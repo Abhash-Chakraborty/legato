@@ -17,9 +17,7 @@
     "test:keyboard": "bun src/lib/utils/keyboard.test.ts",
     "test:playwright": "playwright test",
     "test:playwright:ui": "playwright test --ui",
-    "check:translations": "bun scripts/check-translations.ts",
-    "check:model-languages": "bun scripts/check-model-language-coverage.ts",
-    "postinstall": "bun scripts/check-nix-deps.ts"
+    "check:model-languages": "bun scripts/check-model-language-coverage.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.16",
@@ -27,7 +25,6 @@
     "@tauri-apps/plugin-autostart": "~2.5.1",
     "@tauri-apps/plugin-clipboard-manager": "~2.3.2",
     "@tauri-apps/plugin-dialog": "~2.6",
-    "@tauri-apps/plugin-fs": "~2.4.4",
     "@tauri-apps/plugin-global-shortcut": "~2.3.2",
     "@tauri-apps/plugin-opener": "^2.5.2",
     "@tauri-apps/plugin-os": "~2.3.2",
@@ -45,7 +42,6 @@
     "react-select": "^5.8.0",
     "sonner": "^2.0.7",
     "tailwindcss": "^4.1.16",
-    "tauri-plugin-macos-permissions-api": "2.3.0",
     "zod": "^3.25.76",
     "zustand": "^5.0.8"
   },

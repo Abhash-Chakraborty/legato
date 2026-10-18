@@ -201,15 +201,6 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }
   }, [isDragging, handleMouseUp]);
 
-  // Cleanup blob URLs on unmount
-  useEffect(() => {
-    return () => {
-      if (loadedSrc?.startsWith("blob:")) {
-        URL.revokeObjectURL(loadedSrc);
-      }
-    };
-  }, [loadedSrc]);
-
   const togglePlay = async () => {
     const audio = audioRef.current;
     if (!audio) return;

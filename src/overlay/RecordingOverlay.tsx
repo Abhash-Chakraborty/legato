@@ -9,9 +9,7 @@ import type {
   StreamTextEvent,
   StreamWorkKind,
 } from "@/bindings";
-import i18n, { syncLanguageFromSettings } from "@/i18n";
 import type { ModelStateEvent } from "@/lib/types/events";
-import { getLanguageDirection } from "@/lib/utils/rtl";
 
 type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
 
@@ -20,9 +18,9 @@ type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
 const WAVE_BARS = 9;
 
 // Only call out a model load in the Live preview once it has run this long.
-// Warm loads finish in well under this (~0.2s on Apple Silicon, ~1.5s on a
-// Windows CPU backend), so the common case never flashes a loading notice while
-// the user is speaking; cold loads can take 40s+.
+// Warm loads finish in well under this (~1.5s on a Windows CPU backend), so the
+// common case never flashes a loading notice while the user is speaking; cold
+// loads can take 40s+.
 const SLOW_MODEL_LOAD_MS = 2000;
 
 const RecordingOverlay: React.FC = () => {
@@ -68,7 +66,6 @@ const RecordingOverlay: React.FC = () => {
   // until they scroll back down.
   const capRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
-  const direction = getLanguageDirection(i18n.language);
 
   useEffect(() => {
     const setupEventListeners = async () => {
@@ -84,7 +81,6 @@ const RecordingOverlay: React.FC = () => {
           setStreamText({ committed: "", tentative: "" });
         }
 
-        await syncLanguageFromSettings();
         // The Live panel flows downward from a top overlay and upward from a
         // bottom one; read the placement so the layout can flip to match.
         try {
@@ -301,7 +297,7 @@ const RecordingOverlay: React.FC = () => {
     const collapsed = working && !hasText;
 
     return (
-      <div dir={direction} className={`ov-stage ${position}`}>
+      <div className={`ov-stage ${position}`}>
         <div
           key={session}
           className={`scard ${open ? "open" : ""} ${collapsed ? "working" : ""} ${
@@ -353,10 +349,7 @@ const RecordingOverlay: React.FC = () => {
     state === "processing" ? t("overlay.processing") : transcribingLabel;
 
   return (
-    <div
-      dir={direction}
-      className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
-    >
+    <div className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}>
       <div
         className={`scard compact ${working && isVisible ? "cworking" : ""}`}
       >

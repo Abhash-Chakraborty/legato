@@ -15,7 +15,7 @@ const compoundKeys = [
 
 for (const [code, stored, displayed] of compoundKeys) {
   assert.equal(getKeyName(keyboardEvent({ code })), stored);
-  assert.equal(formatKeyCombination(stored, "linux"), displayed);
+  assert.equal(formatKeyCombination(stored), displayed);
 }
 
 assert.equal(getKeyName(keyboardEvent({ key: "CapsLock" })), "capslock");

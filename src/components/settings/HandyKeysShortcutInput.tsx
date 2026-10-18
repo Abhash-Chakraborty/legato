@@ -5,11 +5,8 @@ import { formatKeyCombination } from "../../lib/utils/keyboard";
 import { ResetButton } from "../ui/ResetButton";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
-import { useOsType } from "../../hooks/useOsType";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { SECURE_INPUT_HELP_URL } from "../SecureInputWarning";
 
 interface HandyKeysShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
@@ -45,10 +42,9 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
   // on its key's release and a modifier-only shortcut only once every
   // modifier is released. Committing on the *first* release (the old
   // behavior) silently saved just the modifier whenever the key event never
-  // arrived — e.g. while macOS Secure Input is active (issue #1578).
+  // arrived (issue #1578).
   const keyedShortcutRef = useRef<string>("");
   const modifierOnlyShortcutRef = useRef<string>("");
-  const osType = useOsType();
 
   const bindings = getSetting("bindings") || {};
 
@@ -214,27 +210,15 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
     // Store the original binding to restore if canceled
     setOriginalBinding(bindings[shortcutId]?.current_binding || "");
 
-    // Start backend recording. The backend refuses while macOS Secure Input
-    // is active (the recorder's listener would receive no key events and
-    // capture just the modifier) — it also flips the warning banner on, so
-    // the toast points at a visible explanation.
+    // Start backend recording
     try {
       const result = await commands.startHandyKeysRecording(shortcutId);
       if (result.status === "error") {
-        if (String(result.error).includes("secure-input-active")) {
-          toast.error(t("secureInput.recorderBlocked"), {
-            action: {
-              label: t("secureInput.learnMore"),
-              onClick: () => openUrl(SECURE_INPUT_HELP_URL),
-            },
-          });
-        } else {
-          toast.error(
-            t("settings.general.shortcut.errors.set", {
-              error: String(result.error),
-            }),
-          );
-        }
+        toast.error(
+          t("settings.general.shortcut.errors.set", {
+            error: String(result.error),
+          }),
+        );
         return;
       }
       setIsRecording(true);
@@ -253,7 +237,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
   // Format the current shortcut keys being recorded
   const formatCurrentKeys = (): string => {
     if (!currentKeys) return t("settings.general.shortcut.pressKeys");
-    return formatKeyCombination(currentKeys, osType);
+    return formatKeyCombination(currentKeys);
   };
 
   // If still loading, show loading state
@@ -336,7 +320,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
             className="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-logo-primary/10 rounded-md cursor-pointer hover:border-logo-primary"
             onClick={startRecording}
           >
-            {formatKeyCombination(binding.current_binding, osType)}
+            {formatKeyCombination(binding.current_binding)}
           </div>
         )}
         <ResetButton

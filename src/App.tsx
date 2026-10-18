@@ -8,15 +8,8 @@ import {
 import { toast, Toaster } from "sonner";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
-import { platform } from "@tauri-apps/plugin-os";
-import {
-  checkAccessibilityPermission,
-  checkMicrophonePermission,
-} from "tauri-plugin-macos-permissions-api";
 import { ModelStateEvent, RecordingErrorEvent } from "./lib/types/events";
 import "./App.css";
-import AccessibilityPermissions from "./components/AccessibilityPermissions";
-import SecureInputWarning from "./components/SecureInputWarning";
 import Footer from "./components/footer";
 import Onboarding, {
   AccessibilityOnboarding,
@@ -33,7 +26,6 @@ import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
 import { deleteRetiredModel } from "@/components/onboarding/retiredModels";
-import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
 type OnboardingStep = "accessibility" | "migration" | "model" | "done";
 
@@ -54,7 +46,7 @@ const renderSettingsContent = (
 };
 
 function App() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(
     null,
   );
@@ -69,7 +61,6 @@ function App() {
   const [currentSection, setCurrentSection] =
     useState<SidebarSection>("general");
   const { settings, updateSetting } = useSettings();
-  const direction = getLanguageDirection(i18n.language);
   const refreshAudioDevices = useSettingsStore(
     (state) => state.refreshAudioDevices,
   );
@@ -84,9 +75,9 @@ function App() {
     onboardingStep === "migration" ||
     onboardingStep === "model";
 
-  // Classic scrollbars consume layout space. Reserve a matching gutter on the
+  // The scrollbar consumes layout space. Reserve a matching gutter on the
   // opposite edge while onboarding is visible so its content stays centered in
-  // the physical window. Overlay scrollbars ignore scrollbar-gutter.
+  // the physical window.
   useLayoutEffect(() => {
     const attribute = "data-onboarding-active";
     document.documentElement.toggleAttribute(attribute, isShowingOnboarding);
@@ -101,11 +92,6 @@ function App() {
   useEffect(() => {
     checkOnboardingStatus();
   }, []);
-
-  // Initialize RTL direction when language changes
-  useEffect(() => {
-    initializeRTL(i18n.language);
-  }, [i18n.language]);
 
   // Initialize Enigo, shortcuts, and refresh audio devices when main app loads
   useEffect(() => {
@@ -125,7 +111,7 @@ function App() {
   // Handle keyboard shortcuts for debug mode toggle
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Check for Ctrl+Shift+D (Windows/Linux) or Cmd+Shift+D (macOS)
+      // Ctrl+Shift+D (or Win+Shift+D) toggles debug mode
       const isDebugShortcut =
         event.shiftKey &&
         event.key.toLowerCase() === "d" &&
@@ -153,12 +139,9 @@ function App() {
       const { error_type, detail } = event.payload;
 
       if (error_type === "microphone_permission_denied") {
-        const currentPlatform = platform();
-        const platformKey = `errors.micPermissionDenied.${currentPlatform}`;
-        const description = t(platformKey, {
-          defaultValue: t("errors.micPermissionDenied.generic"),
+        toast.error(t("errors.micPermissionDeniedTitle"), {
+          description: t("errors.micPermissionDenied"),
         });
-        toast.error(t("errors.micPermissionDeniedTitle"), { description });
       } else if (error_type === "no_input_device") {
         toast.error(t("errors.noInputDeviceTitle"), {
           description: t("errors.noInputDevice"),
@@ -254,7 +237,6 @@ function App() {
       const hasCompletedOnboarding =
         settingsResult.status === "ok" &&
         settingsResult.data.onboarding_completed === true;
-      const currentPlatform = platform();
 
       if (hasCompletedOnboarding) {
         // Returning user - check if they need to grant permissions first
@@ -264,39 +246,20 @@ function App() {
         );
         setMigrationModelId(retiredModelId);
 
-        if (currentPlatform === "macos") {
-          try {
-            const [hasAccessibility, hasMicrophone] = await Promise.all([
-              checkAccessibilityPermission(),
-              checkMicrophonePermission(),
-            ]);
-            if (!hasAccessibility || !hasMicrophone) {
-              await revealMainWindowForPermissions();
-              setOnboardingStep("accessibility");
-              return;
-            }
-          } catch (e) {
-            console.warn("Failed to check macOS permissions:", e);
-            // If we can't check, proceed to main app and let them fix it there
+        try {
+          const microphoneStatus =
+            await commands.getWindowsMicrophonePermissionStatus();
+          if (
+            microphoneStatus.supported &&
+            microphoneStatus.overall_access === "denied"
+          ) {
+            await revealMainWindowForPermissions();
+            setOnboardingStep("accessibility");
+            return;
           }
-        }
-
-        if (currentPlatform === "windows") {
-          try {
-            const microphoneStatus =
-              await commands.getWindowsMicrophonePermissionStatus();
-            if (
-              microphoneStatus.supported &&
-              microphoneStatus.overall_access === "denied"
-            ) {
-              await revealMainWindowForPermissions();
-              setOnboardingStep("accessibility");
-              return;
-            }
-          } catch (e) {
-            console.warn("Failed to check Windows microphone permissions:", e);
-            // If we can't check, proceed to main app and let them fix it there
-          }
+        } catch (e) {
+          console.warn("Failed to check Windows microphone permissions:", e);
+          // If we can't check, proceed to main app and let them fix it there
         }
 
         await finishReturningUser(retiredModelId);
@@ -407,10 +370,7 @@ function App() {
     );
   } else {
     content = (
-      <div
-        dir={direction}
-        className="h-screen flex flex-col select-none cursor-default"
-      >
+      <div className="h-screen flex flex-col select-none cursor-default">
         <ErrorBoundary context="What's New">
           <WhatsNewGate />
         </ErrorBoundary>
@@ -424,8 +384,6 @@ function App() {
           <div className="flex-1 flex flex-col overflow-hidden">
             <div ref={settingsScrollRef} className="flex-1 overflow-y-auto">
               <div className="flex flex-col items-center p-4 gap-4">
-                <AccessibilityPermissions />
-                <SecureInputWarning />
                 {renderSettingsContent(currentSection, setOnboardingPreview)}
               </div>
             </div>

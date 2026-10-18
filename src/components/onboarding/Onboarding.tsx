@@ -170,7 +170,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
           disabled={isBusy}
           className="fixed top-4 start-4 flex items-center gap-1 text-text/70 hover:text-text"
         >
-          <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
+          <ChevronLeft className="w-4 h-4" />
           {t("common.back")}
         </Button>
       )}

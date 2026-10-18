@@ -2,8 +2,6 @@
  * Keyboard utility functions for handling keyboard events
  */
 
-export type OSType = "macos" | "windows" | "linux" | "unknown";
-
 // Shortcut parsers require compact tokens; keep display labels separate.
 const COMPOUND_KEY_DISPLAY: Record<string, string> = {
   capslock: "Caps Lock",
@@ -16,13 +14,8 @@ const COMPOUND_KEY_DISPLAY: Record<string, string> = {
 
 /**
  * Extract a consistent key name from a KeyboardEvent
- * This function provides cross-platform keyboard event handling
- * and returns key names appropriate for the target operating system
  */
-export const getKeyName = (
-  e: KeyboardEvent,
-  osType: OSType = "unknown",
-): string => {
+export const getKeyName = (e: KeyboardEvent): string => {
   // Handle special cases first
   if (e.code) {
     const code = e.code;
@@ -47,35 +40,18 @@ export const getKeyName = (
       return code.replace("Numpad", "numpad ").toLowerCase();
     }
 
-    // Handle modifier keys - OS-specific naming
-    const getModifierName = (baseModifier: string): string => {
-      switch (baseModifier) {
-        case "shift":
-          return "shift";
-        case "ctrl":
-          return osType === "macos" ? "ctrl" : "ctrl";
-        case "alt":
-          return osType === "macos" ? "option" : "alt";
-        case "meta":
-          // Windows key on Windows/Linux, Command key on Mac
-          if (osType === "macos") return "command";
-          return "super";
-        default:
-          return baseModifier;
-      }
-    };
-
+    // Handle modifier keys (the Windows key is "super")
     const modifierMap: Record<string, string> = {
-      ShiftLeft: getModifierName("shift"),
-      ShiftRight: getModifierName("shift"),
-      ControlLeft: getModifierName("ctrl"),
-      ControlRight: getModifierName("ctrl"),
-      AltLeft: getModifierName("alt"),
-      AltRight: getModifierName("alt"),
-      MetaLeft: getModifierName("meta"),
-      MetaRight: getModifierName("meta"),
-      OSLeft: getModifierName("meta"),
-      OSRight: getModifierName("meta"),
+      ShiftLeft: "shift",
+      ShiftRight: "shift",
+      ControlLeft: "ctrl",
+      ControlRight: "ctrl",
+      AltLeft: "alt",
+      AltRight: "alt",
+      MetaLeft: "super",
+      MetaRight: "super",
+      OSLeft: "super",
+      OSRight: "super",
       CapsLock: "capslock",
       Tab: "tab",
       Enter: "enter",
@@ -135,15 +111,13 @@ export const getKeyName = (
   if (e.key) {
     const key = e.key;
 
-    // Handle special key names with OS-specific formatting
+    // Handle special key names
     const keyMap: Record<string, string> = {
-      Control: osType === "macos" ? "ctrl" : "ctrl",
-      Alt: osType === "macos" ? "option" : "alt",
+      Control: "ctrl",
+      Alt: "alt",
       Shift: "shift",
-      Meta:
-        osType === "macos" ? "command" : osType === "windows" ? "win" : "super",
-      OS:
-        osType === "macos" ? "command" : osType === "windows" ? "win" : "super",
+      Meta: "win",
+      OS: "win",
       CapsLock: "capslock",
       ArrowUp: "up",
       ArrowDown: "down",
@@ -182,7 +156,7 @@ const capitalizeKey = (key: string): string => {
 /**
  * Format a single key part for display.
  * Handles _left/_right suffixes and capitalizes names.
- * e.g. "shift_left" -> "Left Shift", "option" -> "Option", "space" -> "Space"
+ * e.g. "shift_left" -> "Left Shift", "alt" -> "Alt", "space" -> "Space"
  */
 const formatKeyPart = (part: string): string => {
   const trimmed = part.trim();
@@ -201,14 +175,11 @@ const formatKeyPart = (part: string): string => {
 };
 
 /**
- * Get display-friendly key combination string for the current OS
- * Formats raw hotkey strings like "option_left+shift+space" into
- * human-readable form like "Left Option + Shift + Space"
+ * Get display-friendly key combination string
+ * Formats raw hotkey strings like "ctrl_left+shift+space" into
+ * human-readable form like "Left Ctrl + Shift + Space"
  */
-export const formatKeyCombination = (
-  combination: string,
-  _osType: OSType,
-): string => {
+export const formatKeyCombination = (combination: string): string => {
   if (!combination) return "";
   return combination.split("+").map(formatKeyPart).join(" + ");
 };

@@ -74,12 +74,6 @@
         "title": "Microphone Access",
         "description": "Required to hear your voice for transcription."
       },
-      "accessibility": {
-        "title": "Accessibility Access",
-        "description": "Required to type transcribed text into your applications."
-      },
-      "grant": "Grant Permission",
-      "granted": "Granted",
       "waiting": "Waiting...",
       "allGranted": "All set!",
       "errors": {
@@ -270,7 +264,7 @@
       "overlay": {
         "style": {
           "title": "Overlay",
-          "description": "Choose the recording overlay: None hides it, Minimal shows a compact pill, Live shows transcription in real time as you speak (streaming-capable models only — look for the Streaming badge in the model picker). On Linux 'None' is recommended.",
+          "description": "Choose the recording overlay: None hides it, Minimal shows a compact pill, Live shows transcription in real time as you speak (streaming-capable models only — look for the Streaming badge in the model picker).",
           "options": {
             "none": "None",
             "minimal": "Minimal",
@@ -290,20 +284,11 @@
         "title": "Paste Method",
         "description": "Choose how text is inserted. Direct: simulates typing via system input. None: skips paste, only updates history/clipboard.",
         "options": {
-          "clipboard": "Clipboard ({{modifier}}+V)",
+          "clipboard": "Clipboard (Ctrl+V)",
           "clipboardCtrlShiftV": "Clipboard (Ctrl+Shift+V)",
           "clipboardShiftInsert": "Clipboard (Shift+Insert)",
           "direct": "Direct",
-          "none": "None",
-          "externalScript": "External Script"
-        },
-        "externalScriptPlaceholder": "/path/to/your/script.sh"
-      },
-      "typingTool": {
-        "title": "Typing Tool",
-        "description": "Choose which Linux typing tool to use for Direct paste method. Auto will automatically detect and use the best available tool for your system.",
-        "options": {
-          "auto": "Auto (Recommended)"
+          "none": "None"
         }
       },
       "clipboardHandling": {
@@ -316,11 +301,10 @@
       },
       "autoSubmit": {
         "title": "Auto Submit",
-        "description": "Automatically send the selected key combination after text insertion. Cmd+Enter applies on macOS, while Windows/Linux use Super+Enter.",
+        "description": "Automatically send the selected key combination after text insertion.",
         "options": {
           "off": "Off",
           "enter": "Enter",
-          "cmdEnter": "Cmd+Enter",
           "superEnter": "Super+Enter",
           "ctrlEnter": "Ctrl+Enter"
         }
@@ -398,9 +382,6 @@
             "openai": "OpenAI Compatible (Chat Completions)",
             "anthropic": "Anthropic Messages"
           }
-        },
-        "appleIntelligence": {
-          "unavailable": "Apple Intelligence is not available on this device. Requires an Apple Silicon Mac running macOS Tahoe (26.0) or later with Apple Intelligence enabled in System Settings."
         },
         "baseUrl": {
           "title": "Base URL",
@@ -527,10 +508,6 @@
         "label": "Always-On Microphone",
         "description": "Keep microphone active for faster response"
       },
-      "clamshellMicrophone": {
-        "title": "Clamshell Microphone",
-        "description": "Microphone to use when laptop lid is closed"
-      },
       "postProcessingToggle": {
         "label": "Post Processing",
         "description": "Enable AI-powered text refinement after transcription"
@@ -567,31 +544,11 @@
       },
       "reliablePaste": {
         "title": "Reliable Paste (Beta)",
-        "description": "Restore the clipboard only after the target app actually reads the transcription, instead of after a fixed delay. Intended to fix old clipboard content being pasted under system load. Requires a clipboard paste method; macOS and Windows only."
+        "description": "Restore the clipboard only after the target app actually reads the transcription, instead of after a fixed delay. Intended to fix old clipboard content being pasted under system load. Requires a clipboard paste method."
       },
       "recordingBuffer": {
         "title": "Extra Recording Buffer",
         "description": "Extra time (in milliseconds) to keep recording after you release the key, to capture trailing audio. 0 = no extra buffer."
-      },
-      "keyboardDiagnostic": {
-        "title": "Keyboard Diagnostic",
-        "description": "Checks whether keyboard events reach Handy. Only event counts are recorded — never which keys you press.",
-        "run": "Run 10s diagnostic",
-        "running": "Listening… press your shortcut a few times (e.g. Option+Space)",
-        "secureInputLabel": "Secure Input",
-        "enabled": "enabled",
-        "disabled": "disabled",
-        "holder": "held by {{name}} (pid {{pid}})",
-        "holderUnknown": "no visible holder",
-        "keyDown": "Key down",
-        "keyUp": "Key up",
-        "flagsChanged": "Modifiers",
-        "mouse": "Mouse",
-        "verdictBlocked": "Secure Input is blocking key events — keyed shortcuts cannot work until it is resolved.",
-        "verdictSuspicious": "Modifier events arrived but no key events — something is suppressing keys even though Secure Input reports disabled. Please report this on GitHub.",
-        "verdictOk": "Key events are reaching Handy normally.",
-        "verdictNoEvents": "No events captured — did you press any keys during the test?",
-        "failed": "Diagnostic failed: {{error}}"
       }
     },
     "about": {
@@ -647,7 +604,6 @@
     "title": "New in Handy v{{version}}"
   },
   "common": {
-    "loading": "Loading...",
     "delete": "Delete",
     "back": "Back",
     "close": "Close",
@@ -657,18 +613,12 @@
     "noOptionsFound": "No options found"
   },
   "accessibility": {
-    "permissionsDescription": "Handy needs accessibility permissions to type transcribed text.",
     "openSettings": "Open System Settings"
   },
   "errors": {
     "loadDirectory": "Error loading directory: {{error}}",
     "micPermissionDeniedTitle": "Microphone Access Denied",
-    "micPermissionDenied": {
-      "generic": "Microphone access was denied by the operating system. Please grant microphone permission in your system settings.",
-      "windows": "Enable microphone access in Settings → Privacy & security → Microphone (including desktop app access).",
-      "macos": "Grant microphone access in System Settings → Privacy & Security → Microphone.",
-      "linux": "Grant microphone access in your system's sound or privacy settings."
-    },
+    "micPermissionDenied": "Enable microphone access in Settings → Privacy & security → Microphone (including desktop app access).",
     "noInputDeviceTitle": "No Microphone Found",
     "noInputDevice": "No audio input device was detected. Please connect a microphone or headset and try again.",
     "recordingFailed": "Failed to start recording: {{error}}",
@@ -677,10 +627,6 @@
     "pasteFailedTitle": "Failed to Paste Text",
     "pasteFailed": "Text could not be pasted into the active application.",
     "transcriptionFailedTitle": "Transcription Failed"
-  },
-  "appLanguage": {
-    "title": "Application Language",
-    "description": "Change the language of the Handy interface"
   },
   "theme": {
     "title": "Application Theme",
@@ -695,16 +641,5 @@
     "transcribing": "Transcribing...",
     "processing": "Processing...",
     "loadingModel": "Loading model..."
-  },
-  "secureInput": {
-    "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",
-    "blockedWithCulprit_other": "{{name}} may be blocking {{count}} shortcuts",
-    "blockedNoCulprit_one": "macOS is temporarily blocking 1 shortcut",
-    "blockedNoCulprit_other": "macOS is temporarily blocking {{count}} shortcuts",
-    "recorderBlockedWithCulprit": "{{name}} may be blocking shortcut changes",
-    "recorderBlockedNoCulprit": "macOS is temporarily blocking shortcut changes",
-    "learnMore": "How to fix",
-    "recorderBlocked": "Can't record shortcuts right now — macOS Secure Input is blocking key events. Resolve the Secure Input warning first.",
-    "dismiss": "Dismiss"
   }
 }
