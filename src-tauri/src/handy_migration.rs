@@ -15,13 +15,15 @@
 //! is never tried again. Handy writes to its roaming folder while it runs, and
 //! a rename can go through even then, since Handy may have nothing open there.
 //! So before that folder moves, if `handy.exe` is running, a message box asks
-//! the user to quit Handy and retry, or to start without the data. The box
-//! says that Cancel is final. Files still in use get a few seconds of retries;
-//! after that, and on any other failure, the folder is left behind, the failure
-//! is logged and startup carries on. The local folder never shows a box.
-//! Without one, each folder holds up startup by a few seconds at most.
+//! the user to quit Handy and retry, or to start without the data. Files still
+//! in use get a few seconds of retries. If they stay in use after the user
+//! chose Retry, a second box asks the user to close whatever has them open.
+//! Both boxes say that Cancel is final. Otherwise a failed move leaves the
+//! folder behind, logs why and lets startup carry on. The local folder never
+//! shows a box. Without one, each folder holds up startup by a few seconds at
+//! most.
 //!
-//! Once the roaming folder has moved, if Handy still looks installed, a second
+//! Once the roaming folder has moved, if Handy still looks installed, another
 //! box suggests uninstalling it so the two apps don't both start with Windows
 //! and claim the same shortcut. It shows at most once, as the move does.
 //!
@@ -54,7 +56,7 @@ use winreg::enums::{
 };
 use winreg::RegKey;
 
-use flow::{Choice, System};
+use flow::{Choice, Prompt, System};
 
 const HANDY_IDENTIFIER: &str = "com.pais.handy";
 
@@ -68,6 +70,11 @@ const QUIT_HANDY_TEXT: &str = "Handy is still running, so Legato can't bring ove
 your settings and history yet.\n\nQuit Handy from its tray icon, then choose Retry. \
 If you choose Cancel, Legato starts without them and won't ask again. They stay in \
 Handy's folder.";
+
+const FILES_IN_USE_TEXT: &str = "Something still has files open in Handy's folder, \
+so Legato can't bring over your settings and history yet.\n\nClose any program that \
+might be using them, then choose Retry. If you choose Cancel, Legato starts without \
+them and won't ask again. They stay in Handy's folder.";
 
 const UNINSTALL_HANDY_TEXT: &str = "Your settings, history and recordings are now \
 in Legato.\n\nUninstall Handy so the two apps don't both start with Windows and \
@@ -140,8 +147,12 @@ impl System for Windows {
         handy_running()
     }
 
-    fn ask_to_quit_handy(&mut self) -> Choice {
-        if message_box(QUIT_HANDY_TEXT, MB_RETRYCANCEL | MB_ICONWARNING) == IDRETRY {
+    fn ask(&mut self, prompt: Prompt) -> Choice {
+        let text = match prompt {
+            Prompt::QuitHandy => QUIT_HANDY_TEXT,
+            Prompt::FilesInUse => FILES_IN_USE_TEXT,
+        };
+        if message_box(text, MB_RETRYCANCEL | MB_ICONWARNING) == IDRETRY {
             Choice::Retry
         } else {
             Choice::Cancel

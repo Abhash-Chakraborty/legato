@@ -27,8 +27,9 @@ pub(super) trait System {
     fn sleep(&mut self, duration: Duration);
     /// Whether a Handy process is running.
     fn handy_running(&mut self) -> bool;
-    /// Asks the user to quit Handy, or to start without its data.
-    fn ask_to_quit_handy(&mut self) -> Choice;
+    /// Asks the user to clear what blocks the move, or to start without
+    /// Handy's data.
+    fn ask(&mut self, prompt: Prompt) -> Choice;
     /// Whether Handy still looks installed.
     fn handy_installed(&mut self) -> bool;
     /// Suggests uninstalling Handy. Returns whether to open Installed apps.
@@ -37,10 +38,19 @@ pub(super) trait System {
     fn open_installed_apps(&mut self) -> io::Result<()>;
 }
 
-/// The user's answer when a running Handy blocks the move.
+/// What blocks the roaming folder's move, which decides the box shown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Prompt {
+    /// Handy is running: ask the user to quit it.
+    QuitHandy,
+    /// Handy is gone, but files are still in use after the user chose Retry.
+    FilesInUse,
+}
+
+/// The user's answer when the move is blocked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Choice {
-    /// Handy was quit, so try again.
+    /// What blocked the move is gone, so try again.
     Retry,
     /// Start without Handy's data. This is final: Legato's folders exist
     /// after this run, so the move isn't offered again.
@@ -115,25 +125,29 @@ pub(super) enum Step {
     Copy,
     /// Try again for a few seconds: the files may be about to close.
     RetryBriefly,
-    /// Ask the user to quit Handy, which has the files open.
-    AskToQuitHandy,
+    /// Ask the user to clear what blocks the move.
+    Ask(Prompt),
     /// Leave Handy's folder where it is and start without it.
     GiveUp,
 }
 
 /// Picks what to do after a failed rename. Only the roaming folder is worth a
-/// message box, and only a running Handy is worth one.
+/// message box: while Handy runs, or when files stay in use after the user
+/// chose Retry (`asked`), since they are waiting on the move by then.
 pub(super) fn next_step(
     folder: Folder,
     failure: Failure,
     handy_running: bool,
     attempt: Attempt,
+    asked: bool,
 ) -> Step {
+    let roaming = folder == Folder::Roaming;
     match failure {
         Failure::OtherVolume => Step::Copy,
-        Failure::InUse if handy_running && folder == Folder::Roaming => Step::AskToQuitHandy,
+        Failure::InUse if handy_running && roaming => Step::Ask(Prompt::QuitHandy),
         // Retrying on its own only helps once Handy is gone.
         Failure::InUse if !handy_running && attempt == Attempt::First => Step::RetryBriefly,
+        Failure::InUse if !handy_running && asked && roaming => Step::Ask(Prompt::FilesInUse),
         Failure::InUse | Failure::Other => Step::GiveUp,
     }
 }
@@ -147,10 +161,10 @@ pub(super) enum Outcome {
     Copied,
     /// The copy failed and the partial copy was removed.
     CopyFailed(io::Error),
-    /// Handy was running and the user chose to start without its data. Holds
-    /// the rename's error when a rename was tried.
-    Cancelled(Option<io::Error>),
-    /// The move failed without asking the user; Handy's folder stayed put.
+    /// The user chose to start without Handy's data when asked. Holds the
+    /// rename's error when a rename was tried.
+    Cancelled(Prompt, Option<io::Error>),
+    /// The move failed and was given up; Handy's folder stayed put.
     Failed(io::Error),
 }
 
@@ -176,11 +190,15 @@ impl Outcome {
                 Level::Warn,
                 format!("Could not copy {from} to {to}: {e}; it was left in place"),
             ),
-            Outcome::Cancelled(e) => {
+            Outcome::Cancelled(prompt, e) => {
+                let why = match prompt {
+                    Prompt::QuitHandy => "Handy was running",
+                    Prompt::FilesInUse => "files in it stayed in use",
+                };
                 let detail = e.as_ref().map(|e| format!(" ({e})")).unwrap_or_default();
                 (
                     Level::Warn,
-                    format!("Handy was running{detail}; the user chose to start without its data, which stays in {from}"),
+                    format!("Left {from} in place because {why}{detail}; the user chose to start without its data"),
                 )
             }
             Outcome::Failed(e) => (
@@ -234,15 +252,20 @@ pub(super) fn move_folder(
     if !ready(old, new) {
         return None;
     }
+    // Whether the user has chosen Retry, so is waiting on the move.
+    let mut asked = false;
     loop {
-        let error = match try_move(system, folder, old, new) {
+        let (prompt, error) = match try_move(system, folder, old, new, asked) {
             Round::Done(outcome) => return outcome,
-            Round::HandyRunning(error) => error,
+            Round::Ask(prompt, error) => (prompt, error),
         };
-        if system.ask_to_quit_handy() == Choice::Cancel {
-            return Some(Outcome::Cancelled(error));
+        if system.ask(prompt) == Choice::Cancel {
+            return Some(Outcome::Cancelled(prompt, error));
         }
-        wait_for_handy_to_quit(system);
+        asked = true;
+        if prompt == Prompt::QuitHandy {
+            wait_for_handy_to_quit(system);
+        }
         // The folders can change while a box is up, for example when Legato
         // was started twice and the other one moved them.
         if !ready(old, new) {
@@ -255,18 +278,24 @@ pub(super) fn move_folder(
 enum Round {
     /// Moved, copied or given up, or `None` when the folders changed meanwhile.
     Done(Option<Outcome>),
-    /// Handy is running. Holds the rename's error when a rename was tried.
-    HandyRunning(Option<io::Error>),
+    /// Blocked: ask the user. Holds the rename's error when a rename was tried.
+    Ask(Prompt, Option<io::Error>),
 }
 
 /// One try at the move: a rename, brief retries while files close, or a copy
-/// across volumes.
-fn try_move(system: &mut impl System, folder: Folder, old: &Path, new: &Path) -> Round {
+/// across volumes. `asked` is whether the user has chosen Retry before.
+fn try_move(
+    system: &mut impl System,
+    folder: Folder,
+    old: &Path,
+    new: &Path,
+    asked: bool,
+) -> Round {
     // Handy writes to its roaming folder while it runs, and a rename that went
     // through anyway would pull the folder out from under it. So Handy has to
     // quit first, whether or not it has files open.
     if folder == Folder::Roaming && system.handy_running() {
-        return Round::HandyRunning(None);
+        return Round::Ask(Prompt::QuitHandy, None);
     }
     let mut attempt = Attempt::First;
     let mut result = system.rename(old, new);
@@ -280,13 +309,13 @@ fn try_move(system: &mut impl System, folder: Folder, old: &Path, new: &Path) ->
         }
         let failure = classify(&error);
         let handy_running = failure == Failure::InUse && system.handy_running();
-        match next_step(folder, failure, handy_running, attempt) {
+        match next_step(folder, failure, handy_running, attempt, asked) {
             Step::Copy => return Round::Done(Some(copy_folder(old, new))),
             Step::RetryBriefly => {
                 attempt = Attempt::Retried;
                 result = retry_rename(system, old, new);
             }
-            Step::AskToQuitHandy => return Round::HandyRunning(Some(error)),
+            Step::Ask(prompt) => return Round::Ask(prompt, Some(error)),
             Step::GiveUp => return Round::Done(Some(Outcome::Failed(error))),
         }
     }
@@ -384,6 +413,7 @@ mod tests {
         renames: u32,
         slept: Duration,
         asked: u32,
+        prompts: Vec<Prompt>,
         suggested: u32,
         opened: u32,
     }
@@ -413,8 +443,9 @@ mod tests {
             self.handy_running
         }
 
-        fn ask_to_quit_handy(&mut self) -> Choice {
+        fn ask(&mut self, prompt: Prompt) -> Choice {
             self.asked += 1;
+            self.prompts.push(prompt);
             if let Some((from, to)) = self.moved_meanwhile.take() {
                 fs::rename(from, to).unwrap();
             }
@@ -499,21 +530,39 @@ mod tests {
     #[test]
     fn asks_only_about_the_roaming_folder_while_handy_runs() {
         for attempt in [Attempt::First, Attempt::Retried] {
-            let step = next_step(Folder::Roaming, Failure::InUse, true, attempt);
-            assert_eq!(step, Step::AskToQuitHandy);
-            let step = next_step(Folder::Local, Failure::InUse, true, attempt);
-            assert_eq!(step, Step::GiveUp);
+            for asked in [false, true] {
+                let step = next_step(Folder::Roaming, Failure::InUse, true, attempt, asked);
+                assert_eq!(step, Step::Ask(Prompt::QuitHandy));
+                let step = next_step(Folder::Local, Failure::InUse, true, attempt, asked);
+                assert_eq!(step, Step::GiveUp);
+            }
         }
     }
 
     #[test]
     fn retries_once_when_files_are_in_use_but_handy_is_not_running() {
         for folder in [Folder::Roaming, Folder::Local] {
-            let first = next_step(folder, Failure::InUse, false, Attempt::First);
-            assert_eq!(first, Step::RetryBriefly);
-            let retried = next_step(folder, Failure::InUse, false, Attempt::Retried);
+            for asked in [false, true] {
+                let first = next_step(folder, Failure::InUse, false, Attempt::First, asked);
+                assert_eq!(first, Step::RetryBriefly);
+            }
+            let retried = next_step(folder, Failure::InUse, false, Attempt::Retried, false);
             assert_eq!(retried, Step::GiveUp);
         }
+    }
+
+    #[test]
+    fn asks_about_files_in_use_only_once_the_user_chose_retry() {
+        let step = next_step(
+            Folder::Roaming,
+            Failure::InUse,
+            false,
+            Attempt::Retried,
+            true,
+        );
+        assert_eq!(step, Step::Ask(Prompt::FilesInUse));
+        let step = next_step(Folder::Local, Failure::InUse, false, Attempt::Retried, true);
+        assert_eq!(step, Step::GiveUp);
     }
 
     #[test]
@@ -521,10 +570,13 @@ mod tests {
         for folder in [Folder::Roaming, Folder::Local] {
             for handy_running in [false, true] {
                 for attempt in [Attempt::First, Attempt::Retried] {
-                    let step = next_step(folder, Failure::OtherVolume, handy_running, attempt);
-                    assert_eq!(step, Step::Copy);
-                    let step = next_step(folder, Failure::Other, handy_running, attempt);
-                    assert_eq!(step, Step::GiveUp);
+                    for asked in [false, true] {
+                        let step =
+                            next_step(folder, Failure::OtherVolume, handy_running, attempt, asked);
+                        assert_eq!(step, Step::Copy);
+                        let step = next_step(folder, Failure::Other, handy_running, attempt, asked);
+                        assert_eq!(step, Step::GiveUp);
+                    }
                 }
             }
         }
@@ -613,7 +665,10 @@ mod tests {
         };
 
         let outcome = move_folder(&mut system, Folder::Roaming, &old, &new);
-        assert!(matches!(outcome, Some(Outcome::Cancelled(None))));
+        assert!(matches!(
+            outcome,
+            Some(Outcome::Cancelled(Prompt::QuitHandy, None))
+        ));
         assert_left_in_place(&old, &new);
         assert_eq!((system.asked, system.renames), (1, 0));
         assert_eq!(system.slept, Duration::ZERO);
@@ -647,7 +702,10 @@ mod tests {
         };
 
         let outcome = move_folder(&mut system, Folder::Roaming, &old, &new);
-        assert!(matches!(outcome, Some(Outcome::Cancelled(None))));
+        assert!(matches!(
+            outcome,
+            Some(Outcome::Cancelled(Prompt::QuitHandy, None))
+        ));
         assert_left_in_place(&old, &new);
         assert_eq!((system.asked, system.renames), (2, 0));
         assert_eq!(system.slept, RETRIES * RETRY_DELAY);
@@ -664,7 +722,10 @@ mod tests {
         };
 
         let outcome = move_folder(&mut system, Folder::Roaming, &old, &new);
-        assert!(matches!(outcome, Some(Outcome::Cancelled(Some(_)))));
+        assert!(matches!(
+            outcome,
+            Some(Outcome::Cancelled(Prompt::QuitHandy, Some(_)))
+        ));
         assert_left_in_place(&old, &new);
         assert_eq!((system.asked, system.renames), (1, 1));
     }
@@ -698,6 +759,47 @@ mod tests {
         assert_eq!(system.asked, 0);
         assert_eq!(system.renames, 1 + RETRIES);
         assert_eq!(system.slept, Duration::from_secs(3));
+    }
+
+    #[test]
+    fn asks_again_when_files_stay_in_use_after_quitting_handy() {
+        // Something other than Handy keeps a file open past the retries.
+        let (_root, old, new) = handy_folder();
+        let mut system = Fake {
+            rename_errors: errors(1 + RETRIES as usize, in_use),
+            handy_running: true,
+            retry_quits_handy: true,
+            choices: [Choice::Retry, Choice::Cancel].into(),
+            ..Fake::default()
+        };
+
+        let outcome = move_folder(&mut system, Folder::Roaming, &old, &new);
+        assert!(matches!(
+            outcome,
+            Some(Outcome::Cancelled(Prompt::FilesInUse, Some(_)))
+        ));
+        assert_left_in_place(&old, &new);
+        assert_eq!(system.prompts, [Prompt::QuitHandy, Prompt::FilesInUse]);
+        assert_eq!(system.renames, 1 + RETRIES);
+        assert_eq!(system.slept, RETRIES * RETRY_DELAY);
+    }
+
+    #[test]
+    fn moves_after_retry_once_the_files_close() {
+        let (_root, old, new) = handy_folder();
+        let mut system = Fake {
+            rename_errors: errors(1 + RETRIES as usize, in_use),
+            handy_running: true,
+            retry_quits_handy: true,
+            choices: [Choice::Retry, Choice::Retry].into(),
+            ..Fake::default()
+        };
+
+        let outcome = move_folder(&mut system, Folder::Roaming, &old, &new);
+        assert!(matches!(outcome, Some(Outcome::Moved)));
+        assert_moved(&old, &new);
+        assert_eq!(system.prompts, [Prompt::QuitHandy, Prompt::FilesInUse]);
+        assert_eq!(system.renames, 2 + RETRIES);
     }
 
     #[test]
