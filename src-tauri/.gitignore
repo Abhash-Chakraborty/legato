@@ -6,8 +6,6 @@
 # will have schema files for capabilities auto-completion
 /gen/schemas
 
-# Staged by build.rs: transcribe-cpp shared runtime libraries (Windows DLLs /
-# Linux .so), bundled next to the executable — to the install root via
-# tauri.windows.conf.json on Windows, into /usr/lib/Handy (deb/rpm) via
-# tauri.conf.json on Linux.
+# Staged by build.rs: transcribe-cpp runtime DLLs, bundled next to the
+# executable (the install root) via tauri.windows.conf.json.
 /transcribe-libs/

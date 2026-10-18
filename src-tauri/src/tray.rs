@@ -8,23 +8,22 @@
 //! that actually changed. Requests that arrive while an apply is pending are
 //! coalesced into it, so bursts of state changes never queue up native work.
 //!
-//! Why: native tray updates are the lever we control for the macOS tray
-//! disappearance bug (tauri-apps/tauri#12060, Handy #1948). Before this, every
-//! recording cycle rebuilt the full menu 3-6 times from several threads, and
-//! concurrent rebuilds could interleave and leave a stale menu behind.
+//! Why: before this, every recording cycle rebuilt the full menu 3-6 times
+//! from several threads, and concurrent rebuilds could interleave and leave a
+//! stale menu behind.
 //!
-//! Exception: [`set_tray_visibility`] and [`recreate_tray_icon`] call the tray
-//! directly. Visibility is a separate attribute that never participates in the
-//! icon/menu diff, both are rare and user-initiated, and Tauri marshals them
-//! onto the main thread so they serialize with the applier anyway. Re-showing
-//! a hidden tray relies on tray-icon recreating it from the last applied
-//! icon/menu/tooltip, so those must only ever be set through the applier.
+//! Exception: [`set_tray_visibility`] calls the tray directly. Visibility is a
+//! separate attribute that never participates in the icon/menu diff, it is
+//! rare and user-initiated, and Tauri marshals it onto the main thread so it
+//! serializes with the applier anyway. Re-showing a hidden tray relies on
+//! tray-icon recreating it from the last applied icon/menu/tooltip, so those
+//! must only ever be set through the applier.
 
 use crate::managers::history::{HistoryEntry, HistoryManager};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings;
-use crate::tray_i18n::get_tray_translations;
+use crate::tray_i18n::tray_strings;
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -56,12 +55,10 @@ impl TrayIconState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MenuInputs {
     busy: bool,
-    warning: bool,
     model_loaded: bool,
     selected_model: String,
     /// `(id, name)` of downloaded models, sorted by name.
     downloaded_models: Vec<(String, String)>,
-    locale: String,
     update_checks_enabled: bool,
 }
 
@@ -130,35 +127,28 @@ impl Default for TrayState {
 pub enum AppTheme {
     Dark,
     Light,
-    Colored, // Pink/colored theme for Linux
 }
 
-/// Gets the current app theme, with Linux defaulting to Colored theme
+/// Gets the current app theme
 pub fn get_current_theme(app: &AppHandle) -> AppTheme {
-    if cfg!(target_os = "linux") {
-        // On Linux, always use the colored theme
-        AppTheme::Colored
-    } else {
-        // On Windows the tray icon sits on the taskbar, which follows the
-        // *system* theme (SystemUsesLightTheme), not the app theme. With the
-        // "Custom" personalization mode the two can differ (e.g. dark taskbar
-        // + light apps), and the window theme would pick an icon that is
-        // invisible against the taskbar.
-        #[cfg(target_os = "windows")]
-        if let Some(theme) = windows_taskbar_theme() {
-            return theme;
-        }
+    // The tray icon sits on the taskbar, which follows the *system* theme
+    // (SystemUsesLightTheme), not the app theme. With the "Custom"
+    // personalization mode the two can differ (e.g. dark taskbar + light
+    // apps), and the window theme would pick an icon that is invisible
+    // against the taskbar.
+    if let Some(theme) = windows_taskbar_theme() {
+        return theme;
+    }
 
-        // On other platforms, map system theme to our app theme
-        if let Some(main_window) = app.get_webview_window("main") {
-            match main_window.theme().unwrap_or(Theme::Dark) {
-                Theme::Light => AppTheme::Light,
-                Theme::Dark => AppTheme::Dark,
-                _ => AppTheme::Dark, // Default fallback
-            }
-        } else {
-            AppTheme::Dark
+    // Otherwise, map the window theme to our app theme
+    if let Some(main_window) = app.get_webview_window("main") {
+        match main_window.theme().unwrap_or(Theme::Dark) {
+            Theme::Light => AppTheme::Light,
+            Theme::Dark => AppTheme::Dark,
+            _ => AppTheme::Dark, // Default fallback
         }
+    } else {
+        AppTheme::Dark
     }
 }
 
@@ -167,7 +157,6 @@ pub fn get_current_theme(app: &AppHandle) -> AppTheme {
 /// Returns None if the value is missing (older Windows 10 builds default to a
 /// dark taskbar there, but falling back to the window theme is safer than
 /// guessing).
-#[cfg(target_os = "windows")]
 fn windows_taskbar_theme() -> Option<AppTheme> {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
@@ -184,20 +173,7 @@ fn windows_taskbar_theme() -> Option<AppTheme> {
 }
 
 /// Gets the appropriate icon path for the given theme and state.
-///
-/// `warning` overlays a badge on the idle icon while keyboard shortcuts are
-/// blocked (macOS Secure Input); recording/transcribing states keep their
-/// normal icons so in-flight activity stays recognizable.
-pub fn get_icon_path(theme: AppTheme, state: TrayIconState, warning: bool) -> &'static str {
-    if warning && state == TrayIconState::Idle {
-        return match theme {
-            AppTheme::Dark => "resources/tray_idle_warning.png",
-            AppTheme::Light => "resources/tray_idle_warning_dark.png",
-            // Linux never sets the warning flag (Secure Input is macOS-only),
-            // but fall back to the normal icon just in case.
-            AppTheme::Colored => "resources/handy.png",
-        };
-    }
+pub fn get_icon_path(theme: AppTheme, state: TrayIconState) -> &'static str {
     match (theme, state) {
         // Dark theme uses light icons
         (AppTheme::Dark, TrayIconState::Idle) => "resources/tray_idle.png",
@@ -207,10 +183,6 @@ pub fn get_icon_path(theme: AppTheme, state: TrayIconState, warning: bool) -> &'
         (AppTheme::Light, TrayIconState::Idle) => "resources/tray_idle_dark.png",
         (AppTheme::Light, TrayIconState::Recording) => "resources/tray_recording_dark.png",
         (AppTheme::Light, TrayIconState::Transcribing) => "resources/tray_transcribing_dark.png",
-        // Colored theme uses pink icons (for Linux)
-        (AppTheme::Colored, TrayIconState::Idle) => "resources/handy.png",
-        (AppTheme::Colored, TrayIconState::Recording) => "resources/recording.png",
-        (AppTheme::Colored, TrayIconState::Transcribing) => "resources/transcribing.png",
     }
 }
 
@@ -220,13 +192,13 @@ pub fn set_tray_state(app: &AppHandle, state: TrayIconState) {
 }
 
 /// Re-syncs the tray after something other than the recording state changed
-/// (theme, Secure Input warning). The recording state itself is preserved.
+/// (theme). The recording state itself is preserved.
 pub fn refresh_tray_icon(app: &AppHandle) {
     sync_tray(app);
 }
 
 /// Re-syncs the tray after something the menu depends on changed (model
-/// list/selection/loaded state, language, settings).
+/// list/selection/loaded state, settings).
 pub fn update_tray_menu(app: &AppHandle) {
     sync_tray(app);
 }
@@ -256,8 +228,8 @@ fn sync_tray_with(app: &AppHandle, update: impl FnOnce(&mut TrayInner)) {
         (inner.next_seq, inner.icon_state)
     };
 
-    // Tray not built yet (early secure-input monitor callbacks). The intent
-    // is kept and picked up by the first sync after the tray exists.
+    // Tray not built yet. The intent is kept and picked up by the first sync
+    // after the tray exists.
     if app.try_state::<TrayIcon>().is_none() {
         return;
     }
@@ -312,7 +284,6 @@ fn sync_tray_with(app: &AppHandle, update: impl FnOnce(&mut TrayInner)) {
 fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
     let settings = settings::get_settings(app);
     let theme = get_current_theme(app);
-    let warning = crate::secure_input::tray_warning_active(app);
     let model_loaded = app.state::<Arc<TranscriptionManager>>().is_model_loaded();
 
     let mut downloaded_models: Vec<(String, String)> = app
@@ -325,14 +296,12 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
     downloaded_models.sort_by(|a, b| a.1.cmp(&b.1));
 
     TrayDesired {
-        icon_path: get_icon_path(theme, icon_state, warning),
+        icon_path: get_icon_path(theme, icon_state),
         menu: MenuInputs {
             busy: icon_state.is_busy(),
-            warning,
             model_loaded,
             selected_model: settings.selected_model,
             downloaded_models,
-            locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
         },
     }
@@ -382,7 +351,7 @@ fn apply_on_main(app: &AppHandle) {
     let mut icon_ok = false;
     if icon_changed {
         match icon {
-            Some(image) => match tray.set_icon_with_as_template(Some(image), true) {
+            Some(image) => match tray.set_icon(Some(image)) {
                 Ok(()) => icon_ok = true,
                 Err(err) => error!("Failed to update tray icon '{}': {err}", desired.icon_path),
             },
@@ -396,11 +365,11 @@ fn apply_on_main(app: &AppHandle) {
             Ok((menu, tooltip)) => match tray.set_menu(Some(menu)) {
                 Ok(()) => {
                     menu_ok = true;
-                    // Best-effort: logged, not retried. The tooltip is cosmetic
-                    // and can only fail on Windows, where a failing
-                    // Shell_NotifyIcon call means the icon is failing too.
-                    // Gating `menu_ok` on it would re-run the full menu
-                    // rebuild on every sync for the cheapest mutation.
+                    // Best-effort: logged, not retried. The tooltip is
+                    // cosmetic, and a failing Shell_NotifyIcon call means the
+                    // icon is failing too. Gating `menu_ok` on it would re-run
+                    // the full menu rebuild on every sync for the cheapest
+                    // mutation.
                     if let Err(err) = tray.set_tooltip(Some(tooltip)) {
                         error!("Failed to set tray tooltip: {err}");
                     }
@@ -456,33 +425,7 @@ fn version_label() -> String {
 /// process-constant `HANDY_DISABLE_UPDATER` env flag behind
 /// `update_checks_forced_disabled()`, which cannot change during a run.
 fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri::Wry>, String)> {
-    let strings = get_tray_translations(Some(inputs.locale.clone()));
-
-    // Secure Input warning entry (macOS): clicking opens the settings window
-    // where the full warning banner explains the situation. Locales that
-    // haven't translated the key yet get the English string rather than a
-    // blank menu item (build.rs emits "" for missing keys).
-    let secure_input_warning = if inputs.warning {
-        let label = if strings.secure_input_warning.is_empty() {
-            get_tray_translations(Some("en".to_string())).secure_input_warning
-        } else {
-            strings.secure_input_warning.clone()
-        };
-        Some(MenuItem::with_id(
-            app,
-            "secure_input_warning",
-            &label,
-            true,
-            None::<&str>,
-        )?)
-    } else {
-        None
-    };
-
-    // Platform-specific accelerators
-    #[cfg(target_os = "macos")]
-    let (settings_accelerator, quit_accelerator) = (Some("Cmd+,"), Some("Cmd+Q"));
-    #[cfg(not(target_os = "macos"))]
+    let strings = tray_strings();
     let (settings_accelerator, quit_accelerator) = (Some("Ctrl+,"), Some("Ctrl+Q"));
 
     // Create common menu items
@@ -572,26 +515,16 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         )?
     };
 
-    // When update checks are forced off (e.g. HANDY_DISABLE_UPDATER, set by
-    // the Nix package), the item is dropped from the menu rather than shown
-    // disabled — it can never do anything in that case, and a disabled item
-    // still shifts every entry below it by one position. A manually-disabled
-    // toggle in Debug Settings keeps the old greyed-out behavior via the
-    // enabled flag.
+    // When update checks are forced off (HANDY_DISABLE_UPDATER), the item is
+    // dropped from the menu rather than shown disabled — it can never do
+    // anything in that case, and a disabled item still shifts every entry
+    // below it by one position. A manually-disabled toggle in Debug Settings
+    // keeps the old greyed-out behavior via the enabled flag.
     if settings::update_checks_forced_disabled() {
         menu.remove(&check_updates_i)?;
     }
 
-    // Both layouts start with [version, separator, ...]; slot the warning in
-    // right below the version line so it's the first actionable thing seen.
-    let mut tooltip = version_label;
-    if let Some(warning_item) = secure_input_warning {
-        menu.insert(&warning_item, 2)?;
-        menu.insert(&separator()?, 3)?;
-        tooltip = format!("{} — {}", tooltip, warning_item.text().unwrap_or_default());
-    }
-
-    Ok((menu, tooltip))
+    Ok((menu, version_label))
 }
 
 fn last_transcript_text(entry: &HistoryEntry) -> &str {
@@ -607,31 +540,6 @@ pub fn set_tray_visibility(app: &AppHandle, visible: bool) {
         error!("Failed to set tray visibility: {}", e);
     } else {
         info!("Tray visibility set to: {}", visible);
-    }
-}
-
-/// Recovery for the macOS tray-disappearance bug (#1948, tauri-apps/tauri#12060):
-/// the `NSStatusItem` can silently vanish with no error surfaced to the app.
-/// Hiding and re-showing the tray recreates it with its current icon, menu and
-/// tooltip. Called when the user "relaunches" Handy while it is already running
-/// (`RunEvent::Reopen` for Spotlight/Finder/Dock, the single-instance callback
-/// for a second process) — the natural "where did my icon go?" moment — so a
-/// relaunch brings the icon back without a full quit.
-#[cfg(target_os = "macos")]
-pub fn recreate_tray_icon(app: &AppHandle) {
-    let no_tray = app
-        .try_state::<crate::cli::CliArgs>()
-        .map(|args| args.no_tray)
-        .unwrap_or(false);
-    if no_tray || !settings::get_settings(app).show_tray_icon {
-        return;
-    }
-    let Some(tray) = app.try_state::<TrayIcon>() else {
-        return;
-    };
-    info!("Recreating tray icon on relaunch");
-    if let Err(e) = tray.set_visible(false).and_then(|_| tray.set_visible(true)) {
-        error!("Failed to recreate tray icon: {}", e);
     }
 }
 
@@ -688,11 +596,9 @@ mod tests {
     fn inputs(busy: bool) -> MenuInputs {
         MenuInputs {
             busy,
-            warning: false,
             model_loaded: true,
             selected_model: "small".to_string(),
             downloaded_models: vec![("small".to_string(), "Small".to_string())],
-            locale: "en".to_string(),
             update_checks_enabled: true,
         }
     }

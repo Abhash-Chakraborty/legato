@@ -32,9 +32,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use transcribe_cpp::{Backend, RunOptions, StreamOptions, StreamText, StreamUpdate, Transcript};
 
-/// Spawn, backend init and device listing. Listing first opens the GPU,
-/// which on macOS compiles ggml's Metal library when the system shader cache
-/// does not hold it yet (~15 s after an install or update).
+/// Spawn, backend init and device listing (listing first opens the GPU).
 const HELLO_TIMEOUT: Duration = Duration::from_secs(60);
 /// Model loads stay generous: a slow load is slow, not hung (#1841).
 const LOAD_TIMEOUT: Duration = Duration::from_secs(180);
@@ -336,8 +334,6 @@ impl EngineSupervisor {
     /// Without `gpu_allowed`, every worker is CPU-only, so no GPU driver is
     /// ever loaded.
     pub fn new(gpu_allowed: bool) -> Self {
-        #[cfg(all(unix, not(test)))]
-        record_launched_exe();
         let (commands, queue) = mpsc::channel();
         let shared = Arc::new(Shared {
             gpu_allowed,
@@ -1130,12 +1126,6 @@ impl Worker {
         #[cfg(not(test))]
         let exe = worker_exe()?;
         let mut command = ProcessCommand::new(exe);
-        #[cfg(target_os = "linux")]
-        if let Some(arg0) = std::env::args_os().next() {
-            // Keep `ps` showing Handy's own path rather than /proc/self/exe.
-            use std::os::unix::process::CommandExt;
-            command.arg0(arg0);
-        }
         command.arg(WORKER_FLAG);
         if cpu_only {
             command.arg(CPU_ONLY_FLAG);
@@ -1145,7 +1135,6 @@ impl Worker {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -1346,55 +1335,12 @@ fn wait_exit(child: &mut Child, timeout: Duration) -> Option<ExitStatus> {
 #[cfg(test)]
 static LIVE_WORKERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// The file Handy was started from, with its identity (device and inode),
-/// recorded at startup; see [`worker_exe`]. `None` if either couldn't be
-/// read, which skips the check.
-#[cfg(all(unix, not(test)))]
-static LAUNCHED_EXE: std::sync::OnceLock<Option<(PathBuf, (u64, u64))>> =
-    std::sync::OnceLock::new();
-
-#[cfg(all(unix, not(test)))]
-fn file_id(path: &std::path::Path) -> io::Result<(u64, u64)> {
-    use std::os::unix::fs::MetadataExt;
-    let metadata = std::fs::metadata(path)?;
-    Ok((metadata.dev(), metadata.ino()))
-}
-
-/// Must run before an upgrade can replace the file, so at startup.
-#[cfg(all(unix, not(test)))]
-fn record_launched_exe() {
-    LAUNCHED_EXE.get_or_init(|| {
-        std::env::current_exe()
-            .and_then(|path| {
-                let id = file_id(&path)?;
-                Ok((path, id))
-            })
-            .inspect_err(|e| warn!("Could not identify Handy's executable: {}", e))
-            .ok()
-    });
-}
-
 /// The executable a worker runs: always this very binary, so the two agree
-/// on the protocol and on transcribe.cpp's backend libraries. Upgrading or
-/// moving Handy while it runs replaces or removes the file it started from,
-/// and a worker started from there would be the new version (macOS), or this
-/// binary loading the new version's backend libraries (Linux). Only a
-/// restart fixes that, so refuse to start one and say so. Windows locks a
-/// running executable against replacement. On Linux the worker runs from
-/// `/proc/self/exe`, which is this binary even once its file is replaced.
+/// on the protocol and on transcribe.cpp's backend libraries. Windows locks a
+/// running executable against replacement, so the file Handy started from
+/// is still this binary.
 #[cfg(not(test))]
 fn worker_exe() -> io::Result<PathBuf> {
-    #[cfg(unix)]
-    if let Some((path, launched)) = LAUNCHED_EXE.get().and_then(Option::as_ref) {
-        if file_id(path).ok().as_ref() != Some(launched) {
-            return Err(io::Error::other(
-                "Handy was updated or moved while it was running; restart Handy",
-            ));
-        }
-    }
-    #[cfg(target_os = "linux")]
-    return Ok(PathBuf::from("/proc/self/exe"));
-    #[cfg(not(target_os = "linux"))]
     std::env::current_exe()
 }
 
@@ -1869,8 +1815,7 @@ mod tests {
         set_fault(None, false);
     }
 
-    /// The mask itself: a CPU-only worker registers no GPU device, including
-    /// compiled-in ones such as Metal.
+    /// The mask itself: a CPU-only worker registers no GPU device.
     #[test]
     #[ignore]
     fn cpu_only_worker_lists_no_gpu() {

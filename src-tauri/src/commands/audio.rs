@@ -7,8 +7,6 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
-
-#[cfg(target_os = "windows")]
 use winreg::{
     enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE},
     RegKey, HKEY,
@@ -58,7 +56,6 @@ pub struct WindowsMicrophonePermissionStatus {
     pub desktop_app_access: PermissionAccess,
 }
 
-#[cfg(target_os = "windows")]
 fn read_registry_permission_access(root_hkey: HKEY, path: &str) -> PermissionAccess {
     let root = RegKey::predef(root_hkey);
     let Ok(key) = root.open_subkey(path) else {
@@ -76,8 +73,9 @@ fn read_registry_permission_access(root_hkey: HKEY, path: &str) -> PermissionAcc
     }
 }
 
-#[cfg(target_os = "windows")]
-fn get_windows_microphone_permission_status_impl() -> WindowsMicrophonePermissionStatus {
+#[tauri::command]
+#[specta::specta]
+pub fn get_windows_microphone_permission_status() -> WindowsMicrophonePermissionStatus {
     const MICROPHONE_PATH: &str =
         "Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone";
     const DESKTOP_APPS_PATH: &str =
@@ -117,41 +115,13 @@ fn get_windows_microphone_permission_status_impl() -> WindowsMicrophonePermissio
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_windows_microphone_permission_status() -> WindowsMicrophonePermissionStatus {
-    #[cfg(target_os = "windows")]
-    {
-        get_windows_microphone_permission_status_impl()
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        WindowsMicrophonePermissionStatus {
-            supported: false,
-            overall_access: PermissionAccess::Unknown,
-            device_access: PermissionAccess::Unknown,
-            app_access: PermissionAccess::Unknown,
-            desktop_app_access: PermissionAccess::Unknown,
-        }
-    }
-}
-
-#[tauri::command]
-#[specta::specta]
 pub fn open_microphone_privacy_settings() -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        use std::process::Command;
-        Command::new("cmd")
-            .args(["/C", "start", "", "ms-settings:privacy-microphone"])
-            .spawn()
-            .map_err(|e| format!("Failed to open Windows microphone privacy settings: {}", e))?;
-        return Ok(());
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        Err("Opening microphone privacy settings is only supported on Windows".to_string())
-    }
+    use std::process::Command;
+    Command::new("cmd")
+        .args(["/C", "start", "", "ms-settings:privacy-microphone"])
+        .spawn()
+        .map_err(|e| format!("Failed to open Windows microphone privacy settings: {}", e))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -163,7 +133,7 @@ pub async fn update_microphone_mode(app: AppHandle, always_on: bool) -> Result<(
     write_settings(&app, settings);
 
     // Update the audio manager mode. update_mode can stop/start the cpal stream
-    // (blocking CoreAudio) and takes the manager std mutexes — run it on a
+    // (blocking device calls) and takes the manager std mutexes — run it on a
     // blocking thread, NOT inline on the webview/main run loop (a slow device
     // open/close would freeze the UI).
     let rm = app.state::<Arc<AudioRecordingManager>>().inner().clone();
@@ -200,17 +170,11 @@ pub async fn get_available_microphones() -> Result<Vec<AudioDevice>, String> {
             is_default: true,
         }];
 
-        // PulseAudio monitor sources record a speaker's output, not a microphone.
-        result.extend(
-            devices
-                .into_iter()
-                .filter(|d| !d.is_monitor)
-                .map(|d| AudioDevice {
-                    index: d.id,
-                    name: d.name,
-                    is_default: false, // The explicit default is handled separately
-                }),
-        );
+        result.extend(devices.into_iter().map(|d| AudioDevice {
+            index: d.id,
+            name: d.name,
+            is_default: false, // The explicit default is handled separately
+        }));
 
         Ok::<_, String>(result)
     })
@@ -230,8 +194,8 @@ pub async fn set_selected_microphone(app: AppHandle, device_name: String) -> Res
     write_settings(&app, settings);
 
     // Update the audio manager to use the new device. update_selected_device
-    // can restart the cpal stream (blocking CoreAudio) — run it on a blocking
-    // thread, not inline on the webview/main run loop.
+    // can restart the cpal stream (blocking device calls) — run it on a
+    // blocking thread, not inline on the webview/main run loop.
     let rm = app.state::<Arc<AudioRecordingManager>>().inner().clone();
     tokio::task::spawn_blocking(move || rm.update_selected_device())
         .await
@@ -312,28 +276,6 @@ pub async fn play_test_sound(app: AppHandle, sound_type: String) {
 
 #[tauri::command]
 #[specta::specta]
-pub fn set_clamshell_microphone(app: AppHandle, device_name: String) -> Result<(), String> {
-    let mut settings = get_settings(&app);
-    settings.clamshell_microphone = if device_name == "default" {
-        None
-    } else {
-        Some(device_name)
-    };
-    write_settings(&app, settings);
-    Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn get_clamshell_microphone(app: AppHandle) -> Result<String, String> {
-    let settings = get_settings(&app);
-    Ok(settings
-        .clamshell_microphone
-        .unwrap_or_else(|| "default".to_string()))
-}
-
-#[tauri::command]
-#[specta::specta]
 pub fn is_recording(app: AppHandle) -> bool {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     audio_manager.is_recording()
@@ -353,7 +295,6 @@ pub async fn get_microphone_channels(device_name: String) -> Result<u16, String>
                 .into_iter()
                 .find(|device| device.name == device_name)
         };
-        // `channels` is unknown only on ALSA, where reading it opens the device.
         Ok(device.and_then(|device| device.channels).unwrap_or(1))
     })
     .await

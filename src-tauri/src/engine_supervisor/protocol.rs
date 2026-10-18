@@ -130,8 +130,8 @@ impl DeviceInfo {
 }
 
 /// Persistent device identity. Uses the backend's stable `device_id` where
-/// available and its name otherwise (Metal reports no id). Must stay
-/// byte-identical to what older versions stored in settings.
+/// available and its name otherwise. Must stay byte-identical to what older
+/// versions stored in settings.
 pub fn device_key(kind: &str, device_id: Option<&str>, name: &str) -> String {
     let (identity_kind, identity) = match device_id {
         Some(device_id) => ("id", device_id),
@@ -302,10 +302,7 @@ mod tests {
 
     #[test]
     fn device_key_matches_legacy_format() {
-        assert_eq!(
-            device_key("metal", None, "Metal"),
-            r#"["metal","name","Metal"]"#
-        );
+        assert_eq!(device_key("cpu", None, "CPU"), r#"["cpu","name","CPU"]"#);
         assert_eq!(
             device_key("vulkan", Some("0000:01:00.0"), "Vulkan0"),
             r#"["vulkan","id","0000:01:00.0"]"#

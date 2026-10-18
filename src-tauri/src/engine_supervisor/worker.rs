@@ -30,13 +30,6 @@ struct Incoming {
 }
 
 pub fn run() -> i32 {
-    // The worker owns the per-run engine scratch, so it needs the same glibc
-    // tuning as the app (#1792). Before anything allocates.
-    crate::memory::init_allocator();
-    #[cfg(unix)]
-    ignore_app_signals();
-    #[cfg(target_os = "linux")]
-    set_process_name();
     // Take the real stdout for the protocol before any native code runs, and
     // point fd 1 at stderr: ggml writes to stdout in places, and any stray
     // byte there would corrupt the protocol stream.
@@ -82,7 +75,6 @@ pub fn run() -> i32 {
     let mut session: Option<(Session, LoadedInfo)> = None;
 
     while let Ok(Incoming { request, pcm }) = requests.recv() {
-        let finished_run = matches!(request, Request::Run { .. });
         let response = match request {
             Request::Hello { list_devices } => match &init_error {
                 Some(message) => Response::Error(message.clone()),
@@ -133,7 +125,6 @@ pub fn run() -> i32 {
                             error!("Protocol write failed during stream: {}", e);
                             return 1;
                         }
-                        crate::memory::trim_freed_memory();
                         continue;
                     }
                     Err(e) => Response::Error(e.to_string()),
@@ -148,11 +139,6 @@ pub fn run() -> i32 {
             error!("Protocol write failed: {}", e);
             return 1;
         }
-        // After the reply, so it never delays the transcript.
-        if finished_run {
-            drop(pcm);
-            crate::memory::trim_freed_memory();
-        }
     }
     // Unreachable in practice: the reader exits the process on EOF.
     0
@@ -161,9 +147,8 @@ pub fn run() -> i32 {
 /// The stdin reader. Forwards requests to the main loop, and ends the
 /// process when the parent closes stdin (unload, quit, or the parent died).
 /// Cancels never reach the worker: the parent kills it instead. `_exit`
-/// skips C++ static destructors, so a model still alive at that point can't
-/// trip ggml-metal's teardown asserts, and the OS reclaims its CPU and GPU
-/// memory.
+/// skips C++ static destructors, so a model still alive at that point is
+/// never torn down, and the OS reclaims its CPU and GPU memory.
 fn read_requests(requests: mpsc::Sender<Incoming>) -> ! {
     let mut input = BufReader::new(io::stdin().lock());
     loop {
@@ -355,13 +340,9 @@ fn inject_fault(stage: &str, on_gpu: bool) {
     match kind {
         "abort" => std::process::abort(),
         // SAFETY: deliberately crash the worker with a real invalid memory
-        // write, as a faulting driver does: SIGSEGV on Unix, an access
-        // violation on Windows (where raising SIGSEGV only exits with code
-        // 3). On Unix, restore the default disposition first so Rust's
-        // stack-overflow handler doesn't get involved.
+        // write, as a faulting driver does: an access violation (raising
+        // SIGSEGV only exits with code 3).
         "segv" => unsafe {
-            #[cfg(unix)]
-            libc::signal(libc::SIGSEGV, libc::SIG_DFL);
             std::ptr::write_volatile(std::ptr::null_mut::<u32>(), 1);
         },
         "hang" => loop {
@@ -416,46 +397,6 @@ fn init_logger() {
     }
 }
 
-/// SIGUSR2 toggles transcription in the app (and WebKitGTK uses SIGUSR1).
-/// Aimed at Handy by name, e.g. the README's `pkill -USR2 -n handy`, one
-/// can reach this worker instead, and its default action would kill it.
-#[cfg(unix)]
-fn ignore_app_signals() {
-    // SAFETY: setting a signal's disposition to SIG_IGN has no preconditions.
-    unsafe {
-        libc::signal(libc::SIGUSR1, libc::SIG_IGN);
-        libc::signal(libc::SIGUSR2, libc::SIG_IGN);
-    }
-}
-
-/// Started from /proc/self/exe, the kernel names this process "exe". Name it
-/// as Handy's, but not `handy`: `pkill`/`killall` match names case-sensitively,
-/// so `pkill -USR2 -n handy` keeps reaching the app, never this newer process.
-#[cfg(target_os = "linux")]
-fn set_process_name() {
-    // SAFETY: PR_SET_NAME copies a NUL-terminated name of up to 16 bytes.
-    unsafe {
-        libc::prctl(libc::PR_SET_NAME, c"Handy-worker".as_ptr());
-    }
-}
-
-#[cfg(unix)]
-fn take_stdout_for_protocol() -> io::Result<File> {
-    use std::os::fd::FromRawFd;
-    // SAFETY: plain fd duplication; the new fd is owned by the returned File.
-    unsafe {
-        let fd = libc::dup(libc::STDOUT_FILENO);
-        if fd < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        if libc::dup2(libc::STDERR_FILENO, libc::STDOUT_FILENO) < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(File::from_raw_fd(fd))
-    }
-}
-
-#[cfg(windows)]
 fn take_stdout_for_protocol() -> io::Result<File> {
     use std::os::windows::io::FromRawHandle;
     // Native code writes through the CRT's fd 1, so redirect that one. The

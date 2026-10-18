@@ -120,23 +120,7 @@ pub fn open_app_data_dir(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Check if Apple Intelligence is available on this device.
-/// Called by the frontend when the user selects Apple Intelligence provider.
-#[specta::specta]
-#[tauri::command]
-pub fn check_apple_intelligence_available() -> bool {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    {
-        crate::apple_intelligence::check_apple_intelligence_availability()
-    }
-    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-    {
-        false
-    }
-}
-
 /// Try to initialize Enigo (keyboard/mouse simulation).
-/// On macOS, this will return an error if accessibility permissions are not granted.
 #[specta::specta]
 #[tauri::command]
 pub fn initialize_enigo(app: AppHandle) -> Result<(), String> {
@@ -152,18 +136,11 @@ pub fn initialize_enigo(app: AppHandle) -> Result<(), String> {
     match EnigoState::new() {
         Ok(enigo_state) => {
             app.manage(enigo_state);
-            log::info!("Enigo initialized successfully after permission grant");
+            log::info!("Enigo initialized successfully");
             Ok(())
         }
         Err(e) => {
-            if cfg!(target_os = "macos") {
-                log::warn!(
-                    "Failed to initialize Enigo: {} (accessibility permissions may not be granted)",
-                    e
-                );
-            } else {
-                log::warn!("Failed to initialize Enigo: {}", e);
-            }
+            log::warn!("Failed to initialize Enigo: {}", e);
             Err(format!("Failed to initialize input system: {}", e))
         }
     }
@@ -173,7 +150,6 @@ pub fn initialize_enigo(app: AppHandle) -> Result<(), String> {
 pub struct ShortcutsInitialized;
 
 /// Initialize keyboard shortcuts.
-/// On macOS, this should be called after accessibility permissions are granted.
 /// This is idempotent - calling it multiple times is safe.
 #[specta::specta]
 #[tauri::command]
@@ -187,9 +163,8 @@ pub fn initialize_shortcuts(app: AppHandle) -> Result<(), String> {
     // Initialize shortcuts
     crate::shortcut::init_shortcuts(&app);
 
-    // Mark as initialized before reconciling the macOS Secure Input fallback.
+    // Mark as initialized
     app.manage(ShortcutsInitialized);
-    crate::secure_input::reconcile_fallback(&app);
 
     log::info!("Shortcuts initialized successfully");
     Ok(())

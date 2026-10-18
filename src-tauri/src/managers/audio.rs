@@ -6,7 +6,6 @@ use crate::audio_toolkit::{
     },
     CaptureSink, CaptureVad, SileroVad, SpeechScorer, VadPolicy, VoiceActivityDetector,
 };
-use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
 use crate::settings::{get_settings, write_settings, AppSettings, VadBackend};
 use crate::utils;
@@ -22,101 +21,47 @@ const SILERO_VAD_THRESHOLD: f32 = 0.3;
 const EARSHOT_VAD_THRESHOLD: f32 = 0.5;
 
 fn set_mute(mute: bool) {
-    // Expected behavior:
-    // - Windows: works on most systems using standard audio drivers.
-    // - Linux: works on many systems (PipeWire, PulseAudio, ALSA),
-    //   but some distros may lack the tools used.
-    // - macOS: works on most standard setups via AppleScript.
-    // If unsupported, fails silently.
+    // Works on most systems using standard audio drivers. If unsupported,
+    // fails silently.
+    unsafe {
+        use windows::Win32::{
+            Media::Audio::{
+                eMultimedia, eRender, Endpoints::IAudioEndpointVolume, IMMDeviceEnumerator,
+                MMDeviceEnumerator,
+            },
+            System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED},
+        };
 
-    #[cfg(target_os = "windows")]
-    {
-        unsafe {
-            use windows::Win32::{
-                Media::Audio::{
-                    eMultimedia, eRender, Endpoints::IAudioEndpointVolume, IMMDeviceEnumerator,
-                    MMDeviceEnumerator,
-                },
-                System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED},
+        macro_rules! unwrap_or_return {
+            ($expr:expr) => {
+                match $expr {
+                    Ok(val) => val,
+                    Err(_) => return,
+                }
             };
-
-            macro_rules! unwrap_or_return {
-                ($expr:expr) => {
-                    match $expr {
-                        Ok(val) => val,
-                        Err(_) => return,
-                    }
-                };
-            }
-
-            // Initialize the COM library for this thread.
-            // If already initialized (e.g., by another library like Tauri), this does nothing.
-            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-
-            let all_devices: IMMDeviceEnumerator =
-                unwrap_or_return!(CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL));
-            let default_device =
-                unwrap_or_return!(all_devices.GetDefaultAudioEndpoint(eRender, eMultimedia));
-            let volume_interface = unwrap_or_return!(
-                default_device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None)
-            );
-
-            let _ = volume_interface.SetMute(mute, std::ptr::null());
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        use std::process::Command;
-
-        let mute_val = if mute { "1" } else { "0" };
-        let amixer_state = if mute { "mute" } else { "unmute" };
-
-        // Try multiple backends to increase compatibility
-        // 1. PipeWire (wpctl)
-        if Command::new("wpctl")
-            .args(["set-mute", "@DEFAULT_AUDIO_SINK@", mute_val])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
-            return;
         }
 
-        // 2. PulseAudio (pactl)
-        if Command::new("pactl")
-            .args(["set-sink-mute", "@DEFAULT_SINK@", mute_val])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
-            return;
-        }
+        // Initialize the COM library for this thread.
+        // If already initialized (e.g., by another library like Tauri), this does nothing.
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
 
-        // 3. ALSA (amixer)
-        let _ = Command::new("amixer")
-            .args(["set", "Master", amixer_state])
-            .output();
-    }
+        let all_devices: IMMDeviceEnumerator =
+            unwrap_or_return!(CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL));
+        let default_device =
+            unwrap_or_return!(all_devices.GetDefaultAudioEndpoint(eRender, eMultimedia));
+        let volume_interface =
+            unwrap_or_return!(default_device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None));
 
-    #[cfg(target_os = "macos")]
-    {
-        use std::process::Command;
-        let script = format!(
-            "set volume output muted {}",
-            if mute { "true" } else { "false" }
-        );
-        let _ = Command::new("osascript").args(["-e", &script]).output();
+        let _ = volume_interface.SetMute(mute, std::ptr::null());
     }
 }
 
-/// Reads the current system output mute state, mirroring `set_mute`'s backends.
+/// Reads the current system output mute state, mirroring `set_mute`.
 ///
 /// Returns `Some(true)`/`Some(false)` when the state could be determined, or
-/// `None` when it couldn't (unsupported platform, missing CLI tools, or an
-/// error). Callers treat `None` as "unknown" and fall back to unmuting on stop,
-/// so we never strand the user's audio muted.
-#[cfg(target_os = "windows")]
+/// `None` when it couldn't (any audio endpoint error). Callers treat `None` as
+/// "unknown" and fall back to unmuting on stop, so we never strand the user's
+/// audio muted.
 fn get_mute() -> Option<bool> {
     unsafe {
         use windows::Win32::{
@@ -141,83 +86,6 @@ fn get_mute() -> Option<bool> {
 
         Some(volume_interface.GetMute().ok()?.as_bool())
     }
-}
-
-#[cfg(target_os = "linux")]
-fn get_mute() -> Option<bool> {
-    use std::process::Command;
-
-    // 1. PipeWire (wpctl): prints "[MUTED]" in the volume line when muted.
-    if let Ok(out) = Command::new("wpctl")
-        .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
-        .output()
-    {
-        if out.status.success() {
-            return Some(String::from_utf8_lossy(&out.stdout).contains("[MUTED]"));
-        }
-    }
-
-    // 2. PulseAudio (pactl): prints "Mute: yes" / "Mute: no".
-    // Force LC_ALL=C so a localized system still emits the parseable English
-    // "yes"/"no" instead of e.g. "ja"/"nein".
-    if let Ok(out) = Command::new("pactl")
-        .env("LC_ALL", "C")
-        .args(["get-sink-mute", "@DEFAULT_SINK@"])
-        .output()
-    {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout).to_lowercase();
-            if s.contains("yes") {
-                return Some(true);
-            }
-            if s.contains("no") {
-                return Some(false);
-            }
-        }
-    }
-
-    // 3. ALSA (amixer): prints "[off]" for muted channels, "[on]" otherwise.
-    // LC_ALL=C keeps the "[on]"/"[off]" tokens stable across locales.
-    if let Ok(out) = Command::new("amixer")
-        .env("LC_ALL", "C")
-        .args(["get", "Master"])
-        .output()
-    {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout);
-            if s.contains("[off]") {
-                return Some(true);
-            }
-            if s.contains("[on]") {
-                return Some(false);
-            }
-        }
-    }
-
-    None
-}
-
-#[cfg(target_os = "macos")]
-fn get_mute() -> Option<bool> {
-    use std::process::Command;
-
-    let out = Command::new("osascript")
-        .args(["-e", "output muted of (get volume settings)"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    match String::from_utf8_lossy(&out.stdout).trim() {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
-    }
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-fn get_mute() -> Option<bool> {
-    None
 }
 
 /// Restores the system mute state after our forced mute, given the state
@@ -258,19 +126,10 @@ struct MuteState {
     prev_muted: Option<bool>,
 }
 
-/// The persisted microphone preference currently in effect. Clamshell and
-/// regular selections are kept distinct so losing a clamshell-only device does
-/// not erase the user's normal microphone preference.
-enum DesiredMicrophone {
-    Default,
-    Selected(String),
-    Clamshell(String),
-}
-
 /// Result of resolving the persisted preference to a recorder device ID.
 /// `device: None` opens the system default. The unavailable name is populated
-/// only when enumeration succeeded and confirmed that the user's regular
-/// selected microphone is missing.
+/// only when enumeration succeeded and confirmed that the user's selected
+/// microphone is missing.
 struct MicrophoneResolution {
     device: Option<String>,
     /// The ID came from `cached_device`, so it may be stale.
@@ -473,15 +332,15 @@ pub struct AudioRecordingManager {
     /// maintained by `set_state()`. The hot-path `is_recording()` reads THIS
     /// instead of the std `state` mutex, so a UI poll can no longer deadlock
     /// the main/webview thread when a worker holds `state` across a slow
-    /// CoreAudio open/close.
+    /// device open/close.
     recording_active: Arc<AtomicBool>,
     /// Invalidates asynchronous first-sample UI/chime work when a recording is
     /// stopped or cancelled. This prevents a slow device from producing a late
     /// "ready" indication for a session the user already ended.
     capture_generation: Arc<AtomicU64>,
-    /// Resolution of a *named* microphone (selected or clamshell) to its
-    /// recorder device ID, cached so on-demand recording starts skip an extra
-    /// device enumeration. Keyed by the resolved name, so a settings change
+    /// Resolution of the selected microphone to its recorder device ID,
+    /// cached so on-demand recording starts skip an extra device
+    /// enumeration. Keyed by the resolved name, so a settings change
     /// misses naturally; cleared when an open fails (device unplugged) so the
     /// retry re-enumerates. The system-default case is never cached — the
     /// recorder resolves the current default itself.
@@ -538,45 +397,18 @@ impl AudioRecordingManager {
 
     /* ---------- helper methods --------------------------------------------- */
 
-    /// The persisted microphone preference currently in effect. Only runs the
-    /// clamshell probe (an `ioreg` subprocess, ~10-20ms) when a clamshell
-    /// microphone is actually configured.
-    fn desired_microphone(&self, settings: &AppSettings) -> DesiredMicrophone {
-        if let Some(clamshell_microphone) = &settings.clamshell_microphone {
-            let clamshell_started = Instant::now();
-            let is_clamshell = clamshell::is_clamshell().unwrap_or(false);
-            debug!(
-                "device resolve: clamshell_check={:?} (clamshell={})",
-                clamshell_started.elapsed(),
-                is_clamshell
-            );
-            if is_clamshell {
-                return DesiredMicrophone::Clamshell(clamshell_microphone.clone());
-            }
-        }
-        match &settings.selected_microphone {
-            Some(name) => DesiredMicrophone::Selected(name.clone()),
-            None => DesiredMicrophone::Default,
-        }
-    }
-
     pub fn invalidate_device_cache(&self) {
         *self.cached_device.lock().unwrap() = None;
     }
 
     fn resolve_microphone_device(&self, settings: &AppSettings) -> MicrophoneResolution {
-        let desired = self.desired_microphone(settings);
-        let (device_name, selected_microphone) = match desired {
-            DesiredMicrophone::Default => {
-                debug!("device resolve: no mic configured -> system default");
-                return MicrophoneResolution {
-                    device: None,
-                    from_cache: false,
-                    unavailable_selected_microphone: None,
-                };
-            }
-            DesiredMicrophone::Selected(name) => (name.clone(), Some(name)),
-            DesiredMicrophone::Clamshell(name) => (name, None),
+        let Some(device_name) = settings.selected_microphone.clone() else {
+            debug!("device resolve: no mic configured -> system default");
+            return MicrophoneResolution {
+                device: None,
+                from_cache: false,
+                unavailable_selected_microphone: None,
+            };
         };
 
         // Cache hit: skip the enumeration. A stale ID (device unplugged)
@@ -615,11 +447,11 @@ impl AudioRecordingManager {
             device.is_some()
         );
         if let Some(id) = &device {
-            *self.cached_device.lock().unwrap() = Some((device_name, id.clone()));
+            *self.cached_device.lock().unwrap() = Some((device_name.clone(), id.clone()));
         }
 
         let unavailable_selected_microphone = if enumeration_succeeded && device.is_none() {
-            selected_microphone
+            Some(device_name)
         } else {
             None
         };
@@ -825,7 +657,7 @@ impl AudioRecordingManager {
             }
         }
 
-        // Get the selected device from settings, considering clamshell mode.
+        // Get the selected device from settings.
         // No pre-flight enumeration here: when nothing is configured the
         // recorder resolves the system default itself, and a machine with no
         // input devices at all fails inside open() with `DeviceUnavailable`.
@@ -1248,7 +1080,7 @@ impl AudioRecordingManager {
         // Lock-free: mirrors the `state` {Recording, Stopping} membership via
         // an atomic maintained by `set_state()`. Polled from the webview/main
         // thread, so it MUST NOT take the `state` mutex (a worker can hold it
-        // across a slow CoreAudio open/close → main-thread deadlock / UI
+        // across a slow device open/close → main-thread deadlock / UI
         // freeze).
         self.recording_active.load(Ordering::SeqCst)
     }

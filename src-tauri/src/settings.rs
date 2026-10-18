@@ -8,9 +8,6 @@ use std::fmt;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
-pub const APPLE_INTELLIGENCE_PROVIDER_ID: &str = "apple_intelligence";
-pub const APPLE_INTELLIGENCE_DEFAULT_MODEL_ID: &str = "Apple Intelligence";
-
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
@@ -159,15 +156,15 @@ pub enum ModelUnloadTimeout {
     Sec15, // Debug mode only
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum PasteMethod {
+    #[default]
     CtrlV,
     Direct,
     None,
     ShiftInsert,
     CtrlShiftV,
-    ExternalScript,
 }
 
 /// How the transcribe shortcut's key events drive a recording.
@@ -224,30 +221,12 @@ pub enum RecordingRetentionPeriod {
     Months3,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum KeyboardImplementation {
     Tauri,
+    #[default]
     HandyKeys,
-}
-
-impl Default for KeyboardImplementation {
-    fn default() -> Self {
-        #[cfg(target_os = "linux")]
-        return KeyboardImplementation::Tauri;
-        #[cfg(not(target_os = "linux"))]
-        return KeyboardImplementation::HandyKeys;
-    }
-}
-
-impl Default for PasteMethod {
-    fn default() -> Self {
-        // Default to CtrlV for macOS and Windows, Direct for Linux
-        #[cfg(target_os = "linux")]
-        return PasteMethod::Direct;
-        #[cfg(not(target_os = "linux"))]
-        return PasteMethod::CtrlV;
-    }
 }
 
 impl ModelUnloadTimeout {
@@ -308,18 +287,6 @@ pub enum Theme {
     System,
     Light,
     Dark,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum TypingTool {
-    #[default]
-    Auto,
-    Wtype,
-    Kwtype,
-    Dotool,
-    Ydotool,
-    Xdotool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
@@ -426,8 +393,6 @@ pub struct AppSettings {
     #[serde(default)]
     pub selected_channel: Option<u16>,
     #[serde(default)]
-    pub clamshell_microphone: Option<String>,
-    #[serde(default)]
     pub selected_output_device: Option<String>,
     #[serde(default = "default_translate_to_english")]
     pub translate_to_english: bool,
@@ -493,13 +458,9 @@ pub struct AppSettings {
     pub paste_delay_after_ms: u64,
     /// Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
     /// after the target app actually reads the transcript, instead of after a
-    /// fixed delay. See `paste_tx`. macOS and Windows only.
+    /// fixed delay. See `paste_tx`.
     #[serde(default)]
     pub reliable_paste: bool,
-    #[serde(default = "default_typing_tool")]
-    pub typing_tool: TypingTool,
-    #[serde(default)]
-    pub external_script_path: Option<String>,
     #[serde(default = "default_filler_word_removal_enabled")]
     pub filler_word_removal_enabled: bool,
     #[serde(default)]
@@ -511,8 +472,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub transcribe_accelerator: TranscribeAcceleratorSetting,
     /// Stable transcribe.cpp device selector. This is derived from the backend's
-    /// `device_id` when available (or its name for backends such as Metal),
-    /// never from the process-local device registry index.
+    /// `device_id` when available (or its name otherwise), never from the
+    /// process-local device registry index.
     #[serde(
         default = "default_transcribe_gpu_device",
         deserialize_with = "deserialize_transcribe_gpu_device"
@@ -585,17 +546,12 @@ fn default_selected_language() -> String {
 
 fn default_overlay_position() -> OverlayPosition {
     // Position only matters when the overlay is shown; whether it shows at all is
-    // `overlay_style` (Linux defaults that to None). So a single default suffices.
+    // `overlay_style`.
     OverlayPosition::Bottom
 }
 
 fn default_overlay_style() -> OverlayStyle {
-    // Linux hides the overlay by default; other platforms show the live overlay.
-    // Position is independent and only selects top vs. bottom placement.
-    #[cfg(target_os = "linux")]
-    return OverlayStyle::None;
-    #[cfg(not(target_os = "linux"))]
-    return OverlayStyle::Live;
+    OverlayStyle::Live
 }
 
 fn default_vad_enabled() -> bool {
@@ -736,23 +692,6 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
         },
     ];
 
-    // Note: We always include Apple Intelligence on macOS ARM64 without checking availability
-    // at startup. The availability check is deferred to when the user actually tries to use it
-    // (in actions.rs). This prevents crashes on macOS 26.x beta where accessing
-    // SystemLanguageModel.default during early app initialization causes SIGABRT.
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    {
-        providers.push(PostProcessProvider {
-            id: APPLE_INTELLIGENCE_PROVIDER_ID.to_string(),
-            label: "Apple Intelligence".to_string(),
-            base_url: "apple-intelligence://local".to_string(),
-            allow_base_url_edit: false,
-            models_endpoint: None,
-            supports_structured_output: true,
-            api_format: PostProcessApiFormat::OpenAi,
-        });
-    }
-
     // AWS Bedrock via Mantle (OpenAI-compatible endpoint)
     providers.push(PostProcessProvider {
         id: "bedrock_mantle".to_string(),
@@ -786,20 +725,10 @@ fn default_post_process_api_keys() -> SecretMap {
     SecretMap(map)
 }
 
-fn default_model_for_provider(provider_id: &str) -> String {
-    if provider_id == APPLE_INTELLIGENCE_PROVIDER_ID {
-        return APPLE_INTELLIGENCE_DEFAULT_MODEL_ID.to_string();
-    }
-    String::new()
-}
-
 fn default_post_process_models() -> HashMap<String, String> {
     let mut map = HashMap::new();
     for provider in default_post_process_providers() {
-        map.insert(
-            provider.id.clone(),
-            default_model_for_provider(&provider.id),
-        );
+        map.insert(provider.id, String::new());
     }
     map
 }
@@ -831,10 +760,6 @@ where
             "transcribe GPU device must be a string, integer, or null",
         )),
     }
-}
-
-fn default_typing_tool() -> TypingTool {
-    TypingTool::Auto
 }
 
 fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
@@ -884,20 +809,11 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
             changed = true;
         }
 
-        let default_model = default_model_for_provider(&provider.id);
-        match settings.post_process_models.get_mut(&provider.id) {
-            Some(existing) => {
-                if existing.is_empty() && !default_model.is_empty() {
-                    *existing = default_model.clone();
-                    changed = true;
-                }
-            }
-            None => {
-                settings
-                    .post_process_models
-                    .insert(provider.id.clone(), default_model);
-                changed = true;
-            }
+        if !settings.post_process_models.contains_key(&provider.id) {
+            settings
+                .post_process_models
+                .insert(provider.id.clone(), String::new());
+            changed = true;
         }
     }
 
@@ -907,14 +823,7 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
 pub fn get_default_settings() -> AppSettings {
-    #[cfg(target_os = "windows")]
     let default_shortcut = "ctrl+space";
-    #[cfg(target_os = "macos")]
-    let default_shortcut = "option+space";
-    #[cfg(target_os = "linux")]
-    let default_shortcut = "ctrl+space";
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    let default_shortcut = "alt+space";
 
     let mut bindings = HashMap::new();
     bindings.insert(
@@ -927,14 +836,7 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: default_shortcut.to_string(),
         },
     );
-    #[cfg(target_os = "windows")]
     let default_post_process_shortcut = "ctrl+shift+space";
-    #[cfg(target_os = "macos")]
-    let default_post_process_shortcut = "option+shift+space";
-    #[cfg(target_os = "linux")]
-    let default_post_process_shortcut = "ctrl+shift+space";
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    let default_post_process_shortcut = "alt+shift+space";
 
     bindings.insert(
         "transcribe_with_post_process".to_string(),
@@ -976,7 +878,6 @@ pub fn get_default_settings() -> AppSettings {
         always_on_microphone: false,
         selected_microphone: None,
         selected_channel: None,
-        clamshell_microphone: None,
         selected_output_device: None,
         translate_to_english: false,
         selected_language: "auto".to_string(),
@@ -1010,8 +911,6 @@ pub fn get_default_settings() -> AppSettings {
         paste_delay_ms: default_paste_delay_ms(),
         paste_delay_after_ms: default_paste_delay_after_ms(),
         reliable_paste: false,
-        typing_tool: default_typing_tool(),
-        external_script_path: None,
         filler_word_removal_enabled: default_filler_word_removal_enabled(),
         custom_filler_words: None,
         chinese_script: default_chinese_script(),
@@ -1258,8 +1157,7 @@ fn apply_settings_migrations(
 }
 
 /// Update checks are forced off (without touching the persisted setting) when
-/// `HANDY_DISABLE_UPDATER` is set — e.g. by the Nix package, since self-update
-/// can't work against an immutable /nix/store install.
+/// `HANDY_DISABLE_UPDATER` is set.
 pub fn update_checks_forced_disabled() -> bool {
     use std::sync::OnceLock;
     static IS_UPDATER_DISABLED: OnceLock<bool> = OnceLock::new();
@@ -1487,6 +1385,40 @@ mod tests {
         assert_eq!(settings.transcribe_gpu_device, None);
     }
 
+    /// Settings removed in this version (`typing_tool`, `clamshell_microphone`,
+    /// `external_script_path`) are ignored when an older store still has them.
+    #[test]
+    fn removed_settings_are_ignored_on_load() {
+        let mut stored = default_settings_json();
+        let map = stored.as_object_mut().unwrap();
+        map.insert("typing_tool".into(), serde_json::json!("ydotool"));
+        map.insert(
+            "clamshell_microphone".into(),
+            serde_json::json!("External Microphone"),
+        );
+        map.insert(
+            "external_script_path".into(),
+            serde_json::json!("C:\\paste.cmd"),
+        );
+
+        serde_json::from_value::<AppSettings>(stored)
+            .expect("a store with removed settings must keep parsing strictly");
+    }
+
+    /// The removed `external_script` paste method falls back to the default
+    /// method without resetting anything else.
+    #[test]
+    fn removed_paste_method_falls_back_to_default() {
+        let mut stored = default_settings_json();
+        let map = stored.as_object_mut().unwrap();
+        map.insert("paste_method".into(), serde_json::json!("external_script"));
+        map.insert("onboarding_completed".into(), serde_json::json!(true));
+
+        let salvaged = salvage_settings(&stored);
+        assert_eq!(salvaged.paste_method, PasteMethod::default());
+        assert!(salvaged.onboarding_completed);
+    }
+
     #[test]
     fn salvage_preserves_valid_fields_when_one_value_is_invalid() {
         let mut stored = default_settings_json();
@@ -1593,7 +1525,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(target_os = "linux"))]
     #[test]
     fn default_overlay_style_is_live_when_overlay_defaults_on() {
         let settings = get_default_settings();

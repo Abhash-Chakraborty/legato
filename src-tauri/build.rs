@@ -1,70 +1,16 @@
 fn main() {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    build_apple_intelligence_bridge();
-
     generate_tray_translations();
 
-    // Linux ships transcribe-cpp as a shared libtranscribe + loadable ggml
-    // backend modules (the `dynamic-backends` posture in Cargo.toml). Bake an
-    // $ORIGIN-relative rpath into the `handy` binary so it finds libtranscribe
-    // next to it in the package — deb/rpm install into the app-private
-    // `/usr/lib/Handy` (the dir tauri already uses for resources; keeps
-    // Handy's libs out of the ldconfig-scanned `/usr/lib`, issue #1639) while
-    // the AppImage keeps them in `usr/lib` (linuxdeploy's layout), hence both
-    // entries. transcribe's
-    // init_backends_default() then loads the ggml modules co-located there.
-    // (Windows resolves DLLs from the exe directory, so it needs no rpath;
-    // macOS links transcribe-cpp statically via the `metal` feature.)
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
-        println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib/Handy:$ORIGIN/../lib");
-    }
-
-    // CPAL (handy-recorder's and rodio's) links two CoreAudio functions that
-    // only exist on macOS 14.2+. Weak-link the framework so Handy still
-    // launches on older macOS (minimumSystemVersion is 10.15).
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
-        println!("cargo:rustc-link-arg=-Wl,-weak_framework,CoreAudio");
-        link_clang_rt_osx();
-    }
-
-    // Stage transcribe-cpp's shared runtime libraries (and the dlopen'd ggml
-    // backend modules) for the installer. Self-gates on the shared /
-    // dynamic-backends posture used by Linux and Windows; it's a no-op for the
-    // static macOS `metal` build, where there is nothing to ship.
+    // Stage transcribe-cpp's runtime DLLs (and the dynamically loaded ggml
+    // backend modules) for the installer. Self-gates on the dynamic-backends
+    // posture used on x86_64; it's a no-op for the static ARM64 build, where
+    // there is nothing to ship.
     stage_transcribe_runtime_libs();
 
     // Must run after transcribe staging because that helper recreates transcribe-libs/.
     stage_vc_runtime_dlls();
 
     tauri_build::build()
-}
-
-/// Link clang's compiler runtime, which provides `__isPlatformVersionAtLeast`.
-///
-/// ggml-metal guards newer Metal APIs with `@available`. When the deployment
-/// target is older than the SDK (CI builds for macOS 11.0), clang lowers those
-/// checks to calls into `libclang_rt.osx.a`, which rustc does not link
-/// (`-nodefaultlibs`). ort-sys used to add it for its own static ONNX Runtime;
-/// without ORT, Handy has to. Local builds targeting the host macOS fold the
-/// checks away, which is why only CI hit the undefined symbol.
-fn link_clang_rt_osx() {
-    let output = std::process::Command::new("clang")
-        .arg("--print-resource-dir")
-        .output()
-        .expect("run `clang --print-resource-dir` to locate libclang_rt.osx.a");
-    assert!(
-        output.status.success(),
-        "`clang --print-resource-dir` failed; cannot locate libclang_rt.osx.a"
-    );
-    let resource_dir = String::from_utf8(output.stdout).expect("clang resource dir is UTF-8");
-    let darwin_dir = std::path::Path::new(resource_dir.trim()).join("lib/darwin");
-    assert!(
-        darwin_dir.join("libclang_rt.osx.a").exists(),
-        "libclang_rt.osx.a not found in {}",
-        darwin_dir.display()
-    );
-    println!("cargo:rustc-link-search=native={}", darwin_dir.display());
-    println!("cargo:rustc-link-lib=static=clang_rt.osx");
 }
 
 /// Stage the MSVC runtime DLLs into `transcribe-libs/` for app-local deployment.
@@ -84,9 +30,6 @@ fn stage_vc_runtime_dlls() {
     let Some(redist_dirs) = std::env::var_os("HANDY_VC_REDIST_DIRS") else {
         return;
     };
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
-        return;
-    }
 
     let dest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("transcribe-libs");
     std::fs::create_dir_all(&dest).expect("create transcribe-libs staging dir");
@@ -132,22 +75,16 @@ fn stage_vc_runtime_dlls() {
     );
 }
 
-/// Stage transcribe-cpp's shared runtime libraries into `transcribe-libs/` so the
-/// installer can ship them next to the executable. One code path covers Windows
-/// (`.dll`) and Linux (versioned `.so`); the match-by-name filter below handles
-/// both naming schemes.
+/// Stage transcribe-cpp's runtime DLLs into `transcribe-libs/` so the installer
+/// can ship them beside `handy.exe` (DLLs resolve from the exe dir).
 ///
 /// Source dirs arrive as `DEP_TRANSCRIBE_CPP_*`: the sys crate (`links =
 /// "transcribe"`) emits its install dirs and the wrapper (`links =
 /// "transcribe_cpp"`) forwards them one hop to us — the only way that metadata
 /// crosses cargo's one-hop `links` boundary. The keys exist only in a shared /
-/// dynamic-backends build; a static build (macOS `metal`) leaves them unset, so
-/// this is a no-op there. `RUNTIME_DIR` (core libs) and `MODULE_DIR` (dlopen'd
-/// ggml modules) may be the same dir — the `BTreeSet` below dedups them.
-///
-/// Where the staged dir lands: Windows bundles it beside `handy.exe` (DLLs resolve
-/// from the exe dir); Linux deb/rpm map it into the app-private `/usr/lib/Handy`
-/// and the AppImage into `usr/lib`, both on the binary's rpath.
+/// dynamic-backends build; the static ARM64 build leaves them unset, so this
+/// is a no-op there. `RUNTIME_DIR` (core libs) and `MODULE_DIR` (dynamically
+/// loaded ggml modules) may be the same dir — the `BTreeSet` below dedups them.
 fn stage_transcribe_runtime_libs() {
     use std::collections::BTreeSet;
     use std::path::PathBuf;
@@ -162,9 +99,9 @@ fn stage_transcribe_runtime_libs() {
 
     // transcribe-cpp publishes its runtime layout in up to two directories:
     //   RUNTIME_DIR : the shared libs to load (transcribe + core ggml / ggml-base)
-    //   MODULE_DIR  : the dlopen'd ggml backend modules (the per-ISA ggml-cpu-*
-    //                 and ggml-vulkan), dynamic-backends only. Often — but not
-    //                 always — the SAME directory as RUNTIME_DIR (it is on Linux).
+    //   MODULE_DIR  : the dynamically loaded ggml backend modules (the per-ISA
+    //                 ggml-cpu-* and ggml-vulkan), dynamic-backends only. Often
+    //                 — but not always — the SAME directory as RUNTIME_DIR.
     // BOTH must sit next to the executable, or init_backends_default() finds the
     // core libs but zero loadable compute backends and registers no devices.
     let mut dirs = BTreeSet::new();
@@ -179,8 +116,7 @@ fn stage_transcribe_runtime_libs() {
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).expect("create transcribe-libs staging dir");
 
-    // Collect every candidate library name first (across both dirs) so the
-    // pruning below can see each lib's whole symlink family at once.
+    // Collect by name across both dirs, so a DLL present in both is staged once.
     let mut libs: std::collections::BTreeMap<String, PathBuf> = Default::default();
     for dir in &dirs {
         println!("cargo:rerun-if-changed={}", dir.display());
@@ -190,48 +126,14 @@ fn stage_transcribe_runtime_libs() {
         {
             let src = entry.path();
             let name = src.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            // Match by NAME, not extension: Linux versions its libs
-            // (libtranscribe.so.0, .so.0.2.0) and the loader needs the SONAME, so
-            // an extension-only filter would miss the versioned names entirely.
-            let is_lib = name.ends_with(".dll")
-                || name.ends_with(".dylib")
-                || name.ends_with(".so")
-                || name.contains(".so.");
-            if is_lib {
+            if name.ends_with(".dll") {
                 libs.insert(name.to_string(), src);
             }
         }
     }
 
-    // A Linux install dir carries each lib as a symlink chain (for example,
-    // libfoo.so -> libfoo.so.0.2 -> libfoo.so.0.2.0), and tauri's deb/rpm
-    // bundlers flatten symlinks into real files. Staging every name would
-    // triplicate each lib and draw "not a symbolic link" warnings from ldconfig
-    // (issue #1639). Only one name per lib is needed at runtime: the shortest
-    // versioned name is the SONAME for linked core libs, while a dlopen'd ggml
-    // backend module generally has only its bare unversioned name. Stage that
-    // name; `fs::copy` dereferences the symlink so the staged file is real.
-    let mut best: std::collections::BTreeMap<&str, (&str, &PathBuf, usize)> = Default::default();
-    for (name, src) in &libs {
-        let (stem, rank) = match split_versioned_so(name) {
-            // Windows/macOS names (.dll/.dylib) are unversioned: keep as-is.
-            None => (name.as_str(), 0),
-            // Prefer the shortest versioned name (`.so.0`, `.so.0.2`, etc.),
-            // then the bare `.so`; a full version is only the fallback when the
-            // install tree did not provide its SONAME symlink.
-            Some((stem, 0)) => (stem, usize::MAX),
-            Some((stem, depth)) => (stem, depth - 1),
-        };
-        match best.get(stem) {
-            Some(&(_, _, existing)) if existing <= rank => {}
-            _ => {
-                best.insert(stem, (name, src, rank));
-            }
-        }
-    }
-
     let mut copied = 0usize;
-    for &(name, src, _) in best.values() {
+    for (name, src) in &libs {
         std::fs::copy(src, dest.join(name))
             .unwrap_or_else(|e| panic!("copy {}: {e}", src.display()));
         copied += 1;
@@ -246,69 +148,30 @@ fn stage_transcribe_runtime_libs() {
     println!("cargo:warning=Staged {copied} transcribe-cpp runtime library file(s)");
 }
 
-/// Split a versioned ELF shared-library name into (stem, version depth):
-/// `libfoo.so` -> ("libfoo", 0), `libfoo.so.0` -> ("libfoo", 1),
-/// `libfoo.so.0.2.0` -> ("libfoo", 3). Returns None for names that aren't a
-/// `.so` optionally followed by dot-separated numeric components.
-fn split_versioned_so(name: &str) -> Option<(&str, usize)> {
-    let idx = name.find(".so")?;
-    let (stem, rest) = (&name[..idx], &name[idx + 3..]);
-    if rest.is_empty() {
-        return Some((stem, 0));
-    }
-    let comps: Vec<&str> = rest.strip_prefix('.')?.split('.').collect();
-    comps
-        .iter()
-        .all(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_digit()))
-        .then_some((stem, comps.len()))
-}
-
-/// Generate tray menu translations from frontend locale files.
+/// Generate the tray menu strings from the frontend's English locale file.
 ///
-/// Source of truth: src/i18n/locales/*/translation.json
-/// The English "tray" section defines the struct fields.
+/// Source of truth: the "tray" section of src/i18n/locales/en/translation.json.
+/// Each key becomes a snake_case field of `TrayStrings`.
 fn generate_tray_translations() {
-    use std::collections::BTreeMap;
     use std::fs;
     use std::path::Path;
 
     let out_dir = std::env::var("OUT_DIR").unwrap();
-    let locales_dir = Path::new("../src/i18n/locales");
+    let json_path = Path::new("../src/i18n/locales/en/translation.json");
 
-    println!("cargo:rerun-if-changed=../src/i18n/locales");
+    println!("cargo:rerun-if-changed={}", json_path.display());
 
-    // Collect all locale translations
-    let mut translations: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-
-    for entry in fs::read_dir(locales_dir).unwrap().flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-
-        let lang = path.file_name().unwrap().to_str().unwrap().to_string();
-        let json_path = path.join("translation.json");
-
-        println!("cargo:rerun-if-changed={}", json_path.display());
-
-        let content = fs::read_to_string(&json_path).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-
-        if let Some(tray) = parsed.get("tray").cloned() {
-            translations.insert(lang, tray);
-        }
-    }
-
-    // English defines the schema
-    let english = translations.get("en").unwrap().as_object().unwrap();
-    let fields: Vec<_> = english
-        .keys()
-        .map(|k| (camel_to_snake(k), k.clone()))
+    let content = fs::read_to_string(json_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let tray = parsed.get("tray").unwrap().as_object().unwrap();
+    let fields: Vec<_> = tray
+        .iter()
+        .map(|(key, value)| (camel_to_snake(key), value.as_str().unwrap_or("")))
         .collect();
 
     // Generate code
     let mut out = String::from(
-        "// Auto-generated from src/i18n/locales/*/translation.json - do not edit\n\n",
+        "// Auto-generated from src/i18n/locales/en/translation.json - do not edit\n\n",
     );
 
     // Struct
@@ -318,31 +181,20 @@ fn generate_tray_translations() {
     }
     out.push_str("}\n\n");
 
-    // Static map
-    out.push_str(
-        "pub static TRANSLATIONS: Lazy<HashMap<&'static str, TrayStrings>> = Lazy::new(|| {\n",
-    );
-    out.push_str("    let mut m = HashMap::new();\n");
-
-    for (lang, tray) in &translations {
-        out.push_str(&format!("    m.insert(\"{lang}\", TrayStrings {{\n"));
-        for (rust_field, json_key) in &fields {
-            let val = tray.get(json_key).and_then(|v| v.as_str()).unwrap_or("");
-            out.push_str(&format!(
-                "        {rust_field}: \"{}\".to_string(),\n",
-                escape_string(val)
-            ));
-        }
-        out.push_str("    });\n");
+    // Constructor
+    out.push_str("pub fn tray_strings() -> TrayStrings {\n    TrayStrings {\n");
+    for (rust_field, val) in &fields {
+        out.push_str(&format!(
+            "        {rust_field}: \"{}\".to_string(),\n",
+            escape_string(val)
+        ));
     }
-
-    out.push_str("    m\n});\n");
+    out.push_str("    }\n}\n");
 
     fs::write(Path::new(&out_dir).join("tray_translations.rs"), out).unwrap();
 
     println!(
-        "cargo:warning=Generated tray translations: {} languages, {} fields",
-        translations.len(),
+        "cargo:warning=Generated tray strings: {} fields",
         fields.len()
     );
 }
@@ -365,202 +217,4 @@ fn escape_string(s: &str) -> String {
         .replace('\n', "\\n")
         .replace('\r', "\\r")
         .replace('\t', "\\t")
-}
-
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-fn build_apple_intelligence_bridge() {
-    use std::env;
-    use std::path::{Path, PathBuf};
-    use std::process::Command;
-
-    const REAL_SWIFT_FILE: &str = "swift/apple_intelligence.swift";
-    const STUB_SWIFT_FILE: &str = "swift/apple_intelligence_stub.swift";
-    const BRIDGE_HEADER: &str = "swift/apple_intelligence_bridge.h";
-
-    println!("cargo:rerun-if-changed={REAL_SWIFT_FILE}");
-    println!("cargo:rerun-if-changed={STUB_SWIFT_FILE}");
-    println!("cargo:rerun-if-changed={BRIDGE_HEADER}");
-
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
-    let object_path = out_dir.join("apple_intelligence.o");
-    let static_lib_path = out_dir.join("libapple_intelligence.a");
-
-    // SDKROOT/SWIFTC env-var overrides let non-Xcode toolchains (e.g. nixpkgs
-    // with apple-sdk_* + standalone swift) bypass xcrun, which is Xcode-only.
-    let sdk_path = env::var("SDKROOT").unwrap_or_else(|_| {
-        String::from_utf8(
-            Command::new("xcrun")
-                .args(["--sdk", "macosx", "--show-sdk-path"])
-                .output()
-                .expect("Failed to locate macOS SDK")
-                .stdout,
-        )
-        .expect("SDK path is not valid UTF-8")
-        .trim()
-        .to_string()
-    });
-
-    // Check if the SDK supports FoundationModels (required for Apple Intelligence)
-    let framework_path =
-        Path::new(&sdk_path).join("System/Library/Frameworks/FoundationModels.framework");
-    // HANDY_FORCE_AI_STUB=1 is an explicit escape hatch: force the stub even when
-    // the active toolchain could build the real path (e.g. to skip the Swift
-    // compile, or if the auto-detection below misfires). The common CLT-only case
-    // is detected automatically just below, so this flag is rarely needed.
-    let force_stub = env::var("HANDY_FORCE_AI_STUB").as_deref() == Ok("1");
-
-    // Auto-detect a Command-Line-Tools-only toolchain. The CLT SDK contains
-    // FoundationModels.framework, so the `framework_path.exists()` check alone
-    // wrongly selects the real Swift path, which then fails to compile because
-    // the CLT `swiftc` has no FoundationModelsMacros plugin (full Xcode only).
-    // Detecting this lets a plain `cargo build` / `tauri dev` succeed without the
-    // manual flag. Skipped when SWIFTC is overridden: that signals a custom
-    // toolchain (e.g. the nixpkgs standalone-swift path supported above) whose
-    // capabilities can't be inferred from `xcode-select`.
-    let command_line_tools_only = env::var("SWIFTC").is_err() && is_command_line_tools_only();
-    if command_line_tools_only && !force_stub {
-        println!(
-            "cargo:warning=Command Line Tools-only toolchain detected; Apple Intelligence \
-             (FoundationModels) needs full Xcode. Falling back to stubs. Install Xcode and run \
-             `sudo xcode-select -s /Applications/Xcode.app`, or set HANDY_FORCE_AI_STUB=1 to \
-             silence this message."
-        );
-    }
-
-    let has_foundation_models = framework_path.exists() && !force_stub && !command_line_tools_only;
-
-    let source_file = if has_foundation_models {
-        println!("cargo:warning=Building with Apple Intelligence support.");
-        REAL_SWIFT_FILE
-    } else {
-        // The SDK genuinely lacking FoundationModels is only one reason we build
-        // stubs — CLT-only detection and HANDY_FORCE_AI_STUB (each warned about
-        // above) also land here, and for those the framework does exist. Only
-        // claim it's "not found" when that's actually true.
-        if framework_path.exists() {
-            println!("cargo:warning=Building Apple Intelligence with stubs.");
-        } else {
-            println!("cargo:warning=Apple Intelligence SDK not found. Building with stubs.");
-        }
-        STUB_SWIFT_FILE
-    };
-
-    if !Path::new(source_file).exists() {
-        panic!("Source file {} is missing!", source_file);
-    }
-
-    // See SDKROOT note above — same env-override pattern for non-Xcode toolchains.
-    let swiftc_path = env::var("SWIFTC").unwrap_or_else(|_| {
-        String::from_utf8(
-            Command::new("xcrun")
-                .args(["--find", "swiftc"])
-                .output()
-                .expect("Failed to locate swiftc")
-                .stdout,
-        )
-        .expect("swiftc path is not valid UTF-8")
-        .trim()
-        .to_string()
-    });
-
-    let toolchain_swift_lib = Path::new(&swiftc_path)
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|root| root.join("lib/swift/macosx"))
-        .expect("Unable to determine Swift toolchain lib directory");
-    let sdk_swift_lib = Path::new(&sdk_path).join("usr/lib/swift");
-
-    // Use macOS 11.0 as deployment target for compatibility
-    // The @available(macOS 26.0, *) checks in Swift handle runtime availability
-    // Weak linking for FoundationModels is handled via cargo:rustc-link-arg below
-    let status = Command::new(&swiftc_path)
-        .args([
-            // Without this flag swiftc treats single-file input as script
-            // mode and emits its own `_main` symbol into the .o, which can
-            // win the link against Rust's main under some linkers (e.g.
-            // open-source ld64 used in nixpkgs' Darwin stdenv), producing a
-            // binary whose main() is a 5-instruction no-op that returns 0.
-            // `-parse-as-library` keeps the compilation in library mode so
-            // no `_main` is emitted. See:
-            //   https://forums.swift.org/t/main-in-a-single-swift-file/63079
-            "-parse-as-library",
-            "-target",
-            "arm64-apple-macosx11.0",
-            "-sdk",
-            &sdk_path,
-            "-O",
-            "-import-objc-header",
-            BRIDGE_HEADER,
-            "-c",
-            source_file,
-            "-o",
-            object_path
-                .to_str()
-                .expect("Failed to convert object path to string"),
-        ])
-        .status()
-        .expect("Failed to invoke swiftc for Apple Intelligence bridge");
-
-    if !status.success() {
-        panic!("swiftc failed to compile {source_file}");
-    }
-
-    let status = Command::new("libtool")
-        .args([
-            "-static",
-            "-o",
-            static_lib_path
-                .to_str()
-                .expect("Failed to convert static lib path to string"),
-            object_path
-                .to_str()
-                .expect("Failed to convert object path to string"),
-        ])
-        .status()
-        .expect("Failed to create static library for Apple Intelligence bridge");
-
-    if !status.success() {
-        panic!("libtool failed for Apple Intelligence bridge");
-    }
-
-    println!("cargo:rustc-link-search=native={}", out_dir.display());
-    println!("cargo:rustc-link-lib=static=apple_intelligence");
-    println!(
-        "cargo:rustc-link-search=native={}",
-        toolchain_swift_lib.display()
-    );
-    println!("cargo:rustc-link-search=native={}", sdk_swift_lib.display());
-    println!("cargo:rustc-link-lib=framework=Foundation");
-
-    if has_foundation_models {
-        // Use weak linking so the app can launch on systems without FoundationModels
-        println!("cargo:rustc-link-arg=-weak_framework");
-        println!("cargo:rustc-link-arg=FoundationModels");
-    }
-
-    println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
-}
-
-/// Returns true when the active developer directory is the standalone Command
-/// Line Tools rather than a full Xcode install.
-///
-/// `xcode-select -p` prints the active developer dir; the CLT install resolves
-/// to a path ending in `CommandLineTools` (e.g. `/Library/Developer/CommandLineTools`),
-/// whereas full Xcode resolves under `Xcode.app`. A CLT-only toolchain ships
-/// FoundationModels.framework in its SDK but a `swiftc` without the
-/// FoundationModelsMacros plugin, so the Apple Intelligence Swift path cannot
-/// compile (issue #1448). On any error we conservatively return false so the
-/// existing SDK-presence check decides.
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-fn is_command_line_tools_only() -> bool {
-    use std::process::Command;
-
-    Command::new("xcode-select")
-        .arg("-p")
-        .output()
-        .ok()
-        .filter(|out| out.status.success())
-        .and_then(|out| String::from_utf8(out.stdout).ok())
-        .map(|path| path.trim().ends_with("CommandLineTools"))
-        .unwrap_or(false)
 }

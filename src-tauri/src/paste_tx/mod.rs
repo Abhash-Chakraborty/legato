@@ -8,12 +8,9 @@
 //!
 //! This module instead publishes the transcript as a *lazy promise* and waits
 //! for the operating system to tell us that a consumer actually read the
-//! clipboard — a "receipt" — before restoring:
-//!
-//! - Windows: delayed rendering (`SetClipboardData(CF_UNICODETEXT, NULL)`),
-//!   the owner window receives `WM_RENDERFORMAT` on read.
-//! - macOS: `declareTypes:owner:` with an owner object, the pasteboard calls
-//!   `pasteboard:provideDataForType:` on read.
+//! clipboard — a "receipt" — before restoring. It uses delayed rendering
+//! (`SetClipboardData(CF_UNICODETEXT, NULL)`): the owner window receives
+//! `WM_RENDERFORMAT` on read.
 //!
 //! Two rules make the receipt trustworthy:
 //!
@@ -21,8 +18,8 @@
 //!    read before that is an eager third party (clipboard manager, antivirus)
 //!    reacting to the clipboard change itself.
 //! 2. Restoration only happens while we still own the clipboard
-//!    (sequence number / changeCount unchanged, no ownership-lost event). If
-//!    the user copied something else in the meantime, their action wins.
+//!    (sequence number unchanged, no ownership-lost event). If the user
+//!    copied something else in the meantime, their action wins.
 //!
 //! The restore is additionally gated on a short quiet period after the *last*
 //! receipt, because some applications read the clipboard several times per
@@ -31,21 +28,9 @@
 //! transcript stays on the clipboard a bit longer", never "stale content gets
 //! pasted".
 
-// The shared transaction state is compiled on all platforms (for the unit
-// tests), but only the macOS/Windows platform modules consume all of it.
-#![cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
-
 use std::time::{Duration, Instant};
 
-#[cfg(target_os = "macos")]
-mod macos;
-#[cfg(target_os = "windows")]
 mod windows;
-
-#[cfg(target_os = "macos")]
-use macos as platform;
-#[cfg(target_os = "windows")]
-use windows as platform;
 
 /// How long after the *last* observed read the transcript stays on the
 /// clipboard before restoring. Covers applications that read the clipboard
@@ -78,11 +63,9 @@ pub(crate) struct TxState {
     /// Someone else took clipboard ownership (user copied elsewhere, ...).
     pub ownership_lost: bool,
     /// A newer paste transaction settled this one early (see flush logic in
-    /// the platform modules).
+    /// `windows.rs`).
     pub cancelled: bool,
     /// The post-paste Enter (auto-submit) has been sent for this transaction.
-    /// (Read on Windows; the macOS path settles via `MacPending::settled`.)
-    #[allow(dead_code)]
     pub auto_submit_sent: bool,
     /// First post-injection receipt has been logged.
     pub logged_receipt: bool,
@@ -135,7 +118,7 @@ pub(crate) enum WaitDecision {
 }
 
 /// Pure decision: given the current transaction state, keep waiting for the
-/// target to read, or finish now. Both platform event loops call this.
+/// target to read, or finish now. The clipboard owner's event loop calls this.
 pub(crate) fn evaluate(state: &TxState, now: Instant) -> WaitDecision {
     if state.ownership_lost || state.cancelled {
         return WaitDecision::Finish;
@@ -168,7 +151,7 @@ pub(crate) fn evaluate(state: &TxState, now: Instant) -> WaitDecision {
 /// ~110ms to ~20ms) can be tried as its own experiment later.
 const CHORD_HOLD_MS: u64 = 100;
 
-/// Sends the platform paste chord for the configured method.
+/// Sends the paste chord for the configured method.
 pub(crate) fn send_chord(
     enigo: &mut enigo::Enigo,
     paste_method: &crate::settings::PasteMethod,
@@ -186,11 +169,10 @@ pub(crate) fn send_chord(
 }
 
 /// Attempts the receipt-sequenced paste. Returns `Err` before anything has
-/// been published when the platform transaction cannot start, in which case
+/// been published when the clipboard transaction cannot start, in which case
 /// the caller should fall back to the legacy paste path. On `Ok`, publishing
 /// and chord injection have completed and the guarded restore (plus
 /// auto-submit) finishes asynchronously.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) fn try_reliable_paste(
     text: &str,
     app_handle: &tauri::AppHandle,
@@ -200,7 +182,7 @@ pub(crate) fn try_reliable_paste(
     auto_submit_key: crate::settings::AutoSubmitKey,
     clipboard_handling: crate::settings::ClipboardHandling,
 ) -> Result<(), String> {
-    platform::run(
+    windows::run(
         text,
         app_handle,
         paste_method,

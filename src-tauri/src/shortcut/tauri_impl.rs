@@ -65,7 +65,7 @@ pub fn validate_shortcut(raw: &str) -> Result<(), String> {
     }
 
     // The name check above passes side-specific modifiers such as
-    // `option_left`, which the handy-keys recorder saves but the accelerator
+    // `alt_left`, which the handy-keys recorder saves but the accelerator
     // parser rejects. Parse here so a binding carried over from handy-keys is
     // reset to the default instead of failing to register.
     raw.parse::<Shortcut>()
@@ -113,8 +113,7 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                 let shortcut_string = scut.into_string();
                 let is_pressed = event.state == ShortcutState::Pressed;
                 // Mirrors the handy-keys event log line; the distinct prefix
-                // makes it possible to tell which backend fired a shortcut
-                // (e.g. when diagnosing the Secure Input fallback)
+                // makes it possible to tell which backend fired a shortcut.
                 debug!(
                     "tauri global-shortcut event: binding={}, shortcut={}, state={:?}",
                     binding_id_for_closure, shortcut_string, event.state
@@ -171,21 +170,14 @@ mod tests {
 
     #[test]
     fn rejects_side_specific_modifiers_the_parser_cannot_register() {
-        for raw in ["option_left+space", "ctrl_right+space"] {
+        for raw in ["alt_left+space", "ctrl_right+space"] {
             assert!(validate_shortcut(raw).is_err(), "{raw} should be rejected");
         }
     }
 
     #[test]
     fn accepts_the_default_shortcuts() {
-        for raw in [
-            "option+space",
-            "option+shift+space",
-            "ctrl+space",
-            "ctrl+shift+space",
-            "alt+space",
-            "escape",
-        ] {
+        for raw in ["ctrl+space", "ctrl+shift+space", "escape"] {
             assert_eq!(validate_shortcut(raw), Ok(()), "{raw} should be accepted");
         }
     }

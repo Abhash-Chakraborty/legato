@@ -35,8 +35,8 @@ struct PendingRelease {
 }
 
 /// A press that arrived while the pipeline was still busy processing the
-/// previous transcription. Toggle-style triggers (SIGUSR2, CLI flags, some
-/// pedal setups) flip state on every edge, so dropping a busy press desyncs
+/// previous transcription. Toggle-style triggers (CLI flags, some pedal
+/// setups) flip state on every edge, so dropping a busy press desyncs
 /// the parity: the next edge starts a recording nobody will ever stop.
 struct PendingPress {
     binding_id: String,
@@ -127,7 +127,7 @@ enum Stage {
     Processing,
 }
 
-/// A keyboard/signal edge for a transcribe binding.
+/// A keyboard or external-trigger edge for a transcribe binding.
 struct InputEvent {
     binding_id: String,
     hotkey_string: String,
@@ -135,7 +135,7 @@ struct InputEvent {
     mode: ShortcutActivation,
     /// Hold-or-toggle: minimum press duration that counts as a hold.
     hold_threshold: Duration,
-    /// External triggers (SIGUSR2, CLI flags) rather than physical keys.
+    /// External triggers (CLI flags) rather than physical keys.
     /// They fire on every edge by design and must never be debounced —
     /// dropping one desyncs toggle parity and wedges recording on.
     external: bool,
@@ -526,7 +526,7 @@ impl CoordinatorState {
 }
 
 /// Serialises all transcription lifecycle events through a single thread
-/// to eliminate race conditions between keyboard shortcuts, signals, and
+/// to eliminate race conditions between keyboard shortcuts, CLI triggers, and
 /// the async transcribe-paste pipeline. The thread is a thin shell: it
 /// transports commands to the pure [`CoordinatorState`] and executes the
 /// returned [`Effect`]s.
@@ -611,7 +611,7 @@ impl TranscriptionCoordinator {
         );
     }
 
-    /// Send an external trigger (SIGUSR2, CLI flag). Always a toggle press,
+    /// Send an external trigger (CLI flag). Always a toggle press,
     /// always exempt from debounce — see [`InputEvent::external`].
     pub fn send_external_input(&self, binding_id: &str, source: &str) {
         self.send(
@@ -778,8 +778,8 @@ mod tests {
     // ---------------------------------------------------------------------
     // Busy-pipeline input classification.
     //
-    // Toggle-style triggers (SIGUSR2, CLI flags, pedals that signal on both
-    // edges) flip state on every edge. Dropping a press that arrives while
+    // Toggle-style triggers (CLI flags, pedals that signal on both edges)
+    // flip state on every edge. Dropping a press that arrives while
     // the previous pipeline is still processing desyncs the parity: the next
     // edge then starts a recording no one will stop, leaving the overlay
     // waiting for input with the button long released.
@@ -1155,9 +1155,10 @@ mod tests {
         }
     }
 
-    /// External triggers fire on every edge by design (e.g. SIGUSR2 sent on
-    /// both key press and release). Two edges inside the debounce window must
-    /// both be honoured, or the parity desyncs and recording wedges on.
+    /// External triggers fire on every edge by design (e.g.
+    /// `--toggle-transcription` bound to both key press and release). Two
+    /// edges inside the debounce window must both be honoured, or the parity
+    /// desyncs and recording wedges on.
     #[test]
     fn external_edges_inside_debounce_window_are_not_dropped() {
         let mut state = CoordinatorState::new();

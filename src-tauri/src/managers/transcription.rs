@@ -1648,10 +1648,8 @@ fn drain_until_finalize(rx: mpsc::Receiver<StreamCmd>) {
 ///
 /// Devices are listed by a transcription worker process (see
 /// [`crate::engine_supervisor`]), so GPU driver initialization never runs in
-/// the app process. Listing opens the GPU, which on macOS loads ggml's Metal
-/// library and compiles it when the system shader cache does not hold it yet
-/// (the first launch after an install or update), so the app calls this from
-/// a background thread instead of its startup path.
+/// the app process. Listing opens the GPU, so the app calls this from a
+/// background thread instead of its startup path.
 pub fn report_compute_devices(tm: &TranscriptionManager) {
     if transcribe_gpu_disabled_for_host() {
         warn!(
@@ -1720,8 +1718,8 @@ fn select_transcribe_backend_for_host(
 /// Resolve the user's persisted GPU choice to the device key the worker
 /// should load on. Registry indices and handles are process-local, so
 /// settings store a key based on the backend's stable `device_id` (falling
-/// back to name for backends such as Metal that do not report one). The
-/// worker falls back to automatic selection if that device is gone.
+/// back to name for backends that do not report one). The worker falls back
+/// to automatic selection if that device is gone.
 fn resolve_gpu_device(
     setting: TranscribeAcceleratorSetting,
     gpu_device: Option<&str>,
@@ -1774,7 +1772,7 @@ fn gpu_device_options(engine: &EngineSupervisor) -> Vec<GpuDeviceOption> {
     // GPU compute devices as the latest worker listed them, so a GPU that
     // comes back is picked up. `id` is a persistent identity key, never the
     // process-local registry index. It uses the backend's device_id where
-    // available and its name otherwise (Metal). `total_vram_mb` is 0 when the
+    // available and its name otherwise. `total_vram_mb` is 0 when the
     // backend does not report capacity. Empty if listing failed.
     transcribe_compute_devices(engine)
         .unwrap_or_default()

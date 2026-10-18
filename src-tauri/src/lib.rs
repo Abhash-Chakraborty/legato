@@ -1,6 +1,4 @@
 mod actions;
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-mod apple_intelligence;
 mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
@@ -10,15 +8,12 @@ pub mod cli;
 mod clipboard;
 mod commands;
 pub mod engine_supervisor;
-mod helpers;
 mod input;
 mod llm_client;
 mod managers;
-mod memory;
 mod overlay;
 mod paste_tx;
 pub mod portable;
-mod secure_input;
 mod settings;
 mod shortcut;
 mod signal_handle;
@@ -45,7 +40,6 @@ pub use transcription_coordinator::TranscriptionCoordinator;
 
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Listener, Manager};
-use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_log::{Builder as LogBuilder, RotationStrategy, Target, TargetKind};
 
 use crate::settings::get_settings;
@@ -107,12 +101,6 @@ fn show_main_window(app: &AppHandle) {
         if let Err(e) = main_window.set_focus() {
             log::error!("Failed to focus webview window: {}", e);
         }
-        #[cfg(target_os = "macos")]
-        {
-            if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
-                log::error!("Failed to set activation policy to Regular: {}", e);
-            }
-        }
         return;
     }
 
@@ -123,63 +111,23 @@ fn show_main_window(app: &AppHandle) {
     );
 }
 
-/// Choose the macOS activation policy the process *launches* with.
-///
-/// Must run between `build()` and `run()`: that is the only point where
-/// `App::set_activation_policy` sets tao's initial policy, which
-/// `applicationDidFinishLaunching` then applies directly. Calling the
-/// `AppHandle` variant from `setup` (which Tauri runs on `RunEvent::Ready`,
-/// i.e. after launch) is instead a runtime Regular → Accessory demotion of an
-/// already-activated foreground app — the transition Apple documents as
-/// unreliable, and what left a Dock icon behind for start-hidden and
-/// login-item launches on macOS 26+ (#1787). Launching as Accessory avoids the
-/// transition entirely; showing the window later promotes to Regular, which is
-/// the supported direction.
-///
-/// Mirrors the show-window decision in `setup`: the app launches without a
-/// Dock icon only when it will start hidden (setting or `--start-hidden`) AND a
-/// tray icon is available (setting and not `--no-tray`). With no tray the Dock
-/// icon stays as the only way back into the app (#903). Headless one-shot
-/// runs are left alone.
-#[cfg(target_os = "macos")]
-fn apply_startup_activation_policy(app: &mut tauri::App, headless_mode: bool) {
-    if headless_mode {
-        return;
-    }
-
-    let cli_args = app.state::<CliArgs>().inner().clone();
-    let settings = settings::get_settings(app.handle());
-
-    let should_hide = settings.start_hidden || cli_args.start_hidden;
-    let tray_available = settings.show_tray_icon && !cli_args.no_tray;
-
-    if should_hide && tray_available {
-        log::info!("Starting hidden with tray available: launching as Accessory (no Dock icon)");
-        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-    }
-}
-
-#[allow(unused_variables)]
 fn should_force_show_permissions_window(app: &AppHandle) -> bool {
-    #[cfg(target_os = "windows")]
-    {
-        let model_manager = app.state::<Arc<ModelManager>>();
-        let has_downloaded_models = model_manager
-            .get_available_models()
-            .iter()
-            .any(|model| model.is_downloaded);
+    let model_manager = app.state::<Arc<ModelManager>>();
+    let has_downloaded_models = model_manager
+        .get_available_models()
+        .iter()
+        .any(|model| model.is_downloaded);
 
-        if !has_downloaded_models {
-            return false;
-        }
+    if !has_downloaded_models {
+        return false;
+    }
 
-        let status = commands::audio::get_windows_microphone_permission_status();
-        if status.supported && status.overall_access == commands::audio::PermissionAccess::Denied {
-            log::info!(
-                "Windows microphone permissions are denied; forcing main window visible for onboarding"
-            );
-            return true;
-        }
+    let status = commands::audio::get_windows_microphone_permission_status();
+    if status.supported && status.overall_access == commands::audio::PermissionAccess::Denied {
+        log::info!(
+            "Windows microphone permissions are denied; forcing main window visible for onboarding"
+        );
+        return true;
     }
 
     false
@@ -188,8 +136,7 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
 fn initialize_core_logic(app_handle: &AppHandle) {
     // Note: Enigo (keyboard/mouse simulation) is NOT initialized here.
     // The frontend is responsible for calling the `initialize_enigo` command
-    // after onboarding completes. This avoids triggering permission dialogs
-    // on macOS before the user is ready.
+    // after onboarding completes.
 
     // Initialize the managers. The audio recorder receives the streaming router
     // explicitly, so always-on microphone startup can wire live-preview frames
@@ -216,27 +163,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
-    // after permissions are confirmed (on macOS) or after onboarding completes.
-    // This matches the pattern used for Enigo initialization.
-
-    // Set up signal handlers for toggling transcription. On Linux, SIGUSR1 is
-    // deliberately not handled — it belongs to WebKitGTK's garbage collector
-    // (#1660) — see signal_handle.rs.
-    #[cfg(unix)]
-    signal_handle::setup_signal_handler(app_handle.clone());
-
-    // The macOS activation policy for a start-hidden launch is applied before
-    // the event loop runs (see `apply_startup_activation_policy`), not here:
-    // by the time `setup` runs the app has already launched as a Regular
-    // (Dock) app, and demoting it at runtime is unreliable (#1787).
+    // after onboarding completes. This matches the pattern used for Enigo
+    // initialization.
 
     // Get the current theme to set the appropriate initial icon
     let initial_theme = tray::get_current_theme(app_handle);
 
     // Choose the appropriate initial icon based on theme
-    let initial_icon_path = tray::get_icon_path(initial_theme, tray::TrayIconState::Idle, false);
+    let initial_icon_path = tray::get_icon_path(initial_theme, tray::TrayIconState::Idle);
 
-    let mut tray_builder = TrayIconBuilder::new()
+    let tray = TrayIconBuilder::new()
         .icon(
             Image::from_path(
                 app_handle
@@ -247,44 +183,28 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             .unwrap(),
         )
         .tooltip(tray::tray_tooltip())
-        .icon_as_template(true);
-
-    // Windows notification-area convention: left click opens the app, right click
-    // shows the menu. Elsewhere (macOS menu bar, Linux) the menu stays on left click.
-    #[cfg(target_os = "windows")]
-    {
-        tray_builder = tray_builder
-            .show_menu_on_left_click(false)
-            .on_tray_icon_event(|tray, event| {
-                use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
-                let opens_window = matches!(
-                    event,
-                    TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } | TrayIconEvent::DoubleClick {
-                        button: MouseButton::Left,
-                        ..
-                    }
-                );
-                if opens_window {
-                    show_main_window(tray.app_handle());
+        // Notification-area convention: left click opens the app, right click
+        // shows the menu.
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+            let opens_window = matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } | TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
                 }
-            });
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        tray_builder = tray_builder.show_menu_on_left_click(true);
-    }
-
-    let tray = tray_builder
+            );
+            if opens_window {
+                show_main_window(tray.app_handle());
+            }
+        })
         .on_menu_event(|app, event| match event.id.as_ref() {
             "settings" => {
-                show_main_window(app);
-            }
-            "secure_input_warning" => {
-                // Full explanation lives in the settings-window banner
                 show_main_window(app);
             }
             "check_updates" => {
@@ -355,8 +275,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         tray::update_tray_menu(&app_handle_for_listener);
     });
 
-    // Apply the autostart preference (SMAppService login item on macOS 13+,
-    // tauri-plugin-autostart elsewhere)
+    // Apply the autostart preference
     autostart::apply_autostart(app_handle, settings.autostart_enabled);
 
     // Create the recording overlay window (hidden by default)
@@ -619,26 +538,7 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     0
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(cli_args: CliArgs) {
-    // Avoid ggml-metal residency-set teardown assertions when a native engine
-    // outlives the Tauri shutdown sequence (#1902). This must happen before
-    // transcribe-cpp initializes its Metal device. Advanced users can restore
-    // upstream residency behavior with HANDY_METAL_RESIDENCY=1.
-    #[cfg(target_os = "macos")]
-    if std::env::var("HANDY_METAL_RESIDENCY").as_deref() == Ok("1") {
-        // ggml treats GGML_METAL_NO_RESIDENCY as presence-based, so remove an
-        // inherited value as well when explicitly opting back in.
-        std::env::remove_var("GGML_METAL_NO_RESIDENCY");
-    } else {
-        std::env::set_var("GGML_METAL_NO_RESIDENCY", "1");
-    }
-
-    // Pin glibc's dynamic mmap threshold before the first large allocation,
-    // so per-dictation transient buffers are returned to the OS on free
-    // instead of accumulating in malloc arenas (#1792). No-op off Linux/glibc.
-    memory::init_allocator();
-
     // Detect portable mode before anything else
     portable::init();
 
@@ -669,9 +569,6 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_paste_delay_after_ms_setting,
             shortcut::change_reliable_paste_setting,
             shortcut::change_paste_method_setting,
-            shortcut::get_available_typing_tools,
-            shortcut::change_typing_tool_setting,
-            shortcut::change_external_script_path_setting,
             shortcut::change_clipboard_handling_setting,
             shortcut::change_auto_submit_setting,
             shortcut::change_auto_submit_key_setting,
@@ -710,8 +607,6 @@ pub fn run(cli_args: CliArgs) {
             shortcut::get_available_accelerators,
             shortcut::handy_keys::start_handy_keys_recording,
             shortcut::handy_keys::stop_handy_keys_recording,
-            secure_input::get_secure_input_status,
-            secure_input::run_keyboard_diagnostic,
             trigger_update_check,
             show_main_window_command,
             commands::cancel_operation,
@@ -725,7 +620,6 @@ pub fn run(cli_args: CliArgs) {
             commands::open_recordings_folder,
             commands::open_log_dir,
             commands::open_app_data_dir,
-            commands::check_apple_intelligence_available,
             commands::initialize_enigo,
             commands::initialize_shortcuts,
             commands::models::get_available_models,
@@ -752,8 +646,6 @@ pub fn run(cli_args: CliArgs) {
             commands::audio::get_selected_output_device,
             commands::audio::play_test_sound,
             commands::audio::check_custom_sounds,
-            commands::audio::set_clamshell_microphone,
-            commands::audio::get_clamshell_microphone,
             commands::audio::is_recording,
             commands::audio::get_microphone_channels,
             commands::audio::set_selected_channel,
@@ -767,7 +659,6 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
-            helpers::clamshell::is_laptop,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -790,7 +681,6 @@ pub fn run(cli_args: CliArgs) {
     let headless_mode =
         cli_args.transcribe_file.is_some() || cli_args.list_devices || cli_args.list_models;
 
-    #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .device_event_filter(tauri::DeviceEventFilter::Always)
         .plugin(tauri_plugin_dialog::init())
@@ -842,11 +732,6 @@ pub fn run(cli_args: CliArgs) {
                 .build(),
         );
 
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder.plugin(tauri_nspanel::init());
-    }
-
     // Single-instance forwards CLI args to an already-running Handy and exits.
     // That would make the headless path
     // (--transcribe-file/--list-devices/--list-models) a silent no-op whenever the
@@ -861,37 +746,24 @@ pub fn run(cli_args: CliArgs) {
             } else if args.iter().any(|a| a == "--cancel") {
                 crate::utils::cancel_current_operation(app);
             } else {
-                // A second process was launched without remote-control flags
-                // (e.g. the binary run from a shell). On macOS, relaunching the
-                // bundle from Spotlight/Finder/Dock does not start a process —
-                // it arrives as RunEvent::Reopen below — but treat this the
-                // same way: raise the window and recreate a possibly vanished
-                // tray icon (#1948).
-                #[cfg(target_os = "macos")]
-                tray::recreate_tray_icon(app);
+                // A second process was launched without remote-control flags:
+                // raise the window.
                 show_main_window(app);
             }
         }));
     }
 
-    #[allow(unused_mut)]
-    let mut app = builder
-        .plugin(tauri_plugin_fs::init())
+    let app = builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            Some(vec![]),
-        ))
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(cli_args.clone())
         .setup(move |app| {
-            #[cfg(target_os = "windows")]
             log::info!(
                 "Vulkan layer policy: VK_LOADER_LAYERS_DISABLE={:?}, HANDY_KEEP_VULKAN_IMPLICIT_LAYERS={}",
                 std::env::var_os("VK_LOADER_LAYERS_DISABLE"),
@@ -906,7 +778,7 @@ pub fn run(cli_args: CliArgs) {
             // transcribe-cpp backend + accelerator settings — then run on a worker
             // thread and exit. Deliberately skips the window, tray, overlay, audio
             // recorder (so it never opens the mic, even with always_on_microphone),
-            // signal handlers, and autostart that initialize_core_logic sets up.
+            // and autostart that initialize_core_logic sets up.
             if headless_mode {
                 let app_handle = app.handle().clone();
                 let model_manager = Arc::new(
@@ -955,8 +827,6 @@ pub fn run(cli_args: CliArgs) {
                 win_builder = win_builder.data_directory(data_dir.join("webview"));
             }
 
-            // Only used on Windows, to disable WebView2 browser accelerators.
-            #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
             let main_window = win_builder.build()?;
 
             // Disable WebView2 browser accelerators (F5, F6, Ctrl+F, F12, ...).
@@ -964,32 +834,27 @@ pub fn run(cli_args: CliArgs) {
             // recording a shortcut was reported to turn the whole window white
             // (cjpais/Handy#1940), likely by triggering WebView2 focus cycling.
             // DevTools stays enabled; only the F12 accelerator is lost.
-            #[cfg(target_os = "windows")]
-            {
-                let _ = main_window.with_webview(|webview| unsafe {
-                    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
-                    use windows::core::Interface;
+            let _ = main_window.with_webview(|webview| unsafe {
+                use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+                use windows::core::Interface;
 
-                    let result = webview
-                        .controller()
-                        .CoreWebView2()
-                        .and_then(|core| core.Settings())
-                        .and_then(|settings| settings.cast::<ICoreWebView2Settings3>())
-                        .and_then(|settings| settings.SetAreBrowserAcceleratorKeysEnabled(false));
+                let result = webview
+                    .controller()
+                    .CoreWebView2()
+                    .and_then(|core| core.Settings())
+                    .and_then(|settings| settings.cast::<ICoreWebView2Settings3>())
+                    .and_then(|settings| settings.SetAreBrowserAcceleratorKeysEnabled(false));
 
-                    if let Err(error) = result {
-                        log::warn!("Failed to disable WebView2 browser accelerators: {error}");
-                    }
-                });
-            }
+                if let Err(error) = result {
+                    log::warn!("Failed to disable WebView2 browser accelerators: {error}");
+                }
+            });
 
             let mut settings = get_settings(app.handle());
 
             // Apply the persisted appearance theme to the native title bar before
             // the window is shown, so it matches the in-app palette without a flash
-            // of the wrong theme. See `apply_window_theme` for what this does per
-            // platform.
-            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            // of the wrong theme. See `apply_window_theme`.
             shortcut::apply_window_theme(app.handle(), settings.theme);
 
             // CLI --debug flag overrides debug_mode and log level (runtime-only, not persisted)
@@ -1011,11 +876,6 @@ pub fn run(cli_args: CliArgs) {
 
             initialize_core_logic(&app_handle);
 
-            // Secure Input monitor (macOS): detects stuck secure input that
-            // silently blocks keyed shortcuts, warns the user, and activates
-            // the Carbon fallback. See secure_input.rs and issue #1578.
-            secure_input::init(&app_handle);
-
             // Populate the overlay-enabled cache from initial settings so the
             // audio path (overlay::emit_levels, called ~24 Hz during recording)
             // can do a single atomic load instead of reading the Tauri store.
@@ -1025,14 +885,13 @@ pub fn run(cli_args: CliArgs) {
             );
 
             // Pre-warm GPU/accelerator enumeration on a background thread. The first
-            // device listing opens the GPU, which on macOS loads ggml's Metal library
-            // and compiles it when the system shader cache does not have it yet, so it
-            // stays off the startup path. get_available_accelerators then enumerates
-            // ORT execution providers and transcribe-cpp compute devices; without this
-            // the cost is paid synchronously when the user first opens Advanced
-            // settings, freezing the UI. The device list is kept by the
-            // transcription engine and refreshed by every worker it starts that may
-            // use the GPU (CPU-only workers can't see it).
+            // device listing opens the GPU, so it stays off the startup path. Then
+            // get_available_accelerators enumerates ORT execution providers and
+            // transcribe-cpp compute devices; without this the cost is paid
+            // synchronously when the user first opens Advanced settings, freezing
+            // the UI. The device list is kept by the transcription engine and
+            // refreshed by every worker it starts that may use the GPU (CPU-only
+            // workers can't see it).
             let devices_app_handle = app_handle.clone();
             std::thread::spawn(move || {
                 let tm = devices_app_handle.state::<Arc<TranscriptionManager>>();
@@ -1052,8 +911,7 @@ pub fn run(cli_args: CliArgs) {
             let should_force_show = should_force_show_permissions_window(&app_handle);
 
             // If start_hidden but tray is disabled, we must show the window
-            // anyway. Without a tray icon, the dock is the only way back in.
-            // Keep in sync with `apply_startup_activation_policy` (macOS).
+            // anyway. Without a tray icon there would be no way back in.
             let tray_available = settings.show_tray_icon && !cli_args.no_tray;
             if should_force_show || !should_hide || !tray_available {
                 show_main_window(&app_handle);
@@ -1065,23 +923,6 @@ pub fn run(cli_args: CliArgs) {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _res = window.hide();
-
-                #[cfg(target_os = "macos")]
-                {
-                    let settings = get_settings(window.app_handle());
-                    let tray_visible =
-                        settings.show_tray_icon && !window.app_handle().state::<CliArgs>().no_tray;
-                    if tray_visible {
-                        // Tray is available: hide the dock icon, app lives in the tray
-                        let res = window
-                            .app_handle()
-                            .set_activation_policy(tauri::ActivationPolicy::Accessory);
-                        if let Err(e) = res {
-                            log::error!("Failed to set activation policy: {}", e);
-                        }
-                    }
-                    // No tray: keep the dock icon visible so the user can reopen
-                }
             }
             tauri::WindowEvent::ThemeChanged(theme) => {
                 log::info!("Theme changed to: {:?}", theme);
@@ -1094,34 +935,9 @@ pub fn run(cli_args: CliArgs) {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    // Must sit between build() and run(): see the doc comment.
-    #[cfg(target_os = "macos")]
-    apply_startup_activation_policy(&mut app, headless_mode);
-
-    // `app` is only used by the macOS arm.
-    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
-    app.run(|app, event| match &event {
-        #[cfg(target_os = "macos")]
-        tauri::RunEvent::Reopen { .. } => {
-            // Fired when the already-running bundle is launched again from
-            // Spotlight/Finder or the Dock icon is clicked. If the settings
-            // window is hidden, the user is likely looking for a tray icon
-            // that vanished (#1948): recreate it. When the window is
-            // already visible this is just a focus request and the tray is
-            // left alone.
-            let window_visible = app
-                .get_webview_window("main")
-                .and_then(|w| w.is_visible().ok())
-                .unwrap_or(false);
-            if !window_visible {
-                tray::recreate_tray_icon(app);
-            }
-            show_main_window(app);
-        }
-        // No transcription teardown on exit: transcribe.cpp runs only in the
-        // worker process, which exits by itself as soon as this process's end
-        // of its stdin closes, even if it is hung. Waiting on an unload here
-        // could block quitting behind a hung model load.
-        _ => {}
-    });
+    // No transcription teardown on exit: transcribe.cpp runs only in the
+    // worker process, which exits by itself as soon as this process's end
+    // of its stdin closes, even if it is hung. Waiting on an unload here
+    // could block quitting behind a hung model load.
+    app.run(|_, _| {});
 }
