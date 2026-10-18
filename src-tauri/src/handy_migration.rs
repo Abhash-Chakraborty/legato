@@ -24,8 +24,8 @@
 //! most.
 //!
 //! Once the roaming folder has moved, if Handy still looks installed, another
-//! box suggests uninstalling it so the two apps don't both start with Windows
-//! and claim the same shortcut. It shows at most once, as the move does.
+//! box suggests uninstalling it so the two apps don't both run and claim the
+//! same shortcut. It shows at most once, as the move does.
 //!
 //! The decisions live in [`flow`], which tests drive without Windows.
 
@@ -66,19 +66,11 @@ const HANDY_EXE: &str = "handy.exe";
 /// Handy's product name, which names its Run entry and its uninstall entry.
 const HANDY_NAME: &str = "Handy";
 
-const QUIT_HANDY_TEXT: &str = "Handy is still running, so Legato can't bring over \
-your settings and history yet.\n\nQuit Handy from its tray icon, then choose Retry. \
-If you choose Cancel, Legato starts without them and won't ask again. They stay in \
-Handy's folder.";
-
-const FILES_IN_USE_TEXT: &str = "Something still has files open in Handy's folder, \
-so Legato can't bring over your settings and history yet.\n\nClose any program that \
-might be using them, then choose Retry. If you choose Cancel, Legato starts without \
-them and won't ask again. They stay in Handy's folder.";
-
-const UNINSTALL_HANDY_TEXT: &str = "Your settings, history and recordings are now \
-in Legato.\n\nUninstall Handy so the two apps don't both start with Windows and \
-fight over the same shortcut. Open Installed apps now?";
+// The message box texts: `HandyMigrationStrings` and
+// `handy_migration_strings()`, which build.rs generates from the
+// "handyMigration" section of src/i18n/locales/en/translation.json, the way it
+// generates the tray strings.
+include!(concat!(env!("OUT_DIR"), "/handy_migration_translations.rs"));
 
 /// What the move did, held until the logger is attached.
 struct Notes(Vec<(Level, String)>);
@@ -148,11 +140,12 @@ impl System for Windows {
     }
 
     fn ask(&mut self, prompt: Prompt) -> Choice {
+        let strings = handy_migration_strings();
         let text = match prompt {
-            Prompt::QuitHandy => QUIT_HANDY_TEXT,
-            Prompt::FilesInUse => FILES_IN_USE_TEXT,
+            Prompt::QuitHandy => strings.quit_handy,
+            Prompt::FilesInUse => strings.files_in_use,
         };
-        if message_box(text, MB_RETRYCANCEL | MB_ICONWARNING) == IDRETRY {
+        if message_box(&text, MB_RETRYCANCEL | MB_ICONWARNING) == IDRETRY {
             Choice::Retry
         } else {
             Choice::Cancel
@@ -164,7 +157,8 @@ impl System for Windows {
     }
 
     fn suggest_uninstalling_handy(&mut self) -> bool {
-        message_box(UNINSTALL_HANDY_TEXT, MB_YESNO | MB_ICONINFORMATION) == IDYES
+        let text = handy_migration_strings().uninstall_handy;
+        message_box(&text, MB_YESNO | MB_ICONINFORMATION) == IDYES
     }
 
     fn open_installed_apps(&mut self) -> io::Result<()> {

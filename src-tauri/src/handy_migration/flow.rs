@@ -32,9 +32,9 @@ pub(super) trait System {
     fn ask(&mut self, prompt: Prompt) -> Choice;
     /// Whether Handy still looks installed.
     fn handy_installed(&mut self) -> bool;
-    /// Suggests uninstalling Handy. Returns whether to open Installed apps.
+    /// Suggests uninstalling Handy. Returns whether to open the apps list.
     fn suggest_uninstalling_handy(&mut self) -> bool;
-    /// Opens Installed apps in Windows Settings.
+    /// Opens the list of installed apps in Windows Settings.
     fn open_installed_apps(&mut self) -> io::Result<()>;
 }
 
@@ -242,7 +242,10 @@ pub(super) fn migrate(
         ));
         if system.suggest_uninstalling_handy() {
             if let Err(e) = system.open_installed_apps() {
-                notes.push((Level::Warn, format!("Could not open Installed apps: {e}")));
+                notes.push((
+                    Level::Warn,
+                    format!("Could not open the apps list in Windows Settings: {e}"),
+                ));
             }
         }
     }
@@ -1064,6 +1067,6 @@ mod tests {
         let notes = migrate(&mut system, Some(roaming), None);
         let (level, note) = notes.last().unwrap();
         assert_eq!(*level, Level::Warn);
-        assert!(note.contains("Installed apps"));
+        assert!(note.contains("apps list"));
     }
 }

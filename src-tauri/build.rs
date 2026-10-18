@@ -1,5 +1,5 @@
 fn main() {
-    generate_tray_translations();
+    generate_translations();
 
     // Stage transcribe-cpp's runtime DLLs (and the dynamically loaded ggml
     // backend modules) for the installer. Self-gates on the dynamic-backends
@@ -148,23 +148,53 @@ fn stage_transcribe_runtime_libs() {
     println!("cargo:warning=Staged {copied} transcribe-cpp runtime library file(s)");
 }
 
-/// Generate the tray menu strings from the frontend's English locale file.
+/// Generate the strings the backend shows from the frontend's English locale
+/// file, so the backend and the UI share one source of truth.
 ///
-/// Source of truth: the "tray" section of src/i18n/locales/en/translation.json.
-/// Each key becomes a snake_case field of `TrayStrings`.
-fn generate_tray_translations() {
+/// Source of truth: src/i18n/locales/en/translation.json. Its "tray" section
+/// becomes `TrayStrings` and its "handyMigration" section, the first-run
+/// message boxes, becomes `HandyMigrationStrings`.
+fn generate_translations() {
     use std::fs;
     use std::path::Path;
 
-    let out_dir = std::env::var("OUT_DIR").unwrap();
     let json_path = Path::new("../src/i18n/locales/en/translation.json");
 
     println!("cargo:rerun-if-changed={}", json_path.display());
 
     let content = fs::read_to_string(json_path).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-    let tray = parsed.get("tray").unwrap().as_object().unwrap();
-    let fields: Vec<_> = tray
+    write_strings(
+        &parsed,
+        "tray",
+        "TrayStrings",
+        "tray_strings",
+        "tray_translations.rs",
+    );
+    write_strings(
+        &parsed,
+        "handyMigration",
+        "HandyMigrationStrings",
+        "handy_migration_strings",
+        "handy_migration_translations.rs",
+    );
+}
+
+/// Write `struct_name`, with one snake_case field per key of `section`, and
+/// `fn_name`, which fills it in, to `file_name` in OUT_DIR.
+fn write_strings(
+    parsed: &serde_json::Value,
+    section: &str,
+    struct_name: &str,
+    fn_name: &str,
+    file_name: &str,
+) {
+    use std::fs;
+    use std::path::Path;
+
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    let strings = parsed.get(section).unwrap().as_object().unwrap();
+    let fields: Vec<_> = strings
         .iter()
         .map(|(key, value)| (camel_to_snake(key), value.as_str().unwrap_or("")))
         .collect();
@@ -175,14 +205,18 @@ fn generate_tray_translations() {
     );
 
     // Struct
-    out.push_str("#[derive(Debug, Clone)]\npub struct TrayStrings {\n");
+    out.push_str(&format!(
+        "#[derive(Debug, Clone)]\npub struct {struct_name} {{\n"
+    ));
     for (rust_field, _) in &fields {
         out.push_str(&format!("    pub {rust_field}: String,\n"));
     }
     out.push_str("}\n\n");
 
     // Constructor
-    out.push_str("pub fn tray_strings() -> TrayStrings {\n    TrayStrings {\n");
+    out.push_str(&format!(
+        "pub fn {fn_name}() -> {struct_name} {{\n    {struct_name} {{\n"
+    ));
     for (rust_field, val) in &fields {
         out.push_str(&format!(
             "        {rust_field}: \"{}\".to_string(),\n",
@@ -191,10 +225,10 @@ fn generate_tray_translations() {
     }
     out.push_str("    }\n}\n");
 
-    fs::write(Path::new(&out_dir).join("tray_translations.rs"), out).unwrap();
+    fs::write(Path::new(&out_dir).join(file_name), out).unwrap();
 
     println!(
-        "cargo:warning=Generated tray strings: {} fields",
+        "cargo:warning=Generated {section} strings: {} fields",
         fields.len()
     );
 }

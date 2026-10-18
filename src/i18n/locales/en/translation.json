@@ -8,6 +8,11 @@
     "quit": "Quit",
     "cancel": "Cancel"
   },
+  "handyMigration": {
+    "quitHandy": "Handy is still running, so Legato can't bring over your settings and history yet.\n\nQuit Handy from its tray icon, then choose Retry. If you choose Cancel, Legato starts without them and won't ask again. They stay in Handy's folder.",
+    "filesInUse": "Something still has files open in Handy's folder, so Legato can't bring over your settings and history yet.\n\nClose any program that might be using them, then choose Retry. If you choose Cancel, Legato starts without them and won't ask again. They stay in Handy's folder.",
+    "uninstallHandy": "Your settings, history and recordings are now in Legato.\n\nUninstall Handy so the two apps don't both run and fight over the same shortcut. Open Windows Settings to uninstall it?"
+  },
   "sidebar": {
     "general": "General",
     "models": "Models",
@@ -76,7 +81,7 @@
       "waiting": "Waiting...",
       "allGranted": "All set!",
       "errors": {
-        "checkFailed": "Failed to check permissions. Please try again.",
+        "checkFailed": "Failed to check permission. Please try again.",
         "requestFailed": "Failed to request permission. Please try again."
       }
     }
@@ -601,7 +606,7 @@
     "noOptionsFound": "No options found"
   },
   "accessibility": {
-    "openSettings": "Open privacy settings"
+    "openSettings": "Open Privacy Settings"
   },
   "errors": {
     "loadDirectory": "Error loading directory: {{error}}",
