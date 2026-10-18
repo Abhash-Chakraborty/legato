@@ -1910,7 +1910,6 @@ mod tests {
     #[test]
     fn portuguese_transcription_does_not_use_english_ui_filler_words() {
         let settings = AppSettings {
-            app_language: "en".to_string(),
             selected_language: "pt-BR".to_string(),
             ..Default::default()
         };
