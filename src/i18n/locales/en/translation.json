@@ -189,7 +189,6 @@
         "translation": "Filter models that support translation to English"
       },
       "rescan": {
-        "label": "Rescan",
         "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside Legato"
       },
       "noModelsMatch": "No models match this filter."

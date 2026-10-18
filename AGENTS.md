@@ -95,7 +95,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `transcribe-cpp` - Local speech recognition (Whisper, Parakeet, Moonshine, SenseVoice, etc.; GGML/GGUF) with GPU acceleration
 - `handy-recorder` - Microphone capture: device selection, resampling to 16 kHz, failure detection
 - `transcribe-cpp` (Silero VAD v6, CPU-only, in-process) / `earshot` - Voice Activity Detection
-- `rdev` - Global keyboard shortcuts
+- `handy-keys` / `tauri-plugin-global-shortcut` - Global keyboard shortcuts
 - `rodio` - Audio playback for feedback sounds
 
 ### Application Flow
