@@ -39,10 +39,6 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
     const microphoneStatus =
       await commands.getWindowsMicrophonePermissionStatus();
 
-    if (!microphoneStatus.supported) {
-      return true;
-    }
-
     return microphoneStatus.overall_access !== "denied";
   }, []);
 

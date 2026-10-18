@@ -49,7 +49,6 @@ pub enum PermissionAccess {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
 pub struct WindowsMicrophonePermissionStatus {
-    pub supported: bool,
     pub overall_access: PermissionAccess,
     pub device_access: PermissionAccess,
     pub app_access: PermissionAccess,
@@ -105,7 +104,6 @@ pub fn get_windows_microphone_permission_status() -> WindowsMicrophonePermission
     };
 
     WindowsMicrophonePermissionStatus {
-        supported: true,
         overall_access,
         device_access,
         app_access,

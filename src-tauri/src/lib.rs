@@ -124,7 +124,7 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
     }
 
     let status = commands::audio::get_windows_microphone_permission_status();
-    if status.supported && status.overall_access == commands::audio::PermissionAccess::Denied {
+    if status.overall_access == commands::audio::PermissionAccess::Denied {
         log::info!(
             "Windows microphone permissions are denied; forcing main window visible for onboarding"
         );
