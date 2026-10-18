@@ -13,8 +13,9 @@ use log::Level;
 /// them while a file inside it is open.
 const IN_USE_ERRORS: [i32; 3] = [5, 32, 33];
 
-/// Retries for files that are about to close, about three seconds in all.
-/// After Handy quits, its WebView2 helpers can hold files for a few seconds.
+/// Retries for files that are about to close, or for Handy to exit, about
+/// three seconds in all. After Handy quits, its WebView2 helpers can hold files
+/// for a few seconds.
 const RETRIES: u32 = 6;
 const RETRY_DELAY: Duration = Duration::from_millis(500);
 
@@ -145,8 +146,9 @@ pub(super) enum Outcome {
     Copied,
     /// The copy failed and the partial copy was removed.
     CopyFailed(io::Error),
-    /// Handy had files open and the user chose to start without them.
-    Cancelled(io::Error),
+    /// Handy was running and the user chose to start without its data. Holds
+    /// the rename's error when a rename was tried.
+    Cancelled(Option<io::Error>),
     /// The move failed without asking the user; Handy's folder stayed put.
     Failed(io::Error),
 }
@@ -173,10 +175,13 @@ impl Outcome {
                 Level::Warn,
                 format!("Could not copy {from} to {to}: {e}; it was left in place"),
             ),
-            Outcome::Cancelled(e) => (
-                Level::Warn,
-                format!("Handy had files open in {from} ({e}); the user chose to start without its data"),
-            ),
+            Outcome::Cancelled(e) => {
+                let detail = e.as_ref().map(|e| format!(" ({e})")).unwrap_or_default();
+                (
+                    Level::Warn,
+                    format!("Handy was running{detail}; the user chose to start without its data, which stays in {from}"),
+                )
+            }
             Outcome::Failed(e) => (
                 Level::Warn,
                 format!("Could not move {from} to {to}: {e}; it was left in place"),
@@ -225,36 +230,80 @@ pub(super) fn move_folder(
     old: &Path,
     new: &Path,
 ) -> Option<Outcome> {
-    let ready = || folder_state(has_data(old), new.exists()) == FolderState::ReadyToMove;
-    if !ready() {
+    if !ready(old, new) {
         return None;
+    }
+    loop {
+        let error = match try_move(system, folder, old, new) {
+            Round::Done(outcome) => return outcome,
+            Round::HandyRunning(error) => error,
+        };
+        if system.ask_to_quit_handy() == Choice::Cancel {
+            return Some(Outcome::Cancelled(error));
+        }
+        wait_for_handy_to_quit(system);
+        // The folders can change while a box is up, for example when Legato
+        // was started twice and the other one moved them.
+        if !ready(old, new) {
+            return None;
+        }
+    }
+}
+
+/// How one try at the move ended.
+enum Round {
+    /// Moved, copied or given up, or `None` when the folders changed meanwhile.
+    Done(Option<Outcome>),
+    /// Handy is running. Holds the rename's error when a rename was tried.
+    HandyRunning(Option<io::Error>),
+}
+
+/// One try at the move: a rename, brief retries while files close, or a copy
+/// across volumes.
+fn try_move(system: &mut impl System, folder: Folder, old: &Path, new: &Path) -> Round {
+    // Handy writes to its roaming folder while it runs, and a rename that went
+    // through anyway would pull the folder out from under it. So Handy has to
+    // quit first, whether or not it has files open.
+    if folder == Folder::Roaming && system.handy_running() {
+        return Round::HandyRunning(None);
     }
     let mut attempt = Attempt::First;
     let mut result = system.rename(old, new);
     loop {
         let error = match result {
-            Ok(()) => return Some(Outcome::Moved),
+            Ok(()) => return Round::Done(Some(Outcome::Moved)),
             Err(error) => error,
         };
-        // The folders can change while a box is up, for example when Legato
-        // was started twice and the other one moved them.
-        if !ready() {
-            return None;
+        if !ready(old, new) {
+            return Round::Done(None);
         }
         let failure = classify(&error);
         let handy_running = failure == Failure::InUse && system.handy_running();
         match next_step(folder, failure, handy_running, attempt) {
-            Step::Copy => return Some(copy_folder(old, new)),
-            Step::RetryBriefly => {}
-            Step::AskToQuitHandy => {
-                if system.ask_to_quit_handy() == Choice::Cancel {
-                    return Some(Outcome::Cancelled(error));
-                }
+            Step::Copy => return Round::Done(Some(copy_folder(old, new))),
+            Step::RetryBriefly => {
+                attempt = Attempt::Retried;
+                result = retry_rename(system, old, new);
             }
-            Step::GiveUp => return Some(Outcome::Failed(error)),
+            Step::AskToQuitHandy => return Round::HandyRunning(Some(error)),
+            Step::GiveUp => return Round::Done(Some(Outcome::Failed(error))),
         }
-        attempt = Attempt::Retried;
-        result = retry_rename(system, old, new);
+    }
+}
+
+/// Whether Handy's folder `old` has data to move and Legato's folder `new`
+/// doesn't exist yet.
+fn ready(old: &Path, new: &Path) -> bool {
+    folder_state(has_data(old), new.exists()) == FolderState::ReadyToMove
+}
+
+/// Gives Handy a few seconds to exit after the user quit it.
+fn wait_for_handy_to_quit(system: &mut impl System) {
+    for _ in 0..RETRIES {
+        if !system.handy_running() {
+            return;
+        }
+        system.sleep(RETRY_DELAY);
     }
 }
 
@@ -320,6 +369,10 @@ mod tests {
         handy_running: bool,
         /// Whether choosing Retry also quits Handy.
         retry_quits_handy: bool,
+        /// How many checks still see Handy after it was quit.
+        exit_checks: u32,
+        /// Whether Handy starts just as the first rename is tried.
+        rename_starts_handy: bool,
         choices: VecDeque<Choice>,
         /// A rename another Legato makes while the box is up.
         moved_meanwhile: Option<(PathBuf, PathBuf)>,
@@ -337,6 +390,9 @@ mod tests {
     impl System for Fake {
         fn rename(&mut self, from: &Path, to: &Path) -> io::Result<()> {
             self.renames += 1;
+            if std::mem::take(&mut self.rename_starts_handy) {
+                self.handy_running = true;
+            }
             match self.rename_errors.pop_front() {
                 Some(error) => Err(error),
                 None => fs::rename(from, to),
@@ -348,6 +404,11 @@ mod tests {
         }
 
         fn handy_running(&mut self) -> bool {
+            if !self.handy_running && self.exit_checks > 0 {
+                // Quit, but still shutting down.
+                self.exit_checks -= 1;
+                return true;
+            }
             self.handy_running
         }
 
@@ -524,37 +585,87 @@ mod tests {
     }
 
     #[test]
+    fn asks_to_quit_handy_before_renaming_anything() {
+        // Handy holds nothing open, so a rename would go through under it.
+        let (_root, old, new) = handy_folder();
+        let mut system = Fake {
+            handy_running: true,
+            retry_quits_handy: true,
+            choices: [Choice::Retry].into(),
+            ..Fake::default()
+        };
+
+        let outcome = move_folder(&mut system, Folder::Roaming, &old, &new);
+        assert!(matches!(outcome, Some(Outcome::Moved)));
+        assert_moved(&old, &new);
+        assert_eq!((system.asked, system.renames), (1, 1));
+        assert_eq!(system.slept, Duration::ZERO);
+    }
+
+    #[test]
     fn cancel_starts_without_handys_data() {
         let (_root, old, new) = handy_folder();
         let mut system = Fake {
-            rename_errors: errors(1, in_use),
             handy_running: true,
             choices: [Choice::Cancel].into(),
             ..Fake::default()
         };
 
         let outcome = move_folder(&mut system, Folder::Roaming, &old, &new);
-        assert!(matches!(outcome, Some(Outcome::Cancelled(_))));
+        assert!(matches!(outcome, Some(Outcome::Cancelled(None))));
         assert_left_in_place(&old, &new);
-        assert_eq!((system.asked, system.slept), (1, Duration::ZERO));
+        assert_eq!((system.asked, system.renames), (1, 0));
+        assert_eq!(system.slept, Duration::ZERO);
+    }
+
+    #[test]
+    fn waits_for_handy_to_exit_after_retry() {
+        let (_root, old, new) = handy_folder();
+        let mut system = Fake {
+            handy_running: true,
+            retry_quits_handy: true,
+            exit_checks: 2,
+            choices: [Choice::Retry].into(),
+            ..Fake::default()
+        };
+
+        let outcome = move_folder(&mut system, Folder::Roaming, &old, &new);
+        assert!(matches!(outcome, Some(Outcome::Moved)));
+        assert_moved(&old, &new);
+        assert_eq!((system.asked, system.renames), (1, 1));
+        assert_eq!(system.slept, 2 * RETRY_DELAY);
     }
 
     #[test]
     fn asks_again_after_retry_while_handy_keeps_running() {
         let (_root, old, new) = handy_folder();
         let mut system = Fake {
-            rename_errors: errors(1 + RETRIES as usize, in_use),
             handy_running: true,
             choices: [Choice::Retry, Choice::Cancel].into(),
             ..Fake::default()
         };
 
         let outcome = move_folder(&mut system, Folder::Roaming, &old, &new);
-        assert!(matches!(outcome, Some(Outcome::Cancelled(_))));
+        assert!(matches!(outcome, Some(Outcome::Cancelled(None))));
         assert_left_in_place(&old, &new);
-        assert_eq!(system.asked, 2);
-        assert_eq!(system.renames, 1 + RETRIES);
+        assert_eq!((system.asked, system.renames), (2, 0));
         assert_eq!(system.slept, RETRIES * RETRY_DELAY);
+    }
+
+    #[test]
+    fn asks_when_handy_starts_between_the_check_and_the_rename() {
+        let (_root, old, new) = handy_folder();
+        let mut system = Fake {
+            rename_errors: errors(1, in_use),
+            rename_starts_handy: true,
+            choices: [Choice::Cancel].into(),
+            ..Fake::default()
+        };
+
+        let outcome = move_folder(&mut system, Folder::Roaming, &old, &new);
+        assert!(matches!(outcome, Some(Outcome::Cancelled(Some(_)))));
+        assert_left_in_place(&old, &new);
+        assert_eq!((system.asked, system.renames), (1, 1));
     }
 
     #[test]
@@ -593,7 +704,6 @@ mod tests {
         let (_root, old, new) = handy_folder();
         let mut system = Fake {
             rename_errors: errors(1, || io::ErrorKind::StorageFull.into()),
-            handy_running: true,
             ..Fake::default()
         };
 
@@ -605,7 +715,7 @@ mod tests {
     }
 
     #[test]
-    fn never_holds_up_startup_for_the_local_folder() {
+    fn skips_the_local_folder_at_once_while_handy_runs() {
         let (_root, old, new) = handy_folder();
         let mut system = Fake {
             rename_errors: errors(1, in_use),
@@ -623,8 +733,8 @@ mod tests {
     fn stops_when_another_legato_moved_the_folder_meanwhile() {
         let (_root, old, new) = handy_folder();
         let mut system = Fake {
-            rename_errors: errors(1, in_use),
             handy_running: true,
+            retry_quits_handy: true,
             choices: [Choice::Retry].into(),
             moved_meanwhile: Some((old.clone(), new.clone())),
             ..Fake::default()
@@ -632,7 +742,7 @@ mod tests {
 
         assert!(move_folder(&mut system, Folder::Roaming, &old, &new).is_none());
         assert_moved(&old, &new);
-        assert_eq!(system.asked, 1);
+        assert_eq!((system.asked, system.renames), (1, 0));
     }
 
     #[test]
@@ -712,6 +822,23 @@ mod tests {
     }
 
     #[test]
+    fn asks_to_quit_an_idle_handy_before_suggesting_uninstall() {
+        // Handy runs but holds nothing open, so a rename alone would work.
+        let (_root, roaming, _) = both_folders();
+        let mut system = Fake {
+            handy_running: true,
+            retry_quits_handy: true,
+            choices: [Choice::Retry].into(),
+            installed: true,
+            ..Fake::default()
+        };
+
+        migrate(&mut system, Some(roaming.clone()), None);
+        assert!(roaming.1.join("history.db").is_file());
+        assert_eq!((system.asked, system.suggested), (1, 1));
+    }
+
+    #[test]
     fn no_closes_the_uninstall_suggestion() {
         let (_root, roaming, local) = both_folders();
         let mut system = Fake {
@@ -734,7 +861,6 @@ mod tests {
         // The user started without Handy's data.
         let (_root, roaming, _) = both_folders();
         let mut system = Fake {
-            rename_errors: errors(1, in_use),
             handy_running: true,
             choices: [Choice::Cancel].into(),
             installed: true,

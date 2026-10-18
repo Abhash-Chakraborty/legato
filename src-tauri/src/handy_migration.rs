@@ -12,13 +12,14 @@
 //! failed move leaves it exactly where it was.
 //!
 //! Legato creates its own folders right after this runs, so a move that fails
-//! is never tried again. Handy usually starts with Windows, and while it runs
-//! it can keep files open, which makes the rename fail. So when the roaming
-//! folder can't be moved because files are in use and `handy.exe` is running,
-//! a message box asks the user to quit Handy and retry, or to start without the
-//! data. Any other failure is logged and startup carries on. The local folder
-//! never holds up startup: it gets a few seconds of retries and is otherwise
-//! left behind.
+//! is never tried again. Handy writes to its roaming folder while it runs, and
+//! a rename can go through even then, since Handy may have nothing open there.
+//! So before that folder moves, if `handy.exe` is running, a message box asks
+//! the user to quit Handy and retry, or to start without the data. Files still
+//! in use get a few seconds of retries; after that, and on any other failure,
+//! the folder is left behind, the failure is logged and startup carries on. The
+//! local folder never shows a box. Without one, each folder holds up startup by
+//! a few seconds at most.
 //!
 //! Once the roaming folder has moved, if Handy still looks installed, a second
 //! box suggests uninstalling it so the two apps don't both start with Windows
