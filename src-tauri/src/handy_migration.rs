@@ -15,11 +15,11 @@
 //! is never tried again. Handy writes to its roaming folder while it runs, and
 //! a rename can go through even then, since Handy may have nothing open there.
 //! So before that folder moves, if `handy.exe` is running, a message box asks
-//! the user to quit Handy and retry, or to start without the data. Files still
-//! in use get a few seconds of retries; after that, and on any other failure,
-//! the folder is left behind, the failure is logged and startup carries on. The
-//! local folder never shows a box. Without one, each folder holds up startup by
-//! a few seconds at most.
+//! the user to quit Handy and retry, or to start without the data. The box
+//! says that Cancel is final. Files still in use get a few seconds of retries;
+//! after that, and on any other failure, the folder is left behind, the failure
+//! is logged and startup carries on. The local folder never shows a box.
+//! Without one, each folder holds up startup by a few seconds at most.
 //!
 //! Once the roaming folder has moved, if Handy still looks installed, a second
 //! box suggests uninstalling it so the two apps don't both start with Windows
@@ -66,7 +66,8 @@ const HANDY_NAME: &str = "Handy";
 
 const QUIT_HANDY_TEXT: &str = "Handy is still running, so Legato can't bring over \
 your settings and history yet.\n\nQuit Handy from its tray icon, then choose Retry. \
-Choose Cancel to start Legato without them.";
+If you choose Cancel, Legato starts without them and won't ask again. They stay in \
+Handy's folder.";
 
 const UNINSTALL_HANDY_TEXT: &str = "Your settings, history and recordings are now \
 in Legato.\n\nUninstall Handy so the two apps don't both start with Windows and \

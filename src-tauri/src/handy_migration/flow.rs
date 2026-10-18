@@ -42,7 +42,8 @@ pub(super) trait System {
 pub(super) enum Choice {
     /// Handy was quit, so try again.
     Retry,
-    /// Start without Handy's data.
+    /// Start without Handy's data. This is final: Legato's folders exist
+    /// after this run, so the move isn't offered again.
     Cancel,
 }
 
