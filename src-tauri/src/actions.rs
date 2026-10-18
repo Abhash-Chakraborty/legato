@@ -449,7 +449,7 @@ impl ShortcutAction for TranscribeAction {
                     // arming animation on hardware that normally starts too fast
                     // to make it visible.
                     #[cfg(debug_assertions)]
-                    if let Ok(delay_ms) = std::env::var("HANDY_DEBUG_MIC_READY_DELAY_MS")
+                    if let Ok(delay_ms) = std::env::var("LEGATO_DEBUG_MIC_READY_DELAY_MS")
                         .unwrap_or_default()
                         .parse::<u64>()
                     {
@@ -587,7 +587,7 @@ impl ShortcutAction for TranscribeAction {
                 } else {
                     // Save WAV concurrently with transcription
                     let sample_count = samples.len();
-                    let file_name = format!("handy-{}.wav", chrono::Utc::now().timestamp());
+                    let file_name = format!("legato-{}.wav", chrono::Utc::now().timestamp());
                     let wav_path = hm.recordings_dir().join(&file_name);
                     let wav_path_for_verify = wav_path.clone();
                     let samples_for_wav = samples.clone();
@@ -728,7 +728,7 @@ impl ShortcutAction for TranscribeAction {
 
                             error!("Transcription failed: {}", err);
                             // Surface the failure to the UI (toast). The full
-                            // message is also in handy.log via the line above.
+                            // message is also in legato.log via the line above.
                             let _ = ah.emit("transcription-error", err.to_string());
                             // Save entry with empty text so user can retry
                             if wav_saved {

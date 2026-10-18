@@ -19,7 +19,7 @@ on:
       asset-prefix:
         required: false
         type: string
-        default: "handy"
+        default: "legato"
       asset-name-pattern:
         required: false
         type: string
@@ -205,7 +205,7 @@ jobs:
           #     statically linking libomp.
           echo "TRANSCRIBE_CMAKE_ARGS=-DGGML_NATIVE=OFF -DGGML_OPENMP=OFF" >> $env:GITHUB_ENV
 
-      # Bundle the VC++ runtime app-local so Handy starts on machines without a
+      # Bundle the VC++ runtime app-local so Legato starts on machines without a
       # current Microsoft redistributable. build.rs stages DLLs from these dirs
       # into transcribe-libs/, using the same VS install that compiled the code.
       # x64 also needs vcomp140.dll for ggml OpenMP; ARM64 disables OpenMP.
@@ -236,8 +236,8 @@ jobs:
             }
             $dirs = "$($crt.FullName);$($omp.FullName)"
           }
-          Write-Host "HANDY_VC_REDIST_DIRS=$dirs"
-          Add-Content -Path $env:GITHUB_ENV -Value "HANDY_VC_REDIST_DIRS=$dirs"
+          Write-Host "LEGATO_VC_REDIST_DIRS=$dirs"
+          Add-Content -Path $env:GITHUB_ENV -Value "LEGATO_VC_REDIST_DIRS=$dirs"
 
       # MSI packaging verifies bundled .dll/.exe resources with signtool before
       # custom signing. Tauri's SDK lookup has no ARM64 host mapping, so pass
@@ -341,9 +341,9 @@ jobs:
           function Assert-PackageContents {
             param([string]$Root, [string]$Label)
 
-            $handy = Get-ChildItem $Root -Filter "handy.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $handy) {
-              throw "$Label package is missing handy.exe"
+            $legato = Get-ChildItem $Root -Filter "legato.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $legato) {
+              throw "$Label package is missing legato.exe"
             }
             foreach ($dll in $stagedDlls) {
               if (-not (Get-ChildItem $Root -Filter $dll.Name -Recurse -ErrorAction SilentlyContinue)) {
@@ -351,10 +351,10 @@ jobs:
               }
             }
 
-            $deviceOutput = (& $handy.FullName --list-devices | Out-String)
+            $deviceOutput = (& $legato.FullName --list-devices | Out-String)
             $deviceOutput | Write-Host
             if ($LASTEXITCODE -ne 0) {
-              throw "$Label handy.exe --list-devices failed"
+              throw "$Label legato.exe --list-devices failed"
             }
             if ("${{ inputs.target }}" -like "aarch64*" -and $deviceOutput -match "kind=(vulkan|cuda|gpu)") {
               throw "$Label Windows ARM64 package unexpectedly exposed a GPU compute device"

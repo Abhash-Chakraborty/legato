@@ -8,6 +8,7 @@ pub mod cli;
 mod clipboard;
 mod commands;
 pub mod engine_supervisor;
+mod handy_migration;
 mod input;
 mod llm_client;
 mod managers;
@@ -683,6 +684,9 @@ pub fn run(cli_args: CliArgs) {
 
     let mut builder = tauri::Builder::default()
         .device_event_filter(tauri::DeviceEventFilter::Always)
+        // First, so Handy's data is in Legato's folders before the log plugin
+        // creates them and before any manager reads settings.
+        .plugin(handy_migration::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             LogBuilder::new()
@@ -708,11 +712,11 @@ pub fn run(cli_args: CliArgs) {
                     Target::new(if let Some(data_dir) = portable::data_dir() {
                         TargetKind::Folder {
                             path: data_dir.join("logs"),
-                            file_name: Some("handy".into()),
+                            file_name: Some("legato".into()),
                         }
                     } else {
                         TargetKind::LogDir {
-                            file_name: Some("handy".into()),
+                            file_name: Some("legato".into()),
                         }
                     })
                     .filter(|metadata| {
@@ -732,7 +736,7 @@ pub fn run(cli_args: CliArgs) {
                 .build(),
         );
 
-    // Single-instance forwards CLI args to an already-running Handy and exits.
+    // Single-instance forwards CLI args to an already-running Legato and exits.
     // That would make the headless path
     // (--transcribe-file/--list-devices/--list-models) a silent no-op whenever the
     // app is already open, so skip it in headless mode and run a standalone
@@ -765,9 +769,9 @@ pub fn run(cli_args: CliArgs) {
         .manage(cli_args.clone())
         .setup(move |app| {
             log::info!(
-                "Vulkan layer policy: VK_LOADER_LAYERS_DISABLE={:?}, HANDY_KEEP_VULKAN_IMPLICIT_LAYERS={}",
+                "Vulkan layer policy: VK_LOADER_LAYERS_DISABLE={:?}, LEGATO_KEEP_VULKAN_IMPLICIT_LAYERS={}",
                 std::env::var_os("VK_LOADER_LAYERS_DISABLE"),
-                utils::env_flag_enabled("HANDY_KEEP_VULKAN_IMPLICIT_LAYERS"),
+                utils::env_flag_enabled("LEGATO_KEEP_VULKAN_IMPLICIT_LAYERS"),
             );
 
             specta_builder.mount_events(app);
@@ -816,7 +820,7 @@ pub fn run(cli_args: CliArgs) {
             // for portable mode (redirects WebView2 cache to portable Data dir)
             let mut win_builder =
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
-                    .title("Handy")
+                    .title("Legato")
                     .inner_size(680.0, 570.0)
                     .min_inner_size(680.0, 570.0)
                     .resizable(true)

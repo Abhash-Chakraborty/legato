@@ -180,7 +180,7 @@ pub fn recording_error_type(error: &anyhow::Error) -> &'static str {
 
 /* ──────────────────────────────────────────────────────────────── */
 
-/// A fresh detector for `backend`, without Handy's smoothing: what a
+/// A fresh detector for `backend`, without Legato's smoothing: what a
 /// recording's VAD wraps, and what scores audio for long-form chunking, so
 /// every path uses the selected backend.
 pub fn create_detector(

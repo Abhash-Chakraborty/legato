@@ -1,11 +1,11 @@
 [package]
-name = "handy"
+name = "legato"
 version = "0.9.8"
-description = "Handy"
-authors = ["cjpais"]
+description = "Legato"
+authors = ["Abhash Chakraborty"]
 edition = "2021"
 license = "MIT"
-default-run = "handy"
+default-run = "legato"
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
@@ -16,7 +16,7 @@ incremental = true # Compile your binary in smaller steps.
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "handy_app_lib"
+name = "legato_app_lib"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -115,7 +115,7 @@ winreg = "0.55"
 # buys nothing on ARM — ALL_VARIANTS is an x86 concept, so a DL build there is
 # just a single portable CPU module shipped as a DLL. So ARM links transcribe-cpp
 # STATICALLY (no features = static CPU-only): the one CPU backend is compiled into
-# handy.exe and we ship zero DLLs, which sidesteps the installer's per-DLL
+# legato.exe and we ship zero DLLs, which sidesteps the installer's per-DLL
 # signtool verify entirely. CI pins -DGGML_NATIVE=OFF (see build.yml) so the
 # static build targets a portable ARM baseline, not the build runner's CPU.
 [target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
@@ -131,10 +131,10 @@ transcribe-cpp = { version = "0.4.0", default-features = false }
 # past 0.35.3 carries tao #1231 (removed window subclassing), which left the
 # thread event target's WNDPROC falling through to DefSubclassProc. On a
 # no-longer-subclassed window that returns 0, so WM_QUERYENDSESSION answered
-# FALSE and vetoed Windows shutdown (Handy #1710). `handy` = 07f3742b + a
-# cherry-pick of tao #1274 (DefSubclassProc → DefWindowProcW). Repoint at
-# upstream once #1274 merges, and drop this once a tao release containing it
-# lands in tauri.
+# FALSE and vetoed Windows shutdown (cjpais/Handy#1710). The `handy` branch is
+# 07f3742b + a cherry-pick of tao #1274 (DefSubclassProc → DefWindowProcW).
+# Repoint at upstream once #1274 merges, and drop this once a tao release
+# containing it lands in tauri.
 #
 # tao-macros must be patched to the SAME rev even though nothing here depends on
 # it directly: wry pulls tao-macros 0.1.3 from crates.io, so without this the

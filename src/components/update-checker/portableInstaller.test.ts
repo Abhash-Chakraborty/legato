@@ -7,17 +7,17 @@ import {
 } from "./portableInstaller";
 
 const X64_SETUP =
-  "https://github.com/cjpais/Handy/releases/download/v0.9.5/Handy_0.9.5_x64-setup.exe";
+  "https://github.com/Abhash-Chakraborty/legato/releases/download/v0.9.8/Legato_0.9.8_x64-setup.exe";
 const ARM64_SETUP =
-  "https://github.com/cjpais/Handy/releases/download/v0.9.5/Handy_0.9.5_arm64-setup.exe";
+  "https://github.com/Abhash-Chakraborty/legato/releases/download/v0.9.8/Legato_0.9.8_arm64-setup.exe";
 
-// Trimmed copy of the real latest.json served from the updater endpoint.
+// Trimmed latest.json in the shape the updater endpoint serves.
 const manifest = {
-  version: "0.9.5",
+  version: "0.9.8",
   platforms: {
     "windows-x86_64-nsis": { url: X64_SETUP, signature: "…" },
     "windows-x86_64-msi": {
-      url: "https://github.com/cjpais/Handy/releases/download/v0.9.5/Handy_0.9.5_x64_en-US.msi",
+      url: "https://github.com/Abhash-Chakraborty/legato/releases/download/v0.9.8/Legato_0.9.8_x64_en-US.msi",
     },
     "windows-aarch64-nsis": { url: ARM64_SETUP, signature: "…" },
   },

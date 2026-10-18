@@ -42,7 +42,7 @@ For the Windows build setup (Visual Studio C++ tools, CMake, Vulkan SDK), see [B
 
 ## Architecture Overview
 
-Handy is a Windows desktop speech-to-text application built with Tauri 2.x (Rust backend + React/TypeScript frontend).
+Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rust backend + React/TypeScript frontend).
 
 ### Backend Structure (src-tauri/src/)
 
@@ -145,7 +145,7 @@ The UI is English only. All user-facing strings still go through i18next, and ES
 
 ## CLI Parameters
 
-Handy supports command-line parameters for integration with scripts, hotkey tools, and autostart configurations.
+Legato supports command-line parameters for integration with scripts, hotkey tools, and autostart configurations.
 
 **Implementation:** `cli.rs` (definitions), `main.rs` (parsing), `lib.rs` (applying), `signal_handle.rs` (shared logic)
 
@@ -170,11 +170,30 @@ Access debug features with `Ctrl+Shift+D`.
 
 ## Platform Notes
 
-Handy targets Windows only, on x64 and ARM64.
+Legato targets Windows only, on x64 and ARM64.
 
 - x64 builds use Vulkan GPU acceleration; ARM64 builds are CPU-only (see the per-architecture dependency tables in `src-tauri/Cargo.toml`)
 - Release installers are code-signed through the `signCommand` in `src-tauri/tauri.conf.json`
-- Implicit Vulkan layers (overlays, capture hooks) are disabled for the Handy process via `VK_LOADER_LAYERS_DISABLE=~implicit~` set in `main.rs`; opt out with `HANDY_KEEP_VULKAN_IMPLICIT_LAYERS=1` or by setting `VK_LOADER_LAYERS_DISABLE` yourself
+- Implicit Vulkan layers (overlays, capture hooks) are disabled for the Legato process via `VK_LOADER_LAYERS_DISABLE=~implicit~` set in `main.rs`; opt out with `LEGATO_KEEP_VULKAN_IMPLICIT_LAYERS=1` or by setting `VK_LOADER_LAYERS_DISABLE` yourself
+
+## Environment Variables
+
+Legato reads these `LEGATO_*` variables. Handy's `HANDY_*` names are not read any more.
+
+| Variable                             | Read by              | Purpose                                                                                    |
+| ------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------ |
+| `LEGATO_KEEP_VULKAN_IMPLICIT_LAYERS` | app                  | Keep implicit Vulkan layers enabled (see Platform Notes)                                   |
+| `LEGATO_DISABLE_UPDATER`             | app                  | Force update checks off without touching the persisted setting; the toggle shows as locked |
+| `LEGATO_VC_REDIST_DIRS`              | `build.rs`           | VC++ redist dirs (`;`-separated) whose runtime DLLs are staged app-local; set by CI        |
+| `LEGATO_TRANSCRIBE_WORKER_LOG`       | transcription worker | Log level the app hands to its worker process; set internally                              |
+| `LEGATO_DEBUG_MIC_READY_DELAY_MS`    | debug builds         | Delay the microphone-ready signal to preview the arming animation                          |
+| `LEGATO_FORCE_TRANSCRIPTION_FAILURE` | debug builds         | Make every transcription fail, to test the error path                                      |
+| `LEGATO_WORKER_FAULT`                | debug builds         | Inject a crash or hang into the worker at a given stage (`<abort\|segv\|hang>@<stage>`)    |
+| `LEGATO_WORKER_FAULT_ONCE`           | debug builds         | Marker file path so the injected fault fires only once                                     |
+| `LEGATO_WORKER_FAULT_GPU_ONLY`       | debug builds         | Fire the injected fault only on GPU work                                                   |
+| `LEGATO_TRANSCRIBE_WORKER_EXE`       | ignored worker tests | Built app to launch as the worker under `cargo test`                                       |
+| `LEGATO_TEST_MODEL`                  | ignored worker tests | GGUF model for the end-to-end worker tests                                                 |
+| `LEGATO_TEST_WAV`                    | ignored worker tests | 16 kHz mono WAV for the end-to-end worker tests                                            |
 
 ## Troubleshooting
 

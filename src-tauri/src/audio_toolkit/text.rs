@@ -267,7 +267,7 @@ fn extract_punctuation(word: &str) -> (&str, &str) {
 
 /// Evidence for the language of the text being cleaned.
 ///
-/// This intentionally describes the transcription output, not Handy's UI
+/// This intentionally describes the transcription output, not Legato's UI
 /// language. Unknown output languages fail closed: built-in filler removal is
 /// skipped rather than applying a language profile speculatively.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -297,7 +297,7 @@ impl OutputLanguageEvidence {
     }
 }
 
-/// Filler tokens that are not lexical words in any language Handy's models can
+/// Filler tokens that are not lexical words in any language Legato's models can
 /// output, so removing them cannot corrupt text regardless of the (possibly
 /// unknown) output language. Kept deliberately conservative: anything that is a
 /// real word somewhere ("um" pt/de, "ha" es, "ah"/"eh" interjections, "mm"

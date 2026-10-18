@@ -173,25 +173,6 @@ async changePasteMethodSetting(method: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getAvailableTypingTools() : Promise<string[]> {
-    return await TAURI_INVOKE("get_available_typing_tools");
-},
-async changeTypingToolSetting(tool: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_typing_tool_setting", { tool }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeExternalScriptPathSetting(path: string | null) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_external_script_path_setting", { path }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async changeClipboardHandlingSetting(handling: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_clipboard_handling_setting", { handling }) };
@@ -487,8 +468,8 @@ async changeTranscribeGpuDevice(device: string | null) : Promise<Result<null, st
  * Return which accelerators and GPU devices are available for this build.
  * 
  * First-call cost is dominated by enumerating GPU devices through the
- * transcribe.cpp Metal/Vulkan backend, which loads dynamic libraries and
- * probes hardware. Run it on the blocking pool so the webview thread
+ * transcribe.cpp backends, which load dynamic libraries and probe
+ * hardware. Run it on the blocking pool so the webview thread
  * stays responsive — see also the startup pre-warm in `lib.rs`.
  */
 async getAvailableAccelerators() : Promise<AvailableAccelerators> {
@@ -511,17 +492,6 @@ async startHandyKeysRecording(bindingId: string) : Promise<Result<null, string>>
 async stopHandyKeysRecording() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("stop_handy_keys_recording") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getSecureInputStatus() : Promise<SecureInputStatus> {
-    return await TAURI_INVOKE("get_secure_input_status");
-},
-async runKeyboardDiagnostic(durationSecs: number | null) : Promise<Result<KeyboardDiagnosticReport, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("run_keyboard_diagnostic", { durationSecs }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -617,15 +587,7 @@ async openAppDataDir() : Promise<Result<null, string>> {
 }
 },
 /**
- * Check if Apple Intelligence is available on this device.
- * Called by the frontend when the user selects Apple Intelligence provider.
- */
-async checkAppleIntelligenceAvailable() : Promise<boolean> {
-    return await TAURI_INVOKE("check_apple_intelligence_available");
-},
-/**
  * Try to initialize Enigo (keyboard/mouse simulation).
- * On macOS, this will return an error if accessibility permissions are not granted.
  */
 async initializeEnigo() : Promise<Result<null, string>> {
     try {
@@ -637,7 +599,6 @@ async initializeEnigo() : Promise<Result<null, string>> {
 },
 /**
  * Initialize keyboard shortcuts.
- * On macOS, this should be called after accessibility permissions are granted.
  * This is idempotent - calling it multiple times is safe.
  */
 async initializeShortcuts() : Promise<Result<null, string>> {
@@ -824,22 +785,6 @@ async playTestSound(soundType: string) : Promise<void> {
 async checkCustomSounds() : Promise<CustomSounds> {
     return await TAURI_INVOKE("check_custom_sounds");
 },
-async setClamshellMicrophone(deviceName: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_clamshell_microphone", { deviceName }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getClamshellMicrophone() : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_clamshell_microphone") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async isRecording() : Promise<boolean> {
     return await TAURI_INVOKE("is_recording");
 },
@@ -933,20 +878,6 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
-},
-/**
- * Checks if the Mac is a laptop by detecting battery presence
- * 
- * This uses pmset to check for battery information.
- * Returns true if a battery is detected (laptop), false otherwise (desktop)
- */
-async isLaptop() : Promise<Result<boolean, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("is_laptop") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
 }
 }
 
@@ -1009,13 +940,13 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
+selected_channel?: number | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
- * fixed delay. See `paste_tx`. macOS and Windows only.
+ * fixed delay. See `paste_tx`.
  */
-reliable_paste?: boolean; typing_tool?: TypingTool; external_script_path?: string | null; filler_word_removal_enabled?: boolean; custom_filler_words?: string[] | null; 
+reliable_paste?: boolean; filler_word_removal_enabled?: boolean; custom_filler_words?: string[] | null; 
 /**
  * Fresh installs default from the OS locale; existing stores are migrated
  * in `apply_settings_migrations`.
@@ -1023,8 +954,8 @@ reliable_paste?: boolean; typing_tool?: TypingTool; external_script_path?: strin
 chinese_script?: ChineseScript; transcribe_accelerator?: TranscribeAcceleratorSetting; 
 /**
  * Stable transcribe.cpp device selector. This is derived from the backend's
- * `device_id` when available (or its name for backends such as Metal),
- * never from the process-local device registry index.
+ * `device_id` when available (or its name otherwise), never from the
+ * process-local device registry index.
  */
 transcribe_gpu_device?: string | null; extra_recording_buffer_ms?: number; vad_enabled?: boolean; 
 /**
@@ -1069,18 +1000,13 @@ export type ImplementationChangeResult = { success: boolean;
  * List of binding IDs that were reset to defaults due to incompatibility
  */
 reset_bindings: string[] }
-export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
-/**
- * Counts only — key identity is deliberately never captured.
- */
-key_down: number; key_up: number; flags_changed: number; mouse: number; duration_ms: number }
 export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**
- * Where a model comes from and how Handy obtains it — the routing discriminant
+ * Where a model comes from and how Legato obtains it — the routing discriminant
  * for downloading and on-disk resolution.
  */
 export type ModelSource = 
@@ -1113,7 +1039,7 @@ export type OverlayPosition = "top" | "bottom"
  */
 export type OverlayStyle = "none" | "minimal" | "live"
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
-export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
+export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 /**
  * Request format a post-processing endpoint speaks. Built-in providers have a
@@ -1135,38 +1061,6 @@ export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "
  */
 export type RetiredModel = { id: string; name: string; size_mb: number; replacement_repo: string }
 export type SecretMap = Partial<{ [key in string]: string }>
-export type SecureInputStatus = { 
-/**
- * Secure input is currently enabled (live check)
- */
-enabled: boolean; 
-/**
- * Enabled continuously long enough to be considered stuck (not just a
- * password field gaining momentary focus)
- */
-sustained: boolean; culprit_pid: number | null; culprit_name: string | null; 
-/**
- * Carbon fallback registrations are currently active
- */
-fallback_active: boolean; 
-/**
- * Binding ids shadow-registered with identical semantics
- */
-covered_bindings: string[]; 
-/**
- * Side-specific binding ids widened to match either side while shadowed
- */
-degraded_bindings: string[]; 
-/**
- * Binding ids that cannot fire at all (e.g. fn+key, registration failure)
- */
-uncovered_bindings: string[]; 
-/**
- * The user tried to record a shortcut while secure input was active.
- * Treated as user impact even when every binding is covered, so the
- * warning banner appears and explains why recording refused.
- */
-recorder_blocked: boolean }
 /**
  * How the transcribe shortcut's key events drive a recording.
  */
@@ -1221,11 +1115,10 @@ export type StreamTextEvent = { committed: string; tentative: string }
 export type StreamWorkKind = "transcribing" | "polishing"
 /**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
- * and `Dark` force one of the two palettes Handy already ships.
+ * and `Dark` force one of the two palettes Legato already ships.
  */
 export type Theme = "system" | "light" | "dark"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
-export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
 

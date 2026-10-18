@@ -1,6 +1,6 @@
 # Build Instructions
 
-This guide covers how to set up the development environment and build Handy from source on Windows.
+This guide covers how to set up the development environment and build Legato from source on Windows.
 
 ## Prerequisites
 
@@ -39,8 +39,8 @@ This guide covers how to set up the development environment and build Handy from
 ### 1. Clone the Repository
 
 ```powershell
-git clone git@github.com:Abhash-Chakraborty/Handy.git
-cd Handy
+git clone https://github.com/Abhash-Chakraborty/legato.git
+cd legato
 ```
 
 ### 2. Install Dependencies
@@ -109,7 +109,7 @@ around either case with a short Cargo target directory:
 $env:CARGO_TARGET_DIR = "C:\h"
 
 # Or persist it for all future terminals (note: redirects ALL your
-# Rust projects' build output, not just Handy):
+# Rust projects' build output, not just Legato):
 [Environment]::SetEnvironmentVariable('CARGO_TARGET_DIR', 'C:\h', 'User')
 ```
 
@@ -120,11 +120,11 @@ and `bun run tauri build` work normally.
 
 ### Windows `tauri build` fails at bundling with `program not found`
 
-If the build compiles all the way to `Built application at: ...\handy.exe` and
+If the build compiles all the way to `Built application at: ...\legato.exe` and
 then fails with:
 
 ```
-Signing C:\...\handy.exe with a custom signing command
+Signing C:\...\legato.exe with a custom signing command
 failed to bundle project `program not found`
 ```
 

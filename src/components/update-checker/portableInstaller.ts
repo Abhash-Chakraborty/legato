@@ -9,12 +9,12 @@
 // `releases/download/v<version>/…` tag URL instead of a moving `latest` link.
 
 export const PORTABLE_RELEASES_URL =
-  "https://github.com/cjpais/Handy/releases/latest";
+  "https://github.com/Abhash-Chakraborty/legato/releases/latest";
 
 /**
  * Pick the NSIS installer URL for the running architecture out of the update
  * manifest. Falls back to the generic releases page whenever there is no
- * matching entry — e.g. an architecture Handy ships no NSIS bundle for.
+ * matching entry — e.g. an architecture Legato ships no NSIS bundle for.
  *
  * @param rawJson `Update.rawJson`, the deserialized `latest.json` manifest
  * @param archName value from `@tauri-apps/plugin-os` `arch()` ("x86_64", "aarch64")

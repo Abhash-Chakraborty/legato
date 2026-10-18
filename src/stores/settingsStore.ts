@@ -641,7 +641,7 @@ export const useSettingsStore = create<SettingsStore>()(
     },
 
     // Check whether update checks are locked by system configuration
-    // (HANDY_DISABLE_UPDATER)
+    // (LEGATO_DISABLE_UPDATER)
     loadUpdateChecksLocked: async () => {
       try {
         const locked = await commands.isUpdateChecksLocked();

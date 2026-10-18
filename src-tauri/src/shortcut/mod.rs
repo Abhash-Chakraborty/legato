@@ -778,7 +778,7 @@ pub fn change_autostart_setting(app: AppHandle, enabled: bool) -> Result<(), Str
 pub fn change_update_checks_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     if settings::update_checks_forced_disabled() {
         return Err(
-            "Update checks are disabled by system configuration (HANDY_DISABLE_UPDATER)".into(),
+            "Update checks are disabled by system configuration (LEGATO_DISABLE_UPDATER)".into(),
         );
     }
 

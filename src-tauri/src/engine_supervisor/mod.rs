@@ -1,7 +1,7 @@
 //! Process isolation for transcribe.cpp.
 //!
 //! All transcribe.cpp native code (backend init, device enumeration, model
-//! load, inference, streaming) runs in a child process: the Handy executable
+//! load, inference, streaming) runs in a child process: the Legato executable
 //! re-launched with [`WORKER_FLAG`]. A GPU driver fault, `GGML_ASSERT` abort,
 //! or hang then kills only the worker.
 //!
@@ -37,7 +37,7 @@ pub use supervisor::{
 pub const WORKER_FLAG: &str = "--transcribe-worker";
 /// Worker argument: register only the CPU backends.
 const CPU_ONLY_FLAG: &str = "--cpu-only";
-const LOG_LEVEL_ENV: &str = "HANDY_TRANSCRIBE_WORKER_LOG";
+const LOG_LEVEL_ENV: &str = "LEGATO_TRANSCRIBE_WORKER_LOG";
 
 /// Whether this process was launched as a transcription worker. Checked in
 /// `main` before CLI parsing, Tauri, or single-instance handling.

@@ -2421,63 +2421,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "handy"
-version = "0.9.8"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "earshot",
- "enigo",
- "env_filter",
- "ferrous-opencc",
- "futures-util",
- "handy-keys",
- "handy-recorder",
- "hf-hub",
- "hound",
- "isolang",
- "libc",
- "log",
- "natural",
- "once_cell",
- "rdev",
- "regex",
- "reqwest 0.12.28",
- "rodio",
- "rusqlite",
- "rusqlite_migration",
- "rustfft",
- "serde",
- "serde_json",
- "sha2",
- "specta",
- "specta-typescript",
- "strsim",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-log",
- "tauri-plugin-opener",
- "tauri-plugin-os",
- "tauri-plugin-process",
- "tauri-plugin-single-instance",
- "tauri-plugin-store",
- "tauri-plugin-updater",
- "tauri-specta",
- "tempfile",
- "tokio",
- "transcribe-cpp",
- "webview2-com",
- "whatlang",
- "windows 0.61.3",
- "winreg 0.55.0",
-]
-
-[[package]]
 name = "handy-cpal"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3236,6 +3179,63 @@ name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
+
+[[package]]
+name = "legato"
+version = "0.9.8"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "earshot",
+ "enigo",
+ "env_filter",
+ "ferrous-opencc",
+ "futures-util",
+ "handy-keys",
+ "handy-recorder",
+ "hf-hub",
+ "hound",
+ "isolang",
+ "libc",
+ "log",
+ "natural",
+ "once_cell",
+ "rdev",
+ "regex",
+ "reqwest 0.12.28",
+ "rodio",
+ "rusqlite",
+ "rusqlite_migration",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "sha2",
+ "specta",
+ "specta-typescript",
+ "strsim",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-log",
+ "tauri-plugin-opener",
+ "tauri-plugin-os",
+ "tauri-plugin-process",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-store",
+ "tauri-plugin-updater",
+ "tauri-specta",
+ "tempfile",
+ "tokio",
+ "transcribe-cpp",
+ "webview2-com",
+ "whatlang",
+ "windows 0.61.3",
+ "winreg 0.55.0",
+]
 
 [[package]]
 name = "libappindicator"

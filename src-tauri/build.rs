@@ -15,19 +15,19 @@ fn main() {
 
 /// Stage the MSVC runtime DLLs into `transcribe-libs/` for app-local deployment.
 ///
-/// Handy's native stack links the VC++ runtime dynamically (/MD). Shipping the
-/// DLLs beside `handy.exe` covers machines with no redistributable installed and
+/// Legato's native stack links the VC++ runtime dynamically (/MD). Shipping the
+/// DLLs beside `legato.exe` covers machines with no redistributable installed and
 /// machines whose system redist is older than the CI toolset (issue #1527).
 ///
-/// Driven by `HANDY_VC_REDIST_DIRS`, set by CI to the redist dirs from the same
+/// Driven by `LEGATO_VC_REDIST_DIRS`, set by CI to the redist dirs from the same
 /// Visual Studio install that compiled the native code. Copies only the runtime
-/// DLL families Handy imports and no-ops when the env var is unset.
+/// DLL families Legato imports and no-ops when the env var is unset.
 fn stage_vc_runtime_dlls() {
     use std::path::PathBuf;
 
-    println!("cargo:rerun-if-env-changed=HANDY_VC_REDIST_DIRS");
+    println!("cargo:rerun-if-env-changed=LEGATO_VC_REDIST_DIRS");
 
-    let Some(redist_dirs) = std::env::var_os("HANDY_VC_REDIST_DIRS") else {
+    let Some(redist_dirs) = std::env::var_os("LEGATO_VC_REDIST_DIRS") else {
         return;
     };
 
@@ -37,7 +37,7 @@ fn stage_vc_runtime_dlls() {
     let mut copied: Vec<String> = Vec::new();
     for dir in std::env::split_paths(&redist_dirs) {
         for entry in std::fs::read_dir(&dir)
-            .unwrap_or_else(|e| panic!("HANDY_VC_REDIST_DIRS: read {}: {e}", dir.display()))
+            .unwrap_or_else(|e| panic!("LEGATO_VC_REDIST_DIRS: read {}: {e}", dir.display()))
             .flatten()
         {
             let src = entry.path();
@@ -63,8 +63,8 @@ fn stage_vc_runtime_dlls() {
     for required in ["msvcp140.dll", "vcruntime140.dll"] {
         if !copied.iter().any(|n| n == required) {
             panic!(
-                "HANDY_VC_REDIST_DIRS is set but {required} was not found in it; \
-                 the app-local VC++ runtime would be incomplete and Handy would \
+                "LEGATO_VC_REDIST_DIRS is set but {required} was not found in it; \
+                 the app-local VC++ runtime would be incomplete and Legato would \
                  crash on machines without a current redist (issue #1527)"
             );
         }
@@ -76,7 +76,7 @@ fn stage_vc_runtime_dlls() {
 }
 
 /// Stage transcribe-cpp's runtime DLLs into `transcribe-libs/` so the installer
-/// can ship them beside `handy.exe` (DLLs resolve from the exe dir).
+/// can ship them beside `legato.exe` (DLLs resolve from the exe dir).
 ///
 /// Source dirs arrive as `DEP_TRANSCRIBE_CPP_*`: the sys crate (`links =
 /// "transcribe"`) emits its install dirs and the wrapper (`links =

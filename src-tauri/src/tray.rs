@@ -414,15 +414,15 @@ pub fn tray_tooltip() -> String {
 
 fn version_label() -> String {
     if cfg!(debug_assertions) {
-        format!("Handy v{} (Dev)", env!("CARGO_PKG_VERSION"))
+        format!("Legato v{} (Dev)", env!("CARGO_PKG_VERSION"))
     } else {
-        format!("Handy v{}", env!("CARGO_PKG_VERSION"))
+        format!("Legato v{}", env!("CARGO_PKG_VERSION"))
     }
 }
 
 /// Builds the tray menu and tooltip for the given inputs. Pure with respect
 /// to app state: everything it depends on is in `inputs`, plus the
-/// process-constant `HANDY_DISABLE_UPDATER` env flag behind
+/// process-constant `LEGATO_DISABLE_UPDATER` env flag behind
 /// `update_checks_forced_disabled()`, which cannot change during a run.
 fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri::Wry>, String)> {
     let strings = tray_strings();
@@ -515,7 +515,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         )?
     };
 
-    // When update checks are forced off (HANDY_DISABLE_UPDATER), the item is
+    // When update checks are forced off (LEGATO_DISABLE_UPDATER), the item is
     // dropped from the menu rather than shown disabled — it can never do
     // anything in that case, and a disabled item still shifts every entry
     // below it by one position. A manually-disabled toggle in Debug Settings
@@ -582,7 +582,7 @@ mod tests {
     fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
         HistoryEntry {
             id: 1,
-            file_name: "handy-1.wav".to_string(),
+            file_name: "legato-1.wav".to_string(),
             timestamp: 0,
             saved: false,
             title: "Recording".to_string(),
