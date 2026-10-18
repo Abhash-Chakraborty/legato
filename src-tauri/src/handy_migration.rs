@@ -8,8 +8,8 @@
 //!
 //! Each Handy folder is moved only when Legato's folder doesn't exist yet. A
 //! rename is tried first; a copy is made only when the rename fails because the
-//! two folders are on different volumes. Handy's folder is never deleted, so a
-//! failed move leaves it exactly where it was.
+//! two folders are on different volumes, and never while Handy runs. Handy's
+//! folder is never deleted, so a failed move leaves it exactly where it was.
 //!
 //! Legato creates its own folders right after this runs, so a move that fails
 //! is never tried again. Handy writes to its roaming folder while it runs, and

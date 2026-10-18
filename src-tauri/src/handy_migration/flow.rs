@@ -143,11 +143,19 @@ pub(super) fn next_step(
 ) -> Step {
     let roaming = folder == Folder::Roaming;
     match failure {
+        // A copy made while Handy runs could catch a file mid-write, so a
+        // running Handy holds up a copy just as it holds up a rename.
+        Failure::OtherVolume | Failure::InUse if handy_running => {
+            if roaming {
+                Step::Ask(Prompt::QuitHandy)
+            } else {
+                Step::GiveUp
+            }
+        }
         Failure::OtherVolume => Step::Copy,
-        Failure::InUse if handy_running && roaming => Step::Ask(Prompt::QuitHandy),
         // Retrying on its own only helps once Handy is gone.
-        Failure::InUse if !handy_running && attempt == Attempt::First => Step::RetryBriefly,
-        Failure::InUse if !handy_running && asked && roaming => Step::Ask(Prompt::FilesInUse),
+        Failure::InUse if attempt == Attempt::First => Step::RetryBriefly,
+        Failure::InUse if asked && roaming => Step::Ask(Prompt::FilesInUse),
         Failure::InUse | Failure::Other => Step::GiveUp,
     }
 }
@@ -159,7 +167,7 @@ pub(super) enum Outcome {
     Moved,
     /// Copied across volumes; Handy's folder was kept.
     Copied,
-    /// The copy failed and the partial copy was removed.
+    /// The copy failed, and whatever it had copied was removed.
     CopyFailed(io::Error),
     /// The user chose to start without Handy's data when asked. Holds the
     /// rename's error when a rename was tried.
@@ -308,7 +316,7 @@ fn try_move(
             return Round::Done(None);
         }
         let failure = classify(&error);
-        let handy_running = failure == Failure::InUse && system.handy_running();
+        let handy_running = failure != Failure::Other && system.handy_running();
         match next_step(folder, failure, handy_running, attempt, asked) {
             Step::Copy => return Round::Done(Some(copy_folder(old, new))),
             Step::RetryBriefly => {
@@ -360,9 +368,14 @@ fn has_data(dir: &Path) -> bool {
 }
 
 /// Copies `old` to `new`, keeping Handy's folder. A failed copy is removed so
-/// Legato starts clean instead of with half of Handy's files.
+/// Legato starts clean instead of with half of Handy's files. If `new` can't
+/// be created, nothing is removed, since a folder that appeared after the last
+/// check would belong to another Legato.
 fn copy_folder(old: &Path, new: &Path) -> Outcome {
-    match copy_dir(old, new) {
+    if let Err(e) = fs::create_dir(new) {
+        return Outcome::CopyFailed(e);
+    }
+    match copy_contents(old, new) {
         Ok(()) => Outcome::Copied,
         Err(e) => {
             let _ = fs::remove_dir_all(new);
@@ -374,6 +387,11 @@ fn copy_folder(old: &Path, new: &Path) -> Outcome {
 /// Copies the directory tree at `from` to `to`, which must not exist yet.
 fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
     fs::create_dir(to)?;
+    copy_contents(from, to)
+}
+
+/// Copies what the folder `from` holds into the existing folder `to`.
+fn copy_contents(from: &Path, to: &Path) -> io::Result<()> {
     for entry in fs::read_dir(from)? {
         let entry = entry?;
         let target = to.join(entry.file_name());
@@ -529,12 +547,15 @@ mod tests {
 
     #[test]
     fn asks_only_about_the_roaming_folder_while_handy_runs() {
-        for attempt in [Attempt::First, Attempt::Retried] {
-            for asked in [false, true] {
-                let step = next_step(Folder::Roaming, Failure::InUse, true, attempt, asked);
-                assert_eq!(step, Step::Ask(Prompt::QuitHandy));
-                let step = next_step(Folder::Local, Failure::InUse, true, attempt, asked);
-                assert_eq!(step, Step::GiveUp);
+        // A running Handy holds up a copy across volumes as well as a rename.
+        for failure in [Failure::InUse, Failure::OtherVolume] {
+            for attempt in [Attempt::First, Attempt::Retried] {
+                for asked in [false, true] {
+                    let step = next_step(Folder::Roaming, failure, true, attempt, asked);
+                    assert_eq!(step, Step::Ask(Prompt::QuitHandy));
+                    let step = next_step(Folder::Local, failure, true, attempt, asked);
+                    assert_eq!(step, Step::GiveUp);
+                }
             }
         }
     }
@@ -568,12 +589,11 @@ mod tests {
     #[test]
     fn copies_across_volumes_and_gives_up_on_other_errors() {
         for folder in [Folder::Roaming, Folder::Local] {
-            for handy_running in [false, true] {
-                for attempt in [Attempt::First, Attempt::Retried] {
-                    for asked in [false, true] {
-                        let step =
-                            next_step(folder, Failure::OtherVolume, handy_running, attempt, asked);
-                        assert_eq!(step, Step::Copy);
+            for attempt in [Attempt::First, Attempt::Retried] {
+                for asked in [false, true] {
+                    let step = next_step(folder, Failure::OtherVolume, false, attempt, asked);
+                    assert_eq!(step, Step::Copy);
+                    for handy_running in [false, true] {
                         let step = next_step(folder, Failure::Other, handy_running, attempt, asked);
                         assert_eq!(step, Step::GiveUp);
                     }
@@ -876,6 +896,54 @@ mod tests {
         let outcome = move_folder(&mut system, Folder::Roaming, &old, &new);
         assert!(matches!(outcome, Some(Outcome::CopyFailed(_))));
         assert_left_in_place(&old, &new);
+    }
+
+    #[test]
+    fn failed_copy_keeps_a_folder_it_did_not_create() {
+        // Another Legato made its folder after the last check.
+        let (_root, old, new) = handy_folder();
+        fs::create_dir_all(&new).unwrap();
+        fs::write(new.join("settings_store.json"), "legato").unwrap();
+
+        let outcome = copy_folder(&old, &new);
+        assert!(matches!(outcome, Outcome::CopyFailed(_)));
+        let kept = fs::read_to_string(new.join("settings_store.json")).unwrap();
+        assert_eq!(kept, "legato");
+        assert!(old.join("settings_store.json").is_file());
+    }
+
+    #[test]
+    fn asks_to_quit_handy_before_copying_across_volumes() {
+        // Handy starts after the first check, before the copy would begin.
+        let (_root, old, new) = handy_folder();
+        let mut system = Fake {
+            rename_errors: errors(2, || io::ErrorKind::CrossesDevices.into()),
+            rename_starts_handy: true,
+            retry_quits_handy: true,
+            choices: [Choice::Retry].into(),
+            ..Fake::default()
+        };
+
+        let outcome = move_folder(&mut system, Folder::Roaming, &old, &new);
+        assert!(matches!(outcome, Some(Outcome::Copied)));
+        assert_eq!(system.prompts, [Prompt::QuitHandy]);
+        assert!(old.join("settings_store.json").is_file());
+        assert!(new.join("settings_store.json").is_file());
+    }
+
+    #[test]
+    fn skips_copying_the_local_folder_while_handy_runs() {
+        let (_root, old, new) = handy_folder();
+        let mut system = Fake {
+            rename_errors: errors(1, || io::ErrorKind::CrossesDevices.into()),
+            handy_running: true,
+            ..Fake::default()
+        };
+
+        let outcome = move_folder(&mut system, Folder::Local, &old, &new);
+        assert!(matches!(outcome, Some(Outcome::Failed(_))));
+        assert_left_in_place(&old, &new);
+        assert_eq!(system.asked, 0);
     }
 
     #[test]
