@@ -6,7 +6,7 @@ Status: in development. This is my personal fork.
 
 To build it on Windows, see [BUILD.md](BUILD.md).
 
-Legato started as a fork of [Handy](https://github.com/cjpais/Handy) by CJ Pais (MIT).
+Legato started as a fork of [Handy](https://github.com/cjpais/Handy) by CJ Pais and its contributors (MIT).
 
 ## Debug mode
 
@@ -179,7 +179,6 @@ Legato is an independent fork and isn't affiliated with or endorsed by the Handy
 
 ## Acknowledgments
 
-- **[Handy](https://github.com/cjpais/Handy)** by CJ Pais and its contributors, the upstream project this fork is built on
 - **Whisper** by OpenAI for the speech recognition model
 - **ggml** for an amazing cross-platform tensor library
 - **Silero** for great lightweight VAD
