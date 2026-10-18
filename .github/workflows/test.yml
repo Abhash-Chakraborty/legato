@@ -15,18 +15,27 @@ concurrency:
 
 jobs:
   rust-tests:
-    runs-on: ubuntu-24.04
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install system dependencies
+      # The x64 build compiles ggml's Vulkan backend (the `vulkan` feature in
+      # src-tauri/Cargo.toml), so the tests need the same Vulkan SDK and
+      # SPIRV-Headers setup as build.yml.
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
+
+      - name: Install SPIRV-Headers
+        shell: pwsh
         run: |
-          sudo apt-get update
-          # libvulkan-dev + glslc + spirv-headers let transcribe-cpp-sys build
-          # ggml's Vulkan backend (the Linux `vulkan` feature). Mirrors the apt
-          # set transcribe.cpp's native-ci uses to build -DTRANSCRIBE_VULKAN=ON.
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libasound2-dev libssl-dev libgtk-layer-shell-dev \
-            libvulkan-dev glslc spirv-headers
+          vcpkg install spirv-headers:x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg install spirv-headers failed" }
+          $prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows" -replace '\\','/'
+          $combined = if ($env:CMAKE_PREFIX_PATH) { "$prefix;$env:CMAKE_PREFIX_PATH" } else { $prefix }
+          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$combined"
 
       - uses: swatinem/rust-cache@v2
         with:
