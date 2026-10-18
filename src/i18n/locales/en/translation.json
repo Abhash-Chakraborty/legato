@@ -67,8 +67,8 @@
       "selectModel": "Failed to select model"
     },
     "permissions": {
-      "title": "Permissions Required",
-      "description": "Legato needs a couple of permissions to work properly.",
+      "title": "Permission Required",
+      "description": "Windows is blocking Legato from using your microphone.",
       "microphone": {
         "title": "Microphone Access",
         "description": "Required to hear your voice for transcription."
@@ -304,7 +304,7 @@
         "options": {
           "off": "Off",
           "enter": "Enter",
-          "superEnter": "Super+Enter",
+          "superEnter": "Win+Enter",
           "ctrlEnter": "Ctrl+Enter"
         }
       },
@@ -602,7 +602,7 @@
     "noOptionsFound": "No options found"
   },
   "accessibility": {
-    "openSettings": "Open System Settings"
+    "openSettings": "Open privacy settings"
   },
   "errors": {
     "loadDirectory": "Error loading directory: {{error}}",

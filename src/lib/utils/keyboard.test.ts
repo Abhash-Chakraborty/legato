@@ -18,6 +18,11 @@ for (const [code, stored, displayed] of compoundKeys) {
   assert.equal(formatKeyCombination(stored), displayed);
 }
 
+// The Windows key is stored as "super" but shown as Win.
+assert.equal(getKeyName(keyboardEvent({ code: "MetaLeft" })), "super");
+assert.equal(formatKeyCombination("super+shift+space"), "Win + Shift + Space");
+assert.equal(formatKeyCombination("super_left+v"), "Left Win + V");
+
 assert.equal(getKeyName(keyboardEvent({ key: "CapsLock" })), "capslock");
 assert.equal(
   getKeyName(keyboardEvent({ code: "AudioVolumeUp" })),

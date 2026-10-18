@@ -3,13 +3,15 @@
  */
 
 // Shortcut parsers require compact tokens; keep display labels separate.
-const COMPOUND_KEY_DISPLAY: Record<string, string> = {
+const KEY_DISPLAY: Record<string, string> = {
   capslock: "Caps Lock",
   numlock: "Num Lock",
   pageup: "Page Up",
   pagedown: "Page Down",
   printscreen: "Print Screen",
   scrolllock: "Scroll Lock",
+  // The parsers call the Windows key "super".
+  super: "Win",
 };
 
 /**
@@ -148,7 +150,7 @@ const capitalizeKey = (key: string): string => {
   if (/^f\d+$/.test(key)) return key.toUpperCase();
   // Single char: a -> A
   if (key.length === 1) return key.toUpperCase();
-  if (COMPOUND_KEY_DISPLAY[key]) return COMPOUND_KEY_DISPLAY[key];
+  if (KEY_DISPLAY[key]) return KEY_DISPLAY[key];
   // Multi-word: capitalize first letter of each word
   return key.replace(/\b\w/g, (c) => c.toUpperCase());
 };
