@@ -10,16 +10,66 @@
 //! rename is tried first; a copy is made only when the rename fails because the
 //! two folders are on different volumes. Handy's folder is never deleted, so a
 //! failed move leaves it exactly where it was.
+//!
+//! Legato creates its own folders right after this runs, so a move that fails
+//! is never tried again. Handy usually starts with Windows, and while it runs
+//! it can keep files open, which makes the rename fail. So when the roaming
+//! folder can't be moved because files are in use and `handy.exe` is running,
+//! a message box asks the user to quit Handy and retry, or to start without the
+//! data. Any other failure is logged and startup carries on. The local folder
+//! never holds up startup: it gets a few seconds of retries and is otherwise
+//! left behind.
+//!
+//! Once the roaming folder has moved, if Handy still looks installed, a second
+//! box suggests uninstalling it so the two apps don't both start with Windows
+//! and claim the same shortcut. It shows at most once, as the move does.
+//!
+//! The decisions live in [`flow`], which tests drive without Windows.
+
+mod flow;
 
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::os::windows::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 use log::Level;
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{AppHandle, Manager, RunEvent, Runtime};
+use windows::core::{w, HSTRING};
+use windows::Win32::Foundation::CloseHandle;
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    MessageBoxW, IDRETRY, IDYES, MB_ICONINFORMATION, MB_ICONWARNING, MB_RETRYCANCEL,
+    MB_SETFOREGROUND, MB_TOPMOST, MB_YESNO, MESSAGEBOX_RESULT, MESSAGEBOX_STYLE,
+};
+use winreg::enums::{
+    HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_32KEY, KEY_WOW64_64KEY,
+};
+use winreg::RegKey;
+
+use flow::{Choice, System};
 
 const HANDY_IDENTIFIER: &str = "com.pais.handy";
+
+/// Handy's executable. Its transcription worker runs the same file.
+const HANDY_EXE: &str = "handy.exe";
+
+/// Handy's product name, which names its Run entry and its uninstall entry.
+const HANDY_NAME: &str = "Handy";
+
+const QUIT_HANDY_TEXT: &str = "Handy is still running, so Legato can't bring over \
+your settings and history yet.\n\nQuit Handy from its tray icon, then choose Retry. \
+Choose Cancel to start Legato without them.";
+
+const UNINSTALL_HANDY_TEXT: &str = "Your settings, history and recordings are now \
+in Legato.\n\nUninstall Handy so the two apps don't both start with Windows and \
+fight over the same shortcut. Open Installed apps now?";
 
 /// What the move did, held until the logger is attached.
 struct Notes(Vec<(Level, String)>);
@@ -60,118 +110,130 @@ fn migrate<R: Runtime>(app: &AppHandle<R>) -> Vec<(Level, String)> {
     let paths = app.path();
     // On Windows the config dir is the roaming data dir, and the cache and log
     // dirs sit inside the local data dir, so these two roots cover everything.
-    [paths.app_data_dir(), paths.app_local_data_dir()]
-        .into_iter()
-        .flatten()
-        .filter_map(|new| {
-            let old = new.parent()?.join(HANDY_IDENTIFIER);
-            move_folder(&old, &new)
-        })
-        .collect()
+    let roaming = paths.app_data_dir().ok().and_then(next_to_handy);
+    let local = paths.app_local_data_dir().ok().and_then(next_to_handy);
+    flow::migrate(&mut Windows, roaming, local)
 }
 
-/// Moves `old` to `new` when `new` is missing and `old` has content, and says
-/// what happened. Returns `None` when there was nothing to do.
-fn move_folder(old: &Path, new: &Path) -> Option<(Level, String)> {
-    let has_content = fs::read_dir(old).is_ok_and(|mut entries| entries.next().is_some());
-    if new.exists() || !has_content {
-        return None;
+/// Pairs Handy's folder with Legato's folder `new`, its sibling.
+fn next_to_handy(new: PathBuf) -> Option<(PathBuf, PathBuf)> {
+    let old = new.parent()?.join(HANDY_IDENTIFIER);
+    Some((old, new))
+}
+
+/// The real system: the file system, the process list, the registry and
+/// native message boxes.
+struct Windows;
+
+impl System for Windows {
+    fn rename(&mut self, from: &Path, to: &Path) -> io::Result<()> {
+        fs::rename(from, to)
     }
-    let (from, to) = (old.display(), new.display());
-    Some(match fs::rename(old, new) {
-        Ok(()) => (
-            Level::Info,
-            format!("Moved Handy's data from {from} to {to}"),
-        ),
-        Err(e) if e.kind() == io::ErrorKind::CrossesDevices => match copy_dir(old, new) {
-            Ok(()) => (
-                Level::Info,
-                format!("Copied {from} to {to}; Handy's folder was kept"),
-            ),
-            Err(e) => {
-                // Drop the partial copy so Legato starts clean instead of with
-                // half of Handy's files.
-                let _ = fs::remove_dir_all(new);
-                let note = format!("Could not copy {from} to {to}: {e}; it was left in place");
-                (Level::Warn, note)
-            }
-        },
-        // Most likely Handy is still running and holds files open.
-        Err(e) => {
-            let note = format!("Could not move {from} to {to}: {e}; it was left in place");
-            (Level::Warn, note)
-        }
-    })
-}
 
-/// Copies the directory tree at `from` to `to`, which must not exist yet.
-fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
-    fs::create_dir(to)?;
-    for entry in fs::read_dir(from)? {
-        let entry = entry?;
-        let target = to.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_dir(&entry.path(), &target)?;
+    fn sleep(&mut self, duration: Duration) {
+        thread::sleep(duration);
+    }
+
+    fn handy_running(&mut self) -> bool {
+        handy_running()
+    }
+
+    fn ask_to_quit_handy(&mut self) -> Choice {
+        if message_box(QUIT_HANDY_TEXT, MB_RETRYCANCEL | MB_ICONWARNING) == IDRETRY {
+            Choice::Retry
         } else {
-            fs::copy(entry.path(), &target)?;
+            Choice::Cancel
         }
     }
-    Ok(())
+
+    fn handy_installed(&mut self) -> bool {
+        handy_installed()
+    }
+
+    fn suggest_uninstalling_handy(&mut self) -> bool {
+        message_box(UNINSTALL_HANDY_TEXT, MB_YESNO | MB_ICONINFORMATION) == IDYES
+    }
+
+    fn open_installed_apps(&mut self) -> io::Result<()> {
+        // Like the microphone privacy link: `start` hands the URI to the shell.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        Command::new("cmd")
+            .args(["/C", "start", "", "ms-settings:appsfeatures"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map(drop)
+    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Shows a message box titled Legato and returns the button chosen. A failed
+/// box returns 0, which matches no button.
+fn message_box(text: &str, style: MESSAGEBOX_STYLE) -> MESSAGEBOX_RESULT {
+    // No window exists yet, so the box has no owner. Keep it in front so it
+    // isn't lost behind other windows.
+    let style = style | MB_SETFOREGROUND | MB_TOPMOST;
+    unsafe { MessageBoxW(None, &HSTRING::from(text), w!("Legato"), style) }
+}
 
-    #[test]
-    fn moves_handy_folder_when_legato_has_none() {
-        let root = tempfile::tempdir().unwrap();
-        let (old, new) = (root.path().join("old"), root.path().join("new"));
-        fs::create_dir_all(old.join("recordings")).unwrap();
-        fs::write(old.join("settings_store.json"), "{}").unwrap();
-
-        let (level, _) = move_folder(&old, &new).expect("a move to report");
-        assert_eq!(level, Level::Info);
-        assert!(!old.exists());
-        assert!(new.join("settings_store.json").is_file());
-        assert!(new.join("recordings").is_dir());
+/// Whether a process other than this one runs Handy's executable.
+fn handy_running() -> bool {
+    // SAFETY: the snapshot handle is owned here and closed before returning,
+    // and the entry's size field is set as the API requires.
+    unsafe {
+        let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
+            return false;
+        };
+        let mut entry = PROCESSENTRY32W {
+            dwSize: size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        let mut found = false;
+        let mut more = Process32FirstW(snapshot, &mut entry).is_ok();
+        while more && !found {
+            found = is_handy(&entry);
+            more = Process32NextW(snapshot, &mut entry).is_ok();
+        }
+        let _ = CloseHandle(snapshot);
+        found
     }
+}
 
-    #[test]
-    fn leaves_both_folders_alone_when_legato_has_one() {
-        let root = tempfile::tempdir().unwrap();
-        let (old, new) = (root.path().join("old"), root.path().join("new"));
-        fs::create_dir_all(&old).unwrap();
-        fs::write(old.join("settings_store.json"), "{}").unwrap();
-        fs::create_dir_all(&new).unwrap();
+/// Whether a process list entry runs Handy's executable and isn't this process.
+fn is_handy(entry: &PROCESSENTRY32W) -> bool {
+    let name = &entry.szExeFile;
+    let len = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+    entry.th32ProcessID != std::process::id()
+        && String::from_utf16_lossy(&name[..len]).eq_ignore_ascii_case(HANDY_EXE)
+}
 
-        assert!(move_folder(&old, &new).is_none());
-        assert!(old.join("settings_store.json").is_file());
-    }
+/// Whether Handy still looks installed: it starts with Windows, or Windows
+/// lists it as an installed app.
+fn handy_installed() -> bool {
+    // tauri-plugin-autostart names the Run entry after the product, and
+    // Handy's uninstaller removes it.
+    const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+    // Handy's NSIS installer writes Uninstall\Handy: to HKCU by default, or to
+    // the 32-bit view of HKLM for all users. Its MSI writes an entry named
+    // after its product code. All of them have Handy as the display name.
+    const UNINSTALL: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall";
 
-    #[test]
-    fn skips_missing_or_empty_handy_folder() {
-        let root = tempfile::tempdir().unwrap();
-        let (old, new) = (root.path().join("old"), root.path().join("new"));
-        assert!(move_folder(&old, &new).is_none());
-
-        fs::create_dir_all(&old).unwrap();
-        assert!(move_folder(&old, &new).is_none());
-        assert!(!new.exists());
-    }
-
-    #[test]
-    fn copy_dir_copies_nested_files_and_keeps_the_source() {
-        let root = tempfile::tempdir().unwrap();
-        let (from, to) = (root.path().join("from"), root.path().join("to"));
-        fs::create_dir_all(from.join("logs")).unwrap();
-        fs::write(from.join("logs").join("handy.log"), "line").unwrap();
-
-        copy_dir(&from, &to).unwrap();
-        assert_eq!(
-            fs::read_to_string(to.join("logs").join("handy.log")).unwrap(),
-            "line"
-        );
-        assert!(from.join("logs").join("handy.log").is_file());
-    }
+    let starts_with_windows = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(RUN)
+        .is_ok_and(|run| run.get_raw_value(HANDY_NAME).is_ok());
+    starts_with_windows
+        || [
+            (HKEY_CURRENT_USER, KEY_READ),
+            (HKEY_LOCAL_MACHINE, KEY_READ | KEY_WOW64_64KEY),
+            (HKEY_LOCAL_MACHINE, KEY_READ | KEY_WOW64_32KEY),
+        ]
+        .into_iter()
+        .any(|(root, access)| {
+            let Ok(apps) = RegKey::predef(root).open_subkey_with_flags(UNINSTALL, access) else {
+                return false;
+            };
+            apps.enum_keys().flatten().any(|app| {
+                apps.open_subkey_with_flags(&app, access)
+                    .and_then(|app| app.get_value::<String, _>("DisplayName"))
+                    .is_ok_and(|name| name == HANDY_NAME)
+            })
+        })
 }
