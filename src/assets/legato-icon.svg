@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Legato">
+  <title>Legato</title>
+  <defs>
+    <linearGradient id="legato-fill" x1="0" y1="0" x2="0" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2f8a82"/>
+      <stop offset="1" stop-color="#195a58"/>
+    </linearGradient>
+    <linearGradient id="legato-edge" x1="0" y1="0" x2="0" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.34"/>
+      <stop offset="0.42" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.82" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.2"/>
+    </linearGradient>
+    <clipPath id="legato-clip"><path d="M40.8 0c8.121 0 12.181 0 15.283 1.58a14.5 14.5 0 0 1 6.337 6.337c1.58 3.102 1.58 7.162 1.58 15.283L64 40.8c0 8.121 0 12.181 -1.58 15.283a14.5 14.5 0 0 1 -6.337 6.337c-3.102 1.58 -7.162 1.58 -15.283 1.58L23.2 64c-8.121 0 -12.181 0 -15.283 -1.58a14.5 14.5 0 0 1 -6.337 -6.337c-1.58 -3.102 -1.58 -7.162 -1.58 -15.283L0 23.2c0 -8.121 0 -12.181 1.58 -15.283a14.5 14.5 0 0 1 6.337 -6.337c3.102 -1.58 7.162 -1.58 15.283 -1.58Z"/></clipPath>
+  </defs>
+  <path d="M40.8 0c8.121 0 12.181 0 15.283 1.58a14.5 14.5 0 0 1 6.337 6.337c1.58 3.102 1.58 7.162 1.58 15.283L64 40.8c0 8.121 0 12.181 -1.58 15.283a14.5 14.5 0 0 1 -6.337 6.337c-3.102 1.58 -7.162 1.58 -15.283 1.58L23.2 64c-8.121 0 -12.181 0 -15.283 -1.58a14.5 14.5 0 0 1 -6.337 -6.337c-1.58 -3.102 -1.58 -7.162 -1.58 -15.283L0 23.2c0 -8.121 0 -12.181 1.58 -15.283a14.5 14.5 0 0 1 6.337 -6.337c3.102 -1.58 7.162 -1.58 15.283 -1.58Z" fill="url(#legato-fill)"/>
+  <path d="M40.8 0c8.121 0 12.181 0 15.283 1.58a14.5 14.5 0 0 1 6.337 6.337c1.58 3.102 1.58 7.162 1.58 15.283L64 40.8c0 8.121 0 12.181 -1.58 15.283a14.5 14.5 0 0 1 -6.337 6.337c-3.102 1.58 -7.162 1.58 -15.283 1.58L23.2 64c-8.121 0 -12.181 0 -15.283 -1.58a14.5 14.5 0 0 1 -6.337 -6.337c-1.58 -3.102 -1.58 -7.162 -1.58 -15.283L0 23.2c0 -8.121 0 -12.181 1.58 -15.283a14.5 14.5 0 0 1 6.337 -6.337c3.102 -1.58 7.162 -1.58 15.283 -1.58Z" fill="none" stroke="url(#legato-edge)" stroke-width="2" clip-path="url(#legato-clip)"/>
+  <path d="M16.25 38.75V27.5A5.25 5.25 0 0 1 26.75 27.5V42.5A5.25 5.25 0 0 0 37.25 42.5V21.5A5.25 5.25 0 0 1 47.75 21.5V30.75" fill="none" stroke="#fcfcfb" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
