@@ -71,6 +71,18 @@ body {
   background-color: var(--bg);
 }
 
+/* Mica (Windows 11, set by App.tsx): the window and the shell go clear so
+   the desktop's tint shows behind the sidebar and title bar; the content
+   card, onboarding and menus stay solid. */
+:root[data-mica],
+:root[data-mica] body,
+:root[data-mica] .app-shell {
+  background-color: transparent;
+}
+:root[data-mica] {
+  --sidebar-active: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
 ::selection {
   background: var(--teal-100);
   color: var(--text);

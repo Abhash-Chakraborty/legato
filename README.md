@@ -22,6 +22,8 @@ Legato supports command-line flags for controlling a running instance and custom
 legato --toggle-transcription    # Toggle recording on/off
 legato --toggle-post-process     # Toggle recording with post-processing on/off
 legato --cancel                  # Cancel the current operation
+legato --open-scratchpad         # Open the Scratchpad
+legato --new-note                # Open the Scratchpad on a new note
 ```
 
 **Startup flags:**

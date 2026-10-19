@@ -24,6 +24,14 @@ pub struct CliArgs {
     #[arg(long)]
     pub cancel: bool,
 
+    /// Open the Scratchpad (sent to running instance)
+    #[arg(long)]
+    pub open_scratchpad: bool,
+
+    /// Open the Scratchpad on a new note (sent to running instance)
+    #[arg(long)]
+    pub new_note: bool,
+
     /// Enable debug mode with verbose logging
     #[arg(long)]
     pub debug: bool,

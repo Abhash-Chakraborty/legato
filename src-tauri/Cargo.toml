@@ -116,6 +116,12 @@ windows = { version = "0.61.3", features = [
   "Win32_UI_Accessibility",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
+  "Win32_UI_Shell_Common",
+  "Win32_UI_Shell_PropertiesSystem",
+  "Win32_Storage_EnhancedStorage",
+  "Data_Xml_Dom",
+  "Foundation",
+  "UI_Notifications",
   "Win32_UI_WindowsAndMessaging",
 ] }
 # App icons for the history list (context.rs); the version tauri already uses.

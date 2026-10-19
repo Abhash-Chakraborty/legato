@@ -13,6 +13,7 @@ pub mod cli;
 mod clipboard;
 mod commands;
 mod context;
+mod desktop;
 mod edit_reader;
 pub mod engine_supervisor;
 mod handy_migration;
@@ -111,6 +112,19 @@ fn build_console_filter() -> env_filter::Filter {
     builder.build()
 }
 
+/// The jump list's Scratchpad and New note, or the same flags on the command
+/// line.
+fn open_scratchpad_from_cli(app: &AppHandle, new_note: bool) {
+    let result = if new_note {
+        scratchpad::show_new(app)
+    } else {
+        scratchpad::show(app, None)
+    };
+    if let Err(e) = result {
+        log::error!("Couldn't open the Scratchpad: {e}");
+    }
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
         if let Err(e) = main_window.unminimize() {
@@ -172,10 +186,10 @@ fn window_state_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     builder.build()
 }
 
-/// Keeps the main window inside the screen it opens on. A small or highly
-/// scaled display (1366 × 768 at 125% is 1093 × 614) can't fit the default
-/// size or even the minimum, so both shrink to the work area there.
-fn fit_main_window_to_screen(window: &tauri::WebviewWindow) {
+/// Keeps a window inside the screen it's on. A small or highly scaled
+/// display (1366 × 768 at 125% is 1093 × 614) can't fit the default size or
+/// even the minimum, so both shrink to the work area there.
+pub(crate) fn fit_window_to_screen(window: &tauri::WebviewWindow, min: (f64, f64)) {
     let Ok(Some(monitor)) = window.current_monitor() else {
         return;
     };
@@ -184,10 +198,13 @@ fn fit_main_window_to_screen(window: &tauri::WebviewWindow) {
     let area_w = f64::from(area.size.width) / scale;
     let area_h = f64::from(area.size.height) / scale;
 
-    let min_w = MAIN_WINDOW_MIN_SIZE.0.min(area_w);
-    let min_h = MAIN_WINDOW_MIN_SIZE.1.min(area_h);
+    let min_w = min.0.min(area_w);
+    let min_h = min.1.min(area_h);
     if let Err(e) = window.set_min_size(Some(tauri::LogicalSize::new(min_w, min_h))) {
-        log::warn!("Failed to set the main window's minimum size: {e}");
+        log::warn!(
+            "Failed to set the {} window's minimum size: {e}",
+            window.label()
+        );
     }
 
     // A restored maximised window already fills its screen.
@@ -207,7 +224,10 @@ fn fit_main_window_to_screen(window: &tauri::WebviewWindow) {
         height.min(area_h * 0.92).max(min_h),
     );
     if let Err(e) = window.set_size(fitted) {
-        log::warn!("Failed to fit the main window to the screen: {e}");
+        log::warn!(
+            "Failed to fit the {} window to the screen: {e}",
+            window.label()
+        );
     }
     let _ = window.center();
 }
@@ -732,6 +752,8 @@ pub fn run(cli_args: CliArgs) {
             show_main_window_command,
             commands::cancel_operation,
             commands::is_portable,
+            commands::has_mica,
+            commands::notify_update,
             commands::is_update_checks_locked,
             commands::get_app_dir_path,
             commands::get_app_settings,
@@ -1021,6 +1043,10 @@ pub fn run(cli_args: CliArgs) {
                 signal_handle::send_transcription_input(app, "transcribe_with_post_process", "CLI");
             } else if args.iter().any(|a| a == "--cancel") {
                 crate::utils::cancel_current_operation(app);
+            } else if args.iter().any(|a| a == desktop::SCRATCHPAD_ARG) {
+                open_scratchpad_from_cli(app, false);
+            } else if args.iter().any(|a| a == desktop::NEW_NOTE_ARG) {
+                open_scratchpad_from_cli(app, true);
             } else {
                 // A second process was launched without remote-control flags:
                 // raise the window.
@@ -1089,6 +1115,11 @@ pub fn run(cli_args: CliArgs) {
                 return Ok(());
             }
 
+            // Before the first window, so the taskbar groups it under the
+            // Start menu shortcut and its jump list.
+            desktop::set_app_id(app.handle());
+            desktop::set_jump_list(app.handle());
+
             // Create main window programmatically so we can set data_directory
             // for portable mode (redirects WebView2 cache to portable Data dir)
             let native_title_bar = get_settings(app.handle()).native_title_bar;
@@ -1106,8 +1137,19 @@ pub fn run(cli_args: CliArgs) {
                 win_builder = win_builder.data_directory(data_dir.join("webview"));
             }
 
+            // Mica behind the sidebar and title bar on Windows 11; the page
+            // keeps its content solid. Windows 10 keeps an opaque window.
+            if desktop::supports_mica() {
+                win_builder = win_builder.transparent(true).effects(
+                    tauri::window::EffectsBuilder::new()
+                        .effect(tauri::window::Effect::Mica)
+                        .build(),
+                );
+                desktop::set_mica(true);
+            }
+
             let main_window = win_builder.build()?;
-            fit_main_window_to_screen(&main_window);
+            fit_window_to_screen(&main_window, MAIN_WINDOW_MIN_SIZE);
 
             // Disable WebView2 browser accelerators (F5, F6, Ctrl+F, F12, ...).
             // A settings window has no use for them, and pressing F6 while
@@ -1187,7 +1229,10 @@ pub fn run(cli_args: CliArgs) {
             // Show main window only if not starting hidden.
             // CLI --start-hidden flag overrides the setting.
             // But if permission onboarding is required, always show the window.
-            let should_hide = settings.start_hidden || cli_args.start_hidden;
+            // The jump list's Scratchpad and New note open just the
+            // Scratchpad when Legato wasn't running.
+            let scratchpad_only = cli_args.open_scratchpad || cli_args.new_note;
+            let should_hide = settings.start_hidden || cli_args.start_hidden || scratchpad_only;
             let should_force_show = should_force_show_permissions_window(&app_handle);
 
             // If start_hidden but tray is disabled, we must show the window
@@ -1195,6 +1240,9 @@ pub fn run(cli_args: CliArgs) {
             let tray_available = settings.show_tray_icon && !cli_args.no_tray;
             if should_force_show || !should_hide || !tray_available {
                 show_main_window(&app_handle);
+            }
+            if scratchpad_only {
+                open_scratchpad_from_cli(&app_handle, cli_args.new_note);
             }
 
             Ok(())
@@ -1204,6 +1252,21 @@ pub fn run(cli_args: CliArgs) {
                 api.prevent_close();
                 let _res = window.hide();
             }
+            // Moved to a screen with another scale, or the scale changed.
+            tauri::WindowEvent::ScaleFactorChanged { .. } => match window.label() {
+                "recording_overlay" => overlay::update_overlay_position(window.app_handle()),
+                "main" => {
+                    if let Some(w) = window.app_handle().get_webview_window("main") {
+                        fit_window_to_screen(&w, MAIN_WINDOW_MIN_SIZE);
+                    }
+                }
+                label if label == scratchpad::WINDOW => {
+                    if let Some(w) = window.app_handle().get_webview_window(label) {
+                        fit_window_to_screen(&w, scratchpad::WINDOW_MIN);
+                    }
+                }
+                _ => {}
+            },
             tauri::WindowEvent::ThemeChanged(theme) => {
                 log::info!("Theme changed to: {:?}", theme);
                 // Re-apply the current tray state with the new theme's icon set

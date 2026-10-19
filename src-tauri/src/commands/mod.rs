@@ -31,6 +31,21 @@ pub fn is_portable() -> bool {
     crate::portable::is_portable()
 }
 
+/// Whether the main window has Mica behind it (Windows 11).
+#[tauri::command]
+#[specta::specta]
+pub fn has_mica() -> bool {
+    crate::desktop::mica()
+}
+
+/// Tells the person a new version is ready, unless they shouldn't be
+/// disturbed.
+#[tauri::command]
+#[specta::specta]
+pub fn notify_update(app: AppHandle, version: String) {
+    crate::desktop::notify_update(&app, &version);
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn is_update_checks_locked() -> bool {

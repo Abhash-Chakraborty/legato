@@ -153,7 +153,8 @@ fn stage_transcribe_runtime_libs() {
 ///
 /// Source of truth: src/i18n/locales/en/translation.json. Its "tray" section
 /// becomes `TrayStrings` and its "handyMigration" section, the first-run
-/// message boxes, becomes `HandyMigrationStrings`.
+/// message boxes, becomes `HandyMigrationStrings`, and its "desktop" section,
+/// the jump list and Windows notifications, becomes `DesktopStrings`.
 fn generate_translations() {
     use std::fs;
     use std::path::Path;
@@ -177,6 +178,13 @@ fn generate_translations() {
         "HandyMigrationStrings",
         "handy_migration_strings",
         "handy_migration_translations.rs",
+    );
+    write_strings(
+        &parsed,
+        "desktop",
+        "DesktopStrings",
+        "desktop_strings",
+        "desktop_translations.rs",
     );
 }
 

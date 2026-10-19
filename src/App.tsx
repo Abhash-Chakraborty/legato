@@ -134,6 +134,17 @@ function App() {
     checkOnboardingStatus();
   }, []);
 
+  // Mica (Windows 11): the shell's background clears so the desktop's tint
+  // shows behind the sidebar and title bar.
+  useEffect(() => {
+    commands
+      .hasMica()
+      .then((on) => {
+        if (on) document.documentElement.dataset.mica = "";
+      })
+      .catch(() => {});
+  }, []);
+
   // "Back to setup" on the toast after skipping it.
   useEffect(() => {
     const onSetup = (e: Event) => {
@@ -452,7 +463,7 @@ function App() {
   } else {
     inShell = true;
     content = (
-      <div className="flex h-screen cursor-default select-none flex-col bg-bg">
+      <div className="app-shell flex h-screen cursor-default select-none flex-col bg-bg">
         <ErrorBoundary context="What's New">
           <WhatsNewGate />
         </ErrorBoundary>

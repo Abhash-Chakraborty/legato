@@ -156,6 +156,8 @@ Legato supports command-line parameters for integration with scripts, hotkey too
 | `--toggle-transcription` | Toggle recording on/off on a running instance              |
 | `--toggle-post-process`  | Toggle recording with post-processing on/off               |
 | `--cancel`               | Cancel the current operation on a running instance         |
+| `--open-scratchpad`      | Open the Scratchpad (also in the jump list)                |
+| `--new-note`             | Open the Scratchpad on a new note (also in the jump list)  |
 | `--start-hidden`         | Launch without showing the main window (tray icon visible) |
 | `--no-tray`              | Launch without system tray (closing window quits the app)  |
 | `--debug`                | Enable debug mode with verbose (Trace) logging             |

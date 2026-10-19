@@ -2856,5 +2856,15 @@
       "subPending": "Add the words you use, so Legato spells them right every time."
     },
     "finished": ", done"
+  },
+  "desktop": {
+    "jumpDictate": "Dictate",
+    "jumpScratchpad": "Scratchpad",
+    "jumpNewNote": "New note",
+    "pasteFailed": "Couldn't paste your dictation",
+    "pasteFailedIn": "Couldn't paste into {{app}}",
+    "pasteFailedBody": "It's saved in the Scratchpad. Click to open it.",
+    "updateTitle": "Legato {{version}} is ready",
+    "updateBody": "Open Legato to install it."
   }
 }

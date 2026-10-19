@@ -17,6 +17,21 @@ interface UpdateCheckerProps {
   className?: string;
 }
 
+const NOTIFIED_KEY = "legato.updateNotified";
+
+/** A Windows notification for a new version, once per version and only
+ *  while Legato isn't in front, where the title bar already shows it. */
+const notifyOnce = (version: string) => {
+  if (document.hasFocus()) return;
+  try {
+    if (localStorage.getItem(NOTIFIED_KEY) === version) return;
+    localStorage.setItem(NOTIFIED_KEY, version);
+  } catch {
+    // Without storage it may say so again after a restart.
+  }
+  commands.notifyUpdate(version).catch(() => {});
+};
+
 const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
   const { t } = useTranslation();
   // Update checking state
@@ -97,6 +112,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
         setPortableInstallerUrl(
           resolvePortableInstallerUrl(update.rawJson, arch()),
         );
+        if (!isManualCheckRef.current) notifyOnce(update.version);
       } else {
         setUpdateAvailable(false);
 

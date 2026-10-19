@@ -487,6 +487,19 @@ async cancelOperation() : Promise<void> {
 async isPortable() : Promise<boolean> {
     return await TAURI_INVOKE("is_portable");
 },
+/**
+ * Whether the main window has Mica behind it (Windows 11).
+ */
+async hasMica() : Promise<boolean> {
+    return await TAURI_INVOKE("has_mica");
+},
+/**
+ * Tells the person a new version is ready, unless they shouldn't be
+ * disturbed.
+ */
+async notifyUpdate(version: string) : Promise<void> {
+    await TAURI_INVOKE("notify_update", { version });
+},
 async isUpdateChecksLocked() : Promise<boolean> {
     return await TAURI_INVOKE("is_update_checks_locked");
 },

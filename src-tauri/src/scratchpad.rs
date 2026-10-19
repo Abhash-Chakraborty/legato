@@ -31,7 +31,7 @@ pub const WINDOW: &str = "scratchpad";
 pub const DICTATE_BINDING: &str = "scratchpad_dictate";
 const OPEN_BINDING: &str = "open_scratchpad";
 const WINDOW_SIZE: (f64, f64) = (520.0, 520.0);
-const WINDOW_MIN: (f64, f64) = (360.0, 300.0);
+pub const WINDOW_MIN: (f64, f64) = (360.0, 300.0);
 /// Time for the app to take focus back before Send to pastes.
 const REFOCUS_MS: u64 = 150;
 
@@ -279,7 +279,10 @@ fn build_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
         builder = builder.data_directory(data_dir.join("webview"));
     }
     match builder.build() {
-        Ok(window) => Some(window),
+        Ok(window) => {
+            crate::fit_window_to_screen(&window, WINDOW_MIN);
+            Some(window)
+        }
         Err(e) => {
             error!("Failed to create the Scratchpad window: {}", e);
             None
@@ -345,6 +348,22 @@ pub fn show(app: &AppHandle, note: Option<i64>) -> Result<()> {
     let _ = window.set_focus();
     let _ = ScratchpadShow { note_id: id }.emit_to(app, WINDOW);
     Ok(())
+}
+
+/// Opens the window on a new note, or on a blank tab already open, so
+/// repeated clicks on the jump list's New note don't pile up empty notes.
+pub fn show_new(app: &AppHandle) -> Result<()> {
+    let m = manager(app);
+    let blank = m
+        .tabs()?
+        .into_iter()
+        .find(|n| n.text.trim().is_empty() && n.title.is_empty())
+        .map(|n| n.id);
+    let id = match blank {
+        Some(id) => id,
+        None => m.create(&NewNote::default())?.id,
+    };
+    show(app, Some(id))
 }
 
 pub fn hide(app: &AppHandle) {
@@ -538,7 +557,10 @@ pub fn save_failed_paste(app: &AppHandle, text: &str, target: Option<&AppInfo>, 
     match note {
         Ok(note) => {
             debug!("Saved a failed paste as note {}", note.id);
-            if get_settings(app).scratchpad_failed_pastes {
+            if !get_settings(app).scratchpad_failed_pastes {
+                // Nothing opens to show it, so Windows says where it went.
+                crate::desktop::notify_failed_paste(app, note.id, target.map(|t| t.name.as_str()));
+            } else {
                 let app = app.clone();
                 // After the bar has said what happened.
                 std::thread::spawn(move || {
