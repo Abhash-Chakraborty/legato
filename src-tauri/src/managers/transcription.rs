@@ -1,7 +1,8 @@
 use crate::audio_toolkit::chunking;
+use crate::audio_toolkit::text::{CompiledDictionary, DictionaryCorrection};
 use crate::audio_toolkit::{
-    apply_custom_words, detect_output_language, normalize_transcription_output,
-    remove_filler_words, OutputLanguageEvidence,
+    detect_output_language, normalize_transcription_output, remove_filler_words,
+    OutputLanguageEvidence,
 };
 use crate::chinese_script::{convert_chinese_script, ChineseVariety};
 use crate::engine_supervisor::{
@@ -885,13 +886,13 @@ impl TranscriptionManager {
 
     /// Transcribe a whole clip in batch: a re-transcribed history entry, or
     /// a file from the CLI.
-    pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
+    pub fn transcribe(&self, audio: Vec<f32>) -> Result<FinishedText> {
         self.complete(Instant::now(), audio, None)
     }
 
     /// Transcribe a finished recording: what its live decode produced, or a
     /// batch run of the whole recording when there is no live result.
-    pub fn transcribe_recording(&self, samples: Vec<f32>) -> Result<String> {
+    pub fn transcribe_recording(&self, samples: Vec<f32>) -> Result<FinishedText> {
         let started = Instant::now();
         let live = self.finalize_live(samples.len())?;
         self.complete(started, samples, live)
@@ -904,7 +905,7 @@ impl TranscriptionManager {
         started: Instant,
         audio: Vec<f32>,
         live: Option<RunOutcome>,
-    ) -> Result<String> {
+    ) -> Result<FinishedText> {
         #[cfg(debug_assertions)]
         if std::env::var("LEGATO_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
             return Err(anyhow::anyhow!(
@@ -917,7 +918,7 @@ impl TranscriptionManager {
         if audio.is_empty() {
             debug!("Empty audio vector");
             self.maybe_unload_immediately("empty audio");
-            return Ok(String::new());
+            return Ok(FinishedText::default());
         }
 
         let outcome = match live {
@@ -925,7 +926,8 @@ impl TranscriptionManager {
             None => self.decode_batch(audio)?,
         };
         let settings = get_settings(&self.app_handle);
-        let final_result = finish_text(outcome, &settings);
+        let lexicon = crate::managers::dictionary::lexicon();
+        let (final_result, fixes) = finish_text(outcome, &settings, &lexicon.corrector);
 
         let translation_note = if settings.translate_to_english {
             " (translated)"
@@ -954,7 +956,10 @@ impl TranscriptionManager {
 
         self.maybe_unload_immediately("transcription");
 
-        Ok(final_result)
+        Ok(FinishedText {
+            text: final_result,
+            fixes,
+        })
     }
 
     /// Decode a whole clip with the loaded model, loading it first if a load
@@ -1089,9 +1094,20 @@ struct RunOutcome {
     model_detected_language: Option<String>,
 }
 
+/// A finished transcription and the Dictionary's fixes to it.
+#[derive(Clone, Debug, Default)]
+pub struct FinishedText {
+    pub text: String,
+    pub fixes: Vec<DictionaryCorrection>,
+}
+
 /// One transcription's final text: its output language resolved, then
 /// post-processed.
-fn finish_text(outcome: RunOutcome, settings: &AppSettings) -> String {
+fn finish_text(
+    outcome: RunOutcome,
+    settings: &AppSettings,
+    dictionary: &CompiledDictionary,
+) -> (String, Vec<DictionaryCorrection>) {
     let RunOutcome {
         setup,
         text,
@@ -1099,10 +1115,11 @@ fn finish_text(outcome: RunOutcome, settings: &AppSettings) -> String {
     } = outcome;
     let output_language = setup.output_language(settings, model_detected_language);
     debug!("Output language evidence: {:?}", output_language);
-    // Skip fuzzy correction if the model already got the custom words.
+    // Words the model already got in its hint skip fuzzy correction.
     post_process_transcription_text(
         text,
         settings,
+        dictionary,
         setup.custom_words_prompted(),
         &output_language,
         &setup.languages,
@@ -1119,7 +1136,8 @@ struct RunSetup {
 }
 
 impl RunSetup {
-    /// Custom words went to the model as vocabulary; skip fuzzy correction.
+    /// Dictionary words went to the model as vocabulary; those skip fuzzy
+    /// correction.
     fn custom_words_prompted(&self) -> bool {
         !self.run_options.vocabulary.is_empty()
     }
@@ -1172,7 +1190,10 @@ fn run_setup(info: &LoadedInfo, settings: &AppSettings, validated_language: &str
         task: run_plan.task,
         language: run_plan.language,
         target_language: run_plan.target_language,
-        vocabulary: vocabulary_for_model(info.supports_vocabulary, &settings.custom_words),
+        vocabulary: vocabulary_for_model(
+            info.supports_vocabulary,
+            &crate::managers::dictionary::lexicon().hint,
+        ),
         ..Default::default()
     };
 
@@ -1412,9 +1433,9 @@ fn with_model_detected_language(
     }
 }
 
-/// Custom words for transcribe-cpp's `vocabulary` slot, in priority order.
-/// Empty for models without Feature::Vocabulary, which would warn on every run
-/// and rely on fuzzy correction instead.
+/// The Dictionary's hint for transcribe-cpp's `vocabulary` slot, in priority
+/// order. Empty for models without Feature::Vocabulary, which would warn on
+/// every run and rely on fuzzy correction instead.
 fn vocabulary_for_model(supports_vocabulary: bool, custom_words: &[String]) -> Vec<String> {
     if supports_vocabulary {
         custom_words.to_vec()
@@ -1462,10 +1483,11 @@ fn transcribe_cpp_run_plan(
 fn post_process_transcription_text(
     raw: String,
     settings: &AppSettings,
+    dictionary: &CompiledDictionary,
     custom_words_already_prompted: bool,
     output_language: &OutputLanguageEvidence,
     supported_languages: &[String],
-) -> String {
+) -> (String, Vec<DictionaryCorrection>) {
     let converts_script = settings.chinese_script != ChineseScript::AsTranscribed;
     fail_open_text_transform(raw, |raw| {
         // Last-resort language evidence: confidence-gated detection from the
@@ -1502,14 +1524,14 @@ fn post_process_transcription_text(
             _ => raw,
         };
 
-        let corrected = if !settings.custom_words.is_empty() && !custom_words_already_prompted {
-            apply_custom_words(
+        let (corrected, fixes) = if dictionary.is_empty() {
+            (raw, Vec::new())
+        } else {
+            dictionary.apply(
                 &raw,
-                &settings.custom_words,
+                custom_words_already_prompted,
                 settings.word_correction_threshold,
             )
-        } else {
-            raw
         };
 
         let without_fillers = remove_filler_words(
@@ -1519,7 +1541,7 @@ fn post_process_transcription_text(
             settings.filler_word_removal_enabled,
         );
 
-        normalize_transcription_output(&without_fillers)
+        (normalize_transcription_output(&without_fillers), fixes)
     })
 }
 
@@ -1585,9 +1607,10 @@ impl PreviewScript {
 /// Optional text cleanup must never discard a successful model result. The
 /// transform is pure and owns its input, so recovering the untouched text is
 /// safe even if a bug in custom-word or filler filtering unwinds.
-fn fail_open_text_transform<F>(raw: String, transform: F) -> String
+fn fail_open_text_transform<F, T>(raw: String, transform: F) -> (String, T)
 where
-    F: FnOnce(String) -> String,
+    F: FnOnce(String) -> (String, T),
+    T: Default,
 {
     let fallback = raw.clone();
     match catch_unwind(AssertUnwindSafe(|| transform(raw))) {
@@ -1597,7 +1620,7 @@ where
                 "Optional transcription text post-processing panicked: {}; using the raw transcription",
                 panic_payload_message(payload.as_ref())
             );
-            fallback
+            (fallback, T::default())
         }
     }
 }
@@ -1806,6 +1829,27 @@ pub fn get_available_accelerators(tm: &TranscriptionManager) -> AvailableAcceler
 mod tests {
     use super::*;
 
+    use crate::audio_toolkit::text::DictionaryWord;
+
+    /// Post-processing with an empty Dictionary.
+    fn post_process(
+        raw: String,
+        settings: &AppSettings,
+        prompted: bool,
+        evidence: &OutputLanguageEvidence,
+        supported: &[String],
+    ) -> String {
+        post_process_transcription_text(
+            raw,
+            settings,
+            &CompiledDictionary::default(),
+            prompted,
+            evidence,
+            supported,
+        )
+        .0
+    }
+
     fn languages(codes: &[&str]) -> Vec<String> {
         codes.iter().map(|code| (*code).to_string()).collect()
     }
@@ -1859,11 +1903,11 @@ mod tests {
     #[test]
     fn optional_text_transform_falls_back_to_raw_text_after_panic() {
         let raw = "原始轉錄。".to_string();
-        let result = fail_open_text_transform(raw.clone(), |_| {
+        let result = fail_open_text_transform::<_, ()>(raw.clone(), |_| {
             panic!("simulated optional cleanup failure")
         });
 
-        assert_eq!(result, raw);
+        assert_eq!(result.0, raw);
     }
 
     #[test]
@@ -1877,7 +1921,7 @@ mod tests {
             OutputLanguageEvidence::UserSelected("en".to_string()),
             OutputLanguageEvidence::TranslatedToEnglish,
         ] {
-            let result = post_process_transcription_text(
+            let result = post_process(
                 "学校に行きます".to_string(),
                 &settings,
                 false,
@@ -1896,7 +1940,7 @@ mod tests {
             filler_word_removal_enabled: false,
             ..Default::default()
         };
-        let result = post_process_transcription_text(
+        let result = post_process(
             "我們今天下午一起去學校圖書館看書，然後再去吃晚飯。".to_string(),
             &settings,
             false,
@@ -1916,7 +1960,7 @@ mod tests {
         let supported = languages(&["en", "pt"]);
         let evidence = resolve_output_language_evidence(&settings, Some("pt"), &supported, false);
 
-        let result = post_process_transcription_text(
+        let result = post_process(
             "eu vi um carro".to_string(),
             &settings,
             false,
@@ -1958,7 +2002,7 @@ mod tests {
 
         // Too short for a reliable text detection, so the gated "um" must
         // survive; the universal "uhm" is removed regardless.
-        let result = post_process_transcription_text(
+        let result = post_process(
             "um uhm ok".to_string(),
             &settings,
             false,
@@ -1977,7 +2021,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = post_process_transcription_text(
+        let result = post_process(
             "um so the weather forecast said it would probably rain throughout the whole weekend"
                 .to_string(),
             &settings,
@@ -1999,7 +2043,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = post_process_transcription_text(
+        let result = post_process(
             "eu vi um carro na rua ontem de manhã quando fui ao mercado".to_string(),
             &settings,
             false,
@@ -2085,7 +2129,7 @@ mod tests {
         let evidence = resolve_output_language_evidence(&settings, None, &supported, false);
         assert_eq!(evidence, OutputLanguageEvidence::Unknown);
 
-        let result = post_process_transcription_text(
+        let result = post_process(
             "eu vi um carro".to_string(),
             &settings,
             false,
@@ -2164,31 +2208,60 @@ mod tests {
     fn fuzzy_correction_is_skipped_exactly_when_vocabulary_was_sent() {
         let settings = AppSettings {
             selected_language: "en".to_string(),
-            custom_words: vec!["Handy".to_string()],
             ..Default::default()
         };
+        let dictionary = CompiledDictionary::new(vec![DictionaryWord {
+            text: "Handy".to_string(),
+            in_hint: true,
+            ..Default::default()
+        }]);
         let evidence = OutputLanguageEvidence::UserSelected("en".to_string());
         let supported = languages(&["en"]);
 
         // The model was already prompted with the term: leave its output alone.
-        let prompted = post_process_transcription_text(
+        let (prompted, fixes) = post_process_transcription_text(
             "i use handy every day".to_string(),
             &settings,
+            &dictionary,
             true,
             &evidence,
             &supported,
         );
         assert_eq!(prompted, "i use handy every day");
+        assert!(fixes.is_empty());
 
         // No vocabulary sent: the fuzzy post-correction fixes the casing.
-        let corrected = post_process_transcription_text(
+        let (corrected, fixes) = post_process_transcription_text(
             "i use handy every day".to_string(),
             &settings,
+            &dictionary,
             false,
             &evidence,
             &supported,
         );
         assert_eq!(corrected, "i use Handy every day");
+        assert_eq!(fixes.len(), 1);
+    }
+
+    #[test]
+    fn heard_forms_apply_even_when_vocabulary_was_sent() {
+        let settings = AppSettings::default();
+        let dictionary = CompiledDictionary::new(vec![DictionaryWord {
+            text: "Dokploy".to_string(),
+            heard: vec!["doc ploy".to_string()],
+            in_hint: true,
+            ..Default::default()
+        }]);
+        let (text, fixes) = post_process_transcription_text(
+            "restart doc ploy now".to_string(),
+            &settings,
+            &dictionary,
+            true,
+            &OutputLanguageEvidence::UserSelected("en".to_string()),
+            &languages(&["en"]),
+        );
+        assert_eq!(text, "restart Dokploy now");
+        assert_eq!(fixes[0].from, "doc ploy");
     }
 }
 

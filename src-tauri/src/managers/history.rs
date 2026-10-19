@@ -1,4 +1,7 @@
-use super::history_store::{self as store, NewEntry, PasteRecord, MIGRATIONS};
+use super::dictionary_store;
+use super::history_store::{
+    self as store, AppliedFix, NewEntry, PasteRecord, TextSnapshot, MIGRATIONS,
+};
 use anyhow::Result;
 use chrono::{DateTime, Local, Utc};
 use log::{debug, error, info};
@@ -103,6 +106,14 @@ impl HistoryManager {
             info!("Filled word counts, speaking time and daily totals for existing history");
         }
 
+        if version_before < store::DICTIONARY_VERSION && version_after >= store::DICTIONARY_VERSION
+        {
+            let words = crate::settings::get_settings(&self.app_handle).custom_words;
+            let moved =
+                dictionary_store::import_custom_words(&mut conn, &words, Utc::now().timestamp())?;
+            info!("Moved {} custom words into the Dictionary", moved.added);
+        }
+
         Ok(())
     }
 
@@ -204,6 +215,7 @@ impl HistoryManager {
     }
 
     /// Update an existing history entry with new transcription results (used by retry).
+    #[allow(clippy::too_many_arguments)]
     pub fn update_transcription(
         &self,
         id: i64,
@@ -212,6 +224,7 @@ impl HistoryManager {
         post_process_prompt: Option<String>,
         transform: Option<String>,
         model: Option<(String, String)>,
+        fixes: &[AppliedFix],
     ) -> Result<HistoryEntry> {
         let mut conn = self.get_connection()?;
         let entry = store::update_transcription(
@@ -224,12 +237,56 @@ impl HistoryManager {
             model
                 .as_ref()
                 .map(|(id, name)| (id.as_str(), name.as_str())),
+            fixes,
         )?;
         debug!("Updated transcription for history entry {}", id);
         self.emit(HistoryUpdatePayload::Updated {
             entry: entry.clone(),
         });
         Ok(entry)
+    }
+
+    /// Fix a word on one dictation; see `history_store::fix_row`.
+    pub fn fix_row(
+        &self,
+        id: i64,
+        shown_before: &str,
+        shown_after: &str,
+        fix: &AppliedFix,
+    ) -> Result<(TextSnapshot, HistoryEntry)> {
+        let mut conn = self.get_connection()?;
+        let (snapshot, entry) = store::fix_row(&mut conn, id, shown_before, shown_after, fix)?;
+        self.emit(HistoryUpdatePayload::Updated {
+            entry: entry.clone(),
+        });
+        Ok((snapshot, entry))
+    }
+
+    /// Other dictations that `from` could be fixed in.
+    pub fn rows_with(&self, from: &str, to: &str, except: i64) -> Result<Vec<i64>> {
+        store::rows_with(&self.get_connection()?, from, to, except)
+    }
+
+    /// Applies a fix to other dictations, returning what they were.
+    pub fn fix_rows(&self, ids: &[i64], fix: &AppliedFix) -> Result<Vec<TextSnapshot>> {
+        let mut conn = self.get_connection()?;
+        let changed = store::fix_rows(&mut conn, ids, fix)?;
+        Ok(changed
+            .into_iter()
+            .map(|(snapshot, entry)| {
+                self.emit(HistoryUpdatePayload::Updated { entry });
+                snapshot
+            })
+            .collect())
+    }
+
+    /// Puts dictations back as they were before a fix.
+    pub fn restore_texts(&self, snapshots: &[TextSnapshot]) -> Result<()> {
+        let mut conn = self.get_connection()?;
+        for entry in store::restore_texts(&mut conn, snapshots)? {
+            self.emit(HistoryUpdatePayload::Updated { entry });
+        }
+        Ok(())
     }
 
     pub fn cleanup_old_entries(&self) -> Result<()> {

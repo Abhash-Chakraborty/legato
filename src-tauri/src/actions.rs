@@ -2,12 +2,13 @@ use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, S
 use crate::audio_toolkit::VadPolicy;
 use crate::context::{self, AppInfo, DictationContext};
 use crate::managers::audio::{recording_error_type, AudioRecordingManager};
+use crate::managers::dictionary::{applied_fixes, DictionaryManager};
 use crate::managers::history::HistoryManager;
 use crate::managers::history_store::{AppFields, DictationStatus, NewEntry, PasteRecord};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::policy::{live_decode, LiveDecode, ModelTraits};
-use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
+use crate::managers::transcription::{FinishedText, StreamWorkKind};
 use crate::settings::{get_settings, AppSettings, OverlayStyle, PasteMethod};
 use crate::shortcut;
 use crate::tray::{set_tray_state, TrayIconState};
@@ -671,7 +672,10 @@ impl ShortcutAction for TranscribeAction {
                     }
 
                     match transcription_result {
-                        Ok(transcription) => {
+                        Ok(FinishedText {
+                            text: transcription,
+                            fixes,
+                        }) => {
                             debug!(
                                 "Transcription completed in {:?}: '{}'",
                                 transcription_time.elapsed(),
@@ -704,9 +708,20 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             }
 
+                            let app_info = started_in.as_ref().map(context::resolve);
+                            if !fixes.is_empty() {
+                                let words: Vec<&str> =
+                                    fixes.iter().map(|f| f.to.as_str()).collect();
+                                ah.state::<Arc<DictionaryManager>>().record_fixes(
+                                    &words,
+                                    app_info
+                                        .as_ref()
+                                        .map(|a| (a.name.as_str(), Some(a.exe_path.as_str()))),
+                                );
+                            }
+
                             // Save to history if WAV was saved
                             let saved_id = if wav_saved {
-                                let app_info = started_in.as_ref().map(context::resolve);
                                 match hm.save_entry(NewEntry {
                                     file_name,
                                     transcription_text: transcription,
@@ -718,6 +733,7 @@ impl ShortcutAction for TranscribeAction {
                                     speech_ms: Some(speech_ms),
                                     model_id: Some(model_id.clone()),
                                     model_name: model_name.clone(),
+                                    fixes: applied_fixes(&fixes),
                                     ..Default::default()
                                 }) {
                                     Ok(entry) => Some(entry.id),
@@ -900,6 +916,17 @@ impl ShortcutAction for TestAction {
     }
 }
 
+/// Adds the text selected in another app to the Dictionary.
+struct AddSelectionAction;
+
+impl ShortcutAction for AddSelectionAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        crate::selection::add_selection_to_dictionary(app);
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
@@ -916,6 +943,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "cancel".to_string(),
         Arc::new(CancelAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "add_to_dictionary".to_string(),
+        Arc::new(AddSelectionAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),

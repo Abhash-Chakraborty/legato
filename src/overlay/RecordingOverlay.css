@@ -218,6 +218,35 @@
   width: var(--ov-work-w);
 }
 
+/* Notice: a single line sized to its text, up to the Live panel's width. */
+.scard.notice {
+  width: auto;
+  max-width: var(--ov-open-w);
+  height: var(--ov-base-h);
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px 0 16px;
+  box-sizing: border-box;
+  font-size: 13px;
+  color: var(--color-text);
+}
+.snotice-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--s-faint);
+}
+.snotice-dot.ok {
+  background: var(--s-accent);
+}
+.snotice-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* text region — auto-height open via grid-rows trick; region fades as a whole */
 .stext {
   display: grid;

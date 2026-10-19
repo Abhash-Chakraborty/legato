@@ -152,10 +152,12 @@ pub async fn retry_history_entry_transcription(
         .map_err(|e| format!("Transcription task panicked: {}", e))?
         .map_err(|e| e.to_string())?;
 
-    if transcription.is_empty() {
+    if transcription.text.is_empty() {
         return Err("Recording contains no speech".to_string());
     }
 
+    let fixes = crate::managers::dictionary::applied_fixes(&transcription.fixes);
+    let transcription = transcription.text;
     let processed =
         process_transcription_output(&app, &transcription, entry.post_process_requested).await;
     let model_id = crate::settings::get_settings(&app).selected_model;
@@ -172,6 +174,7 @@ pub async fn retry_history_entry_transcription(
             processed.post_process_prompt,
             processed.transform,
             Some((model_id, model_name)),
+            &fixes,
         )
         .map(|_| ())
         .map_err(|e| e.to_string())

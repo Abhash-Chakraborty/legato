@@ -8,12 +8,16 @@ import React, {
 import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
-import { Search, X } from "lucide-react";
+import { Search, SpellCheck, X } from "lucide-react";
 import { toast } from "sonner";
 import { commands, type HistoryEntry, type HistoryFilter } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";
 import { formatKeyCombination } from "../../../lib/utils/keyboard";
+import {
+  useDictionaryStore,
+  watchDictionary,
+} from "../../../stores/dictionaryStore";
 import { Dropdown } from "../../ui/Dropdown";
 import { copyToClipboard } from "./clipboard";
 import {
@@ -35,6 +39,15 @@ import { useHistory } from "./useHistory";
 
 const FILTERS: HistoryFilter[] = ["all", "starred", "fixed", "transformed"];
 const ALL_APPS = "__all__";
+const FIX_HINT_KEY = "legato.home.fixHintHidden";
+
+const readFixHintHidden = () => {
+  try {
+    return localStorage.getItem(FIX_HINT_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
 
 export const HomePage: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -46,6 +59,12 @@ export const HomePage: React.FC = () => {
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [menuId, setMenuId] = useState<number | null>(null);
+  const [fixId, setFixId] = useState<number | null>(null);
+  const [fixHintHidden, setFixHintHidden] = useState(readFixHintHidden);
+  const learnedAny = useDictionaryStore(
+    (s) => s.view?.entries.some((e) => e.source === "fixed") ?? true,
+  );
+  useEffect(() => watchDictionary(), []);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -227,6 +246,10 @@ export const HomePage: React.FC = () => {
       e.preventDefault();
       focusRow(rowIds[i + 1] ?? rowIds[i - 1]);
       actions.remove(entry);
+    } else if (key === "f" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      if (entry.status !== "failed" && entry.transcription_text.trim())
+        setFixId(id);
     } else if (key === "s" && !e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
       actions.toggleStar(entry);
@@ -321,6 +344,32 @@ export const HomePage: React.FC = () => {
               })
             : t("home.nothingToday")}
         </p>
+
+        {!fixHintHidden && !learnedAny && visible.length > 0 && (
+          <div className="mb-4 flex items-start gap-3 rounded-[var(--r-md)] bg-surface-2 px-3.5 py-3 text-[13px] text-text-2">
+            <SpellCheck
+              className="mt-px h-4 w-4 flex-none text-text-3"
+              aria-hidden="true"
+            />
+            <p className="flex-1">{t("home.fixHint")}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setFixHintHidden(true);
+                try {
+                  localStorage.setItem(FIX_HINT_KEY, "1");
+                } catch {
+                  // Shown again next time; nothing else depends on it.
+                }
+              }}
+              aria-label={t("home.hideHint")}
+              title={t("home.hideHint")}
+              className="-my-1 grid h-7 w-7 flex-none place-items-center rounded-[var(--r-sm)] text-text-3 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        )}
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <div
@@ -421,6 +470,15 @@ export const HomePage: React.FC = () => {
                           setMenuId(open ? entry.id : null)
                         }
                         onFocusRow={() => setFocusedId(entry.id)}
+                        fixing={fixId === entry.id}
+                        onFix={() => {
+                          setFocusedId(entry.id);
+                          setFixId(entry.id);
+                        }}
+                        onExitFix={() => {
+                          setFixId(null);
+                          focusRow(entry.id);
+                        }}
                       />
                     ))}
                   </ul>
@@ -434,7 +492,7 @@ export const HomePage: React.FC = () => {
 
       <div className="hidden min-[1180px]:block">
         <div className="sticky top-0">
-          <HomeRail />
+          <HomeRail fixedToday={summary?.fixed_today ?? []} />
         </div>
       </div>
     </div>

@@ -19,7 +19,7 @@ import {
   type OnboardingPreviewStep,
 } from "./components/settings";
 import { SettingsPage } from "./components/settings/SettingsPage";
-import { DictionaryPage } from "./components/pages/DictionaryPage";
+import { DictionaryPage } from "./components/pages/dictionary/DictionaryPage";
 import { TransformsPage } from "./components/pages/TransformsPage";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar } from "./components/Sidebar";
@@ -319,6 +319,8 @@ function App() {
           description: "text-mid-gray",
           actionButton:
             "px-2 py-1 text-xs font-medium rounded-lg border bg-mid-gray/10 border-mid-gray/20 hover:bg-background-ui/30 hover:border-logo-primary cursor-pointer whitespace-nowrap",
+          cancelButton:
+            "px-2 py-1 text-xs font-medium rounded-lg text-text-2 hover:text-text cursor-pointer whitespace-nowrap",
         },
       }}
     />

@@ -1,13 +1,16 @@
 import React, { useEffect, useRef } from "react";
-import type { LucideIcon } from "lucide-react";
+import { Check, type LucideIcon } from "lucide-react";
+import { reveal } from "../../lib/utils/reveal";
 
 export type ActionMenuItem =
   | {
       id: string;
       label: string;
-      icon: LucideIcon;
+      icon?: LucideIcon;
       /** Shown on the right, such as "Del". */
       shortcut?: string;
+      /** Makes the item one of a set of choices, ticked when chosen. */
+      checked?: boolean;
       danger?: boolean;
       disabled?: boolean;
       onSelect: () => void;
@@ -34,8 +37,11 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
 
   useEffect(() => {
     ref.current
-      ?.querySelector<HTMLButtonElement>("[role=menuitem]:not(:disabled)")
-      ?.focus();
+      ?.querySelector<HTMLButtonElement>("[role^=menuitem]:not(:disabled)")
+      ?.focus({ preventScroll: true });
+    // The enter animation shrinks the menu, so it is revealed again when it
+    // ends; this first pass covers reduced motion, where nothing animates.
+    requestAnimationFrame(() => ref.current && reveal(ref.current));
     const onPointer = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose(false);
     };
@@ -46,7 +52,7 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const buttons = Array.from(
       e.currentTarget.querySelectorAll<HTMLButtonElement>(
-        "[role=menuitem]:not(:disabled)",
+        "[role^=menuitem]:not(:disabled)",
       ),
     );
     const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
@@ -72,8 +78,9 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
       ref={ref}
       role="menu"
       aria-label={label}
-      className={`menu w-60 ${className}`}
+      className={`menu w-60 scroll-my-4 ${className}`}
       onKeyDown={onKeyDown}
+      onAnimationEnd={(e) => reveal(e.currentTarget)}
     >
       {items.map((item, index) =>
         item === "separator" ? (
@@ -86,7 +93,8 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
           <button
             key={item.id}
             type="button"
-            role="menuitem"
+            role={item.checked === undefined ? "menuitem" : "menuitemradio"}
+            aria-checked={item.checked}
             disabled={item.disabled}
             className={`menu-item ${item.danger ? "text-danger" : ""}`}
             onClick={() => {
@@ -94,10 +102,19 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
               item.onSelect();
             }}
           >
-            <item.icon
-              className={`h-4 w-4 flex-none stroke-[1.75] ${item.danger ? "" : "text-text-2"}`}
-              aria-hidden="true"
-            />
+            {item.checked !== undefined ? (
+              <Check
+                className={`h-4 w-4 flex-none stroke-[2] text-teal-700 ${item.checked ? "" : "invisible"}`}
+                aria-hidden="true"
+              />
+            ) : (
+              item.icon && (
+                <item.icon
+                  className={`h-4 w-4 flex-none stroke-[1.75] ${item.danger ? "" : "text-text-2"}`}
+                  aria-hidden="true"
+                />
+              )
+            )}
             <span className="min-w-0 flex-1 truncate">{item.label}</span>
             {item.shortcut && (
               <span className="text-xs text-text-3">{item.shortcut}</span>

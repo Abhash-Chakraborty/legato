@@ -142,6 +142,10 @@
           "transcribe_with_post_process": {
             "name": "Dictate then transform",
             "description": "Dictates, then runs your selected prompt on the text before pasting it."
+          },
+          "add_to_dictionary": {
+            "name": "Add selection to Dictionary",
+            "description": "Select a word in any app and press this to add it to your Dictionary, spelled exactly as selected."
           }
         },
         "errors": {
@@ -732,7 +736,14 @@
   "overlay": {
     "transcribing": "Transcribing...",
     "processing": "Processing...",
-    "loadingModel": "Loading model..."
+    "loadingModel": "Loading model...",
+    "notice": {
+      "word_added": "Added “{{word}}” to your Dictionary",
+      "word_exists": "“{{word}}” is already in your Dictionary",
+      "no_selection": "Select a word first, then press the shortcut",
+      "not_a_word": "Select one word or name, up to four words long",
+      "failed": "Couldn't read the selection"
+    }
   },
   "titleBar": {
     "minimize": "Minimize",
@@ -796,7 +807,12 @@
       "deleteKey": "Del",
       "transcribing": "Transcribing again…",
       "failed": "This one didn't transcribe.",
-      "tryAgain": "Try again"
+      "tryAgain": "Try again",
+      "fixWord": "Fix a word",
+      "fixWordKey": "Fix a word (F)",
+      "fixedTip": "{{word}} · fixed from “{{heard}}” · {{by}}",
+      "fixedByYou": "by you",
+      "fixedByDictionary": "Dictionary"
     },
     "meta": {
       "siteIn": "{{site}} in {{app}}",
@@ -856,15 +872,203 @@
         "off": "Off",
         "paste": "Paste",
         "transformWith": "{{name}}, with its own shortcut"
+      },
+      "fixedToday_one": "Fixed today · {{count}}",
+      "fixedToday_other": "Fixed today · {{count}}",
+      "fixedTo": "fixed to"
+    },
+    "fixHint": "Legato got a word wrong? Hover the transcript and choose Fix a word, or press F. It's spelled your way from the next dictation.",
+    "hideHint": "Hide this hint",
+    "fix": {
+      "pickLabel": "Pick the words Legato got wrong",
+      "pickHelp": "Click the word Legato got wrong, or drag across a few. Arrow keys and Enter work too.",
+      "done": "Done",
+      "popoverLabel": "Fix “{{heard}}”",
+      "heard": "Heard",
+      "extendLeft": "Add the word before",
+      "extendRight": "Add the word after",
+      "shouldBe": "Should be",
+      "why": {
+        "heard": "Already a way Legato hears {{word}}",
+        "close": "Closest word in your Dictionary"
+      },
+      "remember": "Remember “{{heard}}” as a way Legato mishears it",
+      "also_one": "Also fix {{count}} other transcript",
+      "also_other": "Also fix {{count}} other transcripts",
+      "learn": "Fix and learn",
+      "here": "Just fix here",
+      "cancel": "Cancel",
+      "failed": "Couldn't fix the word",
+      "openDictionary": "Open",
+      "alsoFixed_one": " · also fixed {{count}} other transcript",
+      "alsoFixed_other": " · also fixed {{count}} other transcripts",
+      "toast": {
+        "here": "Fixed in this transcript only",
+        "added": "{{word}} added to your Dictionary · used from your next dictation",
+        "extended": "“{{heard}}” added as a way Legato hears {{word}}",
+        "known": "{{word}} is already in your Dictionary"
       }
     }
   },
   "dictionary": {
     "title": "Dictionary",
-    "subtitle": "Names and terms Legato should spell your way.",
-    "groups": {
-      "words": "Words",
-      "matching": "Matching"
+    "subtitle": "Words and names Legato should spell your way.",
+    "selectionChip": "adds selected text",
+    "selectionHelp": "Select a word in any app and press this to add it, spelled exactly as selected.",
+    "more": "More actions",
+    "add": "Add word",
+    "search": "Search words",
+    "import": {
+      "action": "Import words…",
+      "files": "Word lists",
+      "failed": "Couldn't import that file",
+      "done": "Imported: {{added}} added, {{updated}} updated, {{skipped}} skipped"
+    },
+    "export": {
+      "action": "Export as JSON…",
+      "files": "JSON",
+      "done_one": "Exported {{count}} word",
+      "done_other": "Exported {{count}} words",
+      "failed": "Couldn't export the Dictionary"
+    },
+    "intro": {
+      "hide": "Hide this explanation",
+      "title": "Used before and after the model listens",
+      "body": "Pinned and recently used words go to the speech model as a vocabulary hint. Afterwards, the ways it misheard a word and close matches are corrected.",
+      "test": "Test a sentence"
+    },
+    "test": {
+      "label": "Type how it sounds",
+      "placeholder": "restart doc ploy on the arm box",
+      "empty": "The result shows here, with corrected words marked.",
+      "unchanged": "Nothing to correct.",
+      "fixedFrom": "Heard as “{{from}}”"
+    },
+    "tabs": {
+      "label": "Words",
+      "all": "All",
+      "learned": "Learned",
+      "mine": "Added by me"
+    },
+    "sort": {
+      "label": "Sort words",
+      "pinned": "Pinned first",
+      "hits": "Most fixed",
+      "recent": "Fixed most recently",
+      "newest": "Newest",
+      "az": "A to Z"
+    },
+    "empty": {
+      "title": "No words yet",
+      "body": "Add names and terms Legato gets wrong. When you fix a word on Home, it lands here too."
+    },
+    "noResults": {
+      "title": "No words here yet",
+      "titleSearch": "No words match “{{query}}”",
+      "clear": "Show all words"
+    },
+    "footer": "{{words}} · {{fixes}} · {{learned}}",
+    "counts": {
+      "words_one": "{{count}} word",
+      "words_other": "{{count}} words",
+      "fixes_one": "fixed {{count}} time in total",
+      "fixes_other": "fixed {{count}} times in total",
+      "learned_one": "{{count}} learned from your fixes",
+      "learned_other": "{{count}} learned from your fixes"
+    },
+    "toast": {
+      "deleted": "Deleted “{{word}}”",
+      "deleteFailed": "Couldn't delete the word",
+      "undo": "Undo",
+      "pinned": "Pinned “{{word}}” · always in the vocabulary hint",
+      "unpinned": "Unpinned “{{word}}”",
+      "saved": "Saved “{{word}}”",
+      "added": "Added “{{word}}” · spelled this way from your next dictation"
+    },
+    "row": {
+      "origin": {
+        "manual": "added by you · {{when}}",
+        "fixed": "first fixed on Home · {{when}}",
+        "selection": "added from a selection · {{when}}",
+        "imported": "imported · {{when}}"
+      },
+      "caseSensitive": "Case sensitive: pasted with exactly this capitalisation",
+      "caseBadge": "Aa",
+      "pinned": "Pinned",
+      "learned": "Learned",
+      "heardAs": "heard as",
+      "quoted": "“{{text}}”",
+      "noMisses": "no misses recorded yet",
+      "fixedTimes_one": "fixed {{count}}×",
+      "fixedTimes_other": "fixed {{count}}×",
+      "notNeeded": "not needed yet",
+      "pin": "Pin {{word}}: always in the vocabulary hint",
+      "unpin": "Unpin {{word}}",
+      "edit": "Edit {{word}}",
+      "delete": "Delete {{word}}"
+    },
+    "learning": {
+      "title": "Learning and matching",
+      "summary": {
+        "strict": "strict matching",
+        "normal": "normal matching",
+        "loose": "loose matching",
+        "pinned": "{{pinned}} of {{limit}} pinned",
+        "hint": "{{used}} of {{limit}} hint words"
+      },
+      "matching": {
+        "title": "Matching",
+        "strict": "Strict",
+        "normal": "Normal",
+        "loose": "Loose",
+        "help": {
+          "strict": "Only near-identical words are corrected. Fewest surprises in ordinary sentences.",
+          "normal": "Close misses of your words are corrected. Recommended.",
+          "loose": "Catches more misses, and may now and then correct a word that was right."
+        }
+      },
+      "hint": {
+        "title": "Vocabulary hint",
+        "help": "Models that take a hint, like Whisper, get up to {{limit}} words before they listen: {{pinned}} pinned, then the ones used most recently. Every word is still corrected afterwards.",
+        "show": "Show list",
+        "dialogTitle": "Vocabulary hint",
+        "dialogDescription": "What the speech model receives before each dictation, in order",
+        "close": "Close",
+        "empty": "No words yet.",
+        "counts": "{{pinned}} pinned, {{recent}} by recent use, {{free}} free."
+      }
+    },
+    "editor": {
+      "addTitle": "Add word",
+      "editTitle": "Edit word",
+      "addDescription": "Spelled exactly the way it should be pasted.",
+      "editDescription_one": "Fixed {{count}} time so far.",
+      "editDescription_other": "Fixed {{count}} times so far.",
+      "word": "Word or name",
+      "wordPlaceholder": "Dokploy",
+      "errors": {
+        "empty": "Type the word the way it should be spelled.",
+        "duplicate": "Already in your Dictionary.",
+        "pinLimit": "You can pin up to {{count}} words. Unpin one first, or save without pinning."
+      },
+      "editThatOne": "Edit that one",
+      "charsLeft_one": "{{count}} character left",
+      "charsLeft_other": "{{count}} characters left",
+      "heard": "Also heard as",
+      "heardPlaceholder": "how Legato mishears it, e.g. doc ploy",
+      "heardMore": "add another",
+      "heardHelp": "Optional. Press Enter after each. Fix a word on Home adds these for you.",
+      "removeHeard": "Remove “{{heard}}”",
+      "caseSensitive": "Case sensitive",
+      "caseSensitiveHelp": "Pasted with exactly this capitalisation, even when the model capitalises it differently.",
+      "pinned": "Pinned",
+      "pinnedHelp": "Always in the vocabulary hint ({{pinned}} of {{limit}} pinned).",
+      "pinFull": "All {{count}} pins are in use. Unpin a word to pin this one.",
+      "test": "Test",
+      "testPlaceholder": "Type how it sounds, e.g. restart doc ploy on the arm box",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "save": "Save"
     }
   },
   "transforms": {

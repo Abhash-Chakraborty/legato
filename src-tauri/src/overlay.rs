@@ -28,10 +28,11 @@ const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
-    if state == "streaming" {
-        (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT)
-    } else {
-        (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+    match state {
+        "streaming" => (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT),
+        // A notice is one row, as wide as the Live panel so the message fits.
+        "notice" => (OVERLAY_STREAM_WIDTH, OVERLAY_HEIGHT),
+        _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
 }
 
@@ -345,6 +346,27 @@ pub fn show_transcribing_overlay(app_handle: &AppHandle) {
 /// Shows the processing overlay window
 pub fn show_processing_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "processing");
+}
+
+/// How long a notice stays up.
+const NOTICE_MS: u64 = 2600;
+
+/// A one-line message in the overlay, such as a word added from a selection.
+/// It hides itself, unless a dictation shows the overlay in the meantime.
+pub fn show_overlay_notice<T: serde::Serialize>(app_handle: &AppHandle, notice: &T) {
+    let _ = app_handle.emit_to("recording_overlay", "overlay-notice", notice);
+    show_overlay_state(app_handle, "notice");
+    let handle = app_handle.clone();
+    std::thread::spawn(move || {
+        // Showing runs on the main thread; let it land before taking the
+        // generation the hide is tied to.
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let shown = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
+        std::thread::sleep(std::time::Duration::from_millis(NOTICE_MS));
+        if OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) == shown {
+            hide_recording_overlay(&handle);
+        }
+    });
 }
 
 /// Updates the overlay window position based on current settings

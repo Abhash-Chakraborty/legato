@@ -3,6 +3,7 @@
 //! own; `HistoryManager` wraps it with files, settings and events.
 
 use anyhow::{anyhow, Result};
+use regex::Regex;
 use rusqlite::types::ToSql;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use rusqlite_migration::M;
@@ -103,10 +104,37 @@ pub static MIGRATIONS: &[M] = &[
             PRIMARY KEY (day, model)
          );",
     ),
+    // The Dictionary: words spelled the user's way, and the ways the model
+    // mishears each one. A heard form belongs to one word.
+    M::up(
+        "CREATE TABLE dictionary_entry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'manual',
+            pinned INTEGER NOT NULL DEFAULT 0,
+            case_sensitive INTEGER NOT NULL DEFAULT 0,
+            added_at INTEGER NOT NULL,
+            last_fix_at INTEGER,
+            last_app TEXT,
+            last_app_path TEXT,
+            hits INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE UNIQUE INDEX dictionary_entry_text ON dictionary_entry (text COLLATE NOCASE);
+         CREATE TABLE dictionary_heard (
+            entry_id INTEGER NOT NULL REFERENCES dictionary_entry (id) ON DELETE CASCADE,
+            heard TEXT NOT NULL
+         );
+         CREATE UNIQUE INDEX dictionary_heard_form ON dictionary_heard (heard COLLATE NOCASE);
+         CREATE INDEX dictionary_heard_entry ON dictionary_heard (entry_id);",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.
 pub const BACKFILL_VERSION: i32 = 7;
+
+/// The schema version that added the Dictionary; custom words from the
+/// settings move into it when a database first reaches it.
+pub const DICTIONARY_VERSION: i32 = 8;
 
 /// What happened to a dictation after it was transcribed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -142,11 +170,34 @@ impl DictationStatus {
     }
 }
 
-/// A Dictionary fix made on one dictation.
+/// What made a fix.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum FixSource {
+    /// A heard-as form in the Dictionary.
+    Heard,
+    /// A close match to a Dictionary word.
+    #[default]
+    Match,
+    /// Fixed by hand with Fix a word.
+    Manual,
+}
+
+/// A fix made on one dictation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct AppliedFix {
     pub from: String,
     pub to: String,
+    #[serde(default)]
+    pub source: FixSource,
+}
+
+fn fixes_json(fixes: &[AppliedFix]) -> Option<String> {
+    if fixes.is_empty() {
+        None
+    } else {
+        serde_json::to_string(fixes).ok()
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Type)]
@@ -246,6 +297,7 @@ pub struct NewEntry {
     pub model_id: Option<String>,
     pub model_name: Option<String>,
     pub status: Option<DictationStatus>,
+    pub fixes: Vec<AppliedFix>,
 }
 
 /// How the paste went.
@@ -363,8 +415,8 @@ pub fn insert(conn: &mut Connection, new: &NewEntry) -> Result<HistoryEntry> {
             file_name, timestamp, saved, title, transcription_text, post_processed_text,
             post_process_prompt, post_process_requested, app_exe, app_path, app_name,
             app_title, app_site, category, speech_ms, word_count, model_id, model_name,
-            transform, status
-         ) VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+            transform, status, fixes
+         ) VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
         params![
             new.file_name,
             new.timestamp,
@@ -385,6 +437,7 @@ pub fn insert(conn: &mut Connection, new: &NewEntry) -> Result<HistoryEntry> {
             new.model_name,
             new.transform,
             new.status.map(DictationStatus::as_str),
+            fixes_json(&new.fixes),
         ],
     )?;
     let entry = get(&tx, tx.last_insert_rowid())?.ok_or_else(|| anyhow!("Saved row is missing"))?;
@@ -432,6 +485,7 @@ pub fn record_paste(conn: &mut Connection, id: i64, paste: &PasteRecord) -> Resu
 
 /// Replaces a dictation's text after it was transcribed again, keeping the
 /// daily tables in step.
+#[allow(clippy::too_many_arguments)]
 pub fn update_transcription(
     conn: &mut Connection,
     id: i64,
@@ -440,6 +494,7 @@ pub fn update_transcription(
     post_process_prompt: Option<&str>,
     transform: Option<&str>,
     model: Option<(&str, &str)>,
+    fixes: &[AppliedFix],
 ) -> Result<HistoryEntry> {
     let tx = conn.transaction()?;
     let before = get(&tx, id)?.ok_or_else(|| anyhow!("History entry {} not found", id))?;
@@ -454,8 +509,9 @@ pub fn update_transcription(
         "UPDATE transcription_history
          SET transcription_text = ?1, post_processed_text = ?2, post_process_prompt = ?3,
              transform = ?4, word_count = ?5, status = ?6, error = NULL,
-             model_id = COALESCE(?7, model_id), model_name = COALESCE(?8, model_name)
-         WHERE id = ?9",
+             model_id = COALESCE(?7, model_id), model_name = COALESCE(?8, model_name),
+             fixes = ?9
+         WHERE id = ?10",
         params![
             transcription_text,
             post_processed_text,
@@ -465,6 +521,7 @@ pub fn update_transcription(
             status,
             model.map(|(id, _)| id),
             model.map(|(_, name)| name),
+            fixes_json(fixes),
             id
         ],
     )?;
@@ -472,6 +529,226 @@ pub fn update_transcription(
     add_to_stats(&tx, &after, 1)?;
     tx.commit()?;
     Ok(after)
+}
+
+/// A dictation's text and fixes before Fix a word changed it, kept for Undo.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextSnapshot {
+    pub id: i64,
+    pub transcription_text: String,
+    pub post_processed_text: Option<String>,
+    pub fixes: Vec<AppliedFix>,
+}
+
+impl TextSnapshot {
+    fn of(entry: &HistoryEntry) -> Self {
+        Self {
+            id: entry.id,
+            transcription_text: entry.transcription_text.clone(),
+            post_processed_text: entry.post_processed_text.clone(),
+            fixes: entry.fixes.clone(),
+        }
+    }
+}
+
+/// Matches `from` as whole words, in any case and with any spacing.
+fn word_pattern(from: &str) -> Option<Regex> {
+    let from = from.trim();
+    if from.is_empty() {
+        return None;
+    }
+    let body = from
+        .split_whitespace()
+        .map(regex::escape)
+        .collect::<Vec<_>>()
+        .join(r"\s+");
+    let start = if from.starts_with(char::is_alphanumeric) {
+        r"\b"
+    } else {
+        ""
+    };
+    let end = if from.ends_with(char::is_alphanumeric) {
+        r"\b"
+    } else {
+        ""
+    };
+    Regex::new(&format!("(?i){start}{body}{end}")).ok()
+}
+
+/// Replaces every whole-word `from` that doesn't already read `to`.
+fn replace_words(text: &str, pattern: &Regex, to: &str) -> (String, usize) {
+    let mut count = 0;
+    let out = pattern.replace_all(text, |caps: &regex::Captures| {
+        if &caps[0] == to {
+            caps[0].to_string()
+        } else {
+            count += 1;
+            to.to_string()
+        }
+    });
+    (out.into_owned(), count)
+}
+
+/// Writes new text and fixes for a dictation, keeping the daily tables in step.
+fn set_text(
+    tx: &Connection,
+    before: &HistoryEntry,
+    transcription_text: &str,
+    post_processed_text: Option<&str>,
+    fixes: &[AppliedFix],
+) -> Result<HistoryEntry> {
+    add_to_stats(tx, before, -1)?;
+    let words = word_count(&final_text(transcription_text, post_processed_text));
+    tx.execute(
+        "UPDATE transcription_history
+         SET transcription_text = ?1, post_processed_text = ?2, word_count = ?3, fixes = ?4
+         WHERE id = ?5",
+        params![
+            transcription_text,
+            post_processed_text,
+            words,
+            fixes_json(fixes),
+            before.id
+        ],
+    )?;
+    let after =
+        get(tx, before.id)?.ok_or_else(|| anyhow!("History entry {} not found", before.id))?;
+    add_to_stats(tx, &after, 1)?;
+    Ok(after)
+}
+
+/// Fix a word on one dictation. `shown_after` replaces the text Home shows
+/// (the rewritten text when there is one), but only if it still reads
+/// `shown_before`; the other version gets every whole-word `fix.from`
+/// replaced.
+pub fn fix_row(
+    conn: &mut Connection,
+    id: i64,
+    shown_before: &str,
+    shown_after: &str,
+    fix: &AppliedFix,
+) -> Result<(TextSnapshot, HistoryEntry)> {
+    let tx = conn.transaction()?;
+    let before = get(&tx, id)?.ok_or_else(|| anyhow!("History entry {} not found", id))?;
+    if final_text(
+        &before.transcription_text,
+        before.post_processed_text.as_deref(),
+    ) != shown_before
+    {
+        return Err(anyhow!("This transcript changed; try again"));
+    }
+    let pattern = word_pattern(&fix.from);
+    let other = |text: &str| match &pattern {
+        Some(p) => replace_words(text, p, &fix.to).0,
+        None => text.to_string(),
+    };
+    let (text, processed) = match &before.post_processed_text {
+        Some(_) => (
+            other(&before.transcription_text),
+            Some(shown_after.to_string()),
+        ),
+        None => (shown_after.to_string(), None),
+    };
+    let mut fixes = before.fixes.clone();
+    fixes.push(fix.clone());
+    let after = set_text(&tx, &before, &text, processed.as_deref(), &fixes)?;
+    tx.commit()?;
+    Ok((TextSnapshot::of(&before), after))
+}
+
+/// Dictations other than `except` where `from` appears as whole words and
+/// doesn't already read `to`, newest first.
+pub fn rows_with(conn: &Connection, from: &str, to: &str, except: i64) -> Result<Vec<i64>> {
+    let Some(pattern) = word_pattern(from) else {
+        return Ok(Vec::new());
+    };
+    // LIKE narrows the rows cheaply; the pattern decides.
+    let like = format!("%{}%", from.split_whitespace().next().unwrap_or(from));
+    let mut stmt = conn.prepare(
+        "SELECT id, transcription_text, post_processed_text FROM transcription_history
+         WHERE id != ?1 AND (transcription_text LIKE ?2 OR post_processed_text LIKE ?2)
+         ORDER BY id DESC",
+    )?;
+    let rows = stmt
+        .query_map(params![except, like], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows
+        .into_iter()
+        .filter(|(_, text, processed)| {
+            std::iter::once(text.as_str())
+                .chain(processed.as_deref())
+                .any(|t| replace_words(t, &pattern, to).1 > 0)
+        })
+        .map(|(id, _, _)| id)
+        .collect())
+}
+
+/// Replaces `fix.from` with `fix.to` in other dictations, both versions.
+pub fn fix_rows(
+    conn: &mut Connection,
+    ids: &[i64],
+    fix: &AppliedFix,
+) -> Result<Vec<(TextSnapshot, HistoryEntry)>> {
+    let Some(pattern) = word_pattern(&fix.from) else {
+        return Ok(Vec::new());
+    };
+    let tx = conn.transaction()?;
+    let mut changed = Vec::new();
+    for &id in ids {
+        let Some(before) = get(&tx, id)? else {
+            continue;
+        };
+        let (text, a) = replace_words(&before.transcription_text, &pattern, &fix.to);
+        let processed = before
+            .post_processed_text
+            .as_deref()
+            .map(|p| replace_words(p, &pattern, &fix.to));
+        if a == 0 && processed.as_ref().is_none_or(|(_, b)| *b == 0) {
+            continue;
+        }
+        let mut fixes = before.fixes.clone();
+        fixes.push(fix.clone());
+        let after = set_text(
+            &tx,
+            &before,
+            &text,
+            processed.as_ref().map(|(p, _)| p.as_str()),
+            &fixes,
+        )?;
+        changed.push((TextSnapshot::of(&before), after));
+    }
+    tx.commit()?;
+    Ok(changed)
+}
+
+/// Puts dictations back the way they were before a fix (Undo). Rows deleted
+/// since are skipped.
+pub fn restore_texts(
+    conn: &mut Connection,
+    snapshots: &[TextSnapshot],
+) -> Result<Vec<HistoryEntry>> {
+    let tx = conn.transaction()?;
+    let mut restored = Vec::new();
+    for snap in snapshots {
+        let Some(before) = get(&tx, snap.id)? else {
+            continue;
+        };
+        restored.push(set_text(
+            &tx,
+            &before,
+            &snap.transcription_text,
+            snap.post_processed_text.as_deref(),
+            &snap.fixes,
+        )?);
+    }
+    tx.commit()?;
+    Ok(restored)
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -591,6 +868,17 @@ pub struct FilterCounts {
     pub transformed: i64,
 }
 
+/// One fix made today, for Home's rail.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct TodayFix {
+    pub history_id: i64,
+    pub timestamp: i64,
+    pub from: String,
+    pub to: String,
+    pub source: FixSource,
+    pub app: Option<String>,
+}
+
 /// What Home shows above the list.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct HistorySummary {
@@ -598,6 +886,48 @@ pub struct HistorySummary {
     pub counts: FilterCounts,
     /// Apps in the history, most used first.
     pub apps: Vec<AppCount>,
+    /// Today's fixes, newest first, at most 20.
+    pub fixed_today: Vec<TodayFix>,
+}
+
+const FIXED_TODAY_LIMIT: usize = 20;
+
+fn fixed_today(conn: &Connection) -> Result<Vec<TodayFix>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, timestamp, fixes, app_name FROM transcription_history
+         WHERE fixes IS NOT NULL AND fixes != '[]'
+           AND date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
+         ORDER BY id DESC LIMIT 100",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut out = Vec::new();
+    for (history_id, timestamp, json, app) in rows {
+        let fixes: Vec<AppliedFix> = serde_json::from_str(&json).unwrap_or_default();
+        // Within a dictation, the last fix is the newest.
+        for fix in fixes.into_iter().rev() {
+            out.push(TodayFix {
+                history_id,
+                timestamp,
+                from: fix.from,
+                to: fix.to,
+                source: fix.source,
+                app: app.clone(),
+            });
+            if out.len() == FIXED_TODAY_LIMIT {
+                return Ok(out);
+            }
+        }
+    }
+    Ok(out)
 }
 
 pub fn summary(conn: &Connection) -> Result<HistorySummary> {
@@ -649,6 +979,7 @@ pub fn summary(conn: &Connection) -> Result<HistorySummary> {
         today,
         counts,
         apps,
+        fixed_today: fixed_today(conn)?,
     })
 }
 
@@ -787,8 +1118,17 @@ mod tests {
         assert_eq!(summary(&conn).unwrap().today.dictations, 0);
 
         // Trying again counts it once, and clears the failure.
-        let fixed =
-            update_transcription(&mut conn, saved.id, "it worked", None, None, None, None).unwrap();
+        let fixed = update_transcription(
+            &mut conn,
+            saved.id,
+            "it worked",
+            None,
+            None,
+            None,
+            None,
+            &[],
+        )
+        .unwrap();
         assert_eq!(fixed.status, None);
         assert_eq!(summary(&conn).unwrap().today.dictations, 1);
         assert_eq!(summary(&conn).unwrap().today.words, 2);
@@ -826,7 +1166,7 @@ mod tests {
     fn search_follows_deletes_and_updates() {
         let mut conn = db();
         let a = insert(&mut conn, &entry("alpha", None)).unwrap();
-        update_transcription(&mut conn, a.id, "beta", None, None, None, None).unwrap();
+        update_transcription(&mut conn, a.id, "beta", None, None, None, None, &[]).unwrap();
         let count = |conn: &Connection, s: &str| {
             query(
                 conn,
@@ -973,5 +1313,90 @@ mod tests {
             1
         );
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn fix_a_word_edits_both_versions_and_can_be_undone() {
+        let mut conn = db();
+        let mut new = entry("restart doc ploy on the arm box", Some("Slack"));
+        new.post_processed_text = Some("Restart doc ploy on the ARM box.".into());
+        let saved = insert(&mut conn, &new).unwrap();
+        let fix = AppliedFix {
+            from: "doc ploy".into(),
+            to: "Dokploy".into(),
+            source: FixSource::Manual,
+        };
+        // A stale view of the text is refused.
+        assert!(fix_row(&mut conn, saved.id, "old text", "new", &fix).is_err());
+        let (snap, after) = fix_row(
+            &mut conn,
+            saved.id,
+            "Restart doc ploy on the ARM box.",
+            "Restart Dokploy on the ARM box.",
+            &fix,
+        )
+        .unwrap();
+        assert_eq!(after.transcription_text, "restart Dokploy on the arm box");
+        assert_eq!(
+            after.post_processed_text.as_deref(),
+            Some("Restart Dokploy on the ARM box.")
+        );
+        assert_eq!(after.fixes, vec![fix.clone()]);
+        assert_eq!(summary(&conn).unwrap().counts.fixed, 1);
+        assert_eq!(summary(&conn).unwrap().fixed_today.len(), 1);
+
+        let restored = restore_texts(&mut conn, &[snap]).unwrap();
+        assert_eq!(
+            restored[0].transcription_text,
+            "restart doc ploy on the arm box"
+        );
+        assert!(restored[0].fixes.is_empty());
+        assert_eq!(summary(&conn).unwrap().counts.fixed, 0);
+        assert_eq!(summary(&conn).unwrap().today.words, 7);
+    }
+
+    #[test]
+    fn other_transcripts_with_the_same_miss_are_found_and_fixed() {
+        let mut conn = db();
+        let a = insert(&mut conn, &entry("ask carol about it", None)).unwrap();
+        let b = insert(&mut conn, &entry("Carol said yes", None)).unwrap();
+        let c = insert(&mut conn, &entry("christmas carols", None)).unwrap();
+        let d = insert(&mut conn, &entry("Karol is here", None)).unwrap();
+        assert_eq!(
+            rows_with(&conn, "carol", "Karol", a.id).unwrap(),
+            vec![b.id]
+        );
+        let fix = AppliedFix {
+            from: "carol".into(),
+            to: "Karol".into(),
+            source: FixSource::Manual,
+        };
+        let changed = fix_rows(&mut conn, &[b.id, c.id, d.id], &fix).unwrap();
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].1.transcription_text, "Karol said yes");
+        assert_eq!(
+            get(&conn, c.id).unwrap().unwrap().transcription_text,
+            "christmas carols"
+        );
+    }
+
+    #[test]
+    fn saved_fixes_are_counted_and_listed_for_today() {
+        let mut conn = db();
+        let mut new = entry("deploy to Dokploy", Some("Cursor"));
+        new.fixes = vec![AppliedFix {
+            from: "doc ploy".into(),
+            to: "Dokploy".into(),
+            source: FixSource::Heard,
+        }];
+        let saved = insert(&mut conn, &new).unwrap();
+        assert_eq!(saved.fixes.len(), 1);
+        let s = summary(&conn).unwrap();
+        assert_eq!(s.counts.fixed, 1);
+        assert_eq!(s.fixed_today[0].to, "Dokploy");
+        assert_eq!(s.fixed_today[0].app.as_deref(), Some("Cursor"));
+        // Fixes written before they had a source read as close matches.
+        let old: Vec<AppliedFix> = serde_json::from_str(r#"[{"from":"a","to":"b"}]"#).unwrap();
+        assert_eq!(old[0].source, FixSource::Match);
     }
 }

@@ -271,6 +271,16 @@ export const buildSections = (
             ],
             render: () => <ShortcutInput shortcutId="cancel" grouped />,
           },
+          {
+            id: "add-to-dictionary",
+            searchKeys: [
+              "settings.general.shortcut.bindings.add_to_dictionary.name",
+              "settings.general.shortcut.bindings.add_to_dictionary.description",
+            ],
+            render: () => (
+              <ShortcutInput shortcutId="add_to_dictionary" grouped />
+            ),
+          },
         ],
       },
       {

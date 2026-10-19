@@ -11,7 +11,18 @@ import type {
 } from "@/bindings";
 import type { ModelStateEvent } from "@/lib/types/events";
 
-type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
+type OverlayState =
+  | "recording"
+  | "streaming"
+  | "transcribing"
+  | "processing"
+  | "notice";
+
+/** A one-line message, such as a word added with the selection shortcut. */
+type OverlayNotice =
+  | { kind: "word_added"; word: string }
+  | { kind: "word_exists"; word: string }
+  | { kind: "no_selection" | "not_a_word" | "failed" };
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
@@ -27,6 +38,7 @@ const RecordingOverlay: React.FC = () => {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const [state, setState] = useState<OverlayState>("recording");
+  const [notice, setNotice] = useState<OverlayNotice | null>(null);
   // `Stream::play()` returning does not mean hardware callbacks are flowing.
   // Stay visually in an arming state until the backend processes the first
   // actual microphone sample chunk.
@@ -104,6 +116,11 @@ const RecordingOverlay: React.FC = () => {
         setIsVisible(true);
       });
 
+      const unlistenNotice = await listen<OverlayNotice>(
+        "overlay-notice",
+        (event) => setNotice(event.payload),
+      );
+
       const unlistenHide = await listen("hide-overlay", () => {
         setIsVisible(false);
         setCaptureReady(false);
@@ -165,6 +182,7 @@ const RecordingOverlay: React.FC = () => {
 
       return () => {
         unlistenShow();
+        unlistenNotice();
         unlistenHide();
         unlistenReady();
         unlistenLevel();
@@ -336,6 +354,26 @@ const RecordingOverlay: React.FC = () => {
                 true,
               )
             : listeningRow(open, true)}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Notice: one line of text that hides itself.
+  if (state === "notice") {
+    const good = notice?.kind === "word_added";
+    const message = !notice
+      ? ""
+      : notice.kind === "word_added" || notice.kind === "word_exists"
+        ? t(`overlay.notice.${notice.kind}`, { word: notice.word })
+        : t(`overlay.notice.${notice.kind}`);
+    return (
+      <div
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div className="scard notice" role="status">
+          <span className={`snotice-dot ${good ? "ok" : ""}`} />
+          <span className="snotice-text">{message}</span>
         </div>
       </div>
     );

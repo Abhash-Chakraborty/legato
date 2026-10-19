@@ -404,6 +404,8 @@ pub struct AppSettings {
     pub debug_mode: bool,
     #[serde(default = "default_log_level")]
     pub log_level: LogLevel,
+    /// Handy's custom words. Moved into the Dictionary when its tables are
+    /// created, and not read after that.
     #[serde(default)]
     pub custom_words: Vec<String>,
     #[serde(default)]
@@ -860,6 +862,16 @@ pub fn get_default_settings() -> AppSettings {
             description: "Cancels the current recording.".to_string(),
             default_binding: "escape".to_string(),
             current_binding: "escape".to_string(),
+        },
+    );
+    bindings.insert(
+        "add_to_dictionary".to_string(),
+        ShortcutBinding {
+            id: "add_to_dictionary".to_string(),
+            name: "Add selection to Dictionary".to_string(),
+            description: "Adds the word selected in any app to your Dictionary.".to_string(),
+            default_binding: "super+alt+w".to_string(),
+            current_binding: "super+alt+w".to_string(),
         },
     );
 

@@ -293,14 +293,6 @@ async setPostProcessSelectedPrompt(id: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async updateCustomWords(words: string[]) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("update_custom_words", { words }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 /**
  * Temporarily unregister all bindings while the user is recording a
  * shortcut in the UI. This avoids firing actions while keys are recorded.
@@ -925,6 +917,113 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getDictionary() : Promise<Result<DictionaryView, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_dictionary") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async addDictionaryEntry(input: EntryInput) : Promise<Result<DictionaryEntry, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_dictionary_entry", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateDictionaryEntry(id: number, input: EntryInput) : Promise<Result<DictionaryEntry, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_dictionary_entry", { id, input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setDictionaryEntryPinned(id: number, pinned: boolean) : Promise<Result<DictionaryEntry, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_dictionary_entry_pinned", { id, pinned }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Deletes words and returns them, for Undo.
+ */
+async deleteDictionaryEntries(ids: number[]) : Promise<Result<DictionaryEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_dictionary_entries", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreDictionaryEntries(entries: DictionaryEntry[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_dictionary_entries", { entries }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Runs the same correction the pipeline uses on a typed sentence. `draft` is
+ * a word being edited (replacing the entry `draft_id`, or added), so the
+ * editor can test before saving.
+ */
+async testDictionary(text: string, draft: EntryInput | null, draftId: number | null) : Promise<Result<DictionaryTest, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("test_dictionary", { text, draft, draftId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async importDictionary(path: string) : Promise<Result<ImportSummary, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_dictionary", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async exportDictionary(path: string) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_dictionary", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Other kept transcripts the same miss could be fixed in.
+ */
+async findFixCandidates(from: string, to: string, except: number) : Promise<Result<number[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("find_fix_candidates", { from, to, except }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async fixWord(request: FixWordRequest) : Promise<Result<FixWordResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fix_word", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async undoFixWord(undoToken: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("undo_fix_word", { undoToken }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -932,10 +1031,12 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
 
 
 export const events = __makeEvents__<{
+dictionaryChanged: DictionaryChanged,
 historyUpdatePayload: HistoryUpdatePayload,
 streamPhaseEvent: StreamPhaseEvent,
 streamTextEvent: StreamTextEvent
 }>({
+dictionaryChanged: "dictionary-changed",
 historyUpdatePayload: "history-update-payload",
 streamPhaseEvent: "stream-phase-event",
 streamTextEvent: "stream-text-event"
@@ -957,7 +1058,116 @@ streamTextEvent: "stream-text-event"
 /**
  * A Dictionary fix made on one dictation.
  */
-export type AppliedFix = { from: string; to: string }
+/**
+ * A fix made on one dictation.
+ */
+export type AppliedFix = { from: string; to: string; source?: FixSource }
+/**
+ * What made a fix.
+ */
+export type FixSource = 
+/**
+ * A heard-as form in the Dictionary.
+ */
+"heard" | 
+/**
+ * A close match to a Dictionary word.
+ */
+"match" | 
+/**
+ * Fixed by hand with Fix a word.
+ */
+"manual"
+/**
+ * One fix made today, for Home's rail.
+ */
+export type TodayFix = { history_id: number; timestamp: number; from: string; to: string; source: FixSource; app: string | null }
+export type DictionaryEntry = { id: number; text: string; 
+/**
+ * Ways the model mishears the word.
+ */
+heard: string[]; source: DictionarySource; pinned: boolean; case_sensitive: boolean; added_at: number; last_fix_at: number | null; 
+/**
+ * The app the word was last fixed in.
+ */
+last_app: string | null; last_app_path: string | null; 
+/**
+ * Transcripts the word fixed.
+ */
+hits: number }
+/**
+ * Where a word came from.
+ */
+export type DictionarySource = 
+/**
+ * Added on the Dictionary page, or moved from the old custom words.
+ */
+"manual" | 
+/**
+ * Learned from Fix a word on Home.
+ */
+"fixed" | 
+/**
+ * Selected in another app and added with the shortcut.
+ */
+"selection" | "imported"
+/**
+ * A word as the editor saves it, and as files import it.
+ */
+export type EntryInput = { text: string; heard?: string[]; pinned?: boolean; case_sensitive?: boolean }
+/**
+ * How many words an import added, extended and skipped.
+ */
+export type ImportSummary = { added: number; updated: number; skipped: number }
+/**
+ * Everything the Dictionary page shows.
+ */
+export type DictionaryView = { entries: DictionaryEntry[]; 
+/**
+ * What the speech model gets before it listens, in order.
+ */
+hint: string[]; hint_limit: number; pin_limit: number; max_word_chars: number }
+/**
+ * A sentence after the Dictionary corrected it.
+ */
+export type DictionaryTest = { text: string; fixes: AppliedFix[] }
+/**
+ * Fix a word: what was heard, what it should be, and where.
+ */
+export type FixWordRequest = { history_id: number; 
+/**
+ * The transcript's text as Home showed it.
+ */
+shown_before: string; 
+/**
+ * The same text with the fix in place.
+ */
+shown_after: string; from: string; to: string; 
+/**
+ * Add the word to the Dictionary (Fix and learn).
+ */
+learn: boolean; 
+/**
+ * Keep `from` as a way the model mishears the word.
+ */
+remember_heard: boolean; 
+/**
+ * Other transcripts to fix the same way.
+ */
+also: number[] }
+export type FixWordResult = { 
+/**
+ * Pass to `undo_fix_word`.
+ */
+undo_token: number; entry: DictionaryEntry | null; created: boolean; extended: boolean; 
+/**
+ * Other transcripts that were fixed.
+ */
+others: number }
+/**
+ * Sent whenever a word is added, changed or removed.
+ */
+export type DictionaryChanged = null
 export type AppCount = { name: string; 
 /**
  * An executable to take the app's icon from.
@@ -1081,7 +1291,11 @@ export type HistorySummary = { today: DayStats; counts: FilterCounts;
 /**
  * Apps in the history, most used first.
  */
-apps: AppCount[] }
+apps: AppCount[]; 
+/**
+ * Today's fixes, newest first, at most 20.
+ */
+fixed_today: TodayFix[] }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
 /**
  * Result of changing keyboard implementation

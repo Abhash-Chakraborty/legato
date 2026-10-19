@@ -9,11 +9,15 @@ import {
   Replace,
   type LucideIcon,
 } from "lucide-react";
-import { commands } from "@/bindings";
+import { commands, type TodayFix } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useSettingsStore } from "../../../stores/settingsStore";
 import { useModelStore } from "../../../stores/modelStore";
 import { useModelStatusStore } from "../../../stores/modelStatusStore";
+import {
+  useDictionaryStore,
+  watchDictionary,
+} from "../../../stores/dictionaryStore";
 import {
   useNavStore,
   type Page,
@@ -99,10 +103,14 @@ const Step: React.FC<{
   </li>
 );
 
-/** Home's right rail: what is set up right now, and the steps a dictation
- *  goes through, each a link to where it is changed. */
-export const HomeRail: React.FC = () => {
+/** Home's right rail: what is set up right now, the steps a dictation goes
+ *  through (each a link to where it is changed), and today's fixes. */
+export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
+  fixedToday,
+}) => {
   const { t } = useTranslation();
+  const dictionary = useDictionaryStore((s) => s.view);
+  useEffect(() => watchDictionary(), []);
   const { settings } = useSettings();
   const audioDevices = useSettingsStore((s) => s.audioDevices);
   const { models, currentModel } = useModelStore();
@@ -151,7 +159,7 @@ export const HomeRail: React.FC = () => {
   const prompt = settings?.post_process_prompts?.find(
     (p) => p.id === settings?.post_process_selected_prompt_id,
   );
-  const words = settings?.custom_words?.length ?? 0;
+  const words = dictionary?.entries.length ?? 0;
   const pasteMethod = settings?.paste_method ?? "ctrl_v";
   const pasteLabel = t(
     {
@@ -268,6 +276,38 @@ export const HomeRail: React.FC = () => {
           />
         </ol>
       </section>
+
+      {fixedToday.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-sm font-semibold">
+            {t("home.rail.fixedToday", { count: fixedToday.length })}
+          </h2>
+          <ul className="flex flex-col gap-1.5 text-[13px]">
+            {fixedToday.slice(0, 8).map((fix, i) => (
+              <li
+                key={`${fix.history_id}-${i}`}
+                className="flex min-w-0 items-baseline gap-1.5"
+              >
+                <span className="truncate text-text-3 line-through decoration-text-4">
+                  {fix.from}
+                </span>
+                <span aria-hidden="true" className="text-text-4">
+                  →
+                </span>
+                <span className="sr-only">{t("home.rail.fixedTo")}</span>
+                <span className="fixed-word truncate font-medium text-text">
+                  {fix.to}
+                </span>
+                {fix.app && (
+                  <span className="ms-auto flex-none truncate text-xs text-text-3">
+                    {fix.app}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </aside>
   );
 };

@@ -16,6 +16,7 @@ mod managers;
 mod overlay;
 mod paste_tx;
 pub mod portable;
+mod selection;
 mod settings;
 mod shortcut;
 mod signal_handle;
@@ -32,6 +33,7 @@ pub use utils::env_flag_enabled;
 
 use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
+use managers::dictionary::DictionaryManager;
 use managers::history::HistoryManager;
 use managers::model::ModelManager;
 use managers::transcription::TranscriptionManager;
@@ -216,12 +218,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     );
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
+    // After history: it migrates the database the Dictionary lives in.
+    let dictionary_manager =
+        Arc::new(DictionaryManager::new(app_handle).expect("Failed to initialize the Dictionary"));
 
     // Add managers to Tauri's managed state
     app_handle.manage(recording_manager.clone());
     app_handle.manage(model_manager.clone());
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
+    app_handle.manage(dictionary_manager);
     app_handle.manage(context::DictationContext::default());
     app_handle.manage(tray::TrayState::new());
 
@@ -556,7 +562,7 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         }
         let t = Instant::now();
         match tm.transcribe(samples.clone()) {
-            Ok(out) => text = out,
+            Ok(out) => text = out.text,
             Err(e) => {
                 eprintln!("error: transcribe failed: {}", e);
                 return 1;
@@ -648,7 +654,6 @@ pub fn run(cli_args: CliArgs) {
             shortcut::update_post_process_prompt,
             shortcut::delete_post_process_prompt,
             shortcut::set_post_process_selected_prompt,
-            shortcut::update_custom_words,
             shortcut::suspend_all_bindings,
             shortcut::resume_all_bindings,
             shortcut::change_mute_while_recording_setting,
@@ -728,9 +733,22 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
+            commands::dictionary::get_dictionary,
+            commands::dictionary::add_dictionary_entry,
+            commands::dictionary::update_dictionary_entry,
+            commands::dictionary::set_dictionary_entry_pinned,
+            commands::dictionary::delete_dictionary_entries,
+            commands::dictionary::restore_dictionary_entries,
+            commands::dictionary::test_dictionary,
+            commands::dictionary::import_dictionary,
+            commands::dictionary::export_dictionary,
+            commands::dictionary::find_fix_candidates,
+            commands::dictionary::fix_word,
+            commands::dictionary::undo_fix_word,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
+            managers::dictionary::DictionaryChanged,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
         ]);

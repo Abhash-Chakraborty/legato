@@ -1,6 +1,7 @@
 use natural::phonetics::soundex;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use std::collections::{HashMap, HashSet};
 use strsim::levenshtein;
 
 /// Builds an n-gram string by cleaning and concatenating words
@@ -70,23 +71,22 @@ fn supports_soundex(key: &str) -> bool {
 ///
 /// # Arguments
 /// * `candidate` - The cleaned/lowercased candidate string to match
-/// * `custom_words` - Original custom words (for returning the replacement)
 /// * `custom_word_match_keys` - Normalized custom-word keys for comparison
 /// * `threshold` - Maximum similarity score to accept
 ///
 /// # Returns
-/// The best matching custom word and its score, if any match was found
-fn find_best_match<'a>(
+/// The index of the best matching custom word and its score, if any match
+/// was found
+fn find_best_match(
     candidate: &str,
-    custom_words: &'a [String],
     custom_word_match_keys: &[CustomWordMatchKey],
     threshold: f64,
-) -> Option<(&'a String, f64)> {
+) -> Option<(usize, f64)> {
     if !is_supported_fuzzy_key(candidate) || candidate.chars().count() > 50 {
         return None;
     }
 
-    let mut best_match: Option<&String> = None;
+    let mut best_match: Option<usize> = None;
     let mut best_score = f64::MAX;
 
     for custom_word_key in custom_word_match_keys {
@@ -125,7 +125,7 @@ fn find_best_match<'a>(
 
         // Accept if the score is good enough (configurable threshold)
         if combined_score < threshold && combined_score < best_score {
-            best_match = Some(&custom_words[custom_word_key.word_index]);
+            best_match = Some(custom_word_key.word_index);
             best_score = combined_score;
         }
     }
@@ -149,8 +149,23 @@ fn find_best_match<'a>(
 /// # Returns
 /// The corrected text with custom words applied
 pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -> String {
+    let exact_case = vec![false; custom_words.len()];
+    correct_close_words(text, custom_words, &exact_case, &HashSet::new(), threshold).0
+}
+
+/// The fuzzy matcher behind [`apply_custom_words`], reporting what it changed
+/// as `(heard, word)` pairs. Words at the same index in `exact_case` are
+/// pasted exactly as spelled instead of taking the heard word's case, and
+/// a word already spelled exactly as one in `protected` is left alone.
+fn correct_close_words(
+    text: &str,
+    custom_words: &[String],
+    exact_case: &[bool],
+    protected: &HashSet<String>,
+    threshold: f64,
+) -> (String, Vec<(String, String)>) {
     if custom_words.is_empty() {
-        return text.to_string();
+        return (text.to_string(), Vec::new());
     }
 
     // Pre-compute normalized comparison keys to avoid repeated allocations.
@@ -162,10 +177,22 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
 
     let words: Vec<&str> = text.split_whitespace().collect();
     let mut result = Vec::new();
+    let mut changes = Vec::new();
     let mut i = 0;
 
     while i < words.len() {
-        let mut best_match: Option<(usize, &String, f64)> = None;
+        // A word already spelled as one of the user's own stays as it is.
+        let (prefix, suffix) = extract_punctuation(words[i]);
+        let core = words[i]
+            .get(prefix.len()..words[i].len() - suffix.len())
+            .unwrap_or(words[i]);
+        if protected.contains(core) {
+            result.push(words[i].to_string());
+            i += 1;
+            continue;
+        }
+
+        let mut best_match: Option<(usize, usize, f64)> = None;
 
         // Consider n-grams up to three words and choose the closest match. A
         // longest-first match can consume a following ordinary word when both
@@ -187,27 +214,39 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
             }
             let ngram = build_ngram(ngram_words);
 
-            if let Some((replacement, score)) =
-                find_best_match(&ngram, custom_words, &custom_word_match_keys, threshold)
+            if let Some((index, score)) =
+                find_best_match(&ngram, &custom_word_match_keys, threshold)
             {
                 let is_better = best_match
                     .as_ref()
                     .is_none_or(|(_, _, best_score)| score < *best_score);
                 if is_better {
-                    best_match = Some((n, replacement, score));
+                    best_match = Some((n, index, score));
                 }
             }
         }
 
-        if let Some((n, replacement, _)) = best_match {
+        if let Some((n, index, _)) = best_match {
             let ngram_words = &words[i..i + n];
+            let replacement = &custom_words[index];
             // Extract punctuation from first and last words of the n-gram.
             let (prefix, _) = extract_punctuation(ngram_words[0]);
             let (_, suffix) = extract_punctuation(ngram_words[n - 1]);
 
-            // Preserve case from first word.
-            let corrected = preserve_case_pattern(ngram_words[0], replacement);
+            // Preserve case from first word, unless the word is case sensitive.
+            let corrected = if exact_case.get(index).copied().unwrap_or(false) {
+                replacement.clone()
+            } else {
+                preserve_case_pattern(ngram_words[0], replacement)
+            };
 
+            let joined = ngram_words.join(" ");
+            let heard = joined
+                .get(prefix.len()..joined.len() - suffix.len())
+                .unwrap_or(&joined);
+            if heard != corrected {
+                changes.push((heard.to_string(), corrected.clone()));
+            }
             result.push(format!("{}{}{}", prefix, corrected, suffix));
             i += n;
         } else {
@@ -216,7 +255,171 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
         }
     }
 
-    result.join(" ")
+    (result.join(" "), changes)
+}
+
+/// One word in the user's Dictionary, as the corrector sees it.
+#[derive(Clone, Debug, Default)]
+pub struct DictionaryWord {
+    pub text: String,
+    /// Ways the model mishears the word, replaced whole-word in any case.
+    pub heard: Vec<String>,
+    /// Pasted with exactly this capitalisation.
+    pub case_sensitive: bool,
+    /// Sent to the model in its vocabulary hint.
+    pub in_hint: bool,
+}
+
+/// A change the Dictionary made to a transcript.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DictionaryCorrection {
+    pub from: String,
+    pub to: String,
+    /// A heard-as form matched, rather than a close miss.
+    pub heard: bool,
+}
+
+/// The Dictionary prepared for correcting transcripts, with every heard-as
+/// form compiled into one pattern, longest first.
+#[derive(Default)]
+pub struct CompiledDictionary {
+    words: Vec<DictionaryWord>,
+    heard: Option<Regex>,
+    /// Normalised heard form to an index into `words`.
+    heard_index: HashMap<String, usize>,
+    spelled: HashSet<String>,
+}
+
+/// Heard forms compare in lower case with single spaces.
+fn heard_key(form: &str) -> String {
+    form.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// A form can only be matched as whole words if it starts and ends with a
+/// letter or digit.
+fn matchable_form(form: &str) -> bool {
+    form.chars().next().is_some_and(char::is_alphanumeric)
+        && form.chars().last().is_some_and(char::is_alphanumeric)
+}
+
+/// An all-lowercase word replacing a capitalised one (at the start of a
+/// sentence) takes the capital. A word with capitals of its own, like
+/// "iPhone", is always pasted as spelled.
+fn capitalise_like(found: &str, word: &str) -> String {
+    let opens_upper = found.chars().next().is_some_and(char::is_uppercase);
+    if !opens_upper || word.chars().any(char::is_uppercase) {
+        return word.to_string();
+    }
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+impl CompiledDictionary {
+    pub fn new(words: Vec<DictionaryWord>) -> Self {
+        let mut heard_index = HashMap::new();
+        for (index, word) in words.iter().enumerate() {
+            for form in word.heard.iter().filter(|f| matchable_form(f)) {
+                heard_index.entry(heard_key(form)).or_insert(index);
+            }
+            // A case-sensitive word also puts its own capitals right.
+            if word.case_sensitive && matchable_form(&word.text) {
+                heard_index.entry(heard_key(&word.text)).or_insert(index);
+            }
+        }
+        let mut forms: Vec<&String> = heard_index.keys().collect();
+        forms.sort_by(|a, b| {
+            b.chars()
+                .count()
+                .cmp(&a.chars().count())
+                .then_with(|| a.cmp(b))
+        });
+        let heard = if forms.is_empty() {
+            None
+        } else {
+            let alternation = forms
+                .iter()
+                .map(|form| {
+                    form.split(' ')
+                        .map(regex::escape)
+                        .collect::<Vec<_>>()
+                        .join(r"\s+")
+                })
+                .collect::<Vec<_>>()
+                .join("|");
+            Regex::new(&format!(r"(?i)\b(?:{alternation})\b")).ok()
+        };
+        let spelled = words.iter().map(|w| w.text.clone()).collect();
+        Self {
+            words,
+            heard,
+            heard_index,
+            spelled,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.words.is_empty()
+    }
+
+    /// Heard-as forms first, then close misses of the words the model
+    /// didn't get in its hint (all of them when `prompted` is false).
+    pub fn apply(
+        &self,
+        text: &str,
+        prompted: bool,
+        threshold: f64,
+    ) -> (String, Vec<DictionaryCorrection>) {
+        let mut corrections = Vec::new();
+        let text = match &self.heard {
+            Some(pattern) => pattern
+                .replace_all(text, |caps: &regex::Captures| {
+                    let found = &caps[0];
+                    let Some(word) = self.heard_index.get(&heard_key(found)) else {
+                        return found.to_string();
+                    };
+                    let word = &self.words[*word];
+                    let out = if word.case_sensitive {
+                        word.text.clone()
+                    } else {
+                        capitalise_like(found, &word.text)
+                    };
+                    if out != found {
+                        corrections.push(DictionaryCorrection {
+                            from: found.to_string(),
+                            to: out.clone(),
+                            heard: true,
+                        });
+                    }
+                    out
+                })
+                .into_owned(),
+            None => text.to_string(),
+        };
+
+        let candidates: Vec<&DictionaryWord> = self
+            .words
+            .iter()
+            .filter(|w| !(prompted && w.in_hint))
+            .collect();
+        if candidates.is_empty() {
+            return (text, corrections);
+        }
+        let list: Vec<String> = candidates.iter().map(|w| w.text.clone()).collect();
+        let exact: Vec<bool> = candidates.iter().map(|w| w.case_sensitive).collect();
+        let (text, changes) = correct_close_words(&text, &list, &exact, &self.spelled, threshold);
+        corrections.extend(changes.into_iter().map(|(from, to)| DictionaryCorrection {
+            from,
+            to,
+            heard: false,
+        }));
+        (text, corrections)
+    }
 }
 
 /// Preserves the case pattern of the original word when applying a replacement
@@ -880,5 +1083,111 @@ mod tests {
         let custom_words = vec!["你号".to_string()];
         let result = apply_custom_words(text, &custom_words, 1.0);
         assert_eq!(result, text);
+    }
+
+    fn word(text: &str, heard: &[&str]) -> DictionaryWord {
+        DictionaryWord {
+            text: text.to_string(),
+            heard: heard.iter().map(|h| h.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn dictionary_replaces_heard_forms_in_any_case() {
+        let dict = CompiledDictionary::new(vec![
+            word("Dokploy", &["doc ploy"]),
+            word("Karol", &["carol"]),
+        ]);
+        let (text, fixes) = dict.apply("Restart Doc  ploy, then ask carol.", true, 0.18);
+        assert_eq!(text, "Restart Dokploy, then ask Karol.");
+        assert_eq!(
+            fixes,
+            vec![
+                DictionaryCorrection {
+                    from: "Doc  ploy".into(),
+                    to: "Dokploy".into(),
+                    heard: true
+                },
+                DictionaryCorrection {
+                    from: "carol".into(),
+                    to: "Karol".into(),
+                    heard: true
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn dictionary_heard_forms_match_whole_words_only() {
+        let dict = CompiledDictionary::new(vec![word("Karol", &["carol"])]);
+        let (text, fixes) = dict.apply("Christmas carols", true, 0.18);
+        assert_eq!(text, "Christmas carols");
+        assert!(fixes.is_empty());
+    }
+
+    #[test]
+    fn dictionary_prefers_the_longest_heard_form() {
+        let dict =
+            CompiledDictionary::new(vec![word("Net", &["net"]), word("Netbird", &["net bird"])]);
+        let (text, _) = dict.apply("open net bird now", true, 0.18);
+        assert_eq!(text, "open Netbird now");
+    }
+
+    #[test]
+    fn dictionary_keeps_a_sentence_capital() {
+        let dict = CompiledDictionary::new(vec![
+            word("iPhone", &["eye phone"]),
+            word("legato", &["le gato"]),
+        ]);
+        assert_eq!(
+            dict.apply("Eye phone is here", true, 0.18).0,
+            "iPhone is here"
+        );
+        assert_eq!(dict.apply("Le gato works", true, 0.18).0, "Legato works");
+    }
+
+    #[test]
+    fn dictionary_case_sensitive_words_fix_their_own_capitals() {
+        let mut gpu = word("GPU", &[]);
+        gpu.case_sensitive = true;
+        let dict = CompiledDictionary::new(vec![gpu]);
+        let (text, fixes) = dict.apply("the Gpu is fast", true, 0.18);
+        assert_eq!(text, "the GPU is fast");
+        assert_eq!(fixes.len(), 1);
+    }
+
+    #[test]
+    fn dictionary_fuzzy_matches_only_words_outside_the_hint() {
+        let mut in_hint = word("Dokploy", &[]);
+        in_hint.in_hint = true;
+        let dict = CompiledDictionary::new(vec![in_hint, word("Coolify", &[])]);
+        // Prompted: Dokploy was in the hint, so the model's spelling stands.
+        let (text, fixes) = dict.apply("deploy dokploi with coolifi", true, 0.18);
+        assert_eq!(text, "deploy dokploi with Coolify");
+        assert_eq!(
+            fixes,
+            vec![DictionaryCorrection {
+                from: "coolifi".into(),
+                to: "Coolify".into(),
+                heard: false
+            }]
+        );
+        // Not prompted: every word is matched.
+        let (text, _) = dict.apply("deploy dokploi with coolifi", false, 0.18);
+        assert_eq!(text, "deploy Dokploy with Coolify");
+    }
+
+    #[test]
+    fn dictionary_leaves_correct_words_and_unrelated_text_alone() {
+        let dict = CompiledDictionary::new(vec![word("Karol", &[]), word("Carol", &[])]);
+        let (text, fixes) = dict.apply("Carol and Karol met.", false, 0.18);
+        assert_eq!(text, "Carol and Karol met.");
+        assert!(fixes.is_empty());
+        let empty = CompiledDictionary::default();
+        assert_eq!(
+            empty.apply("keep  this\nas is", false, 0.18).0,
+            "keep  this\nas is"
+        );
     }
 }

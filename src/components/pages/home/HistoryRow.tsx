@@ -8,6 +8,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  SpellCheck,
   Star,
   Trash2,
   type LucideIcon,
@@ -15,7 +16,9 @@ import {
 import type { HistoryEntry } from "@/bindings";
 import { AudioPlayer } from "../../ui/AudioPlayer";
 import { ActionMenu, type ActionMenuItem } from "../../ui/ActionMenu";
+import { markFixes } from "../../../lib/utils/words";
 import { AppIcon } from "./AppIcon";
+import { FixWord } from "./FixWord";
 import { finalText, formatSpeech } from "./format";
 
 export interface RowActions {
@@ -48,10 +51,25 @@ const RowButton: React.FC<{
   </button>
 );
 
-const Dot: React.FC = () => (
-  <span aria-hidden="true" className="text-text-4">
-    ·
-  </span>
+/** A wrapping "a · b · c" line. Each item brings its own dot, and the dot
+ *  that would start a line sits in a clipped margin, so no line starts or
+ *  ends with one. */
+const MetaLine: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="mt-1.5 overflow-hidden text-[13px] text-text-3">
+    <div className="-ml-[21px] flex flex-wrap items-center gap-y-1">
+      {React.Children.toArray(children).map((item, i) => (
+        <span key={i} className="inline-flex min-w-0 items-center">
+          <span
+            aria-hidden="true"
+            className="w-[21px] flex-none text-center text-text-4"
+          >
+            ·
+          </span>
+          {item}
+        </span>
+      ))}
+    </div>
+  </div>
 );
 
 interface HistoryRowProps {
@@ -61,6 +79,10 @@ interface HistoryRowProps {
   menuOpen: boolean;
   setMenuOpen: (open: boolean) => void;
   onFocusRow: () => void;
+  /** This row is in Fix a word mode. */
+  fixing: boolean;
+  onFix: () => void;
+  onExitFix: (fixed: boolean) => void;
 }
 
 export const HistoryRow: React.FC<HistoryRowProps> = ({
@@ -70,6 +92,9 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
   menuOpen,
   setMenuOpen,
   onFocusRow,
+  fixing,
+  onFix,
+  onExitFix,
 }) => {
   const { t, i18n } = useTranslation();
   const [playing, setPlaying] = useState(false);
@@ -101,6 +126,17 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
   );
 
   const menuItems: ActionMenuItem[] = [
+    ...(failed
+      ? []
+      : [
+          {
+            id: "fix",
+            label: t("home.row.fixWord"),
+            icon: SpellCheck,
+            shortcut: "F",
+            onSelect: onFix,
+          },
+        ]),
     {
       id: "retry",
       label: t("home.row.transcribeAgain"),
@@ -187,16 +223,38 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
               {t("home.row.tryAgain")}
             </button>
           </p>
+        ) : fixing ? (
+          <FixWord entry={entry} onExit={onExitFix} />
         ) : (
           <p
             data-history-text
             className="cursor-text select-text whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-text"
           >
-            {text}
+            {markFixes(text, entry.fixes).map((seg, i) =>
+              seg.fix ? (
+                <span
+                  key={i}
+                  className="fixed-word"
+                  title={t("home.row.fixedTip", {
+                    word: seg.fix.to,
+                    heard: seg.fix.from,
+                    by: t(
+                      seg.fix.source === "manual"
+                        ? "home.row.fixedByYou"
+                        : "home.row.fixedByDictionary",
+                    ),
+                  })}
+                >
+                  {seg.text}
+                </span>
+              ) : (
+                <React.Fragment key={i}>{seg.text}</React.Fragment>
+              ),
+            )}
           </p>
         )}
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-text-3">
+        <MetaLine>
           {appLabel && (
             <span
               className="inline-flex min-w-0 items-center gap-1.5 text-text-2"
@@ -208,55 +266,33 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
               </span>
             </span>
           )}
-          {entry.model_name && (
-            <>
-              {appLabel && <Dot />}
-              <span>{entry.model_name}</span>
-            </>
-          )}
+          {entry.model_name && <span>{entry.model_name}</span>}
           {entry.speech_ms != null && entry.speech_ms > 0 && (
-            <>
-              <Dot />
-              <span>{formatSpeech(entry.speech_ms)}</span>
-            </>
+            <span>{formatSpeech(entry.speech_ms)}</span>
           )}
           {entry.status === "pasted" && (
-            <>
-              <Dot />
-              <span>
-                {entry.paste_app_name
-                  ? t("home.meta.pastedInto", { app: entry.paste_app_name })
-                  : entry.paste_ms != null
-                    ? t("home.meta.pastedIn", {
-                        time: formatSpeech(entry.paste_ms),
-                      })
-                    : t("home.meta.pasted")}
-              </span>
-            </>
+            <span>
+              {entry.paste_app_name
+                ? t("home.meta.pastedInto", { app: entry.paste_app_name })
+                : entry.paste_ms != null
+                  ? t("home.meta.pastedIn", {
+                      time: formatSpeech(entry.paste_ms),
+                    })
+                  : t("home.meta.pasted")}
+            </span>
           )}
           {entry.status === "not_pasted" && (
-            <>
-              <Dot />
-              <span>{t("home.meta.notPasted")}</span>
-            </>
+            <span>{t("home.meta.notPasted")}</span>
           )}
           {entry.transform && (
-            <>
-              <Dot />
-              <span>
-                {t("home.meta.transformed", { name: entry.transform })}
-              </span>
-            </>
+            <span>{t("home.meta.transformed", { name: entry.transform })}</span>
           )}
           {entry.fixes.length > 0 && (
-            <>
-              <Dot />
-              <span className="text-teal-700">
-                {t("home.meta.fixes", { count: entry.fixes.length })}
-              </span>
-            </>
+            <span className="text-teal-700">
+              {t("home.meta.fixes", { count: entry.fixes.length })}
+            </span>
           )}
-        </div>
+        </MetaLine>
 
         {entry.status === "paste_failed" && (
           <p className="mt-1 text-[13px] text-danger">
@@ -276,7 +312,7 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
       </div>
 
       <div
-        className={`relative flex items-start gap-0.5 transition-opacity duration-[var(--dur-1)] group-hover:opacity-100 group-hover:duration-0 group-focus-within:opacity-100 ${menuOpen || playing ? "opacity-100" : "opacity-0"}`}
+        className={`relative flex items-start gap-0.5 transition-opacity duration-[var(--dur-1)] group-hover:opacity-100 group-hover:duration-0 group-focus-within:opacity-100 ${menuOpen || playing || fixing ? "opacity-100" : "opacity-0"}`}
       >
         <RowButton
           label={playing ? t("home.row.hidePlayer") : t("home.row.play")}
@@ -289,6 +325,14 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
             label={copied ? t("home.row.copied") : t("home.row.copy")}
             icon={copied ? Check : Copy}
             onClick={() => copy(text)}
+          />
+        )}
+        {!failed && (
+          <RowButton
+            label={t("home.row.fixWordKey")}
+            icon={SpellCheck}
+            pressed={fixing}
+            onClick={fixing ? () => onExitFix(false) : onFix}
           />
         )}
         <RowButton
