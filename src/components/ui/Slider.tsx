@@ -48,35 +48,31 @@ export const Slider: React.FC<SliderProps> = ({
       layout="horizontal"
       disabled={disabled}
     >
-      <div className="w-full">
-        <div className="flex items-center space-x-1 h-6">
-          <input
-            type="range"
-            aria-label={label}
-            min={min}
-            max={max}
-            step={step}
-            value={value}
-            onChange={handleChange}
-            disabled={disabled}
-            className="flex-grow h-2 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-logo-primary disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              background: `linear-gradient(to right, var(--color-background-ui) ${
-                ((value - min) / (max - min)) * 100
-              }%, rgba(128, 128, 128, 0.2) ${
-                ((value - min) / (max - min)) * 100
-              }%)`,
-            }}
-          />
-          {showValue && (
-            <span className="text-sm font-medium text-text/90 w-12 text-end">
-              {formatValue(value)}
-            </span>
-          )}
-          {onReset && (
-            <ResetButton onClick={onReset} disabled={disabled || isResetting} />
-          )}
-        </div>
+      <div className="flex items-center gap-3">
+        <input
+          type="range"
+          aria-label={label}
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={handleChange}
+          disabled={disabled}
+          className="slider"
+          style={
+            {
+              "--pct": `${((value - min) / (max - min)) * 100}%`,
+            } as React.CSSProperties
+          }
+        />
+        {showValue && (
+          <span className="min-w-12 text-end text-[13px] tabular-nums text-text-2">
+            {formatValue(value)}
+          </span>
+        )}
+        {onReset && (
+          <ResetButton onClick={onReset} disabled={disabled || isResetting} />
+        )}
       </div>
     </SettingContainer>
   );

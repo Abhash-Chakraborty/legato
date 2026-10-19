@@ -5,8 +5,8 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { arch } from "@tauri-apps/plugin-os";
-import { ProgressBar } from "../shared";
 import { useSettings } from "../../hooks/useSettings";
+import { useUpdateStore, type UpdateStatus } from "../../stores/updateStore";
 import { commands } from "../../bindings";
 import {
   resolvePortableInstallerUrl,
@@ -63,9 +63,13 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
 
     checkForUpdates();
 
-    // Listen for update check events
+    // Listen for update check events (the tray menu and Settings › About)
     const updateUnlisten = listen("check-for-updates", () => {
       handleManualUpdateCheck();
+    });
+    // Settings › About's Install button
+    const installUnlisten = listen("install-update", () => {
+      installUpdate();
     });
 
     return () => {
@@ -73,6 +77,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
         clearTimeout(upToDateTimeoutRef.current);
       }
       updateUnlisten.then((fn) => fn());
+      installUnlisten.then((fn) => fn());
     };
   }, [settingsLoaded, updateChecksEnabled]);
 
@@ -170,37 +175,31 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
     }
   };
 
-  // Update status functions
-  const getUpdateStatusText = () => {
-    if (!updateChecksEnabled) {
-      return t("footer.updateCheckingDisabled");
-    }
-    if (isInstalling) {
-      return downloadProgress > 0 && downloadProgress < 100
-        ? t("footer.downloading", {
-            progress: downloadProgress.toString().padStart(3),
-          })
-        : downloadProgress === 100
-          ? t("footer.installing")
-          : t("footer.preparing");
-    }
-    if (isChecking) return t("footer.checkingUpdates");
-    if (showUpToDate) return t("footer.upToDate");
-    if (updateAvailable) return t("footer.updateAvailableShort");
-    return t("footer.checkForUpdates");
-  };
+  // Share the state with Settings › About.
+  const status: UpdateStatus = !updateChecksEnabled
+    ? "idle"
+    : isInstalling
+      ? "installing"
+      : isChecking
+        ? "checking"
+        : updateAvailable
+          ? "available"
+          : showUpToDate
+            ? "upToDate"
+            : "idle";
+  useEffect(() => {
+    useUpdateStore.getState().setStatus(status);
+  }, [status]);
+  useEffect(() => {
+    useUpdateStore.getState().setProgress(downloadProgress);
+  }, [downloadProgress]);
 
-  const getUpdateStatusAction = () => {
-    if (!updateChecksEnabled) return undefined;
-    if (updateAvailable && !isInstalling) return installUpdate;
-    if (!isChecking && !isInstalling && !updateAvailable)
-      return handleManualUpdateCheck;
-    return undefined;
-  };
-
-  const isUpdateDisabled = !updateChecksEnabled || isChecking || isInstalling;
-  const isUpdateClickable =
-    !isUpdateDisabled && (updateAvailable || (!isChecking && !showUpToDate));
+  const installingText =
+    downloadProgress > 0 && downloadProgress < 100
+      ? t("footer.downloading", { progress: downloadProgress })
+      : downloadProgress === 100
+        ? t("footer.installing")
+        : t("footer.preparing");
 
   // When no installer could be resolved for this target the button falls back to
   // the releases index, so the dialog has to say "browse" rather than "download".
@@ -241,37 +240,34 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
           </div>
         </div>
       )}
-      <div className={`flex items-center gap-3 ${className}`}>
-        {isUpdateClickable ? (
-          <button
-            onClick={getUpdateStatusAction()}
-            disabled={isUpdateDisabled}
-            className={`transition-colors disabled:opacity-50 tabular-nums ${
-              updateAvailable
-                ? "text-logo-primary hover:text-logo-primary/80 font-medium"
-                : "text-text/60 hover:text-text/80"
-            }`}
-          >
-            {getUpdateStatusText()}
-          </button>
-        ) : (
-          <span className="text-text/60 tabular-nums">
-            {getUpdateStatusText()}
-          </span>
-        )}
-
-        {isInstalling && downloadProgress > 0 && downloadProgress < 100 && (
-          <ProgressBar
-            progress={[
-              {
-                id: "update",
-                percentage: downloadProgress,
-              },
-            ]}
-            size="large"
-          />
-        )}
-      </div>
+      {/* The title bar only mentions updates when there is something to
+          act on or a check you asked for has finished. */}
+      {status === "available" && (
+        <button
+          type="button"
+          onClick={installUpdate}
+          className={`inline-flex h-7 items-center gap-2 rounded-full bg-teal-50 px-3 text-[13px] font-medium text-teal-700 transition-colors duration-[var(--dur-1)] hover:bg-teal-100 hover:duration-0 ${className}`}
+        >
+          <span className="h-[7px] w-[7px] rounded-full bg-teal-600" />
+          {t("footer.updateAvailableShort")}
+        </button>
+      )}
+      {status === "installing" && (
+        <span
+          role="status"
+          className={`inline-flex h-7 items-center gap-2 px-2 text-[13px] tabular-nums text-text-2 ${className}`}
+        >
+          {installingText}
+        </span>
+      )}
+      {status === "upToDate" && (
+        <span
+          role="status"
+          className={`inline-flex h-7 items-center px-2 text-[13px] text-text-3 ${className}`}
+        >
+          {t("footer.upToDate")}
+        </span>
+      )}
     </>
   );
 };

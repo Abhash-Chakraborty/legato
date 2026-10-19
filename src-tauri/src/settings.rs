@@ -442,6 +442,10 @@ pub struct AppSettings {
     pub append_trailing_space: bool,
     #[serde(default = "default_theme")]
     pub theme: Theme,
+    /// Use the standard Windows title bar instead of Legato's own. Applied when
+    /// the main window is created and whenever the setting changes.
+    #[serde(default)]
+    pub native_title_bar: bool,
     #[serde(default)]
     pub experimental_enabled: bool,
     #[serde(default)]
@@ -895,6 +899,7 @@ pub fn get_default_settings() -> AppSettings {
         mute_while_recording: false,
         append_trailing_space: false,
         theme: default_theme(),
+        native_title_bar: false,
         experimental_enabled: false,
         lazy_stream_close: false,
         keyboard_implementation: KeyboardImplementation::default(),

@@ -1,0 +1,317 @@
+/* Legato controls, ported from the design prototype (design.css). Each one
+   carries its hover, pressed, keyboard-focus and disabled states. Hover
+   arrives at once and fades out over --dur-1; presses are immediate. */
+
+/* ------------------------------------------------------------- toggle */
+.toggle {
+  --w: 40px;
+  --h: 22px;
+  --k: 16px;
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: var(--w);
+  height: var(--h);
+  border-radius: 999px;
+  background: var(--border-strong);
+  cursor: pointer;
+  transition: background-color var(--dur-2) var(--ease-out);
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: var(--k);
+  height: var(--k);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition:
+    transform var(--dur-2) var(--ease-out),
+    width var(--dur-1) var(--ease-out);
+}
+.toggle:hover {
+  background: var(--text-4);
+}
+.toggle:active::after {
+  width: calc(var(--k) + 4px);
+  transition-duration: 0ms;
+}
+.toggle[aria-checked="true"] {
+  background: var(--toggle-on);
+}
+.toggle[aria-checked="true"]:hover {
+  background: var(--toggle-on-hover);
+}
+.toggle[aria-checked="true"]::after {
+  transform: translateX(calc(var(--w) - var(--k) - 6px));
+}
+.toggle[aria-checked="true"]:active::after {
+  transform: translateX(calc(var(--w) - var(--k) - 10px));
+}
+.toggle:focus-visible {
+  outline-offset: 3px;
+}
+.toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.toggle:disabled:hover {
+  background: var(--border-strong);
+}
+.toggle[aria-checked="true"]:disabled:hover {
+  background: var(--toggle-on);
+}
+
+/* --------------------------------------------------------- dropdown */
+.select-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 200px;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out);
+}
+.select-btn:hover {
+  border-color: var(--text-4);
+  background: var(--surface-2);
+  transition-duration: 0ms;
+}
+.select-btn[aria-expanded="true"] {
+  border-color: var(--teal-600);
+  box-shadow: 0 0 0 3px var(--teal-50);
+}
+.select-btn .chev {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--text-3);
+  transition: transform var(--dur-2) var(--ease-out);
+}
+.select-btn[aria-expanded="true"] .chev {
+  transform: rotate(180deg);
+}
+.select-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.select-btn:disabled:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+/* ------------------------------------------------------------- menus */
+.menu {
+  position: absolute;
+  z-index: 60;
+  min-width: 200px;
+  max-height: 300px;
+  padding: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+  transform-origin: top;
+  animation: menu-in var(--dur-2) var(--ease-out) both;
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.menu-item {
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: var(--r-xs);
+  color: var(--text);
+  font-size: 14px;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+.menu-item:hover,
+.menu-item.is-active {
+  background: var(--surface-2);
+  transition-duration: 0ms;
+}
+.menu-item:active {
+  background: var(--surface-3);
+}
+.menu-item:focus-visible {
+  outline-offset: -2px;
+}
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.menu-item .check {
+  margin-inline-start: auto;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--teal-700);
+}
+
+/* ------------------------------------------------------------ inputs */
+.input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out);
+}
+textarea.input {
+  min-height: 96px;
+  padding: 10px 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.input::placeholder {
+  color: var(--text-4);
+}
+.input:hover {
+  border-color: var(--text-4);
+}
+.input:focus,
+.input:focus-visible {
+  border-color: var(--teal-600);
+  box-shadow: 0 0 0 3px var(--teal-50);
+  outline: none;
+}
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.input.compact {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  border-radius: var(--r-sm);
+}
+
+/* ------------------------------------------------------------ slider */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 180px;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--teal-700) var(--pct, 50%),
+    var(--border-strong) var(--pct, 50%)
+  );
+  cursor: pointer;
+  outline: none;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--teal-700);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out);
+}
+.slider::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+}
+.slider:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 6px var(--teal-50);
+}
+.slider:focus-visible {
+  outline: none;
+}
+.slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--focus-outer);
+  outline-offset: 2px;
+}
+.slider:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------- key caps */
+.kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  box-shadow: 0 1px 0 var(--border-strong);
+  color: var(--text-2);
+  font: 500 12px/1 var(--sans);
+}
+
+/* --------------------------------------------------- saved indicator */
+.saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--teal-700);
+  font-size: 12px;
+  opacity: 0;
+  transform: translateY(2px);
+  transition:
+    opacity var(--dur-2) var(--ease-out),
+    transform var(--dur-2) var(--ease-out);
+  pointer-events: none;
+}
+.saved.show {
+  opacity: 1;
+  transform: none;
+}
+
+/* ------------------------------------------------- page transitions */
+.view-enter {
+  animation: view-in var(--dur-3) var(--ease-out) both;
+}
+@keyframes view-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

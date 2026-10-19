@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "../ui/Button";
 import { Dropdown, DropdownOption } from "../ui/Dropdown";
 import { PlayIcon } from "lucide-react";
@@ -7,14 +8,15 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useSettings } from "../../hooks/useSettings";
 
 interface SoundPickerProps {
-  label: string;
-  description: string;
+  label?: string;
+  description?: string;
 }
 
 export const SoundPicker: React.FC<SoundPickerProps> = ({
   label,
   description,
 }) => {
+  const { t } = useTranslation();
   const { getSetting, updateSetting } = useSettings();
   const playTestSound = useSettingsStore((state) => state.playTestSound);
   const customSounds = useSettingsStore((state) => state.customSounds);
@@ -45,8 +47,8 @@ export const SoundPicker: React.FC<SoundPickerProps> = ({
 
   return (
     <SettingContainer
-      title={label}
-      description={description}
+      title={label ?? t("settings.debug.soundTheme.label")}
+      description={description ?? t("settings.debug.soundTheme.description")}
       grouped
       layout="horizontal"
     >
@@ -62,10 +64,12 @@ export const SoundPicker: React.FC<SoundPickerProps> = ({
         <Button
           variant="ghost"
           size="sm"
+          className="w-[30px] px-0"
           onClick={handlePlayBothSounds}
-          title="Preview sound theme (plays start then stop)"
+          title={t("settings.debug.soundTheme.play")}
+          aria-label={t("settings.debug.soundTheme.play")}
         >
-          <PlayIcon className="h-4 w-4" />
+          <PlayIcon className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
     </SettingContainer>

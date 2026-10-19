@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { Check, Copy, FolderOpen, RotateCcw, Star, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Page } from "../../shell/Page";
 import { toast } from "sonner";
 import {
   commands,
@@ -234,7 +235,7 @@ export const HistorySettings: React.FC = () => {
     );
   } else if (entries.length === 0) {
     content = (
-      <div className="px-4 py-3 text-center text-text/60">
+      <div className="px-6 py-12 text-center text-sm text-text-3">
         {t("settings.history.empty")}
       </div>
     );
@@ -242,7 +243,7 @@ export const HistorySettings: React.FC = () => {
     content = (
       <>
         <AudioPlayerGroup>
-          <div className="divide-y divide-mid-gray/20">
+          <div className="divide-y divide-line">
             {entries.map((entry) => (
               <HistoryEntryComponent
                 key={entry.id}
@@ -263,24 +264,20 @@ export const HistorySettings: React.FC = () => {
   }
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
-      <div className="space-y-2">
-        <div className="px-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-              {t("settings.history.title")}
-            </h2>
-          </div>
-          <OpenRecordingsButton
-            onClick={openRecordingsFolder}
-            label={t("settings.history.openFolder")}
-          />
-        </div>
-        <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
-          {content}
-        </div>
+    <Page
+      title={t("home.title")}
+      subtitle={t("home.subtitle")}
+      actions={
+        <OpenRecordingsButton
+          onClick={openRecordingsFolder}
+          label={t("settings.history.openFolder")}
+        />
+      }
+    >
+      <div className="overflow-visible rounded-[var(--r-lg)] border border-line bg-surface">
+        {content}
       </div>
-    </div>
+    </Page>
   );
 };
 

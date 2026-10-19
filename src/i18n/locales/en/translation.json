@@ -2,8 +2,8 @@
   "tray": {
     "settings": "Settings...",
     "checkUpdates": "Check for Updates...",
-    "copyLastTranscript": "Copy Last Transcript",
-    "unloadModel": "Unload Model",
+    "copyLastTranscript": "Copy last transcript",
+    "unloadModel": "Unload model",
     "model": "Model",
     "quit": "Quit",
     "cancel": "Cancel"
@@ -14,13 +14,12 @@
     "uninstallHandy": "Your settings, history and recordings are now in Legato.\n\nUninstall Handy so the two apps don't both run and fight over the same shortcut. Open Windows Settings to uninstall it?"
   },
   "sidebar": {
-    "general": "General",
+    "label": "Pages",
+    "home": "Home",
+    "dictionary": "Dictionary",
+    "transforms": "Transforms",
     "models": "Models",
-    "advanced": "Advanced",
-    "postProcessing": "Post Process",
-    "history": "History",
-    "debug": "Debug",
-    "about": "About"
+    "settings": "Settings"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -97,12 +96,12 @@
     "verifyingGeneric": "Verifying...",
     "downloading": "Downloading {{percentage}}%",
     "downloadingMultiple": "Downloading {{count}} models...",
-    "modelReady": "Model Ready",
+    "modelReady": "Model ready",
     "loading": "Loading {{modelName}}...",
     "loadingGeneric": "Loading...",
-    "modelError": "Model Error",
-    "modelUnloaded": "Model Unloaded",
-    "noModelDownloadRequired": "No Model - Download Required",
+    "modelError": "Model error",
+    "modelUnloaded": "Model unloaded",
+    "noModelDownloadRequired": "No model downloaded",
     "deleteModel": "Delete {{modelName}}",
     "downloadSpeed": "{{speed}} MB/s",
     "cancel": "Cancel",
@@ -115,7 +114,8 @@
       "translation": "Can translate to English",
       "translate": "Translate",
       "streaming": "Shows live transcription as you speak"
-    }
+    },
+    "manage": "Manage models"
   },
   "settings": {
     "modelSettings": {
@@ -132,16 +132,16 @@
         "pressKeys": "Press keys...",
         "bindings": {
           "transcribe": {
-            "name": "Transcribe Shortcut",
-            "description": "The keyboard shortcut to record and transcribe your voice."
+            "name": "Dictate",
+            "description": "Starts listening in any app, even with this window closed."
           },
           "cancel": {
-            "name": "Cancel Shortcut",
-            "description": "The keyboard shortcut to cancel the current recording."
+            "name": "Cancel",
+            "description": "Stops a recording without pasting anything."
           },
           "transcribe_with_post_process": {
-            "name": "Post-Processing Hotkey",
-            "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
+            "name": "Dictate then transform",
+            "description": "Dictates, then runs your selected prompt on the text before pasting it."
           }
         },
         "errors": {
@@ -151,36 +151,40 @@
         }
       },
       "language": {
-        "title": "Language",
-        "description": "Select the language for speech recognition. Auto will automatically determine the language, while selecting a specific language can improve accuracy for that language.",
+        "title": "Spoken language",
+        "description": "Auto detects the language each time. Pick one if it guesses wrong on short dictations.",
         "searchPlaceholder": "Search languages...",
         "noResults": "No languages found",
         "auto": "Auto"
       },
       "shortcutActivation": {
-        "title": "Shortcut Behavior",
-        "description": "Choose how the transcribe shortcut starts and stops recording.",
+        "title": "Shortcut behaviour",
+        "description": "How the Dictate shortcut starts and stops listening.",
         "options": {
           "holdOrToggle": "Auto",
           "pushToTalk": "Hold",
           "toggle": "Toggle"
         },
         "descriptions": {
-          "hold_or_toggle": "Hold to record or tap to toggle",
-          "push_to_talk": "Records while you hold the shortcut",
-          "toggle": "Tap the shortcut to start recording, tap again to stop"
+          "hold_or_toggle": "Hold to talk and let go to paste, or tap to keep listening until you tap again.",
+          "push_to_talk": "Legato listens only while you hold the keys.",
+          "toggle": "Tap to start listening, tap again to paste."
         }
+      },
+      "nativeTitleBar": {
+        "label": "Native title bar",
+        "description": "Uses the standard Windows title bar instead of Legato's own."
       }
     },
     "models": {
-      "title": "Transcription Models",
+      "title": "Models",
       "description": "Select a transcription model or download additional models. Different models offer varying levels of accuracy and speed.",
       "searchPlaceholder": "Search models by name…",
-      "yourModels": "Downloaded Models",
+      "yourModels": "Downloaded models",
       "availableModels": "Available to Download",
       "deleteConfirm": "Are you sure you want to delete {{modelName}}? You will need to download it again to use it.",
       "deleteActiveConfirm": "{{modelName}} is your active model. Deleting it will stop transcriptions until you select a new model. Are you sure?",
-      "deleteTitle": "Delete Model",
+      "deleteTitle": "Delete model",
       "retiredNotice": {
         "title": "Old models no longer work with Legato",
         "description": "They're taking up {{size}} on your computer.",
@@ -189,7 +193,7 @@
         "deleteFailed": "Some old models couldn't be deleted. Check the log for details."
       },
       "filters": {
-        "allLanguages": "All Languages",
+        "allLanguages": "All languages",
         "streaming": "Filter models that support live streaming transcription",
         "translation": "Filter models that support translation to English"
       },
@@ -202,29 +206,29 @@
       "title": "Sound",
       "microphone": {
         "title": "Microphone",
-        "description": "Select your preferred microphone device",
+        "description": "The microphone Legato listens to. Default follows Windows Sound settings.",
         "placeholder": "Select microphone...",
         "loading": "Loading..."
       },
       "channel": {
-        "title": "Input Channel",
-        "description": "Select which input channel to record from. Use this if your audio interface has multiple inputs.",
+        "title": "Input channel",
+        "description": "For audio interfaces where the microphone is on one input.",
         "average": "Average all channels",
         "channel": "Channel {{n}}"
       },
       "audioFeedback": {
-        "label": "Audio Feedback",
-        "description": "Play sound when recording starts and stops"
+        "label": "Sound feedback",
+        "description": "Plays a short sound when Legato starts and stops listening."
       },
       "outputDevice": {
-        "title": "Output Device",
-        "description": "Select your preferred audio output device for feedback sounds",
+        "title": "Play sounds through",
+        "description": "Where the start and stop sounds play.",
         "placeholder": "Select output device...",
         "loading": "Loading..."
       },
       "volume": {
         "title": "Volume",
-        "description": "Adjust the volume of audio feedback sounds"
+        "description": "How loud the start and stop sounds are."
       }
     },
     "advanced": {
@@ -240,34 +244,34 @@
         "description": "Enable experimental features that are still in development."
       },
       "lazyStreamClose": {
-        "label": "Keep Mic Open Between Transcriptions",
-        "description": "Keeps the microphone stream open for 30 seconds after recording stops, reducing latency for back-to-back transcriptions. May degrade Bluetooth audio quality while active."
+        "label": "Keep the microphone open",
+        "description": "Keeps the microphone open for 30 seconds after a dictation, so the next one starts without a delay. Bluetooth headsets stay in hands-free mode while it's open."
       },
       "acceleration": {
         "transcribe": {
-          "title": "Hardware Acceleration",
-          "description": "Choose the hardware used for transcription. Auto uses the GPU when available and falls back to the CPU."
+          "title": "GPU acceleration",
+          "description": "Auto uses the graphics card when it can and switches to the CPU if the driver fails."
         },
         "gpuDevice": {
           "auto": "Auto"
         }
       },
       "startHidden": {
-        "label": "Start Hidden",
-        "description": "Launch to system tray without opening the window."
+        "label": "Start hidden",
+        "description": "Opens to the tray instead of showing this window."
       },
       "autostart": {
-        "label": "Launch on Startup",
-        "description": "Automatically start Legato when you log in to your computer."
+        "label": "Launch at login",
+        "description": "Starts Legato when you sign in to Windows."
       },
       "showTrayIcon": {
-        "label": "Show Tray Icon",
-        "description": "Display the Legato icon in the system tray."
+        "label": "Show tray icon",
+        "description": "The tray icon opens this window and has quick actions."
       },
       "overlay": {
         "style": {
-          "title": "Overlay",
-          "description": "Choose the recording overlay: None hides it, Minimal shows a compact pill, Live shows transcription in real time as you speak (streaming-capable models only — look for the Streaming badge in the model picker).",
+          "title": "Style",
+          "description": "Minimal shows a small pill. Live shows the words as you speak, with streaming models only. None hides the bar.",
           "options": {
             "none": "None",
             "minimal": "Minimal",
@@ -275,8 +279,8 @@
           }
         },
         "position": {
-          "title": "Overlay Position",
-          "description": "Where the overlay appears on screen during recording and transcription.",
+          "title": "Position",
+          "description": "Where the Legato bar appears while you dictate.",
           "options": {
             "bottom": "Bottom",
             "top": "Top"
@@ -284,8 +288,8 @@
         }
       },
       "pasteMethod": {
-        "title": "Paste Method",
-        "description": "Choose how text is inserted. Direct: simulates typing via system input. None: skips paste, only updates history/clipboard.",
+        "title": "Paste method",
+        "description": "How the text gets into the app. Ctrl+V works in most apps.",
         "options": {
           "clipboard": "Clipboard (Ctrl+V)",
           "clipboardCtrlShiftV": "Clipboard (Ctrl+Shift+V)",
@@ -295,16 +299,16 @@
         }
       },
       "clipboardHandling": {
-        "title": "Clipboard Handling",
-        "description": "Don't Modify Clipboard preserves your current clipboard contents after transcription. Copy to Clipboard leaves the transcription result in your clipboard after pasting.",
+        "title": "Clipboard after pasting",
+        "description": "Put back what you had copied, or leave the transcript there to paste again.",
         "options": {
-          "dontModify": "Don't Modify Clipboard",
+          "dontModify": "Don't modify clipboard",
           "copyToClipboard": "Copy to Clipboard"
         }
       },
       "autoSubmit": {
-        "title": "Auto Submit",
-        "description": "Automatically send the selected key combination after text insertion.",
+        "title": "Auto-submit after paste",
+        "description": "Presses a key after pasting, to send a message or a prompt.",
         "options": {
           "off": "Off",
           "enter": "Enter",
@@ -314,11 +318,11 @@
       },
       "translateToEnglish": {
         "label": "Translate to English",
-        "description": "Automatically translate speech from other languages to English during transcription."
+        "description": "Writes English whatever language you speak, without an AI provider."
       },
       "modelUnload": {
-        "title": "Unload Model",
-        "description": "Automatically free GPU/CPU memory when the model hasn't been used for the specified time",
+        "title": "Unload model after",
+        "description": "Frees memory when you haven't dictated for that long. The next dictation waits a moment while the model loads.",
         "options": {
           "never": "Never",
           "immediately": "Immediately",
@@ -331,38 +335,38 @@
         }
       },
       "customWords": {
-        "title": "Custom Words",
-        "description": "Help supported models recognize names and specialized terms. Fuzzy correction is currently limited to words using A–Z and numbers.",
+        "title": "Your words",
+        "description": "Names and terms Legato should spell your way. Correcting near misses works for words made of A–Z and numbers.",
         "placeholder": "Add a word",
         "add": "Add",
         "remove": "Remove {{word}}",
         "duplicate": "\"{{word}}\" already exists"
       },
       "voiceActivityDetection": {
-        "title": "Voice Activity Detection",
-        "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
+        "title": "Voice activity detection",
+        "description": "Cuts silence before transcribing, so pauses don't turn into made-up words."
       },
       "longFormChunking": {
-        "title": "Long Audio Chunking",
-        "description": "Splits long recordings at pauses before transcribing, which typically improves transcription performance."
+        "title": "Split long recordings",
+        "description": "Splits long recordings at pauses, so a long dictation doesn't stall."
       },
       "vadBackend": {
-        "title": "Voice Activity Backend",
-        "description": "Choose the detector used to filter silence. Earshot is experimental; switch back to Silero if speech is clipped or noise is retained.",
+        "title": "Voice detection engine",
+        "description": "Silero is more accurate. Earshot is lighter on older CPUs and still experimental.",
         "options": {
           "silero": "Silero",
           "earshot": "Earshot"
         }
       },
       "fillerWordRemoval": {
-        "title": "Remove Filler Words",
-        "description": "Removes common hesitation words from transcriptions. Turn off to keep them."
+        "title": "Remove filler words",
+        "description": "Takes out um, uh and other hesitations."
       },
       "chineseScript": {
-        "title": "Chinese Script",
-        "description": "Writes Mandarin and Cantonese transcriptions in Simplified or Traditional characters. Other languages are left unchanged.",
+        "title": "Chinese script",
+        "description": "Writes Mandarin and Cantonese in Simplified or Traditional characters.",
         "options": {
-          "asTranscribed": "As Transcribed",
+          "asTranscribed": "As transcribed",
           "simplified": "Simplified",
           "traditional": "Traditional"
         }
@@ -376,25 +380,25 @@
         "title": "API",
         "provider": {
           "title": "Provider",
-          "description": "Select an OpenAI-compatible or Anthropic-compatible provider."
+          "description": "An OpenAI-compatible or Anthropic-compatible provider."
         },
         "apiFormat": {
-          "title": "API Format",
+          "title": "API format",
           "description": "Request format expected by your custom endpoint.",
           "options": {
-            "openai": "OpenAI Compatible (Chat Completions)",
+            "openai": "OpenAI compatible (Chat Completions)",
             "anthropic": "Anthropic Messages"
           }
         },
         "baseUrl": {
           "title": "Base URL",
-          "description": "API base URL for the selected provider. Only the custom provider can be edited.",
+          "description": "The provider's API address. Only Custom can be edited.",
           "placeholder": "https://api.openai.com/v1",
           "placeholderAnthropic": "https://api.anthropic.com/v1"
         },
         "apiKey": {
-          "title": "API Key",
-          "description": "API key for the selected provider.",
+          "title": "API key",
+          "description": "The key for this provider.",
           "placeholder": "sk-..."
         },
         "model": {
@@ -409,20 +413,20 @@
       "prompts": {
         "title": "Prompt",
         "selectedPrompt": {
-          "title": "Selected Prompt",
+          "title": "Selected prompt",
           "description": "Select a template for refining transcriptions or create a new one. Use ${output} inside the prompt text to reference the captured transcript."
         },
         "noPrompts": "No prompts available",
         "selectPrompt": "Select a prompt",
-        "createNew": "Create New Prompt",
-        "promptLabel": "Prompt Label",
+        "createNew": "Create new prompt",
+        "promptLabel": "Prompt label",
         "promptLabelPlaceholder": "Enter prompt name",
-        "promptInstructions": "Prompt Instructions",
+        "promptInstructions": "Prompt instructions",
         "promptInstructionsPlaceholder": "Write the instructions to run after transcription. Example: Improve grammar and clarity for the following text: ${output}",
         "promptTip": "Tip: Use <code>${output}</code> to insert the transcribed text in your prompt.",
-        "updatePrompt": "Update Prompt",
-        "deletePrompt": "Delete Prompt",
-        "createPrompt": "Create Prompt",
+        "updatePrompt": "Update prompt",
+        "deletePrompt": "Delete prompt",
+        "createPrompt": "Create prompt",
         "cancel": "Cancel",
         "selectToEdit": "Select a prompt above to view and edit its details.",
         "createFirst": "Click 'Create New Prompt' above to create your first post-processing prompt."
@@ -430,7 +434,7 @@
     },
     "history": {
       "title": "History",
-      "openFolder": "Open Recordings Folder",
+      "openFolder": "Open recordings folder",
       "loading": "Loading history...",
       "empty": "No transcriptions yet. Start recording to build your history!",
       "copyToClipboard": "Copy transcription to clipboard",
@@ -447,16 +451,16 @@
     "debug": {
       "title": "Debug",
       "logDirectory": {
-        "title": "Log Directory",
-        "description": "Location where log files are stored"
+        "title": "Logs",
+        "description": "Where Legato writes its log files."
       },
       "logLevel": {
-        "title": "Log Level",
-        "description": "Set the verbosity of logging"
+        "title": "Log level",
+        "description": "Debug and Trace log every audio buffer and slow Legato down."
       },
       "liveLogs": {
-        "title": "Live Logs",
-        "description": "Stream application logs in real time to diagnose issues without opening the log file. Only logs emitted while this panel is open are shown; respects the Log Level setting above.",
+        "title": "Live logs",
+        "description": "The log as it's written, filtered by the level above. Only lines written while this panel is open show up.",
         "live": "Live",
         "paused": "Paused",
         "pause": "Pause",
@@ -466,40 +470,41 @@
         "empty": "Waiting for logs… Entries appear here as the app emits them."
       },
       "updateChecks": {
-        "label": "Check for Updates",
-        "description": "Automatically check for new versions of Legato",
+        "label": "Check for updates automatically",
+        "description": "Looks for a new version when Legato starts. Nothing installs without you.",
         "lockedDescription": "Disabled by system configuration (LEGATO_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
-        "title": "Preview What's New",
-        "description": "Open the latest bundled release note without marking it as seen",
+        "title": "What's new",
+        "description": "The dialog shown after an update, without marking it as seen.",
         "button": "Preview",
         "noNotes": "No bundled release notes found",
         "error": "Failed to preview release notes"
       },
       "onboardingPreview": {
-        "title": "Preview Onboarding",
-        "description": "Preview onboarding screens without changing permissions, models, or completion state",
+        "title": "Onboarding",
+        "description": "The first-run screens, without changing permissions, models or setup.",
         "permissionsButton": "Permissions",
-        "modelsButton": "Model Selection",
-        "exitButton": "Exit Preview"
+        "modelsButton": "Model selection",
+        "exitButton": "Exit preview"
       },
       "soundTheme": {
-        "label": "Sound Theme",
-        "description": "Choose a sound theme for recording start and stop feedback"
+        "label": "Sound",
+        "description": "One sound when Legato starts listening, another when it stops.",
+        "play": "Play the start and stop sounds"
       },
       "wordCorrectionThreshold": {
-        "title": "Word Correction Threshold",
-        "description": "Sensitivity for custom word corrections"
+        "title": "How close a match must be",
+        "description": "Lower only swaps in one of your words when the heard word is almost the same. Higher catches more, with more false swaps."
       },
       "historyLimit": {
-        "title": "History Limit",
-        "description": "Maximum number of history entries to keep",
+        "title": "Keep at most",
+        "description": "The oldest transcripts go first when there are more.",
         "entries": "entries"
       },
       "recordingRetention": {
-        "title": "Auto-Delete Recordings",
-        "description": "Automatically delete old recordings to save space",
+        "title": "Keep recordings",
+        "description": "How long recordings stay on this PC before Legato deletes them.",
         "never": "Never",
         "preserveLimit": "Keep latest {{count}}",
         "days3": "After 3 days",
@@ -508,65 +513,71 @@
         "placeholder": "Select retention period..."
       },
       "alwaysOnMicrophone": {
-        "label": "Always-On Microphone",
-        "description": "Keep microphone active for faster response"
+        "label": "Always-on microphone",
+        "description": "Keeps the microphone open all the time for the fastest start. Windows shows the microphone as in use all day."
       },
       "postProcessingToggle": {
         "label": "Post Processing",
         "description": "Enable AI-powered text refinement after transcription"
       },
       "muteWhileRecording": {
-        "label": "Mute While Recording",
-        "description": "Mute system audio during recording"
+        "label": "Mute other audio while dictating",
+        "description": "Mutes system sound while Legato listens, so speakers don't leak into the recording."
       },
       "appendTrailingSpace": {
-        "label": "Append Trailing Space",
-        "description": "Add a space after pasted transcription"
+        "label": "Add a trailing space",
+        "description": "So the next dictation doesn't run into this one."
       },
       "keyboardImplementation": {
-        "title": "Keyboard Implementation",
-        "description": "Choose the keyboard shortcut backend.",
+        "title": "Keyboard backend",
+        "description": "The built-in hook handles holds and single keys like Esc. Switch to Windows hotkeys if a game or security tool blocks it.",
         "bindingsReset": "Keyboard shortcuts were incompatible and reset to defaults"
       },
       "pasteDelay": {
-        "title": "Paste Delay (Before)",
-        "description": "Delay (in milliseconds) after copying text, before sending the paste keystroke. Increase if nothing gets pasted."
+        "title": "Paste delay",
+        "description": "Wait between copying the text and pressing the paste keys. Raise it if nothing gets pasted."
       },
       "pasteDelayAfter": {
-        "title": "Paste Delay (After)",
+        "title": "Paste delay (after)",
         "description": "Delay (in milliseconds) after the paste keystroke, before restoring your previous clipboard. Increase if your old clipboard content is being pasted instead of the transcription."
       },
       "holdThreshold": {
-        "title": "Hold Threshold",
-        "description": "Auto mode only: how long (in milliseconds) the shortcut must be held before it counts as a hold instead of a tap. Lower if short holds keep leaving recording on; raise if deliberate taps get treated as holds."
+        "title": "Hold threshold",
+        "description": "A press longer than this counts as a hold."
       },
       "reliablePaste": {
-        "title": "Reliable Paste (Beta)",
-        "description": "Restore the clipboard only after the target app actually reads the transcription, instead of after a fixed delay. Intended to fix old clipboard content being pasted under system load. Requires a clipboard paste method."
+        "title": "Reliable paste",
+        "description": "Puts your old clipboard back only after the app has read the transcript, so a busy PC doesn't paste the wrong thing."
       },
       "recordingBuffer": {
-        "title": "Extra Recording Buffer",
-        "description": "Extra time (in milliseconds) to keep recording after you release the key, to capture trailing audio. 0 = no extra buffer."
+        "title": "Extra recording buffer",
+        "description": "Keeps recording this long after you let go, so the last word isn't cut off."
+      },
+      "mode": {
+        "title": "Debug mode is on",
+        "description": "Shows this section. Turn it off here or with Ctrl+Shift+D.",
+        "turnOff": "Turn off"
       }
     },
     "about": {
       "title": "About",
       "version": {
-        "title": "Version",
-        "description": "Current version of Legato"
+        "title": "Legato {{version}}",
+        "description": "Open-source speech to text that runs on this PC.",
+        "search": "Version"
       },
       "whatsNewUpdates": {
-        "label": "Show What's New",
-        "description": "Show release notes after Legato updates"
+        "label": "Show what's new after an update",
+        "description": "A short list of changes the first time a new version opens."
       },
       "appDataDirectory": {
-        "title": "App Data Directory",
-        "description": "Location where Legato stores its data"
+        "title": "App data",
+        "description": "Where Legato keeps its settings, history and recordings."
       },
       "sourceCode": {
-        "title": "Source Code",
-        "description": "View source code and contribute",
-        "button": "View on GitHub"
+        "title": "Source code",
+        "description": "github.com/Abhash-Chakraborty/legato · MIT license · based on Handy by CJ Pais",
+        "button": "Open"
       },
       "acknowledgments": {
         "title": "Acknowledgments",
@@ -575,14 +586,107 @@
           "description": "High-performance tensor library for on-device machine learning inference",
           "details": "Legato's local speech-to-text is built on transcribe.cpp and ggml. Thanks to the amazing work by Georgi Gerganov and contributors."
         }
+      },
+      "updates": {
+        "off": "Update checks are off.",
+        "install": "Install update"
       }
+    },
+    "saved": "Saved",
+    "sectionsLabel": "Settings sections",
+    "search": {
+      "placeholder": "Find a setting",
+      "clear": "Clear search",
+      "title": "Search results",
+      "noResults": "No setting matches “{{query}}”",
+      "noResultsHelp": "Try another word, such as microphone, paste or theme."
+    },
+    "sections": {
+      "general": {
+        "title": "General",
+        "subtitle": "Startup and how this window looks."
+      },
+      "shortcuts": {
+        "title": "Shortcuts",
+        "subtitle": "Keys that work in any app, even with this window closed."
+      },
+      "audio": {
+        "title": "Audio",
+        "subtitle": "The microphone Legato listens to and the sounds it plays."
+      },
+      "transcription": {
+        "title": "Transcription",
+        "subtitle": "How speech becomes text on this PC."
+      },
+      "output": {
+        "title": "Output",
+        "subtitle": "How the text gets into the app you're dictating into."
+      },
+      "ai": {
+        "title": "AI",
+        "subtitle": "Your own AI provider and model, used by Transforms."
+      },
+      "bar": {
+        "title": "Legato bar",
+        "subtitle": "The small bar that shows what Legato is doing."
+      },
+      "privacy": {
+        "title": "Privacy",
+        "subtitle": "What Legato keeps on this PC, and for how long."
+      },
+      "about": {
+        "title": "About",
+        "subtitle": "Version, updates, and help when something goes wrong."
+      },
+      "debug": {
+        "title": "Debug",
+        "subtitle": "Tools for tracking down problems."
+      }
+    },
+    "groups": {
+      "startup": "Startup",
+      "appearance": "Appearance",
+      "window": "Window",
+      "dictation": "Dictation",
+      "keyboard": "Keyboard",
+      "microphone": "Microphone",
+      "whileDictating": "While you dictate",
+      "sounds": "Sounds",
+      "language": "Language",
+      "recording": "Recording",
+      "cleanup": "Cleanup",
+      "engine": "Engine",
+      "paste": "Paste",
+      "afterPasting": "After pasting",
+      "provider": "Provider",
+      "look": "Look",
+      "history": "History",
+      "updates": "Updates",
+      "troubleshooting": "Troubleshooting",
+      "openSource": "Open source",
+      "debugMode": "Debug mode",
+      "logs": "Logs",
+      "input": "Input",
+      "previews": "Previews"
+    },
+    "requires": {
+      "tray": "Needs the tray icon, or there would be no way to open the window.",
+      "auto": "Only Auto needs to tell a hold from a tap.",
+      "transforms": "Turn on Transforms to use this shortcut.",
+      "sound": "Turn on Sound feedback first.",
+      "vad": "Needs voice activity detection to find the pauses.",
+      "model": "Download a speech model first, in Models.",
+      "languageSelection": "{{model}} picks the language itself. Choose another model in Models to set one.",
+      "translation": "{{model}} can't translate. Choose a model that can in Models.",
+      "chinese": "Only used when the spoken language is Chinese, Cantonese or detected automatically.",
+      "clipboardPaste": "Only applies when Legato pastes with keys, not when it types the text or doesn't paste."
     }
   },
   "footer": {
     "checkingUpdates": "Checking for updates...",
     "updateAvailableShort": "Update available",
     "upToDate": "Up to date",
-    "updateCheckingDisabled": "Update Checking Disabled",
+    "updateCheckingDisabled": "Update checking off",
     "downloading": "Downloading... {{progress}}%",
     "installing": "Installing...",
     "preparing": "Preparing...",
@@ -591,7 +695,7 @@
     "portableUpdateMessage": "Portable installs cannot be updated automatically. Download the installer for your system below, run it, and install to the same folder — your Data/ folder (settings, models, recordings) is kept in place.",
     "portableUpdateButton": "Download installer",
     "portableUpdateBrowseMessage": "Portable installs cannot be updated automatically. Download the latest version for your system from GitHub Releases and install it to the same folder — your Data/ folder (settings, models, recordings) is kept in place.",
-    "portableUpdateBrowseButton": "Open GitHub Releases"
+    "portableUpdateBrowseButton": "Open GitHub releases"
   },
   "whatsNew": {
     "title": "New in Legato v{{version}}"
@@ -603,27 +707,28 @@
     "open": "Open",
     "copy": "Copy",
     "clear": "Clear",
-    "noOptionsFound": "No options found"
+    "noOptionsFound": "No options found",
+    "resetToDefault": "Reset to default"
   },
   "accessibility": {
     "openSettings": "Open Privacy Settings"
   },
   "errors": {
     "loadDirectory": "Error loading directory: {{error}}",
-    "micPermissionDeniedTitle": "Microphone Access Denied",
+    "micPermissionDeniedTitle": "Microphone access denied",
     "micPermissionDenied": "Enable microphone access in Settings → Privacy & security → Microphone (including desktop app access).",
-    "noInputDeviceTitle": "No Microphone Found",
+    "noInputDeviceTitle": "No microphone found",
     "noInputDevice": "No audio input device was detected. Please connect a microphone or headset and try again.",
     "recordingFailed": "Failed to start recording: {{error}}",
     "modelLoadFailed": "Failed to load model: {{model}}",
     "modelLoadFailedUnknown": "unknown model",
     "pasteFailedTitle": "Failed to Paste Text",
     "pasteFailed": "Text could not be pasted into the active application.",
-    "transcriptionFailedTitle": "Transcription Failed"
+    "transcriptionFailedTitle": "Transcription failed"
   },
   "theme": {
-    "title": "Application Theme",
-    "description": "Choose whether Legato follows your system theme or stays light or dark",
+    "title": "Theme",
+    "description": "System follows your Windows setting.",
     "options": {
       "system": "System",
       "light": "Light",
@@ -634,5 +739,37 @@
     "transcribing": "Transcribing...",
     "processing": "Processing...",
     "loadingModel": "Loading model..."
+  },
+  "titleBar": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore down",
+    "close": "Close"
+  },
+  "home": {
+    "title": "Home",
+    "subtitle": "Everything you've dictated, newest first."
+  },
+  "dictionary": {
+    "title": "Dictionary",
+    "subtitle": "Names and terms Legato should spell your way.",
+    "groups": {
+      "words": "Words",
+      "matching": "Matching"
+    }
+  },
+  "transforms": {
+    "title": "Transforms",
+    "subtitle": "Prompts your AI provider runs on a dictation before Legato pastes it.",
+    "switch": "Transforms",
+    "off": "Transforms are off. Turn them on with the switch above to use the Dictate then transform shortcut.",
+    "groups": {
+      "provider": "Provider",
+      "shortcut": "Shortcut",
+      "prompts": "Prompts"
+    },
+    "noProvider": "No provider",
+    "noModel": "No model picked yet",
+    "changeProvider": "Change in Settings"
   }
 }

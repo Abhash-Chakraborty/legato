@@ -6,26 +6,23 @@ interface SettingsGroupProps {
   children: React.ReactNode;
 }
 
+/** A titled run of settings rows, separated by hairlines. */
 export const SettingsGroup: React.FC<SettingsGroupProps> = ({
   title,
   description,
   children,
 }) => {
   return (
-    <div className="space-y-2">
+    <section data-settings-group className="mb-7">
       {title && (
-        <div className="px-4">
-          <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-            {title}
-          </h2>
-          {description && (
-            <p className="text-xs text-mid-gray mt-1">{description}</p>
-          )}
-        </div>
+        <h2 className="mb-1 text-[17px] font-semibold tracking-[-0.01em]">
+          {title}
+        </h2>
       )}
-      <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
-        <div className="divide-y divide-mid-gray/20">{children}</div>
-      </div>
-    </div>
+      {description && (
+        <p className="mb-2 text-[13px] text-text-3">{description}</p>
+      )}
+      <div className="divide-y divide-line">{children}</div>
+    </section>
   );
 };

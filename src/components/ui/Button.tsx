@@ -19,33 +19,31 @@ export const Button: React.FC<ButtonProps> = ({
   size = "md",
   ...props
 }) => {
+  // Hover arrives at once and fades out over 100 ms; a press scales to 0.97.
   const baseClasses =
-    "font-medium rounded-lg border focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer";
+    "inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium border cursor-pointer select-none transition-[background-color,border-color,color,transform] duration-[var(--dur-1)] ease-[var(--ease-out)] hover:duration-0 active:scale-[0.97] active:duration-0 disabled:opacity-45 disabled:cursor-not-allowed disabled:active:scale-100";
 
   const variantClasses = {
     primary:
-      "text-white bg-background-ui border-background-ui hover:bg-background-ui/80 hover:border-background-ui/80 focus:ring-1 focus:ring-background-ui",
+      "text-white bg-teal-fill border-transparent hover:bg-teal-fill-hover disabled:hover:bg-teal-fill",
     "primary-soft":
-      "text-text bg-logo-primary/20 border-transparent hover:bg-logo-primary/30 focus:ring-1 focus:ring-logo-primary",
+      "text-teal-700 bg-teal-50 border-transparent hover:bg-teal-100 disabled:hover:bg-teal-50",
     secondary:
-      "bg-mid-gray/10 border-mid-gray/20 hover:bg-background-ui/30 hover:border-logo-primary focus:outline-none",
-    // Secondary's neutral resting look, but hover/focus use the semantic
-    // --color-warning token (theme.css) instead of the pink accent — for
-    // buttons sitting on warning surfaces like RetiredModelsNotice
+      "text-text bg-surface border-line-strong shadow-[var(--shadow-1)] hover:bg-surface-2 hover:border-text-4 active:bg-surface-3 disabled:hover:bg-surface disabled:hover:border-line-strong",
     warning:
-      "text-text bg-mid-gray/10 border-mid-gray/20 hover:bg-warning/15 hover:border-warning focus:ring-1 focus:ring-warning",
+      "text-warn bg-warn-soft border-transparent hover:bg-warn hover:text-white disabled:hover:bg-warn-soft disabled:hover:text-warn",
     danger:
-      "text-white bg-red-600 border-mid-gray/20 hover:bg-red-700 hover:border-red-700 focus:ring-1 focus:ring-red-500",
+      "text-white bg-danger border-transparent hover:brightness-110 disabled:hover:brightness-100",
     "danger-ghost":
-      "text-red-400 border-transparent hover:text-red-300 hover:bg-red-500/10 focus:bg-red-500/20",
+      "text-danger bg-transparent border-transparent hover:bg-danger-soft disabled:hover:bg-transparent",
     ghost:
-      "text-current border-transparent hover:bg-mid-gray/10 hover:border-logo-primary focus:bg-mid-gray/20",
+      "text-text-2 bg-transparent border-transparent hover:bg-surface-2 hover:text-text active:bg-surface-3 disabled:hover:bg-transparent",
   };
 
   const sizeClasses = {
-    sm: "px-2 py-1 text-xs",
-    md: "px-4 py-[5px] text-sm",
-    lg: "px-4 py-2 text-base",
+    sm: "h-[30px] px-2.5 text-[13px] rounded-[var(--r-sm)]",
+    md: "h-9 px-3.5 text-sm rounded-[var(--r-md)]",
+    lg: "h-10 px-[18px] text-[15px] rounded-[var(--r-md)]",
   };
 
   return (

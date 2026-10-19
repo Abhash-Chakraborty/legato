@@ -10,18 +10,23 @@ import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { ModelStateEvent, RecordingErrorEvent } from "./lib/types/events";
 import "./App.css";
-import Footer from "./components/footer";
 import Onboarding, {
   AccessibilityOnboarding,
   ModelMigration,
 } from "./components/onboarding";
 import {
-  DebugSettings,
+  HistorySettings,
+  ModelsSettings,
   type OnboardingPreviewStep,
 } from "./components/settings";
+import { SettingsPage } from "./components/settings/SettingsPage";
+import { DictionaryPage } from "./components/pages/DictionaryPage";
+import { TransformsPage } from "./components/pages/TransformsPage";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
+import { Sidebar } from "./components/Sidebar";
+import { TitleBar } from "./components/shell/TitleBar";
 import { WhatsNewGate } from "./components/whats-new";
+import { useNavStore, type Page } from "./stores/navStore";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
@@ -32,17 +37,22 @@ type OnboardingStep = "accessibility" | "migration" | "model" | "done";
 // Stable identity so preview effects do not re-run due to callback changes.
 const NOOP = () => {};
 
-const renderSettingsContent = (
-  section: SidebarSection,
+const renderPage = (
+  page: Page,
   onPreviewOnboarding: (step: OnboardingPreviewStep) => void,
 ) => {
-  if (section === "debug") {
-    return <DebugSettings onPreviewOnboarding={onPreviewOnboarding} />;
+  switch (page) {
+    case "dictionary":
+      return <DictionaryPage />;
+    case "transforms":
+      return <TransformsPage />;
+    case "models":
+      return <ModelsSettings />;
+    case "settings":
+      return <SettingsPage onPreviewOnboarding={onPreviewOnboarding} />;
+    default:
+      return <HistorySettings />;
   }
-
-  const ActiveComponent =
-    SECTIONS_CONFIG[section]?.component || SECTIONS_CONFIG.general.component;
-  return <ActiveComponent />;
 };
 
 function App() {
@@ -58,8 +68,7 @@ function App() {
   // Set when a returning user's selected model is a retired (ONNX) model that
   // is still on disk: they must update it before the app can transcribe.
   const [migrationModelId, setMigrationModelId] = useState<string | null>(null);
-  const [currentSection, setCurrentSection] =
-    useState<SidebarSection>("general");
+  const page = useNavStore((state) => state.page);
   const { settings, updateSetting } = useSettings();
   const refreshAudioDevices = useSettingsStore(
     (state) => state.refreshAudioDevices,
@@ -84,10 +93,10 @@ function App() {
     return () => document.documentElement.removeAttribute(attribute);
   }, [isShowingOnboarding]);
 
-  // Reset the scroll position whenever the active section changes.
+  // Reset the scroll position whenever the page changes.
   useLayoutEffect(() => {
     settingsScrollRef.current?.scrollTo({ top: 0 });
-  }, [currentSection]);
+  }, [page]);
 
   useEffect(() => {
     checkOnboardingStatus();
@@ -324,6 +333,7 @@ function App() {
   // stable wrapper around this node, so crossing between onboarding steps and
   // the main app never remounts it (which would drop any in-flight toast).
   let content: ReactNode;
+  let inShell = false;
   if (onboardingPreview) {
     // Render previews in the same top-level slot as real onboarding. Keeping
     // the settings layout unmounted ensures viewport overflow behaves exactly
@@ -338,7 +348,7 @@ function App() {
         <button
           type="button"
           onClick={() => setOnboardingPreview(null)}
-          className="fixed top-4 end-4 z-50 rounded-lg border border-mid-gray/20 bg-background px-4 py-2 text-sm font-medium text-text shadow-lg hover:bg-background-ui/30 cursor-pointer"
+          className="fixed top-16 end-4 z-50 rounded-lg border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-text shadow-lg hover:bg-surface-2 cursor-pointer"
         >
           {t("settings.debug.onboardingPreview.exitButton")}
         </button>
@@ -366,28 +376,40 @@ function App() {
       />
     );
   } else {
+    inShell = true;
     content = (
-      <div className="h-screen flex flex-col select-none cursor-default">
+      <div className="flex h-screen cursor-default select-none flex-col bg-bg">
         <ErrorBoundary context="What's New">
           <WhatsNewGate />
         </ErrorBoundary>
-        {/* Main content area that takes remaining space */}
-        <div className="flex-1 flex overflow-hidden">
-          <Sidebar
-            activeSection={currentSection}
-            onSectionChange={setCurrentSection}
-          />
-          {/* Scrollable content area */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div ref={settingsScrollRef} className="flex-1 overflow-y-auto">
-              <div className="flex flex-col items-center p-4 gap-4">
-                {renderSettingsContent(currentSection, setOnboardingPreview)}
-              </div>
+        <TitleBar />
+        <div className="grid min-h-0 flex-1 grid-cols-[212px_minmax(0,1fr)]">
+          <Sidebar />
+          <main className="mb-3.5 me-3.5 min-h-0 overflow-hidden rounded-[var(--r-xl)] border border-line bg-surface">
+            <div
+              ref={settingsScrollRef}
+              data-scroll-root
+              className="h-full overflow-y-auto px-8 pt-8 pb-14 min-[1180px]:px-16 min-[1180px]:pt-10 [scrollbar-gutter:stable]"
+            >
+              <ErrorBoundary key={page} context={page}>
+                <div key={page} className="view-enter">
+                  {renderPage(page, setOnboardingPreview)}
+                </div>
+              </ErrorBoundary>
             </div>
-          </div>
+          </main>
         </div>
-        {/* Fixed footer at bottom */}
-        <Footer />
+      </div>
+    );
+  }
+
+  // Onboarding and its previews fill the window under the title bar, which
+  // only has the window controls there.
+  if (!inShell) {
+    content = (
+      <div className="flex h-screen flex-col bg-bg">
+        <TitleBar minimal />
+        <div className="min-h-0 flex-1 overflow-y-auto">{content}</div>
       </div>
     );
   }

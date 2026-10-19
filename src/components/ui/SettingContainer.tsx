@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Tooltip } from "./Tooltip";
+import React, { createContext, useContext, useEffect, useRef } from "react";
 
 interface SettingContainerProps {
   title: string;
   description: string;
   children: React.ReactNode;
+  /** Kept for existing callers; help text now always shows under the title. */
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
   layout?: "horizontal" | "stacked";
@@ -12,183 +12,98 @@ interface SettingContainerProps {
   tooltipPosition?: "top" | "bottom";
 }
 
+/**
+ * Why the rows inside a <Requires> can't be changed right now. A setting that
+ * depends on another (Start hidden needs the tray icon) greys out and shows
+ * this in place of its help text, without each setting component knowing.
+ */
+const RequiresContext = createContext<string | null>(null);
+
+export const Requires: React.FC<{
+  /** Whether the dependency is met. */
+  met: boolean;
+  reason: string;
+  children: React.ReactNode;
+}> = ({ met, reason, children }) => (
+  <RequiresContext.Provider value={met ? null : reason}>
+    {children}
+  </RequiresContext.Provider>
+);
+
+/** One settings row: title and help on the left, the control on the right. */
 export const SettingContainer: React.FC<SettingContainerProps> = ({
   title,
   description,
   children,
-  descriptionMode = "tooltip",
-  grouped = false,
   layout = "horizontal",
   disabled = false,
-  tooltipPosition = "top",
 }) => {
-  const [showTooltip, setShowTooltip] = useState(false);
-  const tooltipRef = useRef<HTMLDivElement>(null);
+  const reason = useContext(RequiresContext);
+  const blocked = reason !== null;
+  const dim = disabled || blocked;
+  const controlRef = useRef<HTMLDivElement>(null);
 
-  // Handle click outside to close tooltip
+  // A blocked row's control can't be focused or clicked. React 18 has no
+  // `inert` prop, so set the attribute directly.
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        tooltipRef.current &&
-        !tooltipRef.current.contains(event.target as Node)
-      ) {
-        setShowTooltip(false);
-      }
-    };
+    controlRef.current?.toggleAttribute("inert", blocked);
+  }, [blocked]);
 
-    if (showTooltip) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () =>
-        document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showTooltip]);
-
-  const toggleTooltip = () => {
-    setShowTooltip(!showTooltip);
-  };
-
-  const containerClasses = grouped
-    ? "px-4 p-2"
-    : "px-4 p-2 rounded-lg border border-mid-gray/20";
-
-  if (layout === "stacked") {
-    if (descriptionMode === "tooltip") {
-      return (
-        <div className={containerClasses}>
-          <div className="flex items-center gap-2 mb-2">
-            <h3
-              className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}
-            >
-              {title}
-            </h3>
-            <div
-              ref={tooltipRef}
-              className="relative"
-              onMouseEnter={() => setShowTooltip(true)}
-              onMouseLeave={() => setShowTooltip(false)}
-              onClick={toggleTooltip}
-            >
-              <svg
-                className="w-4 h-4 text-mid-gray cursor-help hover:text-logo-primary transition-colors duration-200 select-none"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-label="More information"
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    toggleTooltip();
-                  }
-                }}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              {showTooltip && (
-                <Tooltip targetRef={tooltipRef} position="top">
-                  <p className="text-sm text-center leading-relaxed">
-                    {description}
-                  </p>
-                </Tooltip>
-              )}
-            </div>
-          </div>
-          <div className="w-full">{children}</div>
-        </div>
-      );
-    }
-
-    return (
-      <div className={containerClasses}>
-        <div className="mb-2">
-          <h3 className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}>
-            {title}
-          </h3>
-          <p className={`text-sm ${disabled ? "opacity-50" : ""}`}>
+  // In a horizontal row the text keeps at least 240px; a narrower row puts
+  // the control on its own line below.
+  const text = (
+    <div
+      className={layout === "stacked" ? "min-w-0" : "min-w-0 flex-[1_1_240px]"}
+    >
+      <h3
+        data-setting-title
+        className={`text-[15px] font-medium leading-snug transition-opacity duration-[var(--dur-2)] ${dim ? "opacity-45" : ""}`}
+      >
+        {title}
+      </h3>
+      {blocked ? (
+        <p className="mt-0.5 max-w-[520px] text-[13px] leading-[1.45] text-text-2">
+          {reason}
+        </p>
+      ) : (
+        description && (
+          <p
+            data-setting-help
+            className={`mt-0.5 max-w-[520px] text-[13px] leading-[1.45] text-text-3 ${dim ? "opacity-60" : ""}`}
+          >
             {description}
           </p>
-        </div>
-        <div className="w-full">{children}</div>
-      </div>
-    );
-  }
+        )
+      )}
+    </div>
+  );
 
-  // Horizontal layout (default)
-  const horizontalContainerClasses = grouped
-    ? "flex items-center justify-between min-h-12 px-4 p-2"
-    : "flex items-center justify-between min-h-12 px-4 p-2 rounded-lg border border-mid-gray/20";
-
-  if (descriptionMode === "tooltip") {
+  if (layout === "stacked") {
     return (
-      <div className={horizontalContainerClasses}>
-        <div className="max-w-2/3">
-          <div className="flex items-center gap-2">
-            <h3
-              className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}
-            >
-              {title}
-            </h3>
-            <div
-              ref={tooltipRef}
-              className="relative"
-              onMouseEnter={() => setShowTooltip(true)}
-              onMouseLeave={() => setShowTooltip(false)}
-              onClick={toggleTooltip}
-            >
-              <svg
-                className="w-4 h-4 text-mid-gray cursor-help hover:text-logo-primary transition-colors duration-200 select-none"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-label="More information"
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    toggleTooltip();
-                  }
-                }}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              {showTooltip && (
-                <Tooltip targetRef={tooltipRef} position={tooltipPosition}>
-                  <p className="text-sm text-center leading-relaxed">
-                    {description}
-                  </p>
-                </Tooltip>
-              )}
-            </div>
-          </div>
+      <div data-setting-row className="py-3.5">
+        <div className="mb-3">{text}</div>
+        <div
+          ref={controlRef}
+          className={`w-full transition-opacity duration-[var(--dur-2)] ${blocked ? "opacity-45" : ""}`}
+        >
+          {children}
         </div>
-        <div className="relative">{children}</div>
       </div>
     );
   }
 
   return (
-    <div className={horizontalContainerClasses}>
-      <div className="max-w-2/3">
-        <h3 className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}>
-          {title}
-        </h3>
-        <p className={`text-sm ${disabled ? "opacity-50" : ""}`}>
-          {description}
-        </p>
+    <div
+      data-setting-row
+      className="flex min-h-[60px] flex-wrap items-center justify-between gap-x-8 gap-y-3 py-3.5"
+    >
+      {text}
+      <div
+        ref={controlRef}
+        className={`relative flex flex-none items-center gap-2.5 transition-opacity duration-[var(--dur-2)] ${blocked ? "opacity-45" : ""}`}
+      >
+        {children}
       </div>
-      <div className="relative">{children}</div>
     </div>
   );
 };

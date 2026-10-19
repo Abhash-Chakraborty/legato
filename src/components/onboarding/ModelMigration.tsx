@@ -259,7 +259,7 @@ const ModelMigration: React.FC<ModelMigrationProps> = ({
 
   if (!snapshot) {
     return (
-      <div className="h-screen w-full flex items-center justify-center">
+      <div className="h-full w-full flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-text/50" />
       </div>
     );
@@ -270,7 +270,7 @@ const ModelMigration: React.FC<ModelMigrationProps> = ({
   const noWayForward = chosen.length === 0;
 
   return (
-    <div className="h-screen w-full flex flex-col p-6 gap-5 items-center justify-center">
+    <div className="h-full w-full flex flex-col p-6 gap-5 items-center justify-center">
       <LegatoLogo width={160} className="shrink-0" />
 
       <div className="text-center max-w-md shrink-0">
@@ -446,7 +446,7 @@ const MigrationRow: React.FC<MigrationRowProps> = ({
         <span
           role="img"
           aria-label={t("modelSelector.modelReady")}
-          className="grid place-items-center w-[22px] h-[22px] rounded-full bg-emerald-500/20 text-emerald-500"
+          className="grid place-items-center w-[22px] h-[22px] rounded-full bg-ok-soft text-ok"
         >
           <Check className="w-3 h-3" strokeWidth={3} />
         </span>

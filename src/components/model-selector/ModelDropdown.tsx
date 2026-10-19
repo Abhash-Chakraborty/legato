@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { Check, Cpu } from "lucide-react";
 import type { ModelInfo } from "@/bindings";
 import {
   getTranslatedModelName,
@@ -10,12 +11,17 @@ interface ModelDropdownProps {
   models: ModelInfo[];
   currentModelId: string;
   onModelSelect: (modelId: string) => void;
+  /** Opens the Models page. */
+  onManage: () => void;
+  onClose: () => void;
 }
 
 const ModelDropdown: React.FC<ModelDropdownProps> = ({
   models,
   currentModelId,
   onModelSelect,
+  onManage,
+  onClose,
 }) => {
   const { t } = useTranslation();
   const downloadedModels = models.filter((m) => m.is_downloaded);
@@ -25,60 +31,74 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
   };
 
   return (
-    <div className="absolute bottom-full start-0 mb-2 w-64 max-h-[60vh] overflow-y-auto bg-background border border-mid-gray/20 rounded-lg shadow-lg py-2 z-50">
+    <div
+      role="menu"
+      className="menu end-0 top-full mt-2 w-72 max-h-[60vh]"
+      onKeyDown={(e) => {
+        const items = Array.from(
+          e.currentTarget.querySelectorAll<HTMLButtonElement>(
+            "[role=menuitemradio], [role=menuitem]",
+          ),
+        );
+        const i = items.indexOf(document.activeElement as HTMLButtonElement);
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          const step = e.key === "ArrowDown" ? 1 : -1;
+          items[(i + step + items.length) % items.length]?.focus();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+    >
       {downloadedModels.length > 0 ? (
-        <div>
-          {downloadedModels.map((model) => (
-            <div
-              key={model.id}
-              onClick={() => handleModelClick(model.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  handleModelClick(model.id);
-                }
-              }}
-              tabIndex={0}
-              role="button"
-              className={`w-full px-3 py-2 text-start hover:bg-mid-gray/10 transition-colors cursor-pointer focus:outline-none ${
-                currentModelId === model.id
-                  ? "bg-logo-primary/10 text-logo-primary"
-                  : ""
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-text/80">
-                    {getTranslatedModelName(model, t)}
-                    {model.is_custom && (
-                      <span className="ms-1.5 text-[10px] font-medium text-text/40 uppercase">
-                        {t("modelSelector.custom")}
-                      </span>
-                    )}
-                    {model.supports_streaming && (
-                      <span className="ms-1.5 text-[10px] font-medium text-logo-primary/70 uppercase">
-                        {t("modelSelector.streaming")}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-text/40 italic pe-4">
-                    {getTranslatedModelDescription(model, t)}
-                  </div>
-                </div>
-                {currentModelId === model.id && (
-                  <div className="text-xs text-logo-primary">
-                    {t("modelSelector.active")}
-                  </div>
+        downloadedModels.map((model) => (
+          <button
+            key={model.id}
+            type="button"
+            role="menuitemradio"
+            aria-checked={currentModelId === model.id}
+            onClick={() => handleModelClick(model.id)}
+            className="menu-item items-start"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm">
+                {getTranslatedModelName(model, t)}
+                {model.is_custom && (
+                  <span className="ms-1.5 text-xs text-text-3">
+                    {t("modelSelector.custom")}
+                  </span>
                 )}
-              </div>
-            </div>
-          ))}
-        </div>
+                {model.supports_streaming && (
+                  <span className="ms-1.5 text-xs text-teal-700">
+                    {t("modelSelector.streaming")}
+                  </span>
+                )}
+              </span>
+              <span className="mt-0.5 block text-xs leading-snug text-text-3">
+                {getTranslatedModelDescription(model, t)}
+              </span>
+            </span>
+            {currentModelId === model.id && (
+              <Check className="check mt-0.5" aria-hidden="true" />
+            )}
+          </button>
+        ))
       ) : (
-        <div className="px-3 py-2 text-sm text-text/60">
+        <div className="px-2.5 py-1.5 text-sm text-text-3">
           {t("modelSelector.noModelsAvailable")}
         </div>
       )}
+      <div className="mx-1.5 my-1 h-px bg-line" role="separator" />
+      <button
+        type="button"
+        role="menuitem"
+        className="menu-item"
+        onClick={onManage}
+      >
+        <Cpu className="h-4 w-4 text-text-2" aria-hidden="true" />
+        {t("modelSelector.manage")}
+      </button>
     </div>
   );
 };

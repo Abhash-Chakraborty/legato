@@ -6,7 +6,7 @@ import { getTranslatedModelName } from "../../lib/utils/modelTranslation";
 import { useModelStore } from "../../stores/modelStore";
 import ModelStatusButton from "./ModelStatusButton";
 import ModelDropdown from "./ModelDropdown";
-import DownloadProgressDisplay from "./DownloadProgressDisplay";
+import { useNavStore } from "../../stores/navStore";
 
 import { ModelStateEvent } from "@/lib/types/events";
 
@@ -29,7 +29,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
     models,
     currentModel,
     downloadProgress,
-    downloadStats,
     verifyingModels,
     selectModel,
   } = useModelStore();
@@ -41,6 +40,24 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
   const [pendingModelId, setPendingModelId] = useState<string | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const go = useNavStore((state) => state.go);
+
+  // Put focus on the active model when the menu opens.
+  useEffect(() => {
+    if (!showModelDropdown) return;
+    const menu = dropdownRef.current?.querySelector("[role=menu]");
+    const items = Array.from(
+      menu?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+    );
+    (
+      items.find((b) => b.getAttribute("aria-checked") === "true") ?? items[0]
+    )?.focus();
+  }, [showModelDropdown]);
+
+  const closeDropdown = () => {
+    setShowModelDropdown(false);
+    dropdownRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+  };
 
   const displayModelId = pendingModelId || currentModel;
 
@@ -218,32 +235,27 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
   };
 
   return (
-    <>
-      {/* Model Status and Switcher */}
-      <div className="relative" ref={dropdownRef}>
-        <ModelStatusButton
-          status={getDisplayStatus()}
-          displayText={getModelDisplayText()}
-          isDropdownOpen={showModelDropdown}
-          onClick={() => setShowModelDropdown(!showModelDropdown)}
-        />
-
-        {/* Model Dropdown */}
-        {showModelDropdown && (
-          <ModelDropdown
-            models={models}
-            currentModelId={displayModelId}
-            onModelSelect={handleModelSelect}
-          />
-        )}
-      </div>
-
-      {/* Download Progress Bar for Models */}
-      <DownloadProgressDisplay
-        downloadProgress={downloadProgress}
-        downloadStats={downloadStats}
+    <div className="relative" ref={dropdownRef}>
+      <ModelStatusButton
+        status={getDisplayStatus()}
+        displayText={getModelDisplayText()}
+        isDropdownOpen={showModelDropdown}
+        onClick={() => setShowModelDropdown(!showModelDropdown)}
       />
-    </>
+
+      {showModelDropdown && (
+        <ModelDropdown
+          models={models}
+          currentModelId={displayModelId}
+          onModelSelect={handleModelSelect}
+          onManage={() => {
+            setShowModelDropdown(false);
+            go("models");
+          }}
+          onClose={closeDropdown}
+        />
+      )}
+    </div>
   );
 };
 

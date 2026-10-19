@@ -24,6 +24,8 @@ interface SettingsStore {
   postProcessModelOptions: Record<string, string[]>;
   // null until loadUpdateChecksLocked() resolves
   updateChecksLocked: boolean | null;
+  /** When a change last saved, for the Saved tick in Settings (0 = never). */
+  savedAt: number;
 
   // Actions
   initialize: () => Promise<void>;
@@ -184,6 +186,13 @@ const settingUpdaters: {
     commands.changeChineseScriptSetting(value as ChineseScript),
   show_tray_icon: (value) =>
     commands.changeShowTrayIconSetting(value as boolean),
+  native_title_bar: async (value) => {
+    const result = await commands.changeNativeTitleBarSetting(value as boolean);
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
   transcribe_accelerator: (value) =>
     commands.changeTranscribeAcceleratorSetting(
       value as TranscribeAcceleratorSetting,
@@ -200,6 +209,7 @@ export const useSettingsStore = create<SettingsStore>()(
     defaultSettings: null,
     isLoading: true,
     isUpdating: {},
+    savedAt: 0,
     audioDevices: [],
     outputDevices: [],
     customSounds: { start: false, stop: false },
@@ -325,6 +335,7 @@ export const useSettingsStore = create<SettingsStore>()(
         const updater = settingUpdaters[key];
         if (updater) {
           await updater(value);
+          set({ savedAt: Date.now() });
         } else if (key !== "bindings" && key !== "selected_model") {
           console.warn(`No handler for setting: ${String(key)}`);
         }
@@ -385,6 +396,7 @@ export const useSettingsStore = create<SettingsStore>()(
         if (!result.data.success) {
           throw new Error(result.data.error || "Failed to update binding");
         }
+        set({ savedAt: Date.now() });
       } catch (error) {
         console.error(`Failed to update binding ${id}:`, error);
 
@@ -457,6 +469,7 @@ export const useSettingsStore = create<SettingsStore>()(
       try {
         await commands.setPostProcessProvider(providerId);
         await refreshSettings();
+        set({ savedAt: Date.now() });
       } catch (error) {
         console.error("Failed to set post-process provider:", error);
         if (previousId !== null) {
@@ -491,6 +504,7 @@ export const useSettingsStore = create<SettingsStore>()(
           await commands.changePostProcessModelSetting(providerId, value);
         }
         await refreshSettings();
+        set({ savedAt: Date.now() });
       } catch (error) {
         console.error(
           `Failed to update post-process ${settingType.replace("_", " ")}:`,
@@ -540,6 +554,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
         // Single refresh after both backend writes.
         await refreshSettings();
+        set({ savedAt: Date.now() });
       } catch (error) {
         console.error("Failed to update post-process base URL:", error);
       } finally {
@@ -571,6 +586,7 @@ export const useSettingsStore = create<SettingsStore>()(
           return;
         }
         await refreshSettings();
+        set({ savedAt: Date.now() });
       } catch (error) {
         console.error("Failed to update post-process API format:", error);
       } finally {

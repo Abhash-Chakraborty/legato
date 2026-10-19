@@ -112,6 +112,67 @@ fn show_main_window(app: &AppHandle) {
     );
 }
 
+/// The main window's first size and its minimum, in logical pixels.
+const MAIN_WINDOW_SIZE: (f64, f64) = (1240.0, 800.0);
+const MAIN_WINDOW_MIN_SIZE: (f64, f64) = (960.0, 640.0);
+
+/// Remembers the main window's size, position and maximised state between
+/// launches. Visibility stays with the start-hidden logic and decorations with
+/// the title bar setting, so neither is saved. Portable installs keep the file
+/// in their Data folder.
+fn window_state_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    use tauri_plugin_window_state::StateFlags;
+
+    let mut builder = tauri_plugin_window_state::Builder::default()
+        .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
+        .with_denylist(&["recording_overlay"]);
+    if let Some(data_dir) = portable::data_dir() {
+        // The plugin joins this onto the config folder; an absolute path wins.
+        builder = builder.with_filename(data_dir.join("window-state.json").to_string_lossy());
+    }
+    builder.build()
+}
+
+/// Keeps the main window inside the screen it opens on. A small or highly
+/// scaled display (1366 × 768 at 125% is 1093 × 614) can't fit the default
+/// size or even the minimum, so both shrink to the work area there.
+fn fit_main_window_to_screen(window: &tauri::WebviewWindow) {
+    let Ok(Some(monitor)) = window.current_monitor() else {
+        return;
+    };
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area();
+    let area_w = f64::from(area.size.width) / scale;
+    let area_h = f64::from(area.size.height) / scale;
+
+    let min_w = MAIN_WINDOW_MIN_SIZE.0.min(area_w);
+    let min_h = MAIN_WINDOW_MIN_SIZE.1.min(area_h);
+    if let Err(e) = window.set_min_size(Some(tauri::LogicalSize::new(min_w, min_h))) {
+        log::warn!("Failed to set the main window's minimum size: {e}");
+    }
+
+    // A restored maximised window already fills its screen.
+    if window.is_maximized().unwrap_or(false) {
+        return;
+    }
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let width = f64::from(size.width) / scale;
+    let height = f64::from(size.height) / scale;
+    if width <= area_w && height <= area_h {
+        return;
+    }
+    let fitted = tauri::LogicalSize::new(
+        width.min(area_w * 0.92).max(min_w),
+        height.min(area_h * 0.92).max(min_h),
+    );
+    if let Err(e) = window.set_size(fitted) {
+        log::warn!("Failed to fit the main window to the screen: {e}");
+    }
+    let _ = window.center();
+}
+
 fn should_force_show_permissions_window(app: &AppHandle) -> bool {
     let model_manager = app.state::<Arc<ModelManager>>();
     let has_downloaded_models = model_manager
@@ -602,6 +663,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_keyboard_implementation_setting,
             shortcut::get_keyboard_implementation,
             shortcut::change_show_tray_icon_setting,
+            shortcut::change_native_title_bar_setting,
             shortcut::change_transcribe_accelerator_setting,
             shortcut::change_transcribe_gpu_device,
             shortcut::get_available_accelerators,
@@ -765,6 +827,7 @@ pub fn run(cli_args: CliArgs) {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::Builder::new().build())
+        .plugin(window_state_plugin())
         .manage(cli_args.clone())
         .setup(move |app| {
             log::info!(
@@ -817,11 +880,13 @@ pub fn run(cli_args: CliArgs) {
 
             // Create main window programmatically so we can set data_directory
             // for portable mode (redirects WebView2 cache to portable Data dir)
+            let native_title_bar = get_settings(app.handle()).native_title_bar;
             let mut win_builder =
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
                     .title("Legato")
-                    .inner_size(680.0, 570.0)
-                    .min_inner_size(680.0, 570.0)
+                    .inner_size(MAIN_WINDOW_SIZE.0, MAIN_WINDOW_SIZE.1)
+                    .min_inner_size(MAIN_WINDOW_MIN_SIZE.0, MAIN_WINDOW_MIN_SIZE.1)
+                    .decorations(native_title_bar)
                     .resizable(true)
                     .maximizable(true)
                     .visible(false);
@@ -831,6 +896,7 @@ pub fn run(cli_args: CliArgs) {
             }
 
             let main_window = win_builder.build()?;
+            fit_main_window_to_screen(&main_window);
 
             // Disable WebView2 browser accelerators (F5, F6, Ctrl+F, F12, ...).
             // A settings window has no use for them, and pressing F6 while

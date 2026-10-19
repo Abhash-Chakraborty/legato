@@ -135,7 +135,7 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
   // Still checking initial permissions
   if (microphone === "checking") {
     return (
-      <div className="h-screen w-full flex items-center justify-center">
+      <div className="h-full w-full flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-text/50" />
       </div>
     );
@@ -144,9 +144,9 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
   // All permissions granted - show success briefly
   if (microphone === "granted") {
     return (
-      <div className="h-screen w-full flex flex-col items-center justify-center gap-4">
-        <div className="p-4 rounded-full bg-emerald-500/20">
-          <Check className="w-12 h-12 text-emerald-400" />
+      <div className="h-full w-full flex flex-col items-center justify-center gap-4">
+        <div className="p-4 rounded-full bg-ok-soft">
+          <Check className="w-12 h-12 text-ok" />
         </div>
         <p className="text-lg font-medium text-text">
           {t("onboarding.permissions.allGranted")}
@@ -157,7 +157,7 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
 
   // Show permissions request screen
   return (
-    <div className="h-screen w-full flex flex-col p-6 gap-6 items-center justify-center">
+    <div className="h-full w-full flex flex-col p-6 gap-6 items-center justify-center">
       <div className="flex flex-col items-center gap-2">
         <LegatoLogo width={200} />
       </div>

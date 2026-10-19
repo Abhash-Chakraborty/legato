@@ -161,7 +161,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
   };
 
   return (
-    <div className="h-screen w-full flex flex-col p-6 gap-4">
+    <div className="h-full w-full flex flex-col p-6 gap-4">
       {onBack && (
         <Button
           variant="ghost"

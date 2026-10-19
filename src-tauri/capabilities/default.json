@@ -5,6 +5,11 @@
   "windows": ["main", "recording_overlay"],
   "permissions": [
     "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close",
     "opener:default",
     "store:default",
     "updater:default",

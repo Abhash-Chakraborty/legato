@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Page } from "../../shell/Page";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
   AudioLines,
@@ -234,199 +235,178 @@ export const ModelsSettings: React.FC = () => {
   }
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-4">
-      <div className="mb-4">
-        <h1 className="text-xl font-semibold mb-2">
-          {t("settings.models.title")}
-        </h1>
-        <p className="text-sm text-text/60">
-          {t("settings.models.description")}
-        </p>
-      </div>
+    <Page
+      title={t("settings.models.title")}
+      subtitle={t("settings.models.description")}
+    >
+      <div className="space-y-4">
+        <RetiredModelsNotice />
 
-      <RetiredModelsNotice />
+        {/* Search bar — filter the catalog by name or description */}
+        <div className="relative">
+          <Search
+            className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-3 pointer-events-none"
+            aria-hidden="true"
+          />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t("settings.models.searchPlaceholder")}
+            aria-label={t("settings.models.searchPlaceholder")}
+            className="input ps-9"
+          />
+        </div>
 
-      {/* Search bar — filter the catalog by name or description */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text/40 pointer-events-none" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={t("settings.models.searchPlaceholder")}
-          className="w-full pl-9 pr-3 py-2 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded-lg focus:outline-none focus:ring-1 focus:ring-logo-primary placeholder:text-text/40"
-        />
-      </div>
-
-      <div className="space-y-6">
-        {/* Downloaded Models Section — header always visible so filter stays accessible */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-text/60">
-              {t("settings.models.yourModels")}
-            </h2>
-            <div className="flex items-center gap-2">
-              {/* Rescan local sources for models added outside Legato */}
-              <button
-                type="button"
-                onClick={() => rescanLocalModels()}
-                disabled={isRescanning}
-                title={t("settings.models.rescan.tooltip")}
-                aria-label={t("settings.models.rescan.tooltip")}
-                className="flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <RefreshCw
-                  className={`w-3.5 h-3.5 ${isRescanning ? "animate-spin" : ""}`}
-                />
-              </button>
-
-              {/* Vertical divider separating action from filters */}
-              <div className="h-4 w-px bg-mid-gray/30 mx-0.5" />
-              <button
-                type="button"
-                onClick={() => setFilterStreaming((enabled) => !enabled)}
-                title={t("settings.models.filters.streaming")}
-                aria-label={t("settings.models.filters.streaming")}
-                aria-pressed={filterStreaming}
-                className={`flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg transition-colors ${
-                  filterStreaming
-                    ? "bg-logo-primary/20 text-logo-primary hover:bg-logo-primary/30"
-                    : "bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20"
-                }`}
-              >
-                <AudioLines className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterTranslation((enabled) => !enabled)}
-                title={t("settings.models.filters.translation")}
-                aria-label={t("settings.models.filters.translation")}
-                aria-pressed={filterTranslation}
-                className={`flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg transition-colors ${
-                  filterTranslation
-                    ? "bg-logo-primary/20 text-logo-primary hover:bg-logo-primary/30"
-                    : "bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20"
-                }`}
-              >
-                <Languages className="w-3.5 h-3.5" />
-              </button>
-              {/* Language filter dropdown */}
-              <div className="relative" ref={languageDropdownRef}>
+        <div className="space-y-6">
+          {/* Downloaded Models Section — header always visible so filter stays accessible */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium text-text/60">
+                {t("settings.models.yourModels")}
+              </h2>
+              <div className="flex items-center gap-2">
+                {/* Rescan local sources for models added outside Legato */}
                 <button
                   type="button"
-                  onClick={() => setLanguageDropdownOpen(!languageDropdownOpen)}
-                  className={`flex items-center gap-1.5 h-8 px-3 text-sm font-medium rounded-lg transition-colors ${
-                    languageFilter !== "all"
-                      ? "bg-logo-primary/20 text-logo-primary"
-                      : "bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20"
-                  }`}
+                  onClick={() => rescanLocalModels()}
+                  disabled={isRescanning}
+                  title={t("settings.models.rescan.tooltip")}
+                  aria-label={t("settings.models.rescan.tooltip")}
+                  className="flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span className="max-w-[120px] truncate">
-                    {selectedLanguageLabel}
-                  </span>
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 transition-transform ${
-                      languageDropdownOpen ? "rotate-180" : ""
-                    }`}
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${isRescanning ? "animate-spin" : ""}`}
                   />
                 </button>
 
-                {languageDropdownOpen && (
-                  <div className="absolute top-full right-0 mt-1 w-56 bg-background border border-mid-gray/80 rounded-lg shadow-lg z-50 overflow-hidden">
-                    <div className="p-2 border-b border-mid-gray/40">
-                      <input
-                        ref={languageSearchInputRef}
-                        type="text"
-                        value={languageSearch}
-                        onChange={(e) => setLanguageSearch(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (
-                            e.key === "Enter" &&
-                            filteredLanguages.length > 0
-                          ) {
-                            setLanguageFilter(filteredLanguages[0].value);
-                            setLanguageDropdownOpen(false);
-                            setLanguageSearch("");
-                          } else if (e.key === "Escape") {
-                            setLanguageDropdownOpen(false);
-                            setLanguageSearch("");
-                          }
-                        }}
-                        placeholder={t(
-                          "settings.general.language.searchPlaceholder",
-                        )}
-                        className="w-full px-2 py-1 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded-md focus:outline-none focus:ring-1 focus:ring-logo-primary"
-                      />
-                    </div>
-                    <div className="max-h-48 overflow-y-auto">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLanguageFilter("all");
-                          setLanguageDropdownOpen(false);
-                          setLanguageSearch("");
-                        }}
-                        className={`w-full px-3 py-1.5 text-sm text-left transition-colors ${
-                          languageFilter === "all"
-                            ? "bg-logo-primary/20 text-logo-primary font-semibold"
-                            : "hover:bg-mid-gray/10"
-                        }`}
-                      >
-                        {t("settings.models.filters.allLanguages")}
-                      </button>
-                      {filteredLanguages.map((lang) => (
+                {/* Vertical divider separating action from filters */}
+                <div className="h-4 w-px bg-mid-gray/30 mx-0.5" />
+                <button
+                  type="button"
+                  onClick={() => setFilterStreaming((enabled) => !enabled)}
+                  title={t("settings.models.filters.streaming")}
+                  aria-label={t("settings.models.filters.streaming")}
+                  aria-pressed={filterStreaming}
+                  className={`flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg transition-colors ${
+                    filterStreaming
+                      ? "bg-logo-primary/20 text-logo-primary hover:bg-logo-primary/30"
+                      : "bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20"
+                  }`}
+                >
+                  <AudioLines className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterTranslation((enabled) => !enabled)}
+                  title={t("settings.models.filters.translation")}
+                  aria-label={t("settings.models.filters.translation")}
+                  aria-pressed={filterTranslation}
+                  className={`flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg transition-colors ${
+                    filterTranslation
+                      ? "bg-logo-primary/20 text-logo-primary hover:bg-logo-primary/30"
+                      : "bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20"
+                  }`}
+                >
+                  <Languages className="w-3.5 h-3.5" />
+                </button>
+                {/* Language filter dropdown */}
+                <div className="relative" ref={languageDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLanguageDropdownOpen(!languageDropdownOpen)
+                    }
+                    className={`flex items-center gap-1.5 h-8 px-3 text-sm font-medium rounded-lg transition-colors ${
+                      languageFilter !== "all"
+                        ? "bg-logo-primary/20 text-logo-primary"
+                        : "bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20"
+                    }`}
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    <span className="max-w-[120px] truncate">
+                      {selectedLanguageLabel}
+                    </span>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 transition-transform ${
+                        languageDropdownOpen ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+
+                  {languageDropdownOpen && (
+                    <div className="absolute top-full right-0 mt-1 w-56 bg-background border border-mid-gray/80 rounded-lg shadow-lg z-50 overflow-hidden">
+                      <div className="p-2 border-b border-mid-gray/40">
+                        <input
+                          ref={languageSearchInputRef}
+                          type="text"
+                          value={languageSearch}
+                          onChange={(e) => setLanguageSearch(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (
+                              e.key === "Enter" &&
+                              filteredLanguages.length > 0
+                            ) {
+                              setLanguageFilter(filteredLanguages[0].value);
+                              setLanguageDropdownOpen(false);
+                              setLanguageSearch("");
+                            } else if (e.key === "Escape") {
+                              setLanguageDropdownOpen(false);
+                              setLanguageSearch("");
+                            }
+                          }}
+                          placeholder={t(
+                            "settings.general.language.searchPlaceholder",
+                          )}
+                          className="w-full px-2 py-1 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded-md focus:outline-none focus:ring-1 focus:ring-logo-primary"
+                        />
+                      </div>
+                      <div className="max-h-48 overflow-y-auto">
                         <button
-                          key={lang.value}
                           type="button"
                           onClick={() => {
-                            setLanguageFilter(lang.value);
+                            setLanguageFilter("all");
                             setLanguageDropdownOpen(false);
                             setLanguageSearch("");
                           }}
                           className={`w-full px-3 py-1.5 text-sm text-left transition-colors ${
-                            languageFilter === lang.value
+                            languageFilter === "all"
                               ? "bg-logo-primary/20 text-logo-primary font-semibold"
                               : "hover:bg-mid-gray/10"
                           }`}
                         >
-                          {lang.label}
+                          {t("settings.models.filters.allLanguages")}
                         </button>
-                      ))}
-                      {filteredLanguages.length === 0 && (
-                        <div className="px-3 py-2 text-sm text-text/50 text-center">
-                          {t("settings.general.language.noResults")}
-                        </div>
-                      )}
+                        {filteredLanguages.map((lang) => (
+                          <button
+                            key={lang.value}
+                            type="button"
+                            onClick={() => {
+                              setLanguageFilter(lang.value);
+                              setLanguageDropdownOpen(false);
+                              setLanguageSearch("");
+                            }}
+                            className={`w-full px-3 py-1.5 text-sm text-left transition-colors ${
+                              languageFilter === lang.value
+                                ? "bg-logo-primary/20 text-logo-primary font-semibold"
+                                : "hover:bg-mid-gray/10"
+                            }`}
+                          >
+                            {lang.label}
+                          </button>
+                        ))}
+                        {filteredLanguages.length === 0 && (
+                          <div className="px-3 py-2 text-sm text-text/50 text-center">
+                            {t("settings.general.language.noResults")}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-          {downloadedModels.map((model: ModelInfo) => (
-            <ModelCard
-              key={model.id}
-              model={model}
-              status={getModelStatus(model.id)}
-              onSelect={handleModelSelect}
-              onDownload={handleModelDownload}
-              onDelete={handleModelDelete}
-              onCancel={handleModelCancel}
-              downloadProgress={getDownloadProgress(model.id)}
-              downloadSpeed={getDownloadSpeed(model.id)}
-              showRecommended={false}
-            />
-          ))}
-        </div>
-
-        {/* Available Models Section */}
-        {availableModels.length > 0 && (
-          <div className="space-y-3">
-            <h2 className="text-sm font-medium text-text/60">
-              {t("settings.models.availableModels")}
-            </h2>
-            {availableModels.map((model: ModelInfo) => (
+            {downloadedModels.map((model: ModelInfo) => (
               <ModelCard
                 key={model.id}
                 model={model}
@@ -437,17 +417,40 @@ export const ModelsSettings: React.FC = () => {
                 onCancel={handleModelCancel}
                 downloadProgress={getDownloadProgress(model.id)}
                 downloadSpeed={getDownloadSpeed(model.id)}
-                showRecommended={true}
+                showRecommended={false}
               />
             ))}
           </div>
-        )}
-        {filteredModels.length === 0 && (
-          <div className="text-center py-8 text-text/50">
-            {t("settings.models.noModelsMatch")}
-          </div>
-        )}
+
+          {/* Available Models Section */}
+          {availableModels.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-sm font-medium text-text/60">
+                {t("settings.models.availableModels")}
+              </h2>
+              {availableModels.map((model: ModelInfo) => (
+                <ModelCard
+                  key={model.id}
+                  model={model}
+                  status={getModelStatus(model.id)}
+                  onSelect={handleModelSelect}
+                  onDownload={handleModelDownload}
+                  onDelete={handleModelDelete}
+                  onCancel={handleModelCancel}
+                  downloadProgress={getDownloadProgress(model.id)}
+                  downloadSpeed={getDownloadSpeed(model.id)}
+                  showRecommended={true}
+                />
+              ))}
+            </div>
+          )}
+          {filteredModels.length === 0 && (
+            <div className="text-center py-8 text-text/50">
+              {t("settings.models.noModelsMatch")}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </Page>
   );
 };
