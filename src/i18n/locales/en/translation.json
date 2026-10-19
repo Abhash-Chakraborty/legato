@@ -1072,7 +1072,8 @@
     "pick": {
       "title": "Transform the selection",
       "close": "Close",
-      "empty": "No transforms are on. Turn one on in Legato › Transforms."
+      "empty": "No transforms are on. Turn one on in Legato › Transforms.",
+      "hint": "↑ and ↓ to choose, Enter to run, Esc to close"
     },
     "open": "Open",
     "notes": {

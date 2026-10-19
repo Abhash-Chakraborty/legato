@@ -40,6 +40,17 @@ pub fn handle_shortcut_event(
         return;
     }
 
+    // The transform picker's arrows, Enter and Esc, while it is open.
+    if crate::shortcut::PICK_KEYS
+        .iter()
+        .any(|(id, _)| *id == binding_id)
+    {
+        if is_pressed {
+            crate::transforms::pick_key(app, binding_id);
+        }
+        return;
+    }
+
     // Transcribe bindings are handled by the coordinator.
     if is_transcribe_binding(binding_id) {
         if let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() {

@@ -378,6 +378,9 @@
   background: var(--s-hair);
   transition-duration: 0ms;
 }
+.spick-row.on {
+  background: var(--s-accent-soft);
+}
 .spick-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -385,6 +388,11 @@
 }
 .spick-keys {
   flex: none;
+  color: var(--s-muted);
+  font-size: 12px;
+}
+.spick-hint {
+  margin: 6px 10px 2px;
   color: var(--s-muted);
   font-size: 12px;
 }

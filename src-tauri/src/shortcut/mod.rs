@@ -110,6 +110,56 @@ fn reconcile_cancel_shortcut(app: &AppHandle) {
     }
 }
 
+/// The keys the transform picker takes while it is open, by binding ID.
+/// They are registered only then, so arrows and Enter reach apps otherwise.
+pub const PICK_KEYS: [(&str, &str); 4] = [
+    ("pick_up", "up"),
+    ("pick_down", "down"),
+    ("pick_enter", "enter"),
+    ("pick_close", "escape"),
+];
+
+/// Whether the transform picker wants its keys, and whether they are
+/// registered; reconciled like the cancel shortcut.
+static PICK_REQUESTED: AtomicBool = AtomicBool::new(false);
+static PICK_REGISTERED: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+
+/// Takes or releases the picker's keys. Safe to call from a shortcut
+/// handler: the registration happens on another thread.
+pub fn set_pick_keys(app: &AppHandle, on: bool) {
+    if PICK_REQUESTED.swap(on, Ordering::SeqCst) == on {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut registered = PICK_REGISTERED.lock().unwrap_or_else(|e| e.into_inner());
+        let requested = PICK_REQUESTED.load(Ordering::SeqCst);
+        if requested == *registered {
+            return;
+        }
+        for (id, key) in PICK_KEYS {
+            let binding = ShortcutBinding {
+                id: id.to_string(),
+                name: id.to_string(),
+                description: String::new(),
+                default_binding: key.to_string(),
+                current_binding: key.to_string(),
+            };
+            let result = if requested {
+                register_shortcut(&app, binding)
+            } else {
+                unregister_shortcut(&app, binding)
+            };
+            // Escape may already be the cancel shortcut; the picker's close
+            // button still works without it.
+            if let Err(e) = result {
+                debug!("Picker key '{key}': {e}");
+            }
+        }
+        *registered = requested;
+    });
+}
+
 /// Whether a binding should be registered with the keyboard hook now: it has
 /// a shortcut, and the feature it belongs to is on.
 pub fn binding_is_active(settings: &AppSettings, id: &str, binding: &ShortcutBinding) -> bool {

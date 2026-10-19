@@ -226,6 +226,8 @@ const RecordingOverlay: React.FC = () => {
   const [notice, setNotice] = useState<OverlayNotice | null>(null);
   const [changes, setChanges] = useState<BarChanges | null>(null);
   const [picks, setPicks] = useState<PickItem[]>([]);
+  // The row the arrow keys are on; Enter runs it.
+  const [pickIndex, setPickIndex] = useState(0);
   const [notesTick, setNotesTick] = useState<NotesTick | null>(null);
   const [callCard, setCallCard] = useState<{
     card: CallCard;
@@ -328,8 +330,13 @@ const RecordingOverlay: React.FC = () => {
         setNotesTick(event.payload),
       );
 
-      const unlistenPick = await listen<PickItem[]>("bar-pick", (event) =>
-        setPicks(event.payload),
+      const unlistenPick = await listen<PickItem[]>("bar-pick", (event) => {
+        setPicks(event.payload);
+        setPickIndex(0);
+      });
+      const unlistenPickFocus = await listen<number>(
+        "bar-pick-focus",
+        (event) => setPickIndex(event.payload),
       );
 
       const unlistenLabel = await listen<string | null>(
@@ -401,6 +408,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenNotice();
         unlistenChanges();
         unlistenPick();
+        unlistenPickFocus();
         unlistenNotesTick();
         unlistenCall();
         unlistenLabel();
@@ -1001,11 +1009,16 @@ const RecordingOverlay: React.FC = () => {
             <p className="spick-empty">{t("overlay.pick.empty")}</p>
           ) : (
             <ul className="spick-list">
-              {picks.map((item) => (
+              {picks.map((item, i) => (
                 <li key={item.id}>
                   <button
                     type="button"
-                    className="spick-row"
+                    className={`spick-row ${i === pickIndex ? "on" : ""}`}
+                    aria-current={i === pickIndex ? "true" : undefined}
+                    ref={(el) => {
+                      if (i === pickIndex)
+                        el?.scrollIntoView({ block: "nearest" });
+                    }}
                     onClick={() => commands.barPick(item.id)}
                   >
                     <span className="spick-name">{item.name}</span>
@@ -1018,6 +1031,9 @@ const RecordingOverlay: React.FC = () => {
                 </li>
               ))}
             </ul>
+          )}
+          {picks.length > 0 && (
+            <p className="spick-hint">{t("overlay.pick.hint")}</p>
           )}
         </div>
       </div>

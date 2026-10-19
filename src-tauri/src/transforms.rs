@@ -16,10 +16,10 @@ use crate::{overlay, tray};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_specta::Event;
 
@@ -172,6 +172,11 @@ enum Undoable {
 static LAST_CHANGE: Mutex<Option<Change>> = Mutex::new(None);
 static UNDO: Mutex<Option<Undoable>> = Mutex::new(None);
 static PICKED: Mutex<Option<Captured>> = Mutex::new(None);
+/// The picker's transforms in order, and the one the arrow keys are on.
+static PICK_IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static PICK_INDEX: AtomicUsize = AtomicUsize::new(0);
+/// Bumped each time the picker opens, so an old timer leaves a new one be.
+static PICK_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -628,12 +633,58 @@ pub fn pick_for_selection(app: &AppHandle) {
             })
             .collect();
         *lock(&PICKED) = Some(captured);
+        *lock(&PICK_IDS) = items.iter().map(|item| item.id.clone()).collect();
+        PICK_INDEX.store(0, Ordering::SeqCst);
         overlay::show_bar(app, "pick", "bar-pick", &items, Some(PICK_MS));
+        if !items.is_empty() {
+            release_pick_keys_later(app);
+        }
     });
+}
+
+/// Takes the arrows, Enter and Esc while the picker is open, and gives them
+/// back once it has a choice, is closed, or times out.
+fn release_pick_keys_later(app: &AppHandle) {
+    let generation = PICK_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    crate::shortcut::set_pick_keys(app, true);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        // The bar hides itself a little after PICK_MS.
+        let deadline = Instant::now() + Duration::from_millis(PICK_MS + 200);
+        while Instant::now() < deadline && lock(&PICKED).is_some() {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        if PICK_GENERATION.load(Ordering::SeqCst) == generation {
+            lock(&PICKED).take();
+            crate::shortcut::set_pick_keys(&app, false);
+        }
+    });
+}
+
+/// A picker key: Up and Down move, Enter runs, Esc closes.
+pub fn pick_key(app: &AppHandle, binding_id: &str) {
+    if lock(&PICKED).is_none() {
+        crate::shortcut::set_pick_keys(app, false);
+        return;
+    }
+    let ids = lock(&PICK_IDS).clone();
+    if ids.is_empty() {
+        return;
+    }
+    let index = PICK_INDEX.load(Ordering::SeqCst).min(ids.len() - 1);
+    let moved = match binding_id {
+        "pick_up" => (index + ids.len() - 1) % ids.len(),
+        "pick_down" => (index + 1) % ids.len(),
+        "pick_enter" => return pick(app, &ids[index]),
+        _ => return dismiss(app),
+    };
+    PICK_INDEX.store(moved, Ordering::SeqCst);
+    let _ = app.emit_to("recording_overlay", "bar-pick-focus", moved);
 }
 
 /// The picker's choice.
 pub fn pick(app: &AppHandle, transform_id: &str) {
+    crate::shortcut::set_pick_keys(app, false);
     overlay::hide_recording_overlay(app);
     let Some(captured) = lock(&PICKED).take() else {
         return;
@@ -655,6 +706,7 @@ pub fn pick(app: &AppHandle, transform_id: &str) {
 
 pub fn dismiss(app: &AppHandle) {
     lock(&PICKED).take();
+    crate::shortcut::set_pick_keys(app, false);
     overlay::hide_recording_overlay(app);
 }
 
