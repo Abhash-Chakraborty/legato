@@ -46,6 +46,7 @@ import { ModelUnloadTimeoutSetting } from "./ModelUnloadTimeout";
 import { PasteMethodSetting } from "./PasteMethod";
 import { ReliablePasteToggle } from "./debug/ReliablePaste";
 import { ClipboardHandlingSetting } from "./ClipboardHandling";
+import { FailedPastes } from "./FailedPastes";
 import { AutoSubmit } from "./AutoSubmit";
 import { AppendTrailingSpace } from "./AppendTrailingSpace";
 import {
@@ -338,6 +339,22 @@ export const buildSections = (
             ],
             render: () => <ShortcutInput shortcutId="view_changes" grouped />,
             requires: needsTransforms,
+          },
+        ],
+      },
+      {
+        id: "scratchpad",
+        titleKey: "settings.groups.scratchpad",
+        rows: [
+          {
+            id: "open-scratchpad",
+            searchKeys: [
+              "settings.general.shortcut.bindings.open_scratchpad.name",
+              "settings.general.shortcut.bindings.open_scratchpad.description",
+            ],
+            render: () => (
+              <ShortcutInput shortcutId="open_scratchpad" grouped />
+            ),
           },
         ],
       },
@@ -641,6 +658,14 @@ export const buildSections = (
               "settings.advanced.clipboardHandling.description",
             ],
             render: () => <ClipboardHandlingSetting grouped />,
+          },
+          {
+            id: "failed-pastes",
+            searchKeys: [
+              "settings.output.failedPastes.title",
+              "settings.output.failedPastes.description",
+            ],
+            render: () => <FailedPastes grouped />,
           },
         ],
       },

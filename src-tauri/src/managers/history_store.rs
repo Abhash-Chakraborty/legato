@@ -162,6 +162,30 @@ pub static MIGRATIONS: &[M] = &[
     ),
     // What the model heard, for Style's Heard and Pasted example.
     M::up("ALTER TABLE transcription_history ADD COLUMN heard_text TEXT;"),
+    // The Scratchpad: notes, which of them are open as tabs, and versions.
+    M::up(
+        "CREATE TABLE scratch_note (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL DEFAULT '',
+            auto_title INTEGER NOT NULL DEFAULT 1,
+            text TEXT NOT NULL DEFAULT '',
+            pinned INTEGER NOT NULL DEFAULT 0,
+            tab INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            source TEXT,
+            source_app TEXT,
+            source_app_path TEXT,
+            reason TEXT
+         );
+         CREATE TABLE scratch_version (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            at INTEGER NOT NULL
+         );
+         CREATE INDEX scratch_version_note ON scratch_version (note_id, at);",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.

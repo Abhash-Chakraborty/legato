@@ -67,6 +67,8 @@ pub(crate) enum DictationMode {
     Transform,
     /// Ask: the words are an instruction for the selection.
     Ask,
+    /// Into the Scratchpad instead of the app in front.
+    Scratchpad,
 }
 
 // Transcribe Action
@@ -105,6 +107,15 @@ where
 
 fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool {
     style == OverlayStyle::Live && is_streaming
+}
+
+/// History's app for a dictation into the Scratchpad.
+fn scratchpad_fields() -> AppFields {
+    AppFields {
+        name: "Scratchpad".to_string(),
+        category: crate::context::AppCategory::Other.as_str().to_string(),
+        ..Default::default()
+    }
 }
 
 fn app_fields(info: AppInfo) -> AppFields {
@@ -185,7 +196,7 @@ fn dictation_transform(
             })
             .cloned()
         }
-        DictationMode::Ask => None,
+        DictationMode::Ask | DictationMode::Scratchpad => None,
     }
 }
 
@@ -653,7 +664,11 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             }
 
-                            let app_info = started_in.as_ref().map(context::resolve);
+                            // The Scratchpad isn't an app with a style.
+                            let app_info = started_in
+                                .as_ref()
+                                .filter(|_| mode != DictationMode::Scratchpad)
+                                .map(context::resolve);
                             if post_process {
                                 if use_streaming_overlay {
                                     tm.emit_stream_working(StreamWorkKind::Polishing);
@@ -714,7 +729,11 @@ impl ShortcutAction for TranscribeAction {
                                     post_processed_text: processed.post_processed_text.clone(),
                                     post_process_prompt: processed.post_process_prompt.clone(),
                                     transform: processed.transform.clone(),
-                                    app: app_info.clone().map(app_fields),
+                                    app: if mode == DictationMode::Scratchpad {
+                                        Some(scratchpad_fields())
+                                    } else {
+                                        app_info.clone().map(app_fields)
+                                    },
                                     speech_ms: Some(speech_ms),
                                     model_id: Some(model_id.clone()),
                                     model_name: model_name.clone(),
@@ -732,7 +751,22 @@ impl ShortcutAction for TranscribeAction {
                                 None
                             };
 
-                            if processed.final_text.is_empty() {
+                            if mode == DictationMode::Scratchpad {
+                                if let Some(id) = saved_id {
+                                    let record = PasteRecord {
+                                        status: DictationStatus::Pasted,
+                                        error: None,
+                                        paste_ms: Some(stop_time.elapsed().as_millis() as i64),
+                                        paste_app: None,
+                                    };
+                                    if let Err(e) = hm.record_paste(id, record) {
+                                        error!("Failed to record the paste: {}", e);
+                                    }
+                                }
+                                utils::hide_recording_overlay(&ah);
+                                set_tray_state(&ah, TrayIconState::Idle);
+                                crate::scratchpad::receive(&ah, processed.final_text);
+                            } else if processed.final_text.is_empty() {
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                             } else {
@@ -768,12 +802,42 @@ impl ShortcutAction for TranscribeAction {
                                     } else {
                                         None
                                     };
-                                    let paste_result = crate::clipboard::paste_dictation(
-                                        final_text,
-                                        ah_clone.clone(),
-                                        paste_overrides,
-                                    );
+                                    // Windows drops input sent to an app
+                                    // running as administrator; don't try.
+                                    let admin = !not_pasted && context::foreground_is_elevated();
+                                    let fallback_text = final_text.clone();
+                                    let paste_result = if admin {
+                                        let name = app_info
+                                            .as_ref()
+                                            .map(|a| a.name.clone())
+                                            .unwrap_or_else(|| "The app".to_string());
+                                        let _ = ah_clone.clipboard().write_text(final_text);
+                                        Err(format!(
+                                            "{name} runs as administrator, so Windows blocks typing into it from Legato. The text is on the clipboard."
+                                        ))
+                                    } else {
+                                        crate::clipboard::paste_dictation(
+                                            final_text,
+                                            ah_clone.clone(),
+                                            paste_overrides,
+                                        )
+                                    };
                                     let pasted = paste_result.is_ok() && !not_pasted;
+                                    if let Err(reason) = &paste_result {
+                                        crate::scratchpad::save_failed_paste(
+                                            &ah_clone,
+                                            &fallback_text,
+                                            app_info.as_ref(),
+                                            reason,
+                                        );
+                                        crate::overlay::show_overlay_notice(
+                                            &ah_clone,
+                                            &crate::scratchpad::failed_paste_notice(
+                                                app_info.as_ref(),
+                                                admin,
+                                            ),
+                                        );
+                                    }
                                     match &paste_result {
                                         Ok(()) => debug!(
                                             "Text pasted successfully in {:?}",
@@ -995,6 +1059,12 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         "ask".to_string(),
         Arc::new(TranscribeAction {
             mode: DictationMode::Ask,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        crate::scratchpad::DICTATE_BINDING.to_string(),
+        Arc::new(TranscribeAction {
+            mode: DictationMode::Scratchpad,
         }) as Arc<dyn ShortcutAction>,
     );
     for (id, run) in [

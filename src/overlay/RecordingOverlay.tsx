@@ -54,6 +54,7 @@ type OverlayNotice =
         | "no_changes"
         | "ask_empty";
     }
+  | { kind: "saved_to_scratchpad"; app: string | null; admin: boolean }
   | {
       kind: "transform_failed";
       name: string;
@@ -85,7 +86,12 @@ const GOOD_NOTICES = new Set([
   "copied_last",
   "undone",
 ]);
-const WARN_NOTICES = new Set(["failed", "ai_skipped", "transform_failed"]);
+const WARN_NOTICES = new Set([
+  "failed",
+  "ai_skipped",
+  "transform_failed",
+  "saved_to_scratchpad",
+]);
 
 const CheckMark = () => (
   <svg viewBox="0 0 16 16" aria-hidden="true" className="snotice-ic ok">
@@ -519,6 +525,12 @@ const RecordingOverlay: React.FC = () => {
             ? "overlay.notice.undoneClipboard"
             : "overlay.notice.undone",
         );
+      case "saved_to_scratchpad":
+        return n.admin && n.app
+          ? t("overlay.notice.savedAdmin", { app: n.app })
+          : n.app
+            ? t("overlay.notice.savedFrom", { app: n.app })
+            : t("overlay.notice.saved");
       case "transform_failed":
         return t("overlay.notice.transformFailed", {
           name: n.name,

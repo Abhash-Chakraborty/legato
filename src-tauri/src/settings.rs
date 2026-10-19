@@ -182,6 +182,19 @@ pub enum PasteMethod {
     CtrlShiftV,
 }
 
+/// What the Scratchpad shortcut opens.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ScratchpadOpen {
+    /// The note that was open last.
+    #[default]
+    Resume,
+    /// A new, empty note.
+    New,
+    /// The pinned note edited last.
+    Pinned,
+}
+
 /// How the transcribe shortcut's key events drive a recording.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
@@ -618,6 +631,17 @@ pub struct AppSettings {
     /// Apps and sites moved between kinds of app on Style › Edit apps.
     #[serde(default)]
     pub app_rules: Vec<AppRule>,
+    #[serde(default)]
+    pub scratchpad_open: ScratchpadOpen,
+    /// The Scratchpad window floats above other apps.
+    #[serde(default = "default_true")]
+    pub scratchpad_keep_on_top: bool,
+    /// A paste that fails is saved in the Scratchpad, which opens.
+    #[serde(default = "default_true")]
+    pub scratchpad_failed_pastes: bool,
+    /// The note the Scratchpad showed last, for Resume.
+    #[serde(default)]
+    pub scratchpad_last_note: Option<i64>,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
@@ -1115,6 +1139,12 @@ pub fn get_default_settings() -> AppSettings {
             "Shows what the last transform changed, with Keep and Undo.",
             "super+alt+o",
         ),
+        (
+            "open_scratchpad",
+            "Open Scratchpad",
+            "Press to open the Scratchpad; hold to dictate into a new note.",
+            "super+alt+s",
+        ),
     ] {
         bindings.insert(
             id.to_string(),
@@ -1202,6 +1232,10 @@ pub fn get_default_settings() -> AppSettings {
         style_enabled: true,
         styles: Styles::default(),
         app_rules: Vec::new(),
+        scratchpad_open: ScratchpadOpen::default(),
+        scratchpad_keep_on_top: true,
+        scratchpad_failed_pastes: true,
+        scratchpad_last_note: None,
         mute_while_recording: false,
         append_trailing_space: false,
         theme: default_theme(),

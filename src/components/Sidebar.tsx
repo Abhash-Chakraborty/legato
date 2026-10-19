@@ -4,6 +4,7 @@ import {
   BookA,
   Cpu,
   House,
+  NotebookPen,
   Replace,
   Scissors,
   Settings,
@@ -26,7 +27,7 @@ interface NavItem {
 
 // What you do with dictation first, then the words and prompts you keep;
 // configuration sits at the bottom. Pages from later steps of the plan
-// (Notes, Scratchpad, Insights) join when they exist.
+// (Notes, Insights) join when they exist.
 const TOP: NavItem[] = [
   { id: "home", labelKey: "sidebar.home", icon: House },
   {
@@ -37,6 +38,7 @@ const TOP: NavItem[] = [
   },
   { id: "snippets", labelKey: "sidebar.snippets", icon: Scissors },
   { id: "style", labelKey: "sidebar.style", icon: Type },
+  { id: "scratchpad", labelKey: "sidebar.scratchpad", icon: NotebookPen },
   { id: "transforms", labelKey: "sidebar.transforms", icon: Replace },
 ];
 const BOTTOM: NavItem[] = [

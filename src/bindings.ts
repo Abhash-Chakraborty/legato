@@ -1314,6 +1314,164 @@ async changeCategoryStyleSetting(category: string, style: CategoryStyle) : Promi
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getScratchNotes() : Promise<Result<ScratchNote[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_scratch_notes") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getScratchpadState() : Promise<Result<ScratchpadState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_scratchpad_state") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async newScratchNote() : Promise<Result<ScratchNote, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("new_scratch_note") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveScratchNote(id: number, text: string) : Promise<Result<ScratchNote, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_scratch_note", { id, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async renameScratchNote(id: number, title: string) : Promise<Result<ScratchNote, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_scratch_note", { id, title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setScratchNotePinned(id: number, pinned: boolean) : Promise<Result<ScratchNote, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_scratch_note_pinned", { id, pinned }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async dismissScratchReason(id: number) : Promise<Result<ScratchNote, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("dismiss_scratch_reason", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteScratchNotes(ids: number[]) : Promise<Result<DeletedNote[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_scratch_notes", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreScratchNotes(deleted: DeletedNote[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_scratch_notes", { deleted }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getScratchVersions(id: number) : Promise<Result<ScratchVersion[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_scratch_versions", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreScratchVersion(id: number, versionId: number) : Promise<Result<ScratchNote, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_scratch_version", { id, versionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async openScratchTab(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_scratch_tab", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async closeScratchTab(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("close_scratch_tab", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async moveScratchTab(id: number, to: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("move_scratch_tab", { id, to }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async openScratchpad(noteId: number | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_scratchpad", { noteId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hideScratchpad() : Promise<void> {
+    return await TAURI_INVOKE("hide_scratchpad");
+},
+async scratchpadDictate(noteId: number) : Promise<void> {
+    return await TAURI_INVOKE("scratchpad_dictate", { noteId });
+},
+async sendScratchNote(text: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("send_scratch_note", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeScratchpadKeepOnTopSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_scratchpad_keep_on_top_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeScratchpadOpenSetting(open: ScratchpadOpen) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_scratchpad_open_setting", { open }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeScratchpadFailedPastesSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_scratchpad_failed_pastes_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1325,6 +1483,10 @@ aiStatusChanged: AiStatusChanged,
 dictionaryChanged: DictionaryChanged,
 historyUpdatePayload: HistoryUpdatePayload,
 streamPhaseEvent: StreamPhaseEvent,
+scratchpadChanged: ScratchpadChanged,
+scratchpadDictating: ScratchpadDictating,
+scratchpadInsert: ScratchpadInsert,
+scratchpadShow: ScratchpadShow,
 snippetsChanged: SnippetsChanged,
 streamTextEvent: StreamTextEvent,
 transformRunsChanged: TransformRunsChanged
@@ -1333,6 +1495,10 @@ aiStatusChanged: "ai-status-changed",
 dictionaryChanged: "dictionary-changed",
 historyUpdatePayload: "history-update-payload",
 streamPhaseEvent: "stream-phase-event",
+scratchpadChanged: "scratchpad-changed",
+scratchpadDictating: "scratchpad-dictating",
+scratchpadInsert: "scratchpad-insert",
+scratchpadShow: "scratchpad-show",
 snippetsChanged: "snippets-changed",
 streamTextEvent: "stream-text-event",
 transformRunsChanged: "transform-runs-changed"
@@ -1585,6 +1751,84 @@ text: string;
  */
 matched: number[] }
 export type SnippetsChanged = null
+export type ScratchNote = { id: number; 
+/**
+ * Empty until the note has text; the window shows "Untitled".
+ */
+title: string; 
+/**
+ * Whether the title follows the first line.
+ */
+auto_title: boolean; text: string; pinned: boolean; 
+/**
+ * Position among the window's tabs, or None when closed.
+ */
+tab: number | null; created_at: number; updated_at: number; source: NoteSource | null; 
+/**
+ * For a failed paste: the app it was going to, and why it failed.
+ */
+source_app: string | null; source_app_path: string | null; reason: string | null; 
+/**
+ * Versions kept, the current text included.
+ */
+versions: number }
+/**
+ * Where a note came from.
+ */
+export type NoteSource = 
+/**
+ * Dictated with the Scratchpad shortcut.
+ */
+"dictation" | 
+/**
+ * A paste that failed, saved here instead.
+ */
+"failed_paste"
+export type ScratchVersion = { id: number; text: string; at: number }
+/**
+ * A deleted note with its versions, for Undo.
+ */
+export type DeletedNote = { note: ScratchNote; versions: ScratchVersion[] }
+/**
+ * What the window needs when it opens.
+ */
+export type ScratchpadState = { tabs: ScratchNote[]; active: number | null; keep_on_top: boolean; 
+/**
+ * The app Send to pastes into.
+ */
+target_app: string | null; target_app_path: string | null }
+/**
+ * What the Scratchpad shortcut opens.
+ */
+export type ScratchpadOpen = 
+/**
+ * The note that was open last.
+ */
+"resume" | 
+/**
+ * A new, empty note.
+ */
+"new" | 
+/**
+ * The pinned note edited last.
+ */
+"pinned"
+/**
+ * Sent when notes or tabs change, from any window.
+ */
+export type ScratchpadChanged = null
+/**
+ * Tells the window which note to show.
+ */
+export type ScratchpadShow = { note_id: number }
+/**
+ * Dictated words for the note open in the window, inserted at its cursor.
+ */
+export type ScratchpadInsert = { note_id: number; text: string }
+/**
+ * Whether the window's Dictate here is listening.
+ */
+export type ScratchpadDictating = { active: boolean }
 /**
  * Everything the Snippets page shows.
  */
@@ -1714,7 +1958,19 @@ style_enabled?: boolean; styles?: Styles;
 /**
  * Apps and sites moved between kinds of app on Style › Edit apps.
  */
-app_rules?: AppRule[]; mute_while_recording?: boolean; append_trailing_space?: boolean; theme?: Theme; 
+app_rules?: AppRule[]; scratchpad_open?: ScratchpadOpen; 
+/**
+ * The Scratchpad window floats above other apps.
+ */
+scratchpad_keep_on_top?: boolean; 
+/**
+ * A paste that fails is saved in the Scratchpad, which opens.
+ */
+scratchpad_failed_pastes?: boolean; 
+/**
+ * The note the Scratchpad showed last, for Resume.
+ */
+scratchpad_last_note?: number | null; mute_while_recording?: boolean; append_trailing_space?: boolean; theme?: Theme; 
 /**
  * Use the standard Windows title bar instead of Legato's own. Applied when
  * the main window is created and whenever the setting changes.

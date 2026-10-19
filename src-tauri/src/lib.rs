@@ -19,6 +19,7 @@ mod managers;
 mod overlay;
 mod paste_tx;
 pub mod portable;
+mod scratchpad;
 mod secrets;
 mod selection;
 mod settings;
@@ -236,6 +237,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let snippet_manager = Arc::new(
         managers::snippets::SnippetManager::new(app_handle).expect("Failed to initialize snippets"),
     );
+    let scratchpad_manager = Arc::new(
+        scratchpad::ScratchpadManager::new(app_handle)
+            .expect("Failed to initialize the Scratchpad"),
+    );
     context::set_rules(settings::get_settings(app_handle).app_rules);
 
     // Add managers to Tauri's managed state
@@ -245,6 +250,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(history_manager.clone());
     app_handle.manage(dictionary_manager);
     app_handle.manage(snippet_manager);
+    app_handle.manage(scratchpad_manager);
     app_handle.manage(context::DictationContext::default());
     app_handle.manage(tray::TrayState::new());
 
@@ -806,6 +812,27 @@ pub fn run(cli_args: CliArgs) {
             commands::style::change_custom_filler_words_setting,
             commands::style::change_style_enabled_setting,
             commands::style::change_category_style_setting,
+            commands::scratchpad::get_scratch_notes,
+            commands::scratchpad::get_scratchpad_state,
+            commands::scratchpad::new_scratch_note,
+            commands::scratchpad::save_scratch_note,
+            commands::scratchpad::rename_scratch_note,
+            commands::scratchpad::set_scratch_note_pinned,
+            commands::scratchpad::dismiss_scratch_reason,
+            commands::scratchpad::delete_scratch_notes,
+            commands::scratchpad::restore_scratch_notes,
+            commands::scratchpad::get_scratch_versions,
+            commands::scratchpad::restore_scratch_version,
+            commands::scratchpad::open_scratch_tab,
+            commands::scratchpad::close_scratch_tab,
+            commands::scratchpad::move_scratch_tab,
+            commands::scratchpad::open_scratchpad,
+            commands::scratchpad::hide_scratchpad,
+            commands::scratchpad::scratchpad_dictate,
+            commands::scratchpad::send_scratch_note,
+            commands::scratchpad::change_scratchpad_keep_on_top_setting,
+            commands::scratchpad::change_scratchpad_open_setting,
+            commands::scratchpad::change_scratchpad_failed_pastes_setting,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -813,6 +840,10 @@ pub fn run(cli_args: CliArgs) {
             ai::AiStatusChanged,
             transforms::TransformRunsChanged,
             managers::snippets::SnippetsChanged,
+            scratchpad::ScratchpadChanged,
+            scratchpad::ScratchpadShow,
+            scratchpad::ScratchpadInsert,
+            scratchpad::ScratchpadDictating,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
         ]);

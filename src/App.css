@@ -83,6 +83,10 @@ body {
   outline: 2px solid var(--focus-outer);
   outline-offset: 2px;
 }
+/* A full-bleed note editor shows its caret, as Notepad does, not a ring. */
+.note-editor:focus-visible {
+  outline: none;
+}
 
 .container {
   margin: 0;
@@ -132,7 +136,8 @@ body {
 ::highlight(dictionary-search),
 ::highlight(runs-search),
 ::highlight(snippets-search),
-::highlight(apps-search) {
+::highlight(apps-search),
+::highlight(notes-search) {
   background-color: var(--teal-100);
   color: var(--text);
 }

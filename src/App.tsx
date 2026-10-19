@@ -5,7 +5,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { ModelStateEvent, RecordingErrorEvent } from "./lib/types/events";
@@ -21,10 +21,12 @@ import {
 import { SettingsPage } from "./components/settings/SettingsPage";
 import { DictionaryPage } from "./components/pages/dictionary/DictionaryPage";
 import { SnippetsPage } from "./components/pages/snippets/SnippetsPage";
+import { ScratchpadPage } from "./components/pages/scratchpad/ScratchpadPage";
 import { StylePage } from "./components/pages/style/StylePage";
 import { TransformsPage } from "./components/pages/transforms/TransformsPage";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar } from "./components/Sidebar";
+import { AppToaster } from "./components/shell/AppToaster";
 import { TitleBar } from "./components/shell/TitleBar";
 import { WhatsNewGate } from "./components/whats-new";
 import { useNavStore, type Page } from "./stores/navStore";
@@ -50,6 +52,8 @@ const renderPage = (
       return <SnippetsPage />;
     case "style":
       return <StylePage />;
+    case "scratchpad":
+      return <ScratchpadPage />;
     case "transforms":
       return <TransformsPage />;
     case "models":
@@ -313,24 +317,7 @@ function App() {
   // its position in the tree doesn't affect layout. Without this, errors during
   // onboarding (e.g. a model download failing because blob.handy.computer is
   // unreachable) are silently swallowed and the wizard just appears to "blink".
-  const toaster = (
-    <Toaster
-      theme="system"
-      toastOptions={{
-        unstyled: true,
-        classNames: {
-          toast:
-            "bg-background border border-mid-gray/20 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 text-sm",
-          title: "font-medium",
-          description: "text-mid-gray",
-          actionButton:
-            "px-2 py-1 text-xs font-medium rounded-lg border bg-mid-gray/10 border-mid-gray/20 hover:bg-background-ui/30 hover:border-logo-primary cursor-pointer whitespace-nowrap",
-          cancelButton:
-            "px-2 py-1 text-xs font-medium rounded-lg text-text-2 hover:text-text cursor-pointer whitespace-nowrap",
-        },
-      }}
-    />
-  );
+  const toaster = <AppToaster />;
 
   // Still checking onboarding status
   if (onboardingStep === null) {

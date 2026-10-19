@@ -6,6 +6,7 @@ export type Page =
   | "dictionary"
   | "snippets"
   | "style"
+  | "scratchpad"
   | "transforms"
   | "models"
   | "settings";

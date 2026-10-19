@@ -34,6 +34,12 @@ pub fn handle_shortcut_event(
 ) {
     let settings = get_settings(app);
 
+    // Tap to open the Scratchpad, hold to dictate into it.
+    if crate::scratchpad::is_shortcut(binding_id) {
+        crate::scratchpad::shortcut(app, hotkey_string, is_pressed);
+        return;
+    }
+
     // Transcribe bindings are handled by the coordinator.
     if is_transcribe_binding(binding_id) {
         if let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() {

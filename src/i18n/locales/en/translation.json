@@ -19,6 +19,7 @@
     "dictionary": "Dictionary",
     "snippets": "Snippets",
     "style": "Style",
+    "scratchpad": "Scratchpad",
     "transforms": "Transforms",
     "models": "Models",
     "settings": "Settings"
@@ -168,6 +169,10 @@
           "copy_last": {
             "name": "Copy last dictation",
             "description": "Puts what you last dictated on the clipboard."
+          },
+          "open_scratchpad": {
+            "name": "Open Scratchpad",
+            "description": "Press to open the Scratchpad; hold to dictate into a new note."
           }
         },
         "errors": {
@@ -652,6 +657,7 @@
       "untitled": "",
       "transforms": "Transforms",
       "lastDictation": "Last dictation",
+      "scratchpad": "Scratchpad",
       "messages": "Messages"
     },
     "requires": {
@@ -824,6 +830,12 @@
         "title": "Show changes after a transform",
         "help": "The bar shows what a transform changed, with Keep and Undo. Each transform can turn this off."
       }
+    },
+    "output": {
+      "failedPastes": {
+        "title": "Open the Scratchpad when a paste fails",
+        "description": "A dictation that can't be pasted is always saved there. With this on, the window opens on it so you can copy it or send it again."
+      }
     }
   },
   "footer": {
@@ -915,6 +927,9 @@
       "no_last_dictation": "Nothing dictated yet",
       "no_changes": "No changes to show",
       "ask_empty": "Didn't catch what to do · hold and say it",
+      "saved": "Couldn't paste · saved in the Scratchpad",
+      "savedFrom": "Couldn't paste into {{app}} · saved in the Scratchpad",
+      "savedAdmin": "{{app}} runs as administrator · saved in the Scratchpad and copied",
       "transformFailed": "{{name}} didn't run · {{problem}}",
       "problem": {
         "none": "no AI model is set up",
@@ -1816,6 +1831,162 @@
       "restore": "Restore defaults",
       "restored": "{{category}} has its built-in apps again",
       "done": "Done"
+    }
+  },
+  "scratchpad": {
+    "title": "Scratchpad",
+    "newNote": "New note",
+    "untitled": "Untitled",
+    "pinned": "Pinned",
+    "emptyNote": "Empty note",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyAll": "Copy all",
+    "words_one": "{{count}} word",
+    "words_other": "{{count}} words",
+    "subtitle": "A floating note you can type or dictate into instead of the app in front.",
+    "subtitleFailedOn": "Pastes that fail are saved here and the window opens.",
+    "subtitleFailedOff": "Pastes that fail are saved here without opening the window.",
+    "subtitleChange": "Change",
+    "shortcut": {
+      "chip": "opens it from any app",
+      "change": "Change this shortcut in Settings",
+      "none": "Set a shortcut"
+    },
+    "tabs": {
+      "label": "Notes",
+      "all": "All",
+      "pinned": "Pinned"
+    },
+    "search": "Search notes",
+    "listLabel": "Scratchpad notes",
+    "noResults": "No note matches “{{query}}”",
+    "noResultsBody": "Search looks at titles and at the text inside each note.",
+    "clearSearch": "Clear search",
+    "empty": {
+      "title": "No notes yet",
+      "body": "Start a note here, or hold {{keys}} in any app to dictate one.",
+      "bodyNoKey": "Start a note here, or set a shortcut to open the Scratchpad from any app."
+    },
+    "emptyPinned": {
+      "title": "No pinned notes",
+      "body": "Pin the notes you come back to. With When opened set to Last pinned note, the shortcut opens them first.",
+      "showAll": "Show all notes"
+    },
+    "footer": "{{notes}} · {{pinned}} pinned · kept on this PC until you delete them",
+    "counts": {
+      "notes_one": "{{formatted}} note",
+      "notes_other": "{{formatted}} notes"
+    },
+    "row": {
+      "failed": "Saved when a paste failed",
+      "failedInto": "Saved when pasting into {{app}} failed",
+      "pin": "Pin {{title}}",
+      "unpin": "Unpin {{title}}",
+      "copy": "Copy the text of {{title}}",
+      "delete": "Delete {{title}}"
+    },
+    "card": {
+      "title": "Note title",
+      "placeholder": "Start typing, or open the window to dictate",
+      "noVersions": "No earlier versions yet",
+      "openInWindow": "Open in window"
+    },
+    "editor": {
+      "mode": "Write or preview",
+      "write": "Write",
+      "preview": "Preview",
+      "label": "Note text",
+      "placeholder": "Start typing, or press Ctrl+Space to dictate",
+      "previewEmpty": "Nothing to preview yet",
+      "empty": "Empty"
+    },
+    "status": {
+      "saving": "Saving…",
+      "saved": "Saved",
+      "failed": "Couldn't save.",
+      "retry": "Retry",
+      "edited": "Edited {{when}}"
+    },
+    "banner": {
+      "into": "Couldn't paste into {{app}}.",
+      "noApp": "Couldn't paste this dictation.",
+      "dismiss": "Hide this message"
+    },
+    "actions": {
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "rename": "Rename",
+      "versions_one": "Version history",
+      "versions_other": "Version history ({{count}})",
+      "delete": "Delete note"
+    },
+    "versions": {
+      "title": "Version history",
+      "description": "A version is kept each time the note is saved, up to 50.",
+      "close": "Close",
+      "cancel": "Cancel",
+      "restore": "Restore this version",
+      "list": "Versions",
+      "current": "Current",
+      "none": "No earlier versions yet.",
+      "restored": "Restored the version from {{when}}",
+      "failed": "Couldn't restore that version"
+    },
+    "toast": {
+      "copied": "Copied to the clipboard",
+      "deleted": "Deleted “{{title}}”",
+      "undo": "Undo",
+      "deleteFailed": "Couldn't delete the note",
+      "newFailed": "Couldn't start a note",
+      "sendFailed": "Couldn't send the note",
+      "openFailed": "Couldn't open the Scratchpad"
+    },
+    "keepOnTop": {
+      "short": "Keep on top",
+      "title": "Keep on top of other windows",
+      "help": "The window floats above other apps until you close it, so you can read or dictate into it while you work."
+    },
+    "keys": {
+      "ctrl": "Ctrl",
+      "space": "Space"
+    },
+    "window": {
+      "tabs": "Open notes",
+      "renameLabel": "Note name",
+      "closeTab": "Close {{title}}",
+      "closeTabShort": "Close tab",
+      "newTab": "New tab",
+      "newTabTip": "New tab (Ctrl+T)",
+      "more": "Note actions",
+      "close": "Close the Scratchpad",
+      "closeTip": "Close",
+      "listening": "Listening · click to stop",
+      "dictate": "Dictate here",
+      "sendTo": "Send to {{app}}",
+      "send": "Send",
+      "sendTip": "Paste into {{app}} (Ctrl+Enter)",
+      "noTarget": "Click into the app you want the text in, then open the Scratchpad",
+      "emptyTitle": "No notes open",
+      "emptyBody": "Start a new note, or open one from the Scratchpad page in Legato."
+    },
+    "settings": {
+      "title": "Window",
+      "open": {
+        "title": "When opened",
+        "help": "{{keys}} opens the window on {{on}}.",
+        "helpNoKey": "The window opens on {{on}}.",
+        "options": {
+          "resume": "Resume last note",
+          "new": "New note",
+          "pinned": "Last pinned note"
+        }
+      },
+      "opensOn": {
+        "resume": "the note you had open",
+        "new": "a new note",
+        "pinned": "your last pinned note"
+      }
     }
   }
 }

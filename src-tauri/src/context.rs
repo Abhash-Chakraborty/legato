@@ -203,6 +203,46 @@ pub fn foreground_window() -> Option<ForegroundWindow> {
     }
 }
 
+/// The window in front, as a handle `focus_window` can bring back.
+pub fn foreground_handle() -> Option<isize> {
+    #[cfg(windows)]
+    {
+        win::foreground_handle()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+/// Brings a window back to the front. False when it's gone or Windows
+/// refused.
+pub fn focus_window(handle: isize) -> bool {
+    #[cfg(windows)]
+    {
+        win::focus_window(handle)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = handle;
+        false
+    }
+}
+
+/// Whether the window in front runs at a higher integrity level than
+/// Legato, as an app started "as administrator" does. Windows drops input
+/// sent to it, so a paste would silently fail.
+pub fn foreground_is_elevated() -> bool {
+    #[cfg(windows)]
+    {
+        win::foreground_is_elevated()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
 /// Resolves a window into its app's name, site and category.
 pub fn resolve(window: &ForegroundWindow) -> AppInfo {
     let exe = window
@@ -430,6 +470,102 @@ mod win {
         DestroyIcon, EnumChildWindows, GetForegroundWindow, GetIconInfo, GetWindowTextLengthW,
         GetWindowTextW, GetWindowThreadProcessId, HICON, ICONINFO,
     };
+
+    pub fn foreground_handle() -> Option<isize> {
+        let hwnd = unsafe { GetForegroundWindow() };
+        (!hwnd.0.is_null()).then_some(hwnd.0 as isize)
+    }
+
+    pub fn focus_window(handle: isize) -> bool {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            IsIconic, IsWindow, SetForegroundWindow, ShowWindow, SW_RESTORE,
+        };
+        let hwnd = HWND(handle as *mut c_void);
+        unsafe {
+            if !IsWindow(Some(hwnd)).as_bool() {
+                return false;
+            }
+            if IsIconic(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+            SetForegroundWindow(hwnd).as_bool()
+        }
+    }
+
+    /// The integrity level's RID (0x2000 medium, 0x3000 high), or the error
+    /// opening the token.
+    unsafe fn integrity_of(
+        process: windows::Win32::Foundation::HANDLE,
+    ) -> windows::core::Result<Option<u32>> {
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::Security::{
+            GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TokenIntegrityLevel,
+            TOKEN_MANDATORY_LABEL, TOKEN_QUERY,
+        };
+        use windows::Win32::System::Threading::OpenProcessToken;
+        let mut token = HANDLE::default();
+        OpenProcessToken(process, TOKEN_QUERY, &mut token)?;
+        let mut size = 0u32;
+        let _ = GetTokenInformation(token, TokenIntegrityLevel, None, 0, &mut size);
+        if size == 0 {
+            let _ = CloseHandle(token);
+            return Ok(None);
+        }
+        let mut buf = vec![0u8; size as usize];
+        let read = GetTokenInformation(
+            token,
+            TokenIntegrityLevel,
+            Some(buf.as_mut_ptr() as *mut c_void),
+            size,
+            &mut size,
+        );
+        let _ = CloseHandle(token);
+        if read.is_err() {
+            return Ok(None);
+        }
+        let label = &*(buf.as_ptr() as *const TOKEN_MANDATORY_LABEL);
+        let sid = label.Label.Sid;
+        let count = *GetSidSubAuthorityCount(sid);
+        if count == 0 {
+            return Ok(None);
+        }
+        Ok(Some(*GetSidSubAuthority(sid, u32::from(count) - 1)))
+    }
+
+    pub fn foreground_is_elevated() -> bool {
+        use windows::Win32::Foundation::E_ACCESSDENIED;
+        use windows::Win32::System::Threading::GetCurrentProcess;
+        const HIGH: u32 = 0x3000;
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if hwnd.0.is_null() {
+                return false;
+            }
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            if pid == 0 {
+                return false;
+            }
+            let own = integrity_of(GetCurrentProcess())
+                .ok()
+                .flatten()
+                .unwrap_or(0x2000);
+            if own >= HIGH {
+                return false;
+            }
+            let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+                return false;
+            };
+            let level = integrity_of(process);
+            let _ = CloseHandle(process);
+            match level {
+                Ok(Some(level)) => level > own,
+                Ok(None) => false,
+                // An elevated process's token can't be read from below.
+                Err(e) => e.code() == E_ACCESSDENIED,
+            }
+        }
+    }
 
     pub fn foreground_window() -> Option<ForegroundWindow> {
         unsafe {

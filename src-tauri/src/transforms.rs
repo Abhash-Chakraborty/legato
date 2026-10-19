@@ -84,6 +84,12 @@ pub enum BarNotice {
     NoChanges,
     /// Ask heard no instruction.
     AskEmpty,
+    /// The paste failed, so the text went to the Scratchpad. `admin` when the
+    /// app runs as administrator.
+    SavedToScratchpad {
+        app: Option<String>,
+        admin: bool,
+    },
     /// A transform didn't run; the text stayed as it was.
     TransformFailed {
         name: String,
