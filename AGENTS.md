@@ -46,38 +46,62 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 
 ### Backend Structure (src-tauri/src/)
 
-- `lib.rs` - Main entry point, Tauri setup, manager initialization
-- `managers/` - Core business logic:
+- `lib.rs` - Main entry point, Tauri setup, manager initialization, window events (DPI refit)
+- `managers/` - Core business logic and the SQLite stores:
   - `audio.rs` - Audio recording and device management
   - `model.rs` - Model downloading and management
-  - `transcription.rs` - Speech-to-text processing pipeline
-  - `history.rs` - Transcription history storage (files, settings, events)
-  - `history_store.rs` - History database: schema, search, daily statistics
+  - `transcription.rs` - Speech-to-text processing pipeline (loads the model Style picks per kind of app)
+  - `history.rs` / `history_store.rs` - Transcription history, Home's queries, daily statistics for Insights
+  - `dictionary.rs` / `dictionary_store.rs` - The Dictionary: words, heard-as forms, learned and spelled-differently suggestions
+  - `snippets.rs` / `snippet_store.rs` - Snippets (trigger phrase → saved text)
+  - `transform_store.rs` - Transform runs and usage
+  - `notes_store.rs` - Notes recordings, transcript lines, tags, action items
+  - `scratch_store.rs` - Scratchpad notes and tabs
+- `engine_supervisor/` - Runs transcribe.cpp in a worker process
 - `audio_toolkit/` - Low-level audio processing:
   - `audio/` - Recording sink (VAD, levels, live streaming feed), output devices, WAV I/O
   - `vad/` - Voice Activity Detection (Silero VAD)
-- `commands/` - Tauri command handlers for frontend communication
+- `commands/` - Tauri command handlers for frontend communication, one file per page or feature
+- `actions.rs` - What each shortcut does; the dictation pipeline from recording to paste
+- `*_rules.rs` - Pure logic kept free of Tauri so it can be unit tested on any OS: `cleanup_rules`, `style_rules`, `snippet_rules`, `transform_rules`, `learn_rules`, `notes_rules`, `calls_rules`, `ai_rules`
+- `transforms.rs` - Transforms on the selection or last dictation, the keyboard picker, Ask, the bar's Keep/Undo
+- `clipboard.rs` / `paste_tx/` - Pasting, per-category paste overrides, remembering the last paste
+- `selection.rs` - Copying the selection from another app; Add selection to Dictionary
+- `edit_reader.rs` - Learn from my edits (UI Automation read after a paste)
+- `scratchpad.rs` - The Scratchpad window, failed pastes, Send to
+- `notes.rs` / `loopback.rs` - Notes: voice memos and meetings (per-app loopback capture)
+- `calls.rs` - Noticing calls and offering notes
+- `context.rs` - Knowing the app in front (name, category, icon) and listing open windows
+- `desktop.rs` - Windows shell integration: app ID, jump list, notifications (Do not disturb aware), Mica
+- `setup.rs` - First-run setup: microphone check, model choice, practice scenes
+- `ai.rs` / `llm_client.rs` / `secrets.rs` - Your own AI provider; API keys in Windows Credential Manager
 - `cli.rs` - CLI argument definitions (clap derive)
-- `shortcut/` - Global keyboard shortcut handling
+- `shortcut/` - Global keyboard shortcut handling (handy-keys or Tauri), including the picker's temporary keys
 - `settings.rs` - Application settings management
-- `context.rs` - Knowing the app in front (name, category, icon)
-- `overlay.rs` - Recording overlay window
+- `overlay.rs` - The Legato bar (recording overlay window and its states)
+- `tray.rs` - System tray icon and menu
 - `signal_handle.rs` - `send_transcription_input()` reusable function
+- `handy_migration.rs` - First-run move of Handy's data into Legato's folders
 - `utils.rs` - Shared helpers (operation cancellation, env flags, log redaction, x64-on-ARM64 detection)
 
 ### Frontend Structure (src/)
 
-- `App.tsx` - Main component with onboarding flow
+- `App.tsx` - Main window shell, setup flow, Mica background
 - `components/` - React UI components:
-  - `settings/` - Settings UI
+  - `pages/` - The sidebar pages: `home`, `dictionary`, `snippets`, `style`, `transforms`, `notes`, `scratchpad`, `insights`
+  - `settings/` - Settings sections
+  - `setup/` - First-run setup with practice scenes
   - `model-selector/` - Model management interface
-  - `onboarding/` - First-run experience
+  - `scratchpad/` - The Scratchpad window (tabs, preview, Transform menu, Send to)
+  - `notes/` - Shared Notes components
   - `update-checker/` - App update notifications
-  - `shared/`, `ui/`, `icons/`, `footer/` - Shared components
+  - `shared/`, `ui/`, `icons/`, `shell/`, `whats-new/` - Shared components
+- `overlay/` - The Legato bar window entry point
+- `scratchpad/` - The Scratchpad window entry point
+- `stores/` - Zustand stores (settings, models, dictionary, snippets, transforms, notes, calls, scratchpad, navigation)
 - `hooks/useSettings.ts` - Settings state management hook
-- `stores/settingsStore.ts` - Zustand store for settings
-- `bindings.ts` - Auto-generated Tauri type bindings (via tauri-specta)
-- `overlay/` - Recording overlay window entry point
+- `bindings.ts` - Tauri type bindings (generated by tauri-specta; kept in step by hand when commands change)
+- `i18n/locales/en/translation.json` - All UI strings; the `tray`, `handyMigration` and `desktop` sections also feed Rust through `build.rs`
 - `lib/types/` - Shared TypeScript type definitions
 
 ### Key Architecture Patterns
@@ -86,7 +110,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 
 **Command-Event Architecture:** Frontend → Backend via Tauri commands; Backend → Frontend via events.
 
-**Pipeline Processing:** Audio → VAD → Whisper/Parakeet → Text output → Clipboard/Paste
+**Pipeline Processing:** Audio → VAD → speech model → Dictionary/snippets → Cleanup and Style → optional transform → Clipboard/Paste
 
 **State Flow:** Zustand → Tauri Command → Rust State → Persistence (tauri-plugin-store)
 
@@ -102,11 +126,11 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 
 ### Application Flow
 
-1. **Initialization:** App starts minimized to tray, loads settings, initializes managers
-2. **Model Setup:** First-run downloads preferred Whisper model (Small/Medium/Turbo/Large)
-3. **Recording:** Global shortcut triggers audio recording with VAD filtering
-4. **Processing:** Audio sent to Whisper model for transcription
-5. **Output:** Text pasted to active application via system clipboard
+1. **Initialization:** App starts minimized to tray, loads settings, initializes managers, writes the jump list
+2. **Setup:** First run checks the microphone, picks a model from your Windows input languages, and practises in copies of your apps
+3. **Recording:** Global shortcut triggers audio recording with VAD filtering; the app in front decides the speech model and style
+4. **Processing:** Audio goes to the speech model in a worker process, then through the Dictionary, snippets, cleanup and Style
+5. **Output:** Text pasted to active application via system clipboard; a failed paste lands in the Scratchpad
 
 ### Settings System
 
@@ -114,8 +138,9 @@ Settings are stored using Tauri's store plugin with reactive updates:
 
 - Keyboard shortcuts (configurable, supports push-to-talk)
 - Audio devices (microphone/output selection)
-- Model preferences (Small/Medium/Turbo/Large Whisper variants)
-- Audio feedback and translation options
+- Speech model, plus an optional model per kind of app in Style
+- Style per kind of app: tone, paste keys, Enter after pasting, trailing space
+- Transforms, Ask and your AI provider; Notes, calls, Scratchpad and learning options
 
 ### Single Instance Architecture
 
@@ -129,6 +154,12 @@ The UI is English only. All user-facing strings still go through i18next, and ES
 
 1. Add key to `src/i18n/locales/en/translation.json`
 2. Use in component: `const { t } = useTranslation(); t('key.path')`
+
+## Checks
+
+- Frontend tests are assertion scripts (`*.test.ts`) that print `ok`; run them with `bun test <dir>`
+- The `*_rules.rs` and store modules have unit tests that run on any OS; the rest of the backend builds only for Windows, so check it with `cargo xwin clippy --target x86_64-pc-windows-msvc` from Linux
+- After editing `translation.json` with a script, run Prettier on it; `bun run format:check` covers it
 
 ## Code Style
 
