@@ -146,6 +146,19 @@ Settings are stored using Tauri's store plugin with reactive updates:
 
 The app enforces single instance behavior — launching when already running brings the settings window to front rather than creating a new process. Remote control flags (`--toggle-transcription`, etc.) work by launching a second instance that sends args to the running instance via `tauri_plugin_single_instance`, then exits.
 
+## Phone Sync
+
+Settings › Devices pairs Legato for Android by QR code and syncs over Wi-Fi or Netbird with mutual TLS, with no server in between. The wire protocol, merge rules and what syncs are written down in [docs/phone-sync.md](docs/phone-sync.md); keep it current when the protocol changes.
+
+`tools/stand-in-phone` is a small Linux/Windows CLI that plays the phone, built from the same `src-tauri/src/sync` files:
+
+```bash
+cd tools/stand-in-phone
+cargo test                                   # unit tests plus an end-to-end PC ↔ phone run
+cargo run -- pair 'legato://pair?...'        # pair with a running Legato (Copy link in the dialog)
+cargo run -- connect                         # reconnect later; type `help` for commands
+```
+
 ## UI Strings
 
 The UI is English only. All user-facing strings still go through i18next, and ESLint enforces this (no hardcoded strings in JSX).
