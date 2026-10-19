@@ -17,7 +17,10 @@ mod handy_migration;
 mod input;
 mod learn_rules;
 mod llm_client;
+mod loopback;
 mod managers;
+mod notes;
+mod notes_rules;
 mod overlay;
 mod paste_tx;
 pub mod portable;
@@ -262,6 +265,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         scratchpad::ScratchpadManager::new(app_handle)
             .expect("Failed to initialize the Scratchpad"),
     );
+    let notes_manager =
+        Arc::new(notes::NotesManager::new(app_handle).expect("Failed to initialize Notes"));
     context::set_rules(settings::get_settings(app_handle).app_rules);
 
     // Add managers to Tauri's managed state
@@ -272,6 +277,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(dictionary_manager);
     app_handle.manage(snippet_manager);
     app_handle.manage(scratchpad_manager);
+    app_handle.manage(notes_manager);
     app_handle.manage(context::DictationContext::default());
     app_handle.manage(tray::TrayState::new());
 
@@ -797,6 +803,7 @@ pub fn run(cli_args: CliArgs) {
             commands::ai::test_ai_connection,
             commands::ai::get_ai_key_hints,
             commands::ai::change_ai_correction_setting,
+            commands::ai::change_ai_notes_setting,
             commands::ai::change_ai_min_words_setting,
             commands::ai::change_ai_timeout_setting,
             commands::transforms::get_transform_runs,
@@ -863,6 +870,31 @@ pub fn run(cli_args: CliArgs) {
             commands::scratchpad::change_scratchpad_keep_on_top_setting,
             commands::scratchpad::change_scratchpad_open_setting,
             commands::scratchpad::change_scratchpad_failed_pastes_setting,
+            commands::notes::get_notes,
+            commands::notes::get_note_lines,
+            commands::notes::search_notes,
+            commands::notes::get_note_tags,
+            commands::notes::rename_note,
+            commands::notes::save_note_my_notes,
+            commands::notes::add_note_tag,
+            commands::notes::remove_note_tag,
+            commands::notes::set_note_action_done,
+            commands::notes::delete_note,
+            commands::notes::restore_note,
+            commands::notes::get_note_audio,
+            commands::notes::get_note_markdown,
+            commands::notes::export_note,
+            commands::notes::get_notes_audio_sources,
+            commands::notes::start_notes,
+            commands::notes::stop_notes,
+            commands::notes::pause_notes,
+            commands::notes::get_notes_session,
+            commands::notes::summarise_note,
+            commands::notes::ask_note,
+            commands::notes::notes_dictate,
+            commands::notes::open_note,
+            commands::notes::change_notes_live_transcript_setting,
+            commands::notes::dismiss_notes_reminder,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -875,6 +907,12 @@ pub fn run(cli_args: CliArgs) {
             scratchpad::ScratchpadShow,
             scratchpad::ScratchpadInsert,
             scratchpad::ScratchpadDictating,
+            notes::NotesChanged,
+            notes::NoteLineAdded,
+            notes::NoteLineRemoved,
+            notes::NotesSessionChanged,
+            notes::NotesTick,
+            notes::NoteInsert,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
         ]);

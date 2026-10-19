@@ -1084,6 +1084,7 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         ("view_changes", crate::transforms::view_last_changes),
         ("paste_last", crate::transforms::paste_last),
         ("copy_last", crate::transforms::copy_last),
+        ("toggle_notes", crate::notes::toggle),
     ] {
         map.insert(
             id.to_string(),

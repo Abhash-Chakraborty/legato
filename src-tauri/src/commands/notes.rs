@@ -1,0 +1,181 @@
+//! Commands behind the Notes page and its recorder.
+
+use crate::loopback::{self, AudioApp};
+use crate::managers::notes_store::{DeletedRecording, Note, NoteLine, NoteMatch};
+use crate::notes::{self, NotesManager, SessionInfo, StartNotes};
+use crate::settings::{get_settings, write_settings};
+use std::sync::Arc;
+use tauri::{AppHandle, State};
+
+type Notes<'a> = State<'a, Arc<NotesManager>>;
+
+fn text<T>(result: anyhow::Result<T>) -> Result<T, String> {
+    result.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_notes(notes: Notes<'_>) -> Result<Vec<Note>, String> {
+    text(notes.list())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_note_lines(notes: Notes<'_>, id: i64) -> Result<Vec<NoteLine>, String> {
+    text(notes.lines(id))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn search_notes(notes: Notes<'_>, query: String) -> Result<Vec<NoteMatch>, String> {
+    text(notes.search(&query))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_note_tags(notes: Notes<'_>) -> Result<Vec<String>, String> {
+    text(notes.tags())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn rename_note(notes: Notes<'_>, id: i64, title: String) -> Result<(), String> {
+    text(notes.rename(id, &title))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn save_note_my_notes(notes: Notes<'_>, id: i64, text: String) -> Result<(), String> {
+    self::text(notes.set_my_notes(id, &text))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn add_note_tag(notes: Notes<'_>, id: i64, tag: String) -> Result<(), String> {
+    text(notes.add_tag(id, &tag))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn remove_note_tag(notes: Notes<'_>, id: i64, tag: String) -> Result<(), String> {
+    text(notes.remove_tag(id, &tag))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_note_action_done(notes: Notes<'_>, action_id: i64, done: bool) -> Result<(), String> {
+    text(notes.set_action_done(action_id, done))
+}
+
+/// Deletes a note and returns it for Undo.
+#[tauri::command]
+#[specta::specta]
+pub fn delete_note(notes: Notes<'_>, id: i64) -> Result<Option<DeletedRecording>, String> {
+    text(notes.delete(id))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn restore_note(notes: Notes<'_>, deleted: DeletedRecording) -> Result<(), String> {
+    text(notes.restore(&deleted))
+}
+
+/// The note's audio file, for the player.
+#[tauri::command]
+#[specta::specta]
+pub fn get_note_audio(notes: Notes<'_>, id: i64) -> Result<Option<String>, String> {
+    text(notes.audio_file(id)).map(|p| p.map(|p| p.to_string_lossy().into_owned()))
+}
+
+/// The note as Markdown, for Copy.
+#[tauri::command]
+#[specta::specta]
+pub fn get_note_markdown(notes: Notes<'_>, id: i64) -> Result<String, String> {
+    text(notes.markdown(id))
+}
+
+/// Saves the note as a Markdown file where the save dialog said.
+#[tauri::command]
+#[specta::specta]
+pub fn export_note(notes: Notes<'_>, id: i64, path: String) -> Result<(), String> {
+    let markdown = text(notes.markdown(id))?;
+    std::fs::write(&path, markdown).map_err(|e| e.to_string())
+}
+
+/// Apps a meeting can record, and the output device "Everything" records.
+#[tauri::command]
+#[specta::specta]
+pub fn get_notes_audio_sources() -> (Vec<AudioApp>, Option<String>) {
+    (loopback::audio_apps(), loopback::default_output_name())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn start_notes(app: AppHandle, options: StartNotes) -> Result<Note, String> {
+    text(notes::start(&app, options))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn stop_notes(app: AppHandle) -> Result<(), String> {
+    text(notes::stop(&app))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn pause_notes(app: AppHandle, paused: bool) -> Result<(), String> {
+    text(notes::set_paused(&app, paused))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_notes_session() -> Option<SessionInfo> {
+    notes::session()
+}
+
+/// Writes the note's summary again. Errors are codes the page words.
+#[tauri::command]
+#[specta::specta]
+pub async fn summarise_note(app: AppHandle, id: i64) -> Result<(), String> {
+    notes::resummarise(&app, id).await
+}
+
+/// Ask about this note. Errors are codes the page words.
+#[tauri::command]
+#[specta::specta]
+pub async fn ask_note(app: AppHandle, id: i64, question: String) -> Result<String, String> {
+    notes::ask(&app, id, &question).await
+}
+
+/// Dictate here in My notes: starts a dictation into the note, or stops it.
+#[tauri::command]
+#[specta::specta]
+pub fn notes_dictate(app: AppHandle, note_id: i64) {
+    crate::scratchpad::dictate_into_notes(&app, note_id);
+}
+
+/// The bar's Open after a note is ready.
+#[tauri::command]
+#[specta::specta]
+pub fn open_note(app: AppHandle, id: i64) {
+    crate::open_page(&app, "notes", Some(&id.to_string()));
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_notes_live_transcript_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings.notes_live_transcript = enabled;
+    write_settings(&app, settings);
+    Ok(())
+}
+
+/// Hides the "Let people know you're recording" reminder for good.
+#[tauri::command]
+#[specta::specta]
+pub fn dismiss_notes_reminder(app: AppHandle) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings.notes_reminder = false;
+    write_settings(&app, settings);
+    Ok(())
+}

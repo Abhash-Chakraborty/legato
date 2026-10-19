@@ -52,10 +52,12 @@ pub struct ScratchpadInsert {
     pub text: String,
 }
 
-/// Whether the window's Dictate here is listening.
+/// Whether a Dictate here is listening: the window's, or with `notes`, the
+/// one in a note's My notes.
 #[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct ScratchpadDictating {
     pub active: bool,
+    pub notes: bool,
 }
 
 /// What the window needs when it opens.
@@ -80,6 +82,8 @@ struct State {
     target: Option<Target>,
     /// Where the running dictation goes: a note, or None for a new one.
     dictate_into: Option<i64>,
+    /// `dictate_into` is a Notes recording's My notes, not a Scratchpad note.
+    into_notes: bool,
     dictating: bool,
     /// Dictate here was clicked again to stop.
     stopping: bool,
@@ -387,8 +391,11 @@ fn coordinator_input(app: &AppHandle, hotkey: &str, pressed: bool) {
 }
 
 fn set_dictating(app: &AppHandle, active: bool) {
-    with_state(|s| s.dictating = active);
-    let _ = ScratchpadDictating { active }.emit(app);
+    let notes = with_state(|s| {
+        s.dictating = active;
+        s.into_notes
+    });
+    let _ = ScratchpadDictating { active, notes }.emit(app);
 }
 
 /// Win+Alt+S: a tap opens the window; held past the hold threshold, it
@@ -408,6 +415,7 @@ pub fn shortcut(app: &AppHandle, hotkey: &str, pressed: bool) {
             with_state(|s| {
                 s.holding = true;
                 s.dictate_into = None;
+                s.into_notes = false;
             });
             remember_target();
             set_dictating(&app, true);
@@ -432,6 +440,15 @@ pub fn is_shortcut(binding_id: &str) -> bool {
 /// The window's Dictate here: starts a dictation into a note, or stops the
 /// one running.
 pub fn dictate_here(app: &AppHandle, note_id: i64) {
+    dictate(app, note_id, false);
+}
+
+/// Dictate here in a Notes recording's My notes.
+pub fn dictate_into_notes(app: &AppHandle, note_id: i64) {
+    dictate(app, note_id, true);
+}
+
+fn dictate(app: &AppHandle, note_id: i64, notes: bool) {
     let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() else {
         return;
     };
@@ -440,6 +457,7 @@ pub fn dictate_here(app: &AppHandle, note_id: i64) {
         s.stopping = !starting;
         if starting {
             s.dictate_into = Some(note_id);
+            s.into_notes = notes;
         }
     });
     if starting {
@@ -466,6 +484,7 @@ pub fn dictation_cancelled(app: &AppHandle) {
     if with_state(|s| s.dictating) {
         with_state(|s| s.holding = false);
         set_dictating(app, false);
+        with_state(|s| s.into_notes = false);
     }
 }
 
@@ -474,6 +493,12 @@ pub fn dictation_cancelled(app: &AppHandle) {
 pub fn receive(app: &AppHandle, text: String) {
     let into = with_state(|s| s.dictate_into.take());
     set_dictating(app, false);
+    if with_state(|s| std::mem::take(&mut s.into_notes)) {
+        if let Some(note_id) = into {
+            crate::notes::receive_dictation(app, note_id, text);
+        }
+        return;
+    }
     if text.trim().is_empty() {
         return;
     }

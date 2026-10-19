@@ -314,7 +314,8 @@ impl TranscriptionManager {
                     // model is never unloaded mid-session.
                     let is_recording = app_handle_cloned
                         .try_state::<Arc<AudioRecordingManager>>()
-                        .is_some_and(|a| a.is_recording());
+                        .is_some_and(|a| a.is_recording())
+                        || crate::notes::is_busy();
                     if is_recording {
                         manager_cloned.touch_activity();
                         continue;
@@ -486,8 +487,10 @@ impl TranscriptionManager {
     /// thread, including the event loop.
     pub fn maybe_unload_immediately(&self, context: &str) {
         let settings = get_settings(&self.app_handle);
+        // A Notes recording transcribes line by line; keep the model for it.
         if settings.model_unload_timeout == ModelUnloadTimeout::Immediately
             && self.is_model_loaded()
+            && !crate::notes::is_busy()
         {
             info!("Immediately unloading model after {}", context);
             self.request_unload();

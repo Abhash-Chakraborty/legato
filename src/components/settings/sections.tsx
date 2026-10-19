@@ -57,6 +57,7 @@ import {
   MinWordsRow,
   TimeoutRow,
   TransformsUseRow,
+  NotesSummaryRow,
 } from "./ai/AiSettings";
 import { ShowOverlay } from "./ShowOverlay";
 import { ConfirmPaste, ShowChanges } from "./BarMessages";
@@ -355,6 +356,20 @@ export const buildSections = (
             render: () => (
               <ShortcutInput shortcutId="open_scratchpad" grouped />
             ),
+          },
+        ],
+      },
+      {
+        id: "notes",
+        titleKey: "settings.groups.notes",
+        rows: [
+          {
+            id: "toggle-notes",
+            searchKeys: [
+              "settings.general.shortcut.bindings.toggle_notes.name",
+              "settings.general.shortcut.bindings.toggle_notes.description",
+            ],
+            render: () => <ShortcutInput shortcutId="toggle_notes" grouped />,
           },
         ],
       },
@@ -742,6 +757,15 @@ export const buildSections = (
               "settings.ai.use.transforms.help",
             ],
             render: () => <TransformsUseRow />,
+            requires: needsAiModel,
+          },
+          {
+            id: "ai-notes",
+            searchKeys: [
+              "settings.ai.use.notes.title",
+              "settings.ai.use.notes.help",
+            ],
+            render: () => <NotesSummaryRow />,
             requires: needsAiModel,
           },
         ],

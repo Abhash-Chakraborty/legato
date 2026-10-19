@@ -565,7 +565,8 @@ impl AudioRecordingManager {
     /// restore it instead of unconditionally unmuting.
     pub fn apply_mute(&self) {
         let settings = get_settings(&self.app_handle);
-        if !settings.mute_while_recording {
+        // Muting during a Notes recording would silence the call it records.
+        if !settings.mute_while_recording || crate::notes::is_recording() {
             return;
         }
 

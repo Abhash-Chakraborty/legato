@@ -27,6 +27,8 @@ const OVERLAY_CHANGES_HEIGHT: f64 = 250.0;
 const OVERLAY_PICK_WIDTH: f64 = 320.0;
 const OVERLAY_PICK_HEIGHT: f64 = 330.0;
 
+const OVERLAY_NOTES_WIDTH: f64 = 300.0;
+
 // Actual is 394x118, just a little extra
 const OVERLAY_STREAM_WIDTH: f64 = 400.0;
 const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
@@ -41,6 +43,8 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
         "changes" => (OVERLAY_CHANGES_WIDTH, OVERLAY_CHANGES_HEIGHT),
         // The transform picker for the selection.
         "pick" => (OVERLAY_PICK_WIDTH, OVERLAY_PICK_HEIGHT),
+        // A Notes recording: its clock, two meters and Stop.
+        "notes" => (OVERLAY_NOTES_WIDTH, OVERLAY_HEIGHT),
         _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
 }
@@ -434,8 +438,29 @@ fn update_overlay_position_on_main(app_handle: &AppHandle) {
 /// the instant it drained, well inside the 300 ms hide delay.
 static OVERLAY_SHOW_GENERATION: AtomicU64 = AtomicU64::new(0);
 
-/// Hides the recording overlay window with fade-out animation
+/// Set while a Notes recording runs: the bar shows its pill whenever
+/// nothing else is on it.
+static NOTES_PILL: AtomicBool = AtomicBool::new(false);
+
+/// Shows or hides the Notes pill.
+pub fn set_notes_pill(app_handle: &AppHandle, on: bool) {
+    if NOTES_PILL.swap(on, Ordering::SeqCst) == on {
+        return;
+    }
+    if on {
+        show_overlay_state(app_handle, "notes");
+    } else {
+        hide_recording_overlay(app_handle);
+    }
+}
+
+/// Hides the recording overlay window with fade-out animation; during a
+/// Notes recording, goes back to its pill instead.
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
+    if NOTES_PILL.load(Ordering::SeqCst) {
+        show_overlay_state(app_handle, "notes");
+        return;
+    }
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {

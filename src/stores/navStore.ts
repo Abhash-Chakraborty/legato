@@ -8,6 +8,7 @@ export type Page =
   | "style"
   | "scratchpad"
   | "transforms"
+  | "notes"
   | "models"
   | "settings";
 

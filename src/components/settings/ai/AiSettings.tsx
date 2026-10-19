@@ -946,6 +946,26 @@ export const TransformsUseRow: React.FC = () => {
   );
 };
 
+export const NotesSummaryRow: React.FC = () => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
+  const label = t("settings.ai.use.notes.title");
+  return (
+    <SettingContainer
+      title={label}
+      description={t("settings.ai.use.notes.help")}
+    >
+      <WhereOfAi />
+      <Toggle
+        label={label}
+        checked={getSetting("ai_notes_enabled") ?? true}
+        busy={isUpdating("ai_notes_enabled")}
+        onChange={(on) => updateSetting("ai_notes_enabled", on)}
+      />
+    </SettingContainer>
+  );
+};
+
 export const MinWordsRow: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting, updateSetting } = useSettings();

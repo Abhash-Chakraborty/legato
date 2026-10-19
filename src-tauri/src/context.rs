@@ -203,6 +203,25 @@ pub fn foreground_window() -> Option<ForegroundWindow> {
     }
 }
 
+/// The app a process belongs to, for naming the app whose sound a meeting
+/// records.
+pub fn app_for_process(pid: u32) -> Option<AppInfo> {
+    #[cfg(windows)]
+    {
+        // SAFETY: opens the process for a limited query and closes it.
+        let exe_path = unsafe { win::process_path(pid) }?;
+        Some(resolve(&ForegroundWindow {
+            exe_path,
+            title: String::new(),
+        }))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
 /// The window in front, as a handle `focus_window` can bring back.
 pub fn foreground_handle() -> Option<isize> {
     #[cfg(windows)]
@@ -602,7 +621,7 @@ mod win {
         String::from_utf16_lossy(&buf[..copied.max(0) as usize])
     }
 
-    unsafe fn process_path(pid: u32) -> Option<String> {
+    pub(super) unsafe fn process_path(pid: u32) -> Option<String> {
         let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = vec![0u16; 1024];
         let mut size = buf.len() as u32;

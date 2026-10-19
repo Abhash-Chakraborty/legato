@@ -175,6 +175,7 @@ const settingUpdaters: {
     commands.changeBarShowChangesSetting(value as boolean),
   ai_correction_enabled: (value) =>
     commands.changeAiCorrectionSetting(value as boolean),
+  ai_notes_enabled: (value) => commands.changeAiNotesSetting(value as boolean),
   ai_min_words: (value) => commands.changeAiMinWordsSetting(value as number),
   ai_timeout_secs: (value) => commands.changeAiTimeoutSetting(value as number),
   mute_while_recording: (value) =>
@@ -213,6 +214,8 @@ const settingUpdaters: {
   learn_from_edits: (value) =>
     commands.changeLearnFromEditsSetting(value as boolean),
   learn_mode: (value) => commands.changeLearnModeSetting(value as LearnMode),
+  notes_live_transcript: (value) =>
+    commands.changeNotesLiveTranscriptSetting(value as boolean),
   scratchpad_open: (value) =>
     commands.changeScratchpadOpenSetting(value as ScratchpadOpen),
   scratchpad_keep_on_top: (value) =>

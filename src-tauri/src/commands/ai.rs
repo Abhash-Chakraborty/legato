@@ -39,6 +39,16 @@ pub fn change_ai_correction_setting(app: AppHandle, enabled: bool) -> Result<(),
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_ai_notes_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings.ai_notes_enabled = enabled;
+    write_settings(&app, settings);
+    ai::notify(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_ai_min_words_setting(app: AppHandle, words: u32) -> Result<(), String> {
     let mut settings = get_settings(&app);
     settings.ai_min_words = words.min(MAX_MIN_WORDS);

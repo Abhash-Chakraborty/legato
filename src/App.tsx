@@ -24,6 +24,8 @@ import { SnippetsPage } from "./components/pages/snippets/SnippetsPage";
 import { ScratchpadPage } from "./components/pages/scratchpad/ScratchpadPage";
 import { StylePage } from "./components/pages/style/StylePage";
 import { TransformsPage } from "./components/pages/transforms/TransformsPage";
+import { NotesPage } from "./components/pages/notes/NotesPage";
+import { watchNotes } from "./stores/notesStore";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar } from "./components/Sidebar";
 import { AppToaster } from "./components/shell/AppToaster";
@@ -60,6 +62,8 @@ const renderPage = (
       return <ScratchpadPage />;
     case "transforms":
       return <TransformsPage />;
+    case "notes":
+      return <NotesPage />;
     case "models":
       return <ModelsSettings />;
     case "settings":
@@ -184,6 +188,10 @@ function App() {
   // The technical error detail is logged to legato.log on the Rust side
   // (see actions.rs `error!("Failed to paste transcription: ...")`),
   // so we show a localized, user-friendly message here instead of the raw error.
+  // Notes: the recording's state, and words dictated into My notes, arrive
+  // on any page.
+  useEffect(watchNotes, []);
+
   // The Legato bar's Review and other windows ask for a page.
   useEffect(() => {
     const unlisten = events.openPage.listen((event) => {

@@ -141,7 +141,28 @@ body {
 ::highlight(runs-search),
 ::highlight(snippets-search),
 ::highlight(apps-search),
-::highlight(notes-search) {
+::highlight(notes-search),
+::highlight(recordings-search),
+::highlight(transcript-search) {
   background-color: var(--teal-100);
   color: var(--text);
+}
+
+/* The recording dot in Notes pulses while it records. */
+.notes-recdot {
+  animation: notes-rec 1.6s ease-in-out infinite;
+}
+@keyframes notes-rec {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 45%, transparent);
+  }
+  60% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notes-recdot {
+    animation: none;
+  }
 }

@@ -104,6 +104,19 @@ pub enum BarNotice {
         more: usize,
         app: Option<String>,
     },
+    /// A Notes recording is transcribed.
+    NoteReady {
+        id: i64,
+        duration_ms: i64,
+    },
+    /// A Notes recording heard nothing, so no note was kept.
+    NoteEmpty {
+        duration_ms: i64,
+    },
+    /// Start or stop notes didn't work.
+    NotesFailed {
+        reason: String,
+    },
     /// A transform didn't run; the text stayed as it was.
     TransformFailed {
         name: String,

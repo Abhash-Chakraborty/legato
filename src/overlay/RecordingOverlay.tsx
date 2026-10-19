@@ -8,7 +8,9 @@ import type {
   StreamPhaseEvent,
   StreamTextEvent,
   StreamWorkKind,
+  NotesTick,
 } from "@/bindings";
+import { clock, durationLabel } from "@/components/notes/notes";
 import type { ModelStateEvent } from "@/lib/types/events";
 import { wordDiff } from "@/lib/utils/diff";
 import { formatKeyCombination } from "@/lib/utils/keyboard";
@@ -20,7 +22,8 @@ type OverlayState =
   | "processing"
   | "notice"
   | "changes"
-  | "pick";
+  | "pick"
+  | "notes";
 
 type AiProblemKind =
   | "none"
@@ -61,6 +64,9 @@ type OverlayNotice =
       more: number;
       app: string | null;
     }
+  | { kind: "note_ready"; id: number; duration_ms: number }
+  | { kind: "note_empty"; duration_ms: number }
+  | { kind: "notes_failed"; reason: string }
   | {
       kind: "transform_failed";
       name: string;
@@ -92,13 +98,29 @@ const GOOD_NOTICES = new Set([
   "copied_last",
   "undone",
   "learned",
+  "note_ready",
 ]);
 const WARN_NOTICES = new Set([
   "failed",
   "ai_skipped",
   "transform_failed",
   "saved_to_scratchpad",
+  "notes_failed",
 ]);
+
+const NOTES_BARS = 5;
+
+/** One side of a Notes recording, as five bars. */
+const NotesMeter: React.FC<{ level: number }> = ({ level }) => {
+  const lit = Math.round(Math.min(1, Math.max(0, level)) * NOTES_BARS);
+  return (
+    <span className="snotes-meter">
+      {Array.from({ length: NOTES_BARS }, (_, i) => (
+        <i key={i} className={i < lit ? "on" : ""} />
+      ))}
+    </span>
+  );
+};
 
 const CheckMark = () => (
   <svg viewBox="0 0 16 16" aria-hidden="true" className="snotice-ic ok">
@@ -148,6 +170,7 @@ const RecordingOverlay: React.FC = () => {
   const [notice, setNotice] = useState<OverlayNotice | null>(null);
   const [changes, setChanges] = useState<BarChanges | null>(null);
   const [picks, setPicks] = useState<PickItem[]>([]);
+  const [notesTick, setNotesTick] = useState<NotesTick | null>(null);
   // "Polish…" while a transform runs; the default label otherwise.
   const [workingLabel, setWorkingLabel] = useState<string | null>(null);
   // `Stream::play()` returning does not mean hardware callbacks are flowing.
@@ -236,6 +259,10 @@ const RecordingOverlay: React.FC = () => {
         setChanges(event.payload),
       );
 
+      const unlistenNotesTick = await events.notesTick.listen((event) =>
+        setNotesTick(event.payload),
+      );
+
       const unlistenPick = await listen<PickItem[]>("bar-pick", (event) =>
         setPicks(event.payload),
       );
@@ -309,6 +336,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenNotice();
         unlistenChanges();
         unlistenPick();
+        unlistenNotesTick();
         unlistenLabel();
         unlistenHide();
         unlistenReady();
@@ -544,6 +572,14 @@ const RecordingOverlay: React.FC = () => {
           : n.app
             ? t("overlay.notice.savedFrom", { app: n.app })
             : t("overlay.notice.saved");
+      case "note_ready":
+        return t("overlay.notice.noteReady", {
+          duration: durationLabel(n.duration_ms),
+        });
+      case "note_empty":
+        return t("overlay.notice.noteEmpty");
+      case "notes_failed":
+        return t("overlay.notice.notesFailed", { reason: n.reason });
       case "transform_failed":
         return t("overlay.notice.transformFailed", {
           name: n.name,
@@ -588,6 +624,15 @@ const RecordingOverlay: React.FC = () => {
               {t("overlay.undo")}
             </button>
           )}
+          {notice?.kind === "note_ready" && (
+            <button
+              type="button"
+              className="sbtn ghost"
+              onClick={() => commands.openNote(notice.id)}
+            >
+              {t("overlay.open")}
+            </button>
+          )}
           {notice?.kind === "spotted" && (
             <button
               type="button"
@@ -597,6 +642,74 @@ const RecordingOverlay: React.FC = () => {
               {t("overlay.review")}
             </button>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Notes: a recording runs; its clock, a meter per side, Pause and Stop.
+  if (state === "notes") {
+    const paused = notesTick?.paused ?? false;
+    return (
+      <div
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div className="scard notes" role="status">
+          <span className={`snotes-dot ${paused ? "paused" : ""}`} />
+          <span className="snotes-label">{t("overlay.notes.label")}</span>
+          <span className="snotes-clock">
+            {clock(notesTick?.elapsed_ms ?? 0)}
+          </span>
+          <span className="snotes-meters" aria-hidden="true">
+            <NotesMeter level={paused ? 0 : (notesTick?.you ?? 0)} />
+            {notesTick?.them != null && (
+              <NotesMeter level={paused ? 0 : notesTick.them} />
+            )}
+          </span>
+          <button
+            type="button"
+            className="sx"
+            aria-label={
+              paused ? t("overlay.notes.resume") : t("overlay.notes.pause")
+            }
+            title={
+              paused ? t("overlay.notes.resume") : t("overlay.notes.pause")
+            }
+            onClick={() => commands.pauseNotes(!paused)}
+          >
+            {paused ? (
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="currentColor" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M5.5 4 V12 M10.5 4 V12"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
+          </button>
+          <button
+            type="button"
+            className="sx"
+            aria-label={t("overlay.notes.stop")}
+            title={t("overlay.notes.stop")}
+            onClick={() => commands.stopNotes()}
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect
+                x="4"
+                y="4"
+                width="8"
+                height="8"
+                rx="1.5"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
         </div>
       </div>
     );

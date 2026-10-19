@@ -205,6 +205,53 @@ pub static MIGRATIONS: &[M] = &[
             added_at INTEGER NOT NULL
          );",
     ),
+    // Notes: recordings with their transcript, tags, summary and action
+    // items.
+    M::up(
+        "CREATE TABLE note (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            app TEXT,
+            app_path TEXT,
+            microphone TEXT,
+            system_audio TEXT,
+            started_at INTEGER NOT NULL,
+            duration_ms INTEGER NOT NULL DEFAULT 0,
+            audio_file TEXT,
+            my_notes TEXT NOT NULL DEFAULT '',
+            summary TEXT NOT NULL DEFAULT '',
+            decisions TEXT NOT NULL DEFAULT '[]',
+            summary_model TEXT,
+            summary_at INTEGER,
+            summary_error TEXT,
+            failed_lines INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE note_line (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id INTEGER NOT NULL,
+            at_ms INTEGER NOT NULL,
+            end_ms INTEGER NOT NULL,
+            who TEXT NOT NULL,
+            text TEXT NOT NULL
+         );
+         CREATE INDEX note_line_note ON note_line (note_id, at_ms);
+         CREATE TABLE note_tag (
+            note_id INTEGER NOT NULL,
+            tag TEXT NOT NULL COLLATE NOCASE,
+            PRIMARY KEY (note_id, tag)
+         );
+         CREATE TABLE note_action (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id INTEGER NOT NULL,
+            owner TEXT NOT NULL,
+            text TEXT NOT NULL,
+            done INTEGER NOT NULL DEFAULT 0,
+            position INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE INDEX note_action_note ON note_action (note_id, position);",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.

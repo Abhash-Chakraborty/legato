@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import {
+  AudioLines,
   BookA,
   Cpu,
   House,
@@ -25,9 +26,9 @@ interface NavItem {
   gapBefore?: boolean;
 }
 
-// What you do with dictation first, then the words and prompts you keep;
-// configuration sits at the bottom. Pages from later steps of the plan
-// (Notes, Insights) join when they exist.
+// What you do with dictation first, then the words and prompts you keep,
+// then what you record and jot down; configuration sits at the bottom.
+// Insights joins when it exists.
 const TOP: NavItem[] = [
   { id: "home", labelKey: "sidebar.home", icon: House },
   {
@@ -38,8 +39,14 @@ const TOP: NavItem[] = [
   },
   { id: "snippets", labelKey: "sidebar.snippets", icon: Scissors },
   { id: "style", labelKey: "sidebar.style", icon: Type },
-  { id: "scratchpad", labelKey: "sidebar.scratchpad", icon: NotebookPen },
   { id: "transforms", labelKey: "sidebar.transforms", icon: Replace },
+  {
+    id: "notes",
+    labelKey: "sidebar.notes",
+    icon: AudioLines,
+    gapBefore: true,
+  },
+  { id: "scratchpad", labelKey: "sidebar.scratchpad", icon: NotebookPen },
 ];
 const BOTTOM: NavItem[] = [
   { id: "models", labelKey: "sidebar.models", icon: Cpu },

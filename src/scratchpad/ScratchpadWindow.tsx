@@ -94,7 +94,10 @@ export const ScratchpadWindow: React.FC = () => {
         refresh(e.payload.note_id);
         requestAnimationFrame(() => editorRef.current?.focus());
       }),
-      events.scratchpadDictating.listen((e) => setDictating(e.payload.active)),
+      // A dictation into a Notes page's My notes isn't this window's.
+      events.scratchpadDictating.listen(
+        (e) => !e.payload.notes && setDictating(e.payload.active),
+      ),
     ];
     return () => {
       subs.forEach((s) => s.then((off) => off()));

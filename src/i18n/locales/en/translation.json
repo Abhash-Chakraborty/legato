@@ -22,7 +22,8 @@
     "scratchpad": "Scratchpad",
     "transforms": "Transforms",
     "models": "Models",
-    "settings": "Settings"
+    "settings": "Settings",
+    "notes": "Notes"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -173,6 +174,10 @@
           "open_scratchpad": {
             "name": "Open Scratchpad",
             "description": "Press to open the Scratchpad; hold to dictate into a new note."
+          },
+          "toggle_notes": {
+            "name": "Start or stop notes",
+            "description": "Starts recording a meeting with the call app you're in, or stops the recording."
           }
         },
         "errors": {
@@ -658,7 +663,8 @@
       "transforms": "Transforms",
       "lastDictation": "Last dictation",
       "scratchpad": "Scratchpad",
-      "messages": "Messages"
+      "messages": "Messages",
+      "notes": "Notes"
     },
     "requires": {
       "tray": "Needs the tray icon, or there would be no way to open the window.",
@@ -796,6 +802,10 @@
         "transforms": {
           "title": "Transforms",
           "help": "The Dictate then transform shortcut sends the dictation and the transform's prompt."
+        },
+        "notes": {
+          "title": "Notes summaries and Ask",
+          "help": "After a recording, sends its transcript for a summary, decisions and action items, and answers questions about it."
         }
       },
       "limits": {
@@ -952,7 +962,10 @@
         "rate_limited": "{{name}} is rate limiting",
         "slow": "{{name}} didn't answer in time",
         "failed": "{{name}} couldn't answer"
-      }
+      },
+      "noteReady": "Note saved · {{duration}}",
+      "noteEmpty": "Nothing was heard, so no note was saved",
+      "notesFailed": "Notes didn't start · {{reason}}"
     },
     "working": "{{name}}…",
     "undo": "Undo",
@@ -965,6 +978,13 @@
       "title": "Transform the selection",
       "close": "Close",
       "empty": "No transforms are on. Turn one on in Legato › Transforms."
+    },
+    "open": "Open",
+    "notes": {
+      "label": "Notes",
+      "pause": "Pause notes",
+      "resume": "Resume notes",
+      "stop": "Stop notes"
     }
   },
   "titleBar": {
@@ -2060,6 +2080,214 @@
         "new": "a new note",
         "pinned": "your last pinned note"
       }
+    }
+  },
+  "notes": {
+    "title": "Notes",
+    "subtitle": "Meetings and voice memos, recorded and transcribed on this PC.",
+    "shortcut": {
+      "chip": "starts or stops notes",
+      "change": "Change the shortcut",
+      "none": "No shortcut for notes"
+    },
+    "recordBusy": "One recording at a time",
+    "search": "Search notes",
+    "listLabel": "Notes",
+    "pick": "Pick a note to read it.",
+    "filter": {
+      "label": "Show",
+      "all": "All",
+      "meeting": "Meetings",
+      "memo": "Memos",
+      "tags": "Tags",
+      "anyTag": "Any tag"
+    },
+    "noResults": "No note matches “{{query}}”",
+    "noResultsBody": "Search covers titles, tags, summaries, transcripts and your own notes.",
+    "noneHere": "No notes here",
+    "noneHereBody": "Nothing matches this filter.",
+    "clearSearch": "Clear search",
+    "showAll": "Show all notes",
+    "empty": {
+      "title": "No notes yet",
+      "body": "Record a meeting or a voice memo, or press {{keys}} in any app.",
+      "bodyNoKey": "Record a meeting or a voice memo."
+    },
+    "footer": "{{notes}} · {{duration}} recorded",
+    "counts": {
+      "notes_one": "{{formatted}} note",
+      "notes_other": "{{formatted}} notes"
+    },
+    "kind": {
+      "meeting": "Meeting",
+      "memo": "Voice memo"
+    },
+    "who": {
+      "you": "You",
+      "them": "Them"
+    },
+    "status": {
+      "recording": "Recording",
+      "transcribing": "Transcribing…",
+      "summarising": "Summarising…",
+      "summary": "Summary ready",
+      "transcript": "Transcript only"
+    },
+    "row": {
+      "delete": "Delete {{title}}"
+    },
+    "record": {
+      "button": "Record",
+      "choose": "Choose what to record",
+      "new": {
+        "meeting": "Record a meeting",
+        "memo": "Record a voice memo"
+      },
+      "title": "New recording",
+      "kind": "What to record",
+      "kindHelp": {
+        "meeting": "Records your microphone and the call's sound as two tracks, so the transcript knows who spoke.",
+        "memo": "Records only your microphone."
+      },
+      "titleLabel": "Title",
+      "defaultTitle": {
+        "meeting": "Meeting · {{when}}",
+        "memo": "Voice memo · {{when}}"
+      },
+      "microphone": "Microphone",
+      "noMic": "No microphone found. Plug one in, then open this again.",
+      "system": "Other side",
+      "everything": "Everything this PC plays",
+      "everythingOn": "Everything this PC plays · {{device}}",
+      "appPlaying": "{{app}} · playing now",
+      "systemHelpApp": "Only this app's sound is recorded, so music or a video playing elsewhere stays out.",
+      "systemHelpEverything": "Every sound this PC plays is recorded, including notifications and videos.",
+      "live": "Show the live transcript",
+      "reminder": "Let people know you're recording.",
+      "reminderHide": "Don't show again",
+      "cancel": "Cancel",
+      "start": "Start recording"
+    },
+    "strip": {
+      "label": "Recording",
+      "recording": "Recording",
+      "paused": "Paused",
+      "finishing": "Finishing",
+      "linesLeft_one": "Transcribing the last line…",
+      "linesLeft_other": "Transcribing the last {{count}} lines…",
+      "saving": "Saving the note…",
+      "fallback": "This Windows can't record one app, so everything it plays is recorded.",
+      "pause": "Pause",
+      "resume": "Resume",
+      "stop": "Stop",
+      "live": "Live transcript",
+      "lines_one": "{{count}} line",
+      "lines_other": "{{count}} lines",
+      "hide": "Hide",
+      "show": "Show",
+      "waiting": "Lines appear here a moment after each pause in speech.",
+      "transcribing": "Transcribing the first line…",
+      "latest": "Jump to latest"
+    },
+    "detail": {
+      "titleLabel": "Title",
+      "rename": "Rename",
+      "more": "More actions",
+      "addTag": "Add tag",
+      "removeTag": "Remove tag {{tag}}",
+      "tagPlaceholder": "Tag name",
+      "copySummary": "Copy summary",
+      "copyTranscript": "Copy transcript",
+      "export": "Export as Markdown",
+      "markdownFiles": "Markdown files",
+      "delete": "Delete",
+      "startedAt": "started {{time}}",
+      "youAndOthers": "You and others",
+      "justYou": "Just you",
+      "tabs": "Note",
+      "tab": {
+        "summary": "Summary",
+        "transcript": "Transcript",
+        "mine": "My notes"
+      }
+    },
+    "summary": {
+      "decisions": "Decisions",
+      "actions": "Action items",
+      "doneCount": "{{done}} of {{count}} done",
+      "copy": "Copy summary",
+      "regenerate": "Regenerate",
+      "summarise": "Summarise",
+      "model": "Summarised with {{model}}",
+      "writing": "Writing the summary…",
+      "transcribing": "The summary comes once the transcript is finished.",
+      "noneYet": "No summary yet.",
+      "short": "Too short to summarise.",
+      "off": "Summaries are off in Settings › AI.",
+      "none": "Connect an AI in Settings to get a summary and ask questions.",
+      "recording": "The summary comes after the recording stops.",
+      "failed": "The summary couldn't be written.",
+      "lastFailed": "Regenerate didn't work: {{problem}}",
+      "openAi": "Open AI settings",
+      "readTranscript": "Read the transcript",
+      "failedWith": "No summary: {{problem}}."
+    },
+    "ask": {
+      "title": "Ask about this note",
+      "placeholder": "Ask a question about this note",
+      "send": "Ask",
+      "thinking": "Reading the transcript…",
+      "jump": "Show {{time}} in the transcript",
+      "empty": "This note has no transcript to ask about.",
+      "q": {
+        "promised": "What did I promise?",
+        "blocked": "What's blocked?",
+        "owners": "Who owns what?",
+        "points": "What were the main points?",
+        "todo": "What do I need to do?"
+      }
+    },
+    "transcript": {
+      "playRecording": "Play recording",
+      "play": "Play",
+      "pause": "Pause",
+      "seek": "Position in the recording",
+      "playFrom": "Play from {{time}}",
+      "search": "Search transcript",
+      "copy": "Copy transcript",
+      "noResults": "No line matches “{{query}}”",
+      "empty": "Nothing was transcribed in this recording.",
+      "waiting": "Lines appear here as they are transcribed.",
+      "noAudio": "The recording's audio is gone; the transcript stays.",
+      "failed_one": "{{count}} line couldn't be transcribed.",
+      "failed_other": "{{count}} lines couldn't be transcribed."
+    },
+    "mine": {
+      "help": "Private to you. Included when you copy or export this note.",
+      "helpRecording": "Type while you listen. Saved with the recording.",
+      "placeholder": "Your notes",
+      "dictate": "Dictate here",
+      "stopDictating": "Stop dictating",
+      "saved": "Saved",
+      "words_one": "{{formatted}} word",
+      "words_other": "{{formatted}} words",
+      "recordingBoth": "Recording {{mic}} and {{system}}, on this PC. The summary is ready a few seconds after you stop.",
+      "recordingMic": "Recording {{mic}}, on this PC. The summary is ready a few seconds after you stop."
+    },
+    "toast": {
+      "startFailed": "Couldn't start recording",
+      "actionFailed": "That didn't work",
+      "deleted": "Deleted {{title}}",
+      "undo": "Undo",
+      "deleteFailed": "Couldn't delete the note",
+      "restoreFailed": "Couldn't bring the note back",
+      "renameFailed": "Couldn't rename the note",
+      "tagFailed": "Couldn't add the tag",
+      "summaryCopied": "Summary copied",
+      "transcriptCopied": "Transcript copied",
+      "exported": "Note exported",
+      "exportFailed": "Couldn't export the note",
+      "summaryFailed": "Couldn't write the summary"
     }
   }
 }

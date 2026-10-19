@@ -642,3 +642,55 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Notes: the pill that stays while a meeting or memo records (OVERLAY_NOTES_WIDTH
+   in overlay.rs). */
+.scard.notes {
+  width: auto;
+  height: var(--ov-base-h);
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 0 16px;
+  box-sizing: border-box;
+  font-size: 13px;
+  color: var(--color-text);
+}
+.snotes-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-error);
+}
+.snotes-dot.paused {
+  background: var(--color-warning);
+}
+.snotes-label {
+  font-weight: 600;
+}
+.snotes-clock {
+  font-variant-numeric: tabular-nums;
+  color: var(--s-muted);
+}
+.snotes-meters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.snotes-meter {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+}
+.snotes-meter i {
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--s-hair);
+  transition: background-color 70ms linear;
+}
+.snotes-meter i.on {
+  background: var(--s-accent);
+}

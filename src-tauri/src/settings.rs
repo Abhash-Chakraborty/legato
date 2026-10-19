@@ -647,6 +647,15 @@ pub struct AppSettings {
     pub learn_from_edits: bool,
     #[serde(default)]
     pub learn_mode: LearnMode,
+    /// Notes summaries and Ask about this note may use the AI.
+    #[serde(default = "default_true")]
+    pub ai_notes_enabled: bool,
+    /// Notes shows the transcript as it is written.
+    #[serde(default = "default_true")]
+    pub notes_live_transcript: bool,
+    /// The recorder reminds you to tell people you're recording.
+    #[serde(default = "default_true")]
+    pub notes_reminder: bool,
     #[serde(default)]
     pub scratchpad_open: ScratchpadOpen,
     /// The Scratchpad window floats above other apps.
@@ -1161,6 +1170,12 @@ pub fn get_default_settings() -> AppSettings {
             "Press to open the Scratchpad; hold to dictate into a new note.",
             "super+alt+s",
         ),
+        (
+            "toggle_notes",
+            "Start or stop notes",
+            "Starts recording a meeting, or stops the recording.",
+            "super+alt+m",
+        ),
     ] {
         bindings.insert(
             id.to_string(),
@@ -1250,6 +1265,9 @@ pub fn get_default_settings() -> AppSettings {
         app_rules: Vec::new(),
         learn_from_edits: true,
         learn_mode: LearnMode::default(),
+        ai_notes_enabled: true,
+        notes_live_transcript: true,
+        notes_reminder: true,
         scratchpad_open: ScratchpadOpen::default(),
         scratchpad_keep_on_top: true,
         scratchpad_failed_pastes: true,

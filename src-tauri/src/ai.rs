@@ -6,6 +6,7 @@ pub use crate::ai_rules::AiStatusKind;
 use crate::ai_rules::{self, PromptWord};
 use crate::llm_client;
 use crate::managers::dictionary::DictionaryManager;
+use crate::notes_rules;
 use crate::secrets;
 use crate::settings::{self, AiLastTest, AppSettings, PostProcessApiFormat, PostProcessProvider};
 use log::{debug, warn};
@@ -329,6 +330,87 @@ pub async fn run(
             Err(AiProblem::new(config, kind))
         }
     }
+}
+
+/// A Notes summary or Ask answer may take this long: local models read a
+/// long transcript slowly.
+const NOTES_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// `run`, with an answer format the provider is asked to follow.
+async fn run_json(
+    app: &AppHandle,
+    config: &AiConfig,
+    system: &str,
+    user: String,
+    schema: serde_json::Value,
+    timeout: Duration,
+) -> Result<String, AiProblem> {
+    match ask(config, system, user, Some(schema), timeout).await {
+        Ok(text) => {
+            report(app, config, AiStatusKind::Ok);
+            Ok(text)
+        }
+        Err(kind) => {
+            report(app, config, kind);
+            Err(AiProblem::new(config, kind))
+        }
+    }
+}
+
+/// Summarises a note's transcript: in one request, or part by part and then
+/// combined when it's long.
+pub async fn summarise_note(
+    app: &AppHandle,
+    config: &AiConfig,
+    lines: &[notes_rules::PromptLine<'_>],
+) -> Result<notes_rules::NotesSummary, AiProblem> {
+    let json_hint = !config.provider.supports_structured_output
+        || config.provider.api_format == PostProcessApiFormat::Anthropic;
+    let one = |request: String| async move {
+        let answer = run_json(
+            app,
+            config,
+            notes_rules::SUMMARY_SYSTEM,
+            request,
+            notes_rules::summary_schema(),
+            NOTES_TIMEOUT,
+        )
+        .await?;
+        notes_rules::parse_summary(&answer).ok_or_else(|| {
+            warn!("Notes summary: the model's answer wasn't the expected JSON");
+            AiProblem::new(config, AiStatusKind::Failed)
+        })
+    };
+    let parts = notes_rules::transcript_parts(lines);
+    if parts.len() <= 1 {
+        let transcript = parts.into_iter().next().unwrap_or_default();
+        return one(notes_rules::summary_request(&transcript, json_hint)).await;
+    }
+    debug!("Summarising a long note in {} parts", parts.len());
+    let mut summaries = Vec::new();
+    for part in &parts {
+        summaries.push(one(notes_rules::summary_request(part, json_hint)).await?);
+    }
+    one(notes_rules::combine_request(&summaries, json_hint)).await
+}
+
+/// Answers a question from a note's transcript, citing line times.
+pub async fn ask_note(
+    app: &AppHandle,
+    config: &AiConfig,
+    lines: &[notes_rules::PromptLine<'_>],
+    question: &str,
+) -> Result<String, AiProblem> {
+    let transcript = notes_rules::ask_transcript(lines, question);
+    let answer = run(
+        app,
+        config,
+        notes_rules::ASK_SYSTEM,
+        notes_rules::ask_request(&transcript, question),
+        NOTES_TIMEOUT,
+    )
+    .await?;
+    Ok(answer.trim().to_string())
 }
 
 /// Shown on the recording pill after a paste that went out without the AI's

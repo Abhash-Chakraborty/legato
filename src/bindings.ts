@@ -1057,6 +1057,14 @@ async changeLearnModeSetting(mode: LearnMode) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async changeAiNotesSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_ai_notes_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getAiStatus() : Promise<AiStatus> {
     return await TAURI_INVOKE("get_ai_status");
 },
@@ -1505,6 +1513,186 @@ async openScratchpad(noteId: number | null) : Promise<Result<null, string>> {
 async hideScratchpad() : Promise<void> {
     return await TAURI_INVOKE("hide_scratchpad");
 },
+async getNotes() : Promise<Result<Note[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_notes") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getNoteLines(id: number) : Promise<Result<NoteLine[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_note_lines", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async searchNotes(query: string) : Promise<Result<NoteMatch[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("search_notes", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getNoteTags() : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_note_tags") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async renameNote(id: number, title: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_note", { id, title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveNoteMyNotes(id: number, text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_note_my_notes", { id, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async addNoteTag(id: number, tag: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_note_tag", { id, tag }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async removeNoteTag(id: number, tag: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_note_tag", { id, tag }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setNoteActionDone(actionId: number, done: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_note_action_done", { actionId, done }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteNote(id: number) : Promise<Result<DeletedRecording | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_note", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreNote(deleted: DeletedRecording) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_note", { deleted }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getNoteAudio(id: number) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_note_audio", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getNoteMarkdown(id: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_note_markdown", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async exportNote(id: number, path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_note", { id, path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getNotesAudioSources() : Promise<[AudioApp[], string | null]> {
+    return await TAURI_INVOKE("get_notes_audio_sources");
+},
+async startNotes(options: StartNotes) : Promise<Result<Note, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_notes", { options }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async stopNotes() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_notes") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async pauseNotes(paused: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("pause_notes", { paused }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getNotesSession() : Promise<SessionInfo | null> {
+    return await TAURI_INVOKE("get_notes_session");
+},
+async summariseNote(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("summarise_note", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async askNote(id: number, question: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("ask_note", { id, question }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async notesDictate(noteId: number) : Promise<void> {
+    return await TAURI_INVOKE("notes_dictate", { noteId });
+},
+async openNote(id: number) : Promise<void> {
+    return await TAURI_INVOKE("open_note", { id });
+},
+async changeNotesLiveTranscriptSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_notes_live_transcript_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async dismissNotesReminder() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("dismiss_notes_reminder") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async scratchpadDictate(noteId: number) : Promise<void> {
     return await TAURI_INVOKE("scratchpad_dictate", { noteId });
 },
@@ -1549,6 +1737,12 @@ export const events = __makeEvents__<{
 aiStatusChanged: AiStatusChanged,
 dictionaryChanged: DictionaryChanged,
 historyUpdatePayload: HistoryUpdatePayload,
+noteInsert: NoteInsert,
+noteLineAdded: NoteLineAdded,
+noteLineRemoved: NoteLineRemoved,
+notesChanged: NotesChanged,
+notesSessionChanged: NotesSessionChanged,
+notesTick: NotesTick,
 openPage: OpenPage,
 streamPhaseEvent: StreamPhaseEvent,
 scratchpadChanged: ScratchpadChanged,
@@ -1562,6 +1756,12 @@ transformRunsChanged: TransformRunsChanged
 aiStatusChanged: "ai-status-changed",
 dictionaryChanged: "dictionary-changed",
 historyUpdatePayload: "history-update-payload",
+noteInsert: "note-insert",
+noteLineAdded: "note-line-added",
+noteLineRemoved: "note-line-removed",
+notesChanged: "notes-changed",
+notesSessionChanged: "notes-session-changed",
+notesTick: "notes-tick",
 openPage: "open-page",
 streamPhaseEvent: "stream-phase-event",
 scratchpadChanged: "scratchpad-changed",
@@ -1768,6 +1968,24 @@ export type LearnMode =
  * Asks the main window to show a page, such as Needs review in the
  * Dictionary.
  */
+export type AudioApp = { pid: number; name: string; exe_path: string; active: boolean; call: boolean }
+export type DeletedRecording = { note: Note; lines: NoteLine[] }
+export type Note = { id: number; title: string; kind: NoteKind; status: NoteStatus; app: string | null; app_path: string | null; microphone: string | null; system_audio: string | null; started_at: number; duration_ms: number; audio_file: string | null; tags: string[]; my_notes: string; summary: string; decisions: string[]; summary_model: string | null; summary_at: number | null; summary_error: string | null; failed_lines: number; lines: number; actions: NoteAction[] }
+export type NoteAction = { id: number; owner: string; text: string; done: boolean }
+export type NoteInsert = { note_id: number; text: string }
+export type NoteKind = "memo" | "meeting"
+export type NoteLine = { id: number; note_id: number; at_ms: number; end_ms: number; who: Speaker; text: string }
+export type NoteLineAdded = { line: NoteLine }
+export type NoteLineRemoved = { note_id: number; line_id: number }
+export type NoteMatch = { id: number; line: NoteLine | null }
+export type NoteStatus = "recording" | "transcribing" | "summarising" | "ready"
+export type NotesChanged = null
+export type NotesSessionChanged = { session: SessionInfo | null }
+export type NotesTick = { elapsed_ms: number; you: number; them: number | null; paused: boolean; pending: number }
+export type SessionInfo = { note_id: number; kind: NoteKind; title: string; started_at: number; phase: SessionPhase; paused: boolean; elapsed_ms: number; pending: number; microphone: string; system_audio: string | null; system_fallback: boolean; max_ms: number }
+export type SessionPhase = "recording" | "finishing"
+export type Speaker = "you" | "them"
+export type StartNotes = { kind: NoteKind; title: string | null; microphone: string | null; app_pid: number | null }
 export type OpenPage = { page: string; section: string | null }
 /**
  * A sentence after the Dictionary corrected it.
@@ -1938,7 +2156,7 @@ export type ScratchpadInsert = { note_id: number; text: string }
 /**
  * Whether the window's Dictate here is listening.
  */
-export type ScratchpadDictating = { active: boolean }
+export type ScratchpadDictating = { active: boolean; notes: boolean }
 /**
  * Everything the Snippets page shows.
  */
@@ -2072,7 +2290,19 @@ app_rules?: AppRule[];
 /**
  * Reads the field after a paste and proposes the words you corrected.
  */
-learn_from_edits?: boolean; learn_mode?: LearnMode; scratchpad_open?: ScratchpadOpen; 
+learn_from_edits?: boolean; learn_mode?: LearnMode; 
+/**
+ * Notes summaries and Ask about this note may use the AI.
+ */
+ai_notes_enabled?: boolean; 
+/**
+ * Notes shows the transcript as it is written.
+ */
+notes_live_transcript?: boolean; 
+/**
+ * The recorder reminds you to tell people you're recording.
+ */
+notes_reminder?: boolean; scratchpad_open?: ScratchpadOpen; 
 /**
  * The Scratchpad window floats above other apps.
  */
