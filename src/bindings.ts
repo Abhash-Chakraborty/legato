@@ -1736,6 +1736,111 @@ async retryNoteLines(id: number) : Promise<Result<RetryResult, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getSyncState() : Promise<Result<SyncState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_sync_state") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async startPairing() : Promise<Result<PairingInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_pairing") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelPairing() : Promise<void> {
+    await TAURI_INVOKE("cancel_pairing");
+},
+async unpairPhone(deviceId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("unpair_phone", { deviceId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async renamePhone(deviceId: string, name: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_phone", { deviceId, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * False when the phone isn't connected.
+ */
+async syncPhoneNow(deviceId: string) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_phone_now", { deviceId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getSyncMerges() : Promise<Result<Merge[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_sync_merges") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeSyncSettings(value: SyncSettings) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_sync_settings", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Returns the phone's name.
+ */
+async sendClipboardToPhone() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("send_clipboard_to_phone") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getRecentClips() : Promise<Result<ClipRow[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_recent_clips") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async clearRecentClips() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_recent_clips") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async copyRecentClip(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("copy_recent_clip", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getClipImage(id: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_clip_image", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async notesDictate(noteId: number) : Promise<void> {
     return await TAURI_INVOKE("notes_dictate", { noteId });
 },
@@ -1849,6 +1954,7 @@ dictionaryChanged: DictionaryChanged,
 historyUpdatePayload: HistoryUpdatePayload,
 callTest: CallTest,
 callsChanged: CallsChanged,
+syncChanged: SyncChanged,
 noteInsert: NoteInsert,
 noteLineAdded: NoteLineAdded,
 noteLineRemoved: NoteLineRemoved,
@@ -1874,6 +1980,7 @@ dictionaryChanged: "dictionary-changed",
 historyUpdatePayload: "history-update-payload",
 callTest: "call-test",
 callsChanged: "calls-changed",
+syncChanged: "sync-changed",
 noteInsert: "note-insert",
 noteLineAdded: "note-line-added",
 noteLineRemoved: "note-line-removed",
@@ -1981,6 +2088,27 @@ models: string[] }
  * A fix made on one dictation.
  */
 export type AppliedFix = { from: string; to: string; source?: FixSource }
+export type ClipRow = { id: string; at: number; 
+/**
+ * The phone's name.
+ */
+peer: string; 
+/**
+ * True for clips from the phone, false for clips sent to it.
+ */
+incoming: boolean; 
+/**
+ * "text" or "image".
+ */
+kind: string; text: string | null; 
+/**
+ * The PNG's file name in the clips folder.
+ */
+image: string | null; bytes: number; 
+/**
+ * Arrived too late for the clipboard.
+ */
+late: boolean; from_app: string | null }
 /**
  * What made a fix.
  */
@@ -2004,6 +2132,7 @@ export type FixSource =
 /**
  * One fix made today, for Home's rail.
  */
+export type KindCount = { kind: string; count: number }
 /**
  * A call Legato noticed, for Settings › Context & calls.
  */
@@ -2028,6 +2157,103 @@ export type LiveCall = { app: CallApp; name: string;
  * Unix seconds.
  */
 since: number }
+export type Merge = { id: number; at: number; 
+/**
+ * The device name at the time.
+ */
+peer: string; kind: string; label: string; 
+/**
+ * True when the other device's version was kept.
+ */
+kept_theirs: boolean }
+/**
+ * What Pair a phone shows.
+ */
+export type PairingInfo = { link: string; 
+/**
+ * The link as a QR code, an SVG document.
+ */
+qr_svg: string; minutes: number; pc_name: string; addresses: SyncAddress[] }
+export type Peer = { device_id: string; name: string; platform: string; app_version: string; fingerprint: string; 
+/**
+ * Seconds since 1970, like every time below.
+ */
+paired_at: number; last_seen: number | null; last_sync: number | null; 
+/**
+ * The newest of our changes it confirmed it holds.
+ */
+sent_upto: number; 
+/**
+ * The newest of its changes we hold.
+ */
+recv_upto: number }
+export type PhoneState = { peer: Peer; online: boolean; 
+/**
+ * How it's connected: "lan" or "netbird".
+ */
+via: string | null }
+/**
+ * An address the phone can reach this PC on.
+ */
+export type SyncAddress = { 
+/**
+ * "lan" or "netbird".
+ */
+kind: string; 
+/**
+ * "192.168.1.20:47613".
+ */
+addr: string }
+/**
+ * Sent when anything Settings › Devices shows changed.
+ */
+export type SyncChanged = null
+/**
+ * Settings › Devices: what syncs with a paired phone, and the shared
+ * clipboard.
+ */
+export type SyncSettings = { 
+/**
+ * The kinds that sync (sync/protocol.rs KINDS).
+ */
+kinds?: string[]; 
+/**
+ * What this PC is called on the phone; None uses the computer name.
+ */
+pc_name?: string | null; clipboard?: boolean; 
+/**
+ * Largest image to share, in MB; 0 shares text only.
+ */
+clipboard_images_mb?: number; 
+/**
+ * Apps whose copies are never sent, by file name.
+ */
+clipboard_never?: string[]; 
+/**
+ * Clipboard sync is paused until this time (seconds since 1970);
+ * i64::MAX pauses it until it's turned back on.
+ */
+clipboard_paused_until?: number | null; 
+/**
+ * A clip from the phone shows "From phone" on the Legato bar.
+ */
+phone_pill?: boolean }
+/**
+ * Everything Settings › Devices shows.
+ */
+export type SyncState = { pc_name: string; addresses: SyncAddress[]; 
+/**
+ * Listening for phones; false with no phone paired and no pairing open.
+ */
+listening: boolean; 
+/**
+ * Why listening failed, if it did.
+ */
+listen_error: string | null; pairing: boolean; phones: PhoneState[]; counts: KindCount[]; 
+/**
+ * Merges logged so far (See merges).
+ */
+merges: number }
 export type TodayFix = { history_id: number; timestamp: number; from: string; to: string; source: FixSource; app: string | null }
 export type DictionaryEntry = { id: number; text: string; 
 /**
@@ -2646,7 +2872,7 @@ notes_live_transcript?: boolean;
 /**
  * The recorder reminds you to tell people you're recording.
  */
-notes_reminder?: boolean; calls?: CallSettings; scratchpad_open?: ScratchpadOpen; 
+notes_reminder?: boolean; calls?: CallSettings; sync?: SyncSettings; scratchpad_open?: ScratchpadOpen; 
 /**
  * The Scratchpad window floats above other apps.
  */
@@ -2742,7 +2968,11 @@ transcribe_ms: number | null;
 /**
  * Whether the model ran on the GPU.
  */
-on_gpu: boolean | null }
+on_gpu: boolean | null; 
+/**
+ * The paired phone it was dictated on; None for this PC.
+ */
+device: string | null }
 export type HistoryFilter = "all" | "starred" | "fixed" | "transformed"
 export type HistoryQuery = { 
 /**
@@ -2769,7 +2999,7 @@ apps: AppCount[];
  * Today's fixes, newest first, at most 20.
  */
 fixed_today: TodayFix[] }
-export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
+export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number } | { action: "synced" }
 /**
  * Everything Insights shows.
  */

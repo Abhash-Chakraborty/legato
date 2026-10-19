@@ -12,6 +12,7 @@ import { useTextHighlight } from "../../hooks/useTextHighlight";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
 import { useAiStore, watchAi } from "../../stores/aiStore";
+import { useSyncStore, watchSync } from "../../stores/syncStore";
 import { useNavStore, type SettingsSection } from "../../stores/navStore";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { Requires } from "../ui/SettingContainer";
@@ -97,12 +98,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
   const ai = useAiStore((state) => state.status);
   useEffect(watchAi, []);
+  const paired = useSyncStore((state) => (state.state?.phones.length ?? 0) > 0);
+  useEffect(watchSync, []);
 
   const ctx: RowContext = {
     settings,
     model: models.find((m) => m.id === currentModel),
     ai,
+    paired,
   };
+  const shown = <T extends { when?: (c: RowContext) => boolean }>(item: T) =>
+    item.when?.(ctx) ?? true;
 
   const q = query.trim().toLowerCase();
   const matches = (row: SettingRow) =>
@@ -111,7 +117,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     ? visible
         .map((s) => ({
           section: s,
-          rows: s.groups.flatMap((g) => g.rows.filter(matches)),
+          rows: s.groups
+            .filter(shown)
+            .flatMap((g) => g.rows.filter(shown).filter(matches)),
         }))
         .filter((r) => r.rows.length > 0)
     : [];
@@ -267,9 +275,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             <p className="-mt-3.5 mb-6 max-w-[640px] text-sm text-text-2">
               {t(`settings.sections.${current.id}.subtitle`)}
             </p>
-            {current.groups.map((g) => (
-              <SettingsGroup key={g.id} title={t(g.titleKey)}>
-                {g.rows.map((row) => (
+            {current.groups.filter(shown).map((g) => (
+              <SettingsGroup
+                key={g.id}
+                title={t(g.titleKey)}
+                description={g.descriptionKey ? t(g.descriptionKey) : undefined}
+              >
+                {g.rows.filter(shown).map((row) => (
                   <Row key={row.id} row={row} ctx={ctx} />
                 ))}
               </SettingsGroup>

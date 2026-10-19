@@ -105,6 +105,8 @@ export const useHistory = (view: HistoryView) => {
         );
       } else if (payload.action === "deleted") {
         setEntries((prev) => prev.filter((e) => e.id !== payload.id));
+      } else if (payload.action === "synced") {
+        reload();
       }
       // "toggled" comes from this page's own optimistic update.
       refreshSummary();
@@ -112,7 +114,7 @@ export const useHistory = (view: HistoryView) => {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [refreshSummary]);
+  }, [refreshSummary, reload]);
 
   return {
     entries,

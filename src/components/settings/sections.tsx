@@ -11,6 +11,7 @@ import {
   Plug,
   Settings2,
   Shield,
+  Smartphone,
   type LucideIcon,
 } from "lucide-react";
 import type { AiStatus, AppSettings, ModelInfo } from "@/bindings";
@@ -74,6 +75,22 @@ import {
   TestDetectionRow,
   WatchedAppsRow,
 } from "./calls/CallSettings";
+import {
+  ClipboardImagesRow,
+  NeverShareAppsRow,
+  NeverSyncsRow,
+  PauseClipboardRow,
+  PcNameRow,
+  PhonePillRow,
+  PhoneCard,
+  PrivateContentRow,
+  RecentClipsRow,
+  SendClipboardRow,
+  SharedClipboardRow,
+  SYNC_KINDS,
+  SyncKindRow,
+  SyncStatusRow,
+} from "./devices/DeviceSettings";
 import { ShowOverlay } from "./ShowOverlay";
 import { ConfirmPaste, ShowChanges } from "./BarMessages";
 import { RememberApp } from "./RememberApp";
@@ -104,6 +121,8 @@ export interface RowContext {
   settings: AppSettings | null;
   model: ModelInfo | undefined;
   ai: AiStatus | null;
+  /** A phone is paired (Settings › Devices). */
+  paired: boolean;
 }
 
 /** A dependency that isn't met: the reason key, plus values for it. */
@@ -122,12 +141,17 @@ export interface SettingRow {
   render: () => React.ReactNode;
   /** Returns why the row can't be changed right now, or null when it can. */
   requires?: (ctx: RowContext) => Unmet | null;
+  /** Shows the row only when this holds. */
+  when?: (ctx: RowContext) => boolean;
 }
 
 export interface SettingsGroupDef {
   id: string;
   titleKey: string;
+  descriptionKey?: string;
   rows: SettingRow[];
+  /** Shows the group only when this holds. */
+  when?: (ctx: RowContext) => boolean;
 }
 
 export interface SectionDef {
@@ -155,6 +179,13 @@ const needsCallDetection = ({ settings }: RowContext): Unmet | null =>
   (settings?.calls?.detect ?? true)
     ? null
     : { reasonKey: "settings.requires.calls" };
+
+const paired = ({ paired }: RowContext) => paired;
+
+const needsClipboardSync = ({ settings }: RowContext): Unmet | null =>
+  (settings?.sync?.clipboard ?? true)
+    ? null
+    : { reasonKey: "settings.requires.clipboardSync" };
 
 const needsSoundFeedback = ({ settings }: RowContext): Unmet | null =>
   settings?.audio_feedback ? null : { reasonKey: "settings.requires.sound" };
@@ -997,6 +1028,140 @@ export const buildSections = (
               "settings.bar.showChanges.help",
             ],
             render: () => <ShowChanges grouped />,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "devices",
+    icon: Smartphone,
+    groups: [
+      {
+        id: "phone",
+        titleKey: "settings.groups.phone",
+        rows: [
+          {
+            id: "phone",
+            searchKeys: [
+              "settings.devices.pairCard.title",
+              "settings.devices.pairCard.help",
+              "settings.devices.phone.syncNow",
+              "settings.devices.phone.rename",
+              "settings.devices.phone.unpair",
+            ],
+            render: () => <PhoneCard />,
+          },
+          {
+            id: "sync-status",
+            searchKeys: [
+              "settings.devices.status.title",
+              "settings.devices.status.seeMerges",
+            ],
+            render: () => <SyncStatusRow />,
+            when: paired,
+          },
+          {
+            id: "pc-name",
+            searchKeys: [
+              "settings.devices.pcName.title",
+              "settings.devices.pcName.help",
+            ],
+            render: () => <PcNameRow />,
+          },
+        ],
+      },
+      {
+        id: "what-syncs",
+        titleKey: "settings.groups.whatSyncs",
+        descriptionKey: "settings.devices.whatSyncs",
+        when: paired,
+        rows: [
+          ...SYNC_KINDS.map((kind) => ({
+            id: `sync-${kind}`,
+            searchKeys: [`settings.devices.kinds.${kind}.title`],
+            render: () => <SyncKindRow kind={kind} />,
+          })),
+          {
+            id: "never-syncs",
+            searchKeys: ["settings.devices.never"],
+            render: () => <NeverSyncsRow />,
+          },
+        ],
+      },
+      {
+        id: "clipboard",
+        titleKey: "settings.groups.clipboard",
+        when: paired,
+        rows: [
+          {
+            id: "shared-clipboard",
+            searchKeys: [
+              "settings.devices.clipboard.title",
+              "settings.devices.clipboard.help",
+            ],
+            render: () => <SharedClipboardRow />,
+          },
+          {
+            id: "clipboard-images",
+            searchKeys: [
+              "settings.devices.images.title",
+              "settings.devices.images.help",
+            ],
+            render: () => <ClipboardImagesRow />,
+            requires: needsClipboardSync,
+          },
+          {
+            id: "private-content",
+            searchKeys: [
+              "settings.devices.private.title",
+              "settings.devices.private.help",
+            ],
+            render: () => <PrivateContentRow />,
+          },
+          {
+            id: "never-share",
+            searchKeys: [
+              "settings.devices.neverApps.title",
+              "settings.devices.neverApps.help",
+            ],
+            render: () => <NeverShareAppsRow />,
+            requires: needsClipboardSync,
+          },
+          {
+            id: "phone-pill",
+            searchKeys: [
+              "settings.devices.pill.title",
+              "settings.devices.pill.help",
+            ],
+            render: () => <PhonePillRow />,
+            requires: needsClipboardSync,
+          },
+          {
+            id: "pause-clipboard",
+            searchKeys: [
+              "settings.devices.pause.title",
+              "settings.devices.pause.help",
+            ],
+            render: () => <PauseClipboardRow />,
+            requires: needsClipboardSync,
+          },
+          {
+            id: "send-clipboard",
+            searchKeys: [
+              "settings.devices.send.title",
+              "settings.devices.send.help",
+            ],
+            render: () => <SendClipboardRow />,
+            requires: needsClipboardSync,
+          },
+          {
+            id: "recent-clips",
+            searchKeys: [
+              "settings.devices.clips.title",
+              "settings.devices.clips.help",
+            ],
+            render: () => <RecentClipsRow />,
           },
         ],
       },

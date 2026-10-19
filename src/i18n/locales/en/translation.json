@@ -6,7 +6,10 @@
     "unloadModel": "Unload model",
     "model": "Model",
     "quit": "Quit",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "pauseClipboardSync": "Pause clipboard sync",
+    "resumeClipboardSync": "Resume clipboard sync",
+    "sendClipboardTo": "Send clipboard to {{name}}"
   },
   "handyMigration": {
     "quitHandy": "Handy is still running, so Legato can't bring over your settings and history yet.\n\nQuit Handy from its tray icon, then choose Retry. If you choose Cancel, Legato starts without them and won't ask again. They stay in Handy's folder.",
@@ -648,6 +651,10 @@
       "calls": {
         "title": "Context & calls",
         "subtitle": "Legato notices when a call starts and offers to take notes."
+      },
+      "devices": {
+        "title": "Devices",
+        "subtitle": "Your phone, sync and the shared clipboard."
       }
     },
     "groups": {
@@ -684,7 +691,10 @@
       "notes": "Notes",
       "detection": "Detection",
       "callStart": "When a call starts",
-      "callEnd": "When the call ends"
+      "callEnd": "When the call ends",
+      "phone": "Phone",
+      "whatSyncs": "What syncs",
+      "clipboard": "Clipboard"
     },
     "requires": {
       "tray": "Needs the tray icon, or there would be no way to open the window.",
@@ -699,7 +709,8 @@
       "clipboardPaste": "Only applies when Legato pastes with keys, not when it types the text or doesn't paste.",
       "ask": "Turn on Ask on the Transforms page to use this shortcut.",
       "calls": "Needs Detect calls and offer notes.",
-      "autoStart": "Only used when notes start automatically."
+      "autoStart": "Only used when notes start automatically.",
+      "clipboardSync": "Turn on Shared clipboard first."
     },
     "privacy": {
       "rememberApp": {
@@ -952,6 +963,196 @@
         "title": "Open the note when it's ready",
         "help": "Opens Notes with the summary when processing finishes."
       }
+    },
+    "devices": {
+      "whatSyncs": "Both devices keep a full copy and update each other directly.",
+      "via": {
+        "lan": "Home Wi-Fi",
+        "netbird": "Netbird"
+      },
+      "undo": "Undo",
+      "pair": {
+        "title": "Pair a phone",
+        "subtitle": "Pair Legato for Android with {{pc}}.",
+        "cancel": "Cancel",
+        "finish": "Done",
+        "done": "{{name}} paired",
+        "firstSync": "The first sync is running. Your Dictionary, snippets, notes and history will be on both devices in a minute.",
+        "qr": "QR code for pairing a phone with {{pc}}",
+        "expired": "This code ran out",
+        "making": "Making a code…",
+        "steps": {
+          "open": "Open Legato on your phone and tap Pair with a PC.",
+          "scan": "Scan the code.",
+          "confirm": "Tap Pair when the phone shows {{pc}}."
+        },
+        "once_one": "Works once, for the next minute.",
+        "once_other": "Works once, for the next {{count}} minutes.",
+        "again": "New code",
+        "copyLink": "Copy link",
+        "copied": "Copied the pairing link",
+        "noNetwork": "No network found. Connect this PC to Wi-Fi or Netbird first.",
+        "private": "The phone uses whichever it can reach. Everything is encrypted end to end, and nothing goes through a server.",
+        "waiting": "Waiting for your phone…"
+      },
+      "pairCard": {
+        "title": "Pair a phone",
+        "help": "Keep your Dictionary, snippets, notes and history on Legato for Android too, and share the clipboard.",
+        "button": "Pair a phone…",
+        "listenError": "Legato can't listen for phones: {{error}}"
+      },
+      "rename": {
+        "title": "Rename phone",
+        "label": "Name",
+        "cancel": "Cancel",
+        "save": "Save"
+      },
+      "phone": {
+        "about": "Legato for Android {{version}} · paired {{date}}",
+        "online": {
+          "lan": "Connected on home Wi-Fi",
+          "netbird": "Connected through Netbird"
+        },
+        "synced": "synced {{when}}",
+        "offline": "Not connected",
+        "syncNow": "Sync now",
+        "rename": "Rename…",
+        "unpair": "Unpair…",
+        "unreachable": "Can't reach {{name}} on home Wi-Fi or Netbird. Changes wait here until it's back.",
+        "lastSynced": "last synced {{when}}"
+      },
+      "unpair": {
+        "title": "Unpair {{name}}?",
+        "help": "{{name}} stops syncing with this PC. What's already on it stays.",
+        "cancel": "Cancel",
+        "confirm": "Unpair",
+        "done": "{{name}} is unpaired"
+      },
+      "merges": {
+        "title": "Merged changes",
+        "help": "When the same thing changed on both devices while they were apart, the newer change wins.",
+        "done": "Done",
+        "keptTheirs": "kept the edit from {{name}}",
+        "keptOurs": "kept the edit from this PC"
+      },
+      "status": {
+        "title": "Sync status",
+        "upToDate": "Up to date.",
+        "waiting": "Changes on this PC wait here until {{name}} connects.",
+        "merged_one": "{{count}} edit made on both devices was merged, keeping the newer one.",
+        "merged_other": "{{count}} edits made on both devices were merged, keeping the newer one.",
+        "seeMerges": "See merges"
+      },
+      "pcName": {
+        "title": "Name on your phone",
+        "help": "What this PC is called in Legato for Android."
+      },
+      "kinds": {
+        "dictionary": {
+          "title": "Dictionary",
+          "help_one": "{{count}} word, with its spellings and pin.",
+          "help_other": "{{count}} words, with their spellings and pins."
+        },
+        "snippets": {
+          "title": "Snippets",
+          "help_one": "{{count}} snippet and its trigger.",
+          "help_other": "{{count}} snippets and their triggers."
+        },
+        "history": {
+          "title": "History",
+          "help_one": "{{count}} transcript. Audio stays on the device that recorded it.",
+          "help_other": "{{count}} transcripts. Audio stays on the device that recorded it."
+        },
+        "notes": {
+          "title": "Notes",
+          "help_one": "{{count}} note: transcript, summary and action items. Recordings stay on this PC.",
+          "help_other": "{{count}} notes: transcripts, summaries and action items. Recordings stay on this PC."
+        },
+        "scratchpad": {
+          "title": "Scratchpad",
+          "help_one": "{{count}} Scratchpad note.",
+          "help_other": "{{count}} Scratchpad notes."
+        },
+        "transforms": {
+          "title": "Transforms",
+          "help_one": "{{count}} transform and its prompt. API keys stay on each device.",
+          "help_other": "{{count}} transforms and their prompts. API keys stay on each device."
+        },
+        "style": {
+          "title": "Style per app",
+          "help": "The tone for each kind of app. Paste settings stay on this PC."
+        }
+      },
+      "never": "Never syncs: audio recordings, models, this PC's microphone, shortcuts, paste method and Legato bar settings.",
+      "clipboard": {
+        "title": "Shared clipboard",
+        "help": "Copy on one device, paste on the other."
+      },
+      "images": {
+        "title": "Images",
+        "help": "Larger images stay on the device they were copied on.",
+        "options": {
+          "0": "Text only",
+          "1": "Text and images up to 1 MB",
+          "10": "Text and images up to 10 MB"
+        }
+      },
+      "private": {
+        "title": "Never sends private content",
+        "help": "Password managers mark what they copy as private, and Legato leaves it on this PC.",
+        "always": "Always"
+      },
+      "neverApps": {
+        "title": "Apps that never share",
+        "help": "Nothing copied in these apps goes to your phone.",
+        "count_one": "{{count}} app",
+        "count_other": "{{count}} apps",
+        "remove": "Remove {{app}}",
+        "removed": "{{app}} can share again",
+        "add": "Add",
+        "placeholder": "App file name, like Signal.exe"
+      },
+      "pill": {
+        "title": "Show From phone on the Legato bar",
+        "help": "A short note on the bar when a clip from {{name}} lands on the clipboard."
+      },
+      "pause": {
+        "title": "Pause clipboard sync",
+        "help": "Stops sharing copies both ways for a while.",
+        "button": "Pause…",
+        "hour": "For an hour",
+        "tomorrow": "Until tomorrow morning",
+        "manual": "Until I turn it back on",
+        "resume": "Resume",
+        "until": "Paused until {{time}}.",
+        "untilResumed": "Paused until you turn it back on.",
+        "paused": "Clipboard sync is paused",
+        "resumed": "Clipboard sync is on again"
+      },
+      "send": {
+        "title": "Send clipboard to phone",
+        "help": "Sends what's on the clipboard now.",
+        "offline": "{{name}} isn't connected.",
+        "button": "Send to {{name}}",
+        "sent": "Sent to {{name}}"
+      },
+      "clips": {
+        "title": "Recent clips",
+        "help": "The last 20 clips, both ways. Late ones land here instead of the clipboard.",
+        "empty": "Clips you share show here.",
+        "clear": "Clear all",
+        "clearTitle": "Clear recent clips?",
+        "clearHelp": "The list empties on this PC. Your clipboard stays as it is.",
+        "cancel": "Cancel",
+        "copied": "Copied",
+        "copy": "Copy again",
+        "from": "From {{name}}",
+        "to": "To {{name}}",
+        "incoming": "From the phone",
+        "outgoing": "To the phone",
+        "image": "Copied image",
+        "late": "Arrived more than 2 minutes after it was copied, so it wasn't put on the clipboard."
+      }
     }
   },
   "footer": {
@@ -1072,7 +1273,9 @@
       "noteReady": "Note saved · {{duration}}",
       "noteEmpty": "Nothing was heard, so no note was saved",
       "notesFailed": "Notes didn't start · {{reason}}",
-      "callNever": "Legato won't offer notes in {{app}}"
+      "callNever": "Legato won't offer notes in {{app}}",
+      "fromPhone": "From {{name}} · on your clipboard",
+      "fromPhoneImage": "Image from {{name}} · on your clipboard"
     },
     "working": "{{name}}…",
     "undo": "Undo",
@@ -1193,7 +1396,8 @@
       "fixes_one": "{{count}} fix",
       "fixes_other": "{{count}} fixes",
       "pasteFailed": "Not pasted: {{reason}}",
-      "unknownReason": "Windows didn't say why."
+      "unknownReason": "Windows didn't say why.",
+      "onDevice": "On {{device}}"
     },
     "toast": {
       "deleted": "Dictation deleted",

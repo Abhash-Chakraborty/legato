@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   BackgroundAudio,
   CallSettings,
+  SyncSettings,
   CleanupLevel,
   CleanupRules,
   AppSettings as Settings,
@@ -179,6 +180,12 @@ const settingUpdaters: {
     commands.changeAiCorrectionSetting(value as boolean),
   ai_notes_enabled: (value) => commands.changeAiNotesSetting(value as boolean),
   calls: (value) => commands.changeCallSettings(value as CallSettings),
+  sync: async (value) => {
+    const result = await commands.changeSyncSettings(value as SyncSettings);
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
   ai_min_words: (value) => commands.changeAiMinWordsSetting(value as number),
   ai_timeout_secs: (value) => commands.changeAiTimeoutSetting(value as number),
   background_audio: (value) =>

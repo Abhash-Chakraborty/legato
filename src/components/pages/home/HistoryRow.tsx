@@ -8,6 +8,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Smartphone,
   SpellCheck,
   Star,
   Trash2,
@@ -103,6 +104,8 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
 
   const text = finalText(entry);
   const failed = entry.status === "failed" || !entry.transcription_text.trim();
+  // Dictations from a paired phone keep their audio on the phone.
+  const hasAudio = !!entry.file_name;
   const time = new Date(entry.timestamp * 1000).toLocaleTimeString(
     i18n.language,
     { hour: "numeric", minute: "2-digit" },
@@ -137,13 +140,17 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
             onSelect: onFix,
           },
         ]),
-    {
-      id: "retry",
-      label: t("home.row.transcribeAgain"),
-      icon: RotateCcw,
-      disabled: retrying,
-      onSelect: retry,
-    },
+    ...(hasAudio
+      ? [
+          {
+            id: "retry",
+            label: t("home.row.transcribeAgain"),
+            icon: RotateCcw,
+            disabled: retrying,
+            onSelect: retry,
+          },
+        ]
+      : []),
     ...(entry.post_processed_text
       ? [
           {
@@ -161,12 +168,16 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
       shortcut: "S",
       onSelect: () => actions.toggleStar(entry),
     },
-    {
-      id: "save-audio",
-      label: t("home.row.saveAudio"),
-      icon: Download,
-      onSelect: () => actions.saveAudio(entry),
-    },
+    ...(hasAudio
+      ? [
+          {
+            id: "save-audio",
+            label: t("home.row.saveAudio"),
+            icon: Download,
+            onSelect: () => actions.saveAudio(entry),
+          },
+        ]
+      : []),
     "separator",
     {
       id: "delete",
@@ -268,6 +279,15 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
               </span>
             </span>
           )}
+          {entry.device && (
+            <span className="inline-flex items-center gap-1 text-text-2">
+              <Smartphone
+                className="h-3 w-3 flex-none stroke-[1.75]"
+                aria-hidden="true"
+              />
+              {t("home.meta.onDevice", { device: entry.device })}
+            </span>
+          )}
           {entry.model_name && <span>{entry.model_name}</span>}
           {entry.speech_ms != null && entry.speech_ms > 0 && (
             <span>{formatSpeech(entry.speech_ms)}</span>
@@ -283,7 +303,7 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
                   : t("home.meta.pasted")}
             </span>
           )}
-          {entry.status === "not_pasted" && (
+          {entry.status === "not_pasted" && !entry.device && (
             <span>{t("home.meta.notPasted")}</span>
           )}
           {entry.transform && (
@@ -316,12 +336,14 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
       <div
         className={`relative flex items-start gap-0.5 transition-opacity duration-[var(--dur-1)] group-hover:opacity-100 group-hover:duration-0 group-focus-within:opacity-100 ${menuOpen || playing || fixing ? "opacity-100" : "opacity-0"}`}
       >
-        <RowButton
-          label={playing ? t("home.row.hidePlayer") : t("home.row.play")}
-          icon={playing ? Pause : Play}
-          pressed={playing}
-          onClick={() => setPlaying((p) => !p)}
-        />
+        {hasAudio && (
+          <RowButton
+            label={playing ? t("home.row.hidePlayer") : t("home.row.play")}
+            icon={playing ? Pause : Play}
+            pressed={playing}
+            onClick={() => setPlaying((p) => !p)}
+          />
+        )}
         {!failed && (
           <RowButton
             label={copied ? t("home.row.copied") : t("home.row.copy")}

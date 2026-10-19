@@ -23,6 +23,7 @@ export type SettingsSection =
   | "ai"
   | "calls"
   | "bar"
+  | "devices"
   | "privacy"
   | "about"
   | "debug";

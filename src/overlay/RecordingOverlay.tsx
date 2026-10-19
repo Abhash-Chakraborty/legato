@@ -49,6 +49,7 @@ type OverlayNotice =
   | { kind: "pasted"; words: number; app: string | null; undo: boolean }
   | { kind: "transformed"; name: string; words: number; undo: boolean }
   | { kind: "copied"; name: string }
+  | { kind: "from_phone"; name: string; image: boolean }
   | { kind: "pasted_last" | "copied_last"; words: number }
   | { kind: "undone"; clipboard: boolean }
   | {
@@ -150,6 +151,7 @@ const GOOD_NOTICES = new Set([
   "pasted",
   "transformed",
   "copied",
+  "from_phone",
   "pasted_last",
   "copied_last",
   "undone",
@@ -633,6 +635,13 @@ const RecordingOverlay: React.FC = () => {
         });
       case "copied":
         return t("overlay.notice.copied", { name: n.name });
+      case "from_phone":
+        return t(
+          n.image
+            ? "overlay.notice.fromPhoneImage"
+            : "overlay.notice.fromPhone",
+          { name: n.name },
+        );
       case "pasted_last":
       case "copied_last":
         return t(`overlay.notice.${n.kind}`, { count: n.words });
