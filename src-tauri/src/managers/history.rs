@@ -34,6 +34,9 @@ pub enum HistoryUpdatePayload {
     Deleted { id: i64 },
     #[serde(rename = "toggled")]
     Toggled { id: i64 },
+    /// A paired phone changed history; reload it.
+    #[serde(rename = "synced")]
+    Synced,
 }
 
 pub struct HistoryManager {
@@ -519,6 +522,9 @@ impl HistoryManager {
             "DELETE FROM transcription_history WHERE id = ?1",
             params![id],
         )?;
+        // A paired phone deletes it too (trimming to the history limit
+        // doesn't).
+        crate::sync::ledger::forget(&conn, "history", id, chrono::Utc::now().timestamp())?;
 
         debug!("Deleted history entry with id: {}", id);
 

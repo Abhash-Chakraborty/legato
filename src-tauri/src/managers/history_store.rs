@@ -301,6 +301,69 @@ pub static MIGRATIONS: &[M] = &[
          ALTER TABLE daily_model_stats ADD COLUMN transcribe_ms INTEGER NOT NULL DEFAULT 0;
          ALTER TABLE daily_model_stats ADD COLUMN on_gpu INTEGER NOT NULL DEFAULT 0;",
     ),
+    // Phone sync (sync/ledger.rs): the last known version of every item that
+    // syncs, rows that came from another device, deletes to pass on, paired
+    // devices, merges and recent clips.
+    M::up(
+        "CREATE TABLE sync_item (
+            kind TEXT NOT NULL,
+            key TEXT NOT NULL,
+            hash TEXT NOT NULL,
+            body TEXT,
+            changed_at INTEGER NOT NULL,
+            origin TEXT NOT NULL,
+            seq INTEGER NOT NULL,
+            PRIMARY KEY (kind, key)
+         );
+         CREATE INDEX sync_item_seq ON sync_item (seq);
+         CREATE TABLE sync_local (
+            kind TEXT NOT NULL,
+            local_id INTEGER NOT NULL,
+            key TEXT NOT NULL,
+            device TEXT NOT NULL,
+            PRIMARY KEY (kind, local_id)
+         );
+         CREATE UNIQUE INDEX sync_local_key ON sync_local (kind, key);
+         CREATE TABLE sync_gone (
+            kind TEXT NOT NULL,
+            local_id INTEGER NOT NULL,
+            at INTEGER NOT NULL,
+            PRIMARY KEY (kind, local_id)
+         );
+         CREATE TABLE sync_peer (
+            device_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            app_version TEXT NOT NULL DEFAULT '',
+            fingerprint TEXT NOT NULL,
+            paired_at INTEGER NOT NULL,
+            last_seen INTEGER,
+            last_sync INTEGER,
+            sent_upto INTEGER NOT NULL DEFAULT 0,
+            recv_upto INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE sync_merge (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            at INTEGER NOT NULL,
+            peer TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            key TEXT NOT NULL,
+            label TEXT NOT NULL,
+            kept_theirs INTEGER NOT NULL
+         );
+         CREATE TABLE sync_clip (
+            id TEXT PRIMARY KEY,
+            at INTEGER NOT NULL,
+            peer TEXT NOT NULL,
+            incoming INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            text TEXT,
+            image TEXT,
+            bytes INTEGER NOT NULL,
+            late INTEGER NOT NULL DEFAULT 0,
+            from_app TEXT
+         );",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.
@@ -411,13 +474,17 @@ pub struct HistoryEntry {
     pub transcribe_ms: Option<i64>,
     /// Whether the model ran on the GPU.
     pub on_gpu: Option<bool>,
+    /// The paired phone it was dictated on; None for this PC.
+    pub device: Option<String>,
 }
 
 pub const COLUMNS: &str = "id, file_name, timestamp, saved, title, transcription_text,
     post_processed_text, post_process_prompt, post_process_requested, app_exe, app_path,
     app_name, app_title, app_site, category, paste_app_name, speech_ms, word_count,
     model_id, model_name, transform, fixes, paste_ms, status, error, heard_text,
-    transcribe_ms, on_gpu";
+    transcribe_ms, on_gpu,
+    (SELECT device FROM sync_local
+     WHERE kind = 'history' AND local_id = transcription_history.id) AS device";
 
 pub fn map_entry(row: &Row<'_>) -> rusqlite::Result<HistoryEntry> {
     let fixes: Option<String> = row.get("fixes")?;
@@ -453,6 +520,7 @@ pub fn map_entry(row: &Row<'_>) -> rusqlite::Result<HistoryEntry> {
         heard_text: row.get("heard_text")?,
         transcribe_ms: row.get("transcribe_ms")?,
         on_gpu: row.get("on_gpu")?,
+        device: row.get("device")?,
     })
 }
 

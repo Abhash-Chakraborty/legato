@@ -198,6 +198,71 @@ pub enum PasteMethod {
     CtrlShiftV,
 }
 
+/// Settings › Devices: what syncs with a paired phone, and the shared
+/// clipboard.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+pub struct SyncSettings {
+    /// The kinds that sync (sync/protocol.rs KINDS).
+    #[serde(default = "default_sync_kinds")]
+    pub kinds: Vec<String>,
+    /// What this PC is called on the phone; None uses the computer name.
+    #[serde(default)]
+    pub pc_name: Option<String>,
+    #[serde(default = "default_true")]
+    pub clipboard: bool,
+    /// Largest image to share, in MB; 0 shares text only.
+    #[serde(default = "default_clip_images_mb")]
+    pub clipboard_images_mb: u32,
+    /// Apps whose copies are never sent, by file name.
+    #[serde(default = "default_clipboard_never")]
+    pub clipboard_never: Vec<String>,
+    /// Clipboard sync is paused until this time (seconds since 1970);
+    /// i64::MAX pauses it until it's turned back on.
+    #[serde(default)]
+    pub clipboard_paused_until: Option<i64>,
+    /// A clip from the phone shows "From phone" on the Legato bar.
+    #[serde(default)]
+    pub phone_pill: bool,
+}
+
+fn default_sync_kinds() -> Vec<String> {
+    crate::sync::protocol::KINDS
+        .iter()
+        .map(|k| k.to_string())
+        .collect()
+}
+
+fn default_clip_images_mb() -> u32 {
+    10
+}
+
+fn default_clipboard_never() -> Vec<String> {
+    ["KeePassXC.exe", "Bitwarden.exe", "1Password.exe"]
+        .map(String::from)
+        .to_vec()
+}
+
+impl Default for SyncSettings {
+    fn default() -> Self {
+        Self {
+            kinds: default_sync_kinds(),
+            pc_name: None,
+            clipboard: true,
+            clipboard_images_mb: default_clip_images_mb(),
+            clipboard_never: default_clipboard_never(),
+            clipboard_paused_until: None,
+            phone_pill: false,
+        }
+    }
+}
+
+impl SyncSettings {
+    /// Whether clipboard sync is paused at `now` (seconds).
+    pub fn clipboard_paused(&self, now: i64) -> bool {
+        self.clipboard_paused_until.is_some_and(|until| until > now)
+    }
+}
+
 /// Settings › Context & calls: noticing calls and offering notes.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
 pub struct CallSettings {
@@ -764,6 +829,8 @@ pub struct AppSettings {
     pub notes_reminder: bool,
     #[serde(default)]
     pub calls: CallSettings,
+    #[serde(default)]
+    pub sync: SyncSettings,
     #[serde(default)]
     pub scratchpad_open: ScratchpadOpen,
     /// The Scratchpad window floats above other apps.
@@ -1380,6 +1447,7 @@ pub fn get_default_settings() -> AppSettings {
         notes_live_transcript: true,
         notes_reminder: true,
         calls: CallSettings::default(),
+        sync: SyncSettings::default(),
         scratchpad_open: ScratchpadOpen::default(),
         scratchpad_keep_on_top: true,
         scratchpad_failed_pastes: true,

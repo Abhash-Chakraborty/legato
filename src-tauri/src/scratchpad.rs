@@ -138,7 +138,7 @@ impl ScratchpadManager {
         Ok(Connection::open(&self.db_path)?)
     }
 
-    fn changed(&self) {
+    pub(crate) fn changed(&self) {
         if let Err(e) = ScratchpadChanged.emit(&self.app) {
             error!("Failed to emit scratchpad-changed: {}", e);
         }

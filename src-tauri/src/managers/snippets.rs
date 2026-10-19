@@ -80,7 +80,7 @@ impl SnippetManager {
 
     /// Call after every write: the next dictation uses the change, and the
     /// UI reloads.
-    fn changed(&self) {
+    pub(crate) fn changed(&self) {
         if let Err(e) = self.refresh() {
             error!("Failed to reload snippets: {}", e);
         }

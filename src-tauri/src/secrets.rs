@@ -107,6 +107,16 @@ mod vault {
     }
 }
 
+/// Something other than an API key kept in Credential Manager, such as the
+/// phone sync identity, as "Legato/<name>".
+pub fn read_secret(name: &str) -> Result<Option<String>, String> {
+    vault::read(&target(name))
+}
+
+pub fn write_secret(name: &str, value: &str) -> Result<(), String> {
+    vault::write(&target(name), value)
+}
+
 /// The key for a provider, or an empty string when none is saved. A key
 /// still in the settings file (one Credential Manager refused to take) is
 /// used until it can be moved.

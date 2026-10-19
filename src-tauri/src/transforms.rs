@@ -81,6 +81,11 @@ pub enum BarNotice {
     },
     /// No selection and no dictation to work on.
     NothingToTransform,
+    /// A clip from a paired phone is on the clipboard.
+    FromPhone {
+        name: String,
+        image: bool,
+    },
     NoLastDictation,
     NoChanges,
     /// Ask heard no instruction.

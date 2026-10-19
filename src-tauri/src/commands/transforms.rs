@@ -26,7 +26,7 @@ fn runs_db(app: &AppHandle) -> Result<rusqlite::Connection, String> {
 }
 
 /// Saves settings and moves shortcut registrations to match.
-fn commit(app: &AppHandle, before: &AppSettings, mut after: AppSettings) {
+pub(crate) fn commit(app: &AppHandle, before: &AppSettings, mut after: AppSettings) {
     ensure_transform_bindings(&mut after);
     write_settings(app, after.clone());
     shortcut::sync_bindings(app, before, &after);

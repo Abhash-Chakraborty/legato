@@ -50,7 +50,7 @@ base64 = "0.22"
 hound = "3.5.1"
 log = "0.4.25"
 env_filter = "0.1.0"
-tokio = "1.43.0"
+tokio = { version = "1.43.0", features = ["net", "io-util", "macros", "time", "sync", "rt-multi-thread"] }
 earshot = "1.2.2"
 enigo = "0.6.1"
 # Feedback sounds. No `recording`: microphone capture is handy-recorder's.
@@ -69,6 +69,12 @@ isolang = "2"
 chrono = "0.4"
 rusqlite = { version = "0.37", features = ["bundled"] }
 sha2 = "0.10"
+# Phone sync: TLS with pinned self-signed certificates, on ring like reqwest.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging"] }
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }
+ring = "0.17"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 libc = "0.2"
 # Every model runs through transcribe-cpp (GGUF/ggml, native backends).
 # Per-architecture backend features are added in the target tables below
@@ -96,6 +102,9 @@ webview2-com = "0.38"
 windows-core = "0.61"
 windows = { version = "0.61.3", features = [
   "Win32_Media_Audio",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_NetworkManagement_Ndis",
+  "Win32_Networking_WinSock",
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com_StructuredStorage",
   "Win32_System_DataExchange",

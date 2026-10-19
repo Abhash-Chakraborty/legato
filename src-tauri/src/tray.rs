@@ -32,7 +32,7 @@ use std::time::Instant;
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIcon;
-use tauri::{AppHandle, Manager, Theme};
+use tauri::{AppHandle, Emitter, Manager, Theme};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,6 +60,9 @@ struct MenuInputs {
     /// `(id, name)` of downloaded models, sorted by name.
     downloaded_models: Vec<(String, String)>,
     update_checks_enabled: bool,
+    /// The paired phone's name, when one is paired and clipboard sync is on.
+    phone: Option<String>,
+    clipboard_paused: bool,
 }
 
 /// Complete description of what the tray should look like.
@@ -303,6 +306,13 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             selected_model: settings.selected_model,
             downloaded_models,
             update_checks_enabled: settings.update_checks_enabled,
+            phone: app
+                .try_state::<Arc<crate::sync::SyncManager>>()
+                .and_then(|sync| sync.phone_name())
+                .filter(|_| settings.sync.clipboard),
+            clipboard_paused: settings
+                .sync
+                .clipboard_paused(chrono::Utc::now().timestamp()),
         },
     }
 }
@@ -497,7 +507,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             None::<&str>,
         )?;
 
-        Menu::with_items(
+        let menu = Menu::with_items(
             app,
             &[
                 &version_i,
@@ -512,7 +522,26 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &separator()?,
                 &quit_i,
             ],
-        )?
+        )?;
+        // With a phone paired: pause the shared clipboard, or send it now.
+        if let Some(phone) = &inputs.phone {
+            let (pause_id, pause_label) = if inputs.clipboard_paused {
+                ("resume_clipboard_sync", &strings.resume_clipboard_sync)
+            } else {
+                ("pause_clipboard_sync", &strings.pause_clipboard_sync)
+            };
+            let pause_i = MenuItem::with_id(app, pause_id, pause_label, true, None::<&str>)?;
+            let send_i = MenuItem::with_id(
+                app,
+                "send_clipboard_to_phone",
+                strings.send_clipboard_to.replace("{{name}}", phone),
+                !inputs.clipboard_paused,
+                None::<&str>,
+            )?;
+            menu.insert(&send_i, 3)?;
+            menu.insert(&pause_i, 4)?;
+        }
+        menu
     };
 
     // When update checks are forced off (LEGATO_DISABLE_UPDATER), the item is
@@ -525,6 +554,24 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     }
 
     Ok((menu, version_label))
+}
+
+/// Pauses the shared clipboard until it's turned back on, or turns it back
+/// on.
+pub fn toggle_clipboard_sync(app: &AppHandle) {
+    let before = settings::get_settings(app);
+    let mut after = before.clone();
+    let now = chrono::Utc::now().timestamp();
+    after.sync.clipboard_paused_until = if before.sync.clipboard_paused(now) {
+        None
+    } else {
+        Some(i64::MAX)
+    };
+    settings::write_settings(app, after.clone());
+    if let Some(sync) = app.try_state::<Arc<crate::sync::SyncManager>>() {
+        sync.settings_changed(&before, &after);
+    }
+    let _ = app.emit("settings-changed", serde_json::json!({ "setting": "sync" }));
 }
 
 pub(crate) fn last_transcript_text(entry: &HistoryEntry) -> &str {
@@ -601,6 +648,8 @@ mod tests {
             selected_model: "small".to_string(),
             downloaded_models: vec![("small".to_string(), "Small".to_string())],
             update_checks_enabled: true,
+            phone: None,
+            clipboard_paused: false,
         }
     }
 

@@ -9,6 +9,7 @@ pub mod scratchpad;
 pub mod setup;
 pub mod snippets;
 pub mod style;
+pub mod sync;
 pub mod transcription;
 pub mod transforms;
 

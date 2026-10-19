@@ -37,6 +37,7 @@ mod shortcut;
 mod signal_handle;
 mod snippet_rules;
 mod style_rules;
+mod sync;
 mod transcription_coordinator;
 mod transform_rules;
 mod transforms;
@@ -306,6 +307,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(tray::TrayState::new());
     // Watches for calls, to offer notes.
     calls::init(app_handle);
+    // After history: the ledger lives in its database.
+    sync::init(app_handle);
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -362,6 +365,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             }
             "copy_last_transcript" => {
                 tray::copy_last_transcript(app);
+            }
+            "pause_clipboard_sync" | "resume_clipboard_sync" => {
+                tray::toggle_clipboard_sync(app);
+            }
+            "send_clipboard_to_phone" => {
+                if let Some(sync) = app.try_state::<Arc<sync::SyncManager>>() {
+                    if let Err(e) = sync.send_clipboard_now() {
+                        log::info!("Didn't send the clipboard: {e:#}");
+                    }
+                }
             }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();
@@ -924,6 +937,19 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::summarise_note,
             commands::notes::ask_note,
             commands::notes::retry_note_lines,
+            commands::sync::get_sync_state,
+            commands::sync::start_pairing,
+            commands::sync::cancel_pairing,
+            commands::sync::unpair_phone,
+            commands::sync::rename_phone,
+            commands::sync::sync_phone_now,
+            commands::sync::get_sync_merges,
+            commands::sync::change_sync_settings,
+            commands::sync::send_clipboard_to_phone,
+            commands::sync::get_recent_clips,
+            commands::sync::clear_recent_clips,
+            commands::sync::copy_recent_clip,
+            commands::sync::get_clip_image,
             commands::notes::notes_dictate,
             commands::notes::open_note,
             commands::notes::change_notes_live_transcript_setting,
@@ -956,6 +982,7 @@ pub fn run(cli_args: CliArgs) {
             notes::NotesSessionChanged,
             notes::NotesTick,
             calls::CallsChanged,
+            sync::SyncChanged,
             calls::CallTest,
             setup::PracticeStatus,
             setup::PracticeResult,

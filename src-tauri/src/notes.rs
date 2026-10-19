@@ -145,7 +145,7 @@ impl NotesManager {
         Ok(Connection::open(&self.db_path)?)
     }
 
-    fn changed(&self) {
+    pub(crate) fn changed(&self) {
         if let Err(e) = NotesChanged.emit(&self.app) {
             error!("Failed to emit notes-changed: {}", e);
         }
@@ -185,6 +185,11 @@ impl NotesManager {
 
     fn track_path(&self, id: i64, who: Speaker) -> PathBuf {
         self.dir.join(format!("note-{id}-{}.wav", who.as_str()))
+    }
+
+    /// Where recordings are kept.
+    pub(crate) fn audio_dir(&self) -> &std::path::Path {
+        &self.dir
     }
 
     fn audio_path(&self, id: i64) -> PathBuf {
