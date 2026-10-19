@@ -462,8 +462,9 @@ pub enum AfterPaste {
     CtrlEnter,
 }
 
-/// How one kind of app gets its text. `None` fields inherit Settings › Output.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+/// How one kind of app gets its text. `None` fields inherit Settings › Output,
+/// and the speech model the one chosen in Models.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
 pub struct CategoryStyle {
     pub tone: Tone,
     #[serde(default)]
@@ -472,6 +473,8 @@ pub struct CategoryStyle {
     pub after_paste: Option<AfterPaste>,
     #[serde(default)]
     pub trailing_space: Option<bool>,
+    #[serde(default)]
+    pub speech_model: Option<String>,
 }
 
 impl CategoryStyle {
@@ -481,12 +484,13 @@ impl CategoryStyle {
             paste_method: None,
             after_paste: None,
             trailing_space: None,
+            speech_model: None,
         }
     }
 }
 
 /// Style per kind of app, one field each so the settings file reads plainly.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
 pub struct Styles {
     pub personal: CategoryStyle,
     pub work: CategoryStyle,
@@ -527,14 +531,15 @@ impl Default for Styles {
 impl Styles {
     pub fn get(&self, category: &str) -> CategoryStyle {
         let style = match category {
-            "personal" => self.personal,
-            "work" => self.work,
-            "email" => self.email,
-            "documents" => self.documents,
-            "ai" => self.ai,
-            "code" => self.code,
-            _ => self.other,
-        };
+            "personal" => &self.personal,
+            "work" => &self.work,
+            "email" => &self.email,
+            "documents" => &self.documents,
+            "ai" => &self.ai,
+            "code" => &self.code,
+            _ => &self.other,
+        }
+        .clone();
         // A tone from another kind of app falls back to this one's default.
         if crate::style_rules::tones_for(category).contains(&style.tone) {
             style
@@ -1699,6 +1704,21 @@ impl AppSettings {
     pub fn transform(&self, id: &str) -> Option<&Transform> {
         self.transforms.iter().find(|t| t.id == id)
     }
+
+    /// The speech model for a dictation into this kind of app: Style's
+    /// choice when Style is on and the model is downloaded, else the one
+    /// chosen in Models.
+    pub fn speech_model_for(
+        &self,
+        category: Option<&str>,
+        downloaded: impl Fn(&str) -> bool,
+    ) -> String {
+        category
+            .filter(|_| self.style_enabled)
+            .and_then(|c| self.styles.get(c).speech_model)
+            .filter(|id| id != &self.selected_model && downloaded(id))
+            .unwrap_or_else(|| self.selected_model.clone())
+    }
 }
 
 pub fn get_stored_binding(settings: &AppSettings, id: &str) -> Result<ShortcutBinding, String> {
@@ -2288,5 +2308,30 @@ mod tests {
         let out = format!("{:?}", map);
         assert!(!out.contains("secret"));
         assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn style_picks_the_speech_model_for_a_kind_of_app() {
+        let mut settings = get_default_settings();
+        settings.selected_model = "parakeet".into();
+        settings.style_enabled = true;
+        let mut code = settings.styles.get("code");
+        code.speech_model = Some("whisper-turbo".into());
+        settings.styles.set("code", code);
+        let all = |_: &str| true;
+
+        assert_eq!(
+            settings.speech_model_for(Some("code"), all),
+            "whisper-turbo"
+        );
+        assert_eq!(settings.speech_model_for(Some("email"), all), "parakeet");
+        assert_eq!(settings.speech_model_for(None, all), "parakeet");
+        // A model that was deleted falls back to the one in Models.
+        assert_eq!(
+            settings.speech_model_for(Some("code"), |_| false),
+            "parakeet"
+        );
+        settings.style_enabled = false;
+        assert_eq!(settings.speech_model_for(Some("code"), all), "parakeet");
     }
 }

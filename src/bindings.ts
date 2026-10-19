@@ -2210,9 +2210,10 @@ export type AppRuleKind =
  */
 "site"
 /**
- * How one kind of app gets its text. `None` fields inherit Settings › Output.
+ * How one kind of app gets its text. `None` fields inherit Settings › Output,
+ * and the speech model the one chosen in Models.
  */
-export type CategoryStyle = { tone: Tone; paste_method?: PasteMethod | null; after_paste?: AfterPaste | null; trailing_space?: boolean | null }
+export type CategoryStyle = { tone: Tone; paste_method?: PasteMethod | null; after_paste?: AfterPaste | null; trailing_space?: boolean | null; speech_model?: string | null }
 /**
  * What a button on the call card, or Start notes on the Notes page, does.
  */

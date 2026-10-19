@@ -12,6 +12,7 @@ import {
   type Tone,
 } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
+import { useModelStore } from "../../../stores/modelStore";
 import { useNavStore } from "../../../stores/navStore";
 import { Button } from "../../ui/Button";
 import { Dropdown } from "../../ui/Dropdown";
@@ -144,6 +145,15 @@ export const CategoryPanel: React.FC<CategoryPanelProps> = ({
       ? "enter"
       : "ctrl_enter";
   const globalSpace = settings?.append_trailing_space ?? false;
+
+  const models = useModelStore((s) => s.models);
+  const globalModel = settings?.selected_model ?? "";
+  const modelName = (id: string) => models.find((m) => m.id === id)?.name ?? id;
+  // Downloaded models, and the chosen one even if it was deleted since.
+  const pickable = models.filter(
+    (m) =>
+      m.id !== globalModel && (m.is_downloaded || m.id === style.speech_model),
+  );
 
   return (
     <div className={disabled ? "opacity-55" : ""} aria-disabled={disabled}>
@@ -372,6 +382,51 @@ export const CategoryPanel: React.FC<CategoryPanelProps> = ({
             />
           </SettingContainer>
         </div>
+      </div>
+
+      <div className="mb-2 mt-8 flex flex-wrap items-baseline justify-between gap-3">
+        <h3 className="text-[15px] font-semibold">{t("style.model.title")}</h3>
+        <span className="text-xs text-text-3">
+          {t("style.paste.inheritBefore")}
+          <button type="button" className="link" onClick={() => go("models")}>
+            {t("style.model.inheritLink")}
+          </button>
+        </span>
+      </div>
+      <div className="rounded-[var(--r-lg)] border border-line bg-surface px-4">
+        <SettingContainer
+          title={t("style.model.pick.title")}
+          description={
+            pickable.length
+              ? t("style.model.pick.help")
+              : t("style.model.pick.none")
+          }
+          disabled={disabled}
+        >
+          <Dropdown
+            className="w-[240px]"
+            ariaLabel={t("style.model.pick.title")}
+            disabled={disabled || !pickable.length}
+            selectedValue={style.speech_model ?? INHERIT}
+            onSelect={(v) =>
+              onChange({ ...style, speech_model: v === INHERIT ? null : v })
+            }
+            options={[
+              {
+                value: INHERIT,
+                label: t("style.paste.inherit", {
+                  value: modelName(globalModel),
+                }),
+              },
+              ...pickable.map((m) => ({
+                value: m.id,
+                label: m.is_downloaded
+                  ? m.name
+                  : t("style.model.pick.deleted", { name: m.name }),
+              })),
+            ]}
+          />
+        </SettingContainer>
       </div>
     </div>
   );

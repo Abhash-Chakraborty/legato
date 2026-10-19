@@ -339,9 +339,22 @@ impl ShortcutAction for TranscribeAction {
         let tm = app.state::<Arc<TranscriptionManager>>();
         let rm = app.state::<Arc<AudioRecordingManager>>();
 
+        // The app the text is meant for, which may have its own speech model
+        // in Style. Read before the overlay shows, though the overlay never
+        // takes focus.
+        let front = context::foreground_window();
+        let speech_model = {
+            let settings = get_settings(app);
+            let models = app.state::<Arc<ModelManager>>();
+            let category = front.as_ref().map(|w| context::resolve(w).category);
+            settings.speech_model_for(category.map(|c| c.as_str()), |id| {
+                models.get_model_info(id).is_some_and(|m| m.is_downloaded)
+            })
+        };
+
         // Load ASR model and VAD model in parallel
         let kickoff_started = Instant::now();
-        tm.initiate_model_load();
+        tm.initiate_model_load_of(&speech_model);
         let rm_clone = Arc::clone(&rm);
         std::thread::spawn(move || {
             if let Err(e) = rm_clone.preload_vad() {
@@ -353,24 +366,18 @@ impl ShortcutAction for TranscribeAction {
         // Don't open the mic if nothing can transcribe the recording; the load
         // kicked off above fails and reports why.
         if !tm.is_model_loaded() {
-            let selected_model = get_settings(app).selected_model;
             if let Err(e) = app
                 .state::<Arc<ModelManager>>()
-                .get_model_path(&selected_model)
+                .get_model_path(&speech_model)
             {
                 warn!("Not starting recording: no model can transcribe it ({})", e);
                 return;
             }
         }
 
-        // The app the text is meant for. Read before the overlay shows,
-        // though the overlay never takes focus.
         let remember_app = get_settings(app).remember_app;
-        app.state::<DictationContext>().set(if remember_app {
-            context::foreground_window()
-        } else {
-            None
-        });
+        app.state::<DictationContext>()
+            .set(if remember_app { front } else { None });
 
         let binding_id = binding_id.to_string();
         let tray_started = Instant::now();
@@ -384,7 +391,7 @@ impl ShortcutAction for TranscribeAction {
 
         let selected_model_info = app
             .state::<Arc<ModelManager>>()
-            .get_model_info(&settings.selected_model);
+            .get_model_info(&speech_model);
 
         // Use the app-facing model capability as the single pre-recording source
         // for live streaming decisions. Unknown support is represented as false

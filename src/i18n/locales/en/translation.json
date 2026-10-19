@@ -2052,6 +2052,16 @@
       "restore": "Restore defaults",
       "restored": "{{category}} has its built-in apps again",
       "done": "Done"
+    },
+    "model": {
+      "title": "Speech model",
+      "inheritLink": "Models",
+      "pick": {
+        "title": "Transcribe with",
+        "help": "Dictating in these apps switches to this model, which takes a moment after dictating elsewhere.",
+        "none": "Download another model in Models to use it for these apps.",
+        "deleted": "{{name}} (deleted, uses Inherit)"
+      }
     }
   },
   "scratchpad": {

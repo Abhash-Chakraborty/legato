@@ -696,6 +696,35 @@ impl TranscriptionManager {
         });
     }
 
+    /// Loads `model_id` in the background unless it is already loaded or
+    /// loading. Unlike [`initiate_model_load`](Self::initiate_model_load), a
+    /// different loaded model is replaced: Style can pick a model per kind
+    /// of app.
+    pub fn initiate_model_load_of(&self, model_id: &str) {
+        if self.get_current_model().as_deref() != Some(model_id) {
+            let mut is_loading = self.is_loading.lock().unwrap();
+            if *is_loading {
+                return;
+            }
+            *is_loading = true;
+            let self_clone = self.clone();
+            let model_id = model_id.to_string();
+            thread::spawn(move || {
+                self_clone
+                    .reload_model_on_next_use
+                    .store(false, Ordering::Release);
+                if let Err(e) = self_clone.load_model(&model_id) {
+                    error!("Failed to load model {}: {}", model_id, e);
+                }
+                let mut is_loading = self_clone.is_loading.lock().unwrap();
+                *is_loading = false;
+                self_clone.loading_condvar.notify_all();
+            });
+            return;
+        }
+        self.initiate_model_load();
+    }
+
     pub fn get_current_model(&self) -> Option<String> {
         let current_model = self.current_model_id.lock().unwrap();
         current_model.clone()
