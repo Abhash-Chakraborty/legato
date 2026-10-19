@@ -1,4 +1,4 @@
-use crate::ai::{self, AiConfig, AiNotice, AiProblem, AiStatusKind};
+use crate::ai::{self, AiProblem, AiStatusKind};
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::text::DictionaryCorrection;
 use crate::audio_toolkit::VadPolicy;
@@ -55,36 +55,21 @@ pub trait ShortcutAction: Send + Sync {
     fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str);
 }
 
+/// What a dictation shortcut does with the text.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum DictationMode {
+    /// Dictate: pasted, after the transform set to run after every
+    /// dictation, if any.
+    Plain,
+    /// Dictate then transform.
+    Transform,
+    /// Ask: the words are an instruction for the selection.
+    Ask,
+}
+
 // Transcribe Action
 struct TranscribeAction {
-    post_process: bool,
-}
-
-/// Field name for structured output JSON schema
-const TRANSCRIPTION_FIELD: &str = "transcription";
-
-/// Strip invisible Unicode characters that some LLMs may insert
-fn strip_invisible_chars(s: &str) -> String {
-    s.replace(['\u{200B}', '\u{200C}', '\u{200D}', '\u{FEFF}'], "")
-}
-
-/// Strip a leading `<think>...</think>` block. Some endpoints can't disable
-/// reasoning, and some local servers put the reasoning text into `content`
-/// instead of a separate field — without this the user would get the model's
-/// chain of thought pasted along with the cleaned transcription.
-fn strip_think_block(s: &str) -> &str {
-    if let Some(rest) = s.trim_start().strip_prefix("<think>") {
-        if let Some(end) = rest.find("</think>") {
-            return rest[end + "</think>".len()..].trim_start();
-        }
-    }
-    s
-}
-
-/// Build a system prompt from the user's prompt template.
-/// Removes `${output}` placeholder since the transcription is sent as the user message.
-fn build_system_prompt(prompt_template: &str) -> String {
-    prompt_template.replace("${output}", "").trim().to_string()
+    mode: DictationMode,
 }
 
 /// Returns `true` when a transcription has no meaningful content to
@@ -120,183 +105,6 @@ fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool
     style == OverlayStyle::Live && is_streaming
 }
 
-/// Runs the selected transform on a dictation. Ok(None) means it didn't run
-/// (nothing set up, or an empty answer); Err means the provider didn't answer
-/// properly in time, so the text goes out without it.
-async fn post_process_transcription(
-    app: &AppHandle,
-    settings: &AppSettings,
-    transcription: &str,
-) -> Result<Option<String>, AiProblem> {
-    if is_blank_transcription(transcription) {
-        debug!("Post-processing skipped because the transcription is empty");
-        return Ok(None);
-    }
-
-    let Some(config) = AiConfig::from_settings(settings) else {
-        debug!("Post-processing skipped because no AI model is set up");
-        return Ok(None);
-    };
-
-    let selected_prompt_id = match &settings.post_process_selected_prompt_id {
-        Some(id) => id.clone(),
-        None => {
-            debug!("Post-processing skipped because no prompt is selected");
-            return Ok(None);
-        }
-    };
-
-    let prompt = match settings
-        .post_process_prompts
-        .iter()
-        .find(|prompt| prompt.id == selected_prompt_id)
-    {
-        Some(prompt) => prompt.prompt.clone(),
-        None => {
-            debug!(
-                "Post-processing skipped because prompt '{}' was not found",
-                selected_prompt_id
-            );
-            return Ok(None);
-        }
-    };
-
-    if prompt.trim().is_empty() {
-        debug!("Post-processing skipped because the selected prompt is empty");
-        return Ok(None);
-    }
-
-    let provider = &config.provider;
-    let model = &config.model;
-    debug!(
-        "Starting LLM post-processing with provider '{}' (model: {})",
-        provider.id, model
-    );
-
-    // Ask these providers to skip reasoning/thinking — post-processing rarely
-    // benefits from it and it adds seconds of latency. llm_client picks the
-    // field the endpoint understands and retries without it if rejected.
-    let disable_reasoning = matches!(provider.id.as_str(), "ollama" | "custom" | "openrouter");
-
-    if provider.supports_structured_output {
-        debug!("Using structured outputs for provider '{}'", provider.id);
-
-        let system_prompt = build_system_prompt(&prompt);
-        let user_content = transcription.to_string();
-
-        // Define JSON schema for transcription output
-        let json_schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                (TRANSCRIPTION_FIELD): {
-                    "type": "string",
-                    "description": "The cleaned and processed transcription text"
-                }
-            },
-            "required": [TRANSCRIPTION_FIELD],
-            "additionalProperties": false
-        });
-
-        let answer = ai::guard(
-            app,
-            &config,
-            crate::llm_client::send_chat_completion_with_schema(
-                provider,
-                config.api_key.clone(),
-                model,
-                user_content,
-                Some(system_prompt),
-                Some(json_schema),
-                disable_reasoning,
-            ),
-        )
-        .await;
-        match answer {
-            Ok(Some(content)) => {
-                // Parse the JSON response to extract the transcription field
-                let content = strip_think_block(&content);
-                match serde_json::from_str::<serde_json::Value>(content) {
-                    Ok(json) => {
-                        if let Some(transcription_value) =
-                            json.get(TRANSCRIPTION_FIELD).and_then(|t| t.as_str())
-                        {
-                            let result = strip_invisible_chars(transcription_value);
-                            debug!(
-                                "Structured output post-processing succeeded for provider '{}'. Output length: {} chars",
-                                provider.id,
-                                result.len()
-                            );
-                            return Ok(Some(result));
-                        } else {
-                            error!("Structured output response missing 'transcription' field");
-                            return Ok(Some(strip_invisible_chars(content)));
-                        }
-                    }
-                    Err(e) => {
-                        error!(
-                            "Failed to parse structured output JSON: {}. Returning raw content.",
-                            e
-                        );
-                        return Ok(Some(strip_invisible_chars(content)));
-                    }
-                }
-            }
-            Ok(None) => {
-                error!("LLM API response has no content");
-                return Ok(None);
-            }
-            // Out of time: trying again in the other format would only wait longer.
-            Err(problem) if problem.kind == AiStatusKind::Slow => return Err(problem),
-            Err(problem) => {
-                warn!(
-                    "Structured output failed for provider '{}' ({:?}). Falling back to legacy mode.",
-                    provider.id, problem.kind
-                );
-                // Fall through to legacy mode below
-            }
-        }
-    }
-
-    // Legacy mode: Replace ${output} variable in the prompt with the actual text
-    let processed_prompt = prompt.replace("${output}", transcription);
-    debug!("Processed prompt length: {} chars", processed_prompt.len());
-
-    let answer = ai::guard(
-        app,
-        &config,
-        crate::llm_client::send_chat_completion(
-            provider,
-            config.api_key.clone(),
-            model,
-            processed_prompt,
-            disable_reasoning,
-        ),
-    )
-    .await;
-    match answer {
-        Ok(Some(content)) => {
-            let content = strip_invisible_chars(strip_think_block(&content));
-            debug!(
-                "LLM post-processing succeeded for provider '{}'. Output length: {} chars",
-                provider.id,
-                content.len()
-            );
-            Ok(Some(content))
-        }
-        Ok(None) => {
-            error!("LLM API response has no content");
-            Ok(None)
-        }
-        Err(problem) => {
-            error!(
-                "LLM post-processing failed for provider '{}' ({:?}). Falling back to original transcription.",
-                provider.id, problem.kind
-            );
-            Err(problem)
-        }
-    }
-}
-
 fn app_fields(info: AppInfo) -> AppFields {
     AppFields {
         exe: info.exe,
@@ -318,6 +126,8 @@ pub(crate) struct ProcessedTranscription {
     pub post_process_prompt: Option<String>,
     /// Name of the prompt that rewrote the text.
     pub transform: Option<String>,
+    /// The transform that ran, for the bar and Recent runs.
+    pub transform_run: Option<crate::transforms::DictationTransform>,
     /// An AI step that was skipped because the provider didn't answer.
     pub ai_problem: Option<AiProblem>,
 }
@@ -335,10 +145,51 @@ impl ProcessedTranscription {
     }
 }
 
+/// The transform a dictation runs, if any: Dictate then transform runs the
+/// one set to run after every dictation, or else the Dictate then transform
+/// choice; a plain dictation runs the former unless its skips apply.
+fn dictation_transform(
+    settings: &AppSettings,
+    mode: DictationMode,
+    category: Option<&str>,
+    text: &str,
+) -> Option<crate::settings::Transform> {
+    if !settings.post_process_enabled || is_blank_transcription(text) {
+        return None;
+    }
+    let auto = settings
+        .auto_transform_id
+        .as_deref()
+        .and_then(|id| settings.transform(id))
+        .filter(|t| t.enabled);
+    match mode {
+        DictationMode::Transform => auto
+            .or_else(|| settings.transform(&settings.dictate_transform_id))
+            .cloned(),
+        DictationMode::Plain => {
+            let rules = crate::transform_rules::AutoRules {
+                skip_code: settings.auto_transform_skip_code,
+                skip_ai: settings.auto_transform_skip_ai,
+                min_words: settings.auto_transform_min_words,
+            };
+            auto.filter(|_| {
+                crate::transform_rules::auto_applies(
+                    &rules,
+                    category,
+                    crate::transform_rules::word_count(text),
+                )
+            })
+            .cloned()
+        }
+        DictationMode::Ask => None,
+    }
+}
+
 pub(crate) async fn process_transcription_output(
     app: &AppHandle,
     transcription: &str,
-    post_process: bool,
+    mode: DictationMode,
+    target: Option<&AppInfo>,
 ) -> ProcessedTranscription {
     let settings = get_settings(app);
     let mut text = transcription.to_string();
@@ -358,25 +209,34 @@ pub(crate) async fn process_transcription_output(
     let mut post_processed_text: Option<String> = None;
     let mut post_process_prompt: Option<String> = None;
     let mut transform: Option<String> = None;
+    let mut transform_run = None;
 
-    if post_process {
-        match post_process_transcription(app, &settings, &final_text).await {
+    let category = target.map(|a| a.category.as_str());
+    if let Some(chosen) = dictation_transform(&settings, mode, category, &final_text) {
+        let started = Instant::now();
+        let timeout = Duration::from_secs(u64::from(settings.ai_timeout_secs.clamp(1, 60)));
+        let app_name = target.map(|a| a.name.as_str());
+        match crate::transforms::apply(app, &settings, &chosen, &final_text, app_name, timeout)
+            .await
+        {
             Ok(Some(processed_text)) => {
+                transform_run = Some(crate::transforms::DictationTransform {
+                    id: chosen.id.clone(),
+                    name: chosen.name.clone(),
+                    before: final_text.clone(),
+                    after: processed_text.clone(),
+                    ms: started.elapsed().as_millis() as i64,
+                    show_changes: chosen.show_changes,
+                });
                 post_processed_text = Some(processed_text.clone());
                 final_text = processed_text;
-
-                if let Some(prompt_id) = &settings.post_process_selected_prompt_id {
-                    if let Some(prompt) = settings
-                        .post_process_prompts
-                        .iter()
-                        .find(|prompt| &prompt.id == prompt_id)
-                    {
-                        post_process_prompt = Some(prompt.prompt.clone());
-                        transform = Some(prompt.name.clone());
-                    }
-                }
+                post_process_prompt = Some(chosen.prompt.clone());
+                transform = Some(chosen.name.clone());
             }
-            Ok(None) => {}
+            Ok(None) => debug!("Transform '{}' answered with nothing", chosen.id),
+            // Nothing is set up: the text goes out as dictated, as before
+            // transforms existed, with no warning on every dictation.
+            Err(problem) if problem.kind == AiStatusKind::None => {}
             Err(problem) => ai_problem = Some(problem),
         }
     }
@@ -388,6 +248,7 @@ pub(crate) async fn process_transcription_output(
         post_processed_text,
         post_process_prompt,
         transform,
+        transform_run,
         ai_problem,
     }
 }
@@ -617,7 +478,8 @@ impl ShortcutAction for TranscribeAction {
         play_feedback_sound(app, SoundType::Stop);
 
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
-        let post_process = self.post_process;
+        let mode = self.mode;
+        let post_process = mode == DictationMode::Transform;
         let started_in = app.state::<DictationContext>().take();
         let remember_app = get_settings(app).remember_app;
         let cancel_generation = rm.cancel_generation();
@@ -720,6 +582,16 @@ impl ShortcutAction for TranscribeAction {
                                 utils::redact_text(&transcription)
                             );
 
+                            // Ask: the words are the instruction, not text to paste.
+                            if mode == DictationMode::Ask {
+                                let _ = std::fs::remove_file(hm.recordings_dir().join(&file_name));
+                                utils::hide_recording_overlay(&ah);
+                                set_tray_state(&ah, TrayIconState::Idle);
+                                crate::transforms::ask(&ah, transcription);
+                                return;
+                            }
+
+                            let app_info = started_in.as_ref().map(context::resolve);
                             if post_process {
                                 if use_streaming_overlay {
                                     tm.emit_stream_working(StreamWorkKind::Polishing);
@@ -728,7 +600,12 @@ impl ShortcutAction for TranscribeAction {
                                 }
                             }
                             let Some(processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, &transcription, post_process),
+                                process_transcription_output(
+                                    &ah,
+                                    &transcription,
+                                    mode,
+                                    app_info.as_ref(),
+                                ),
                                 || rm.was_cancelled_since(cancel_generation),
                             )
                             .await
@@ -746,7 +623,6 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             }
 
-                            let app_info = started_in.as_ref().map(context::resolve);
                             let fixes = processed.all_fixes(&fixes);
                             if !fixes.is_empty() {
                                 let words: Vec<&str> =
@@ -768,7 +644,7 @@ impl ShortcutAction for TranscribeAction {
                                     post_processed_text: processed.post_processed_text.clone(),
                                     post_process_prompt: processed.post_process_prompt.clone(),
                                     transform: processed.transform.clone(),
-                                    app: app_info.map(app_fields),
+                                    app: app_info.clone().map(app_fields),
                                     speech_ms: Some(speech_ms),
                                     model_id: Some(model_id.clone()),
                                     model_name: model_name.clone(),
@@ -792,7 +668,9 @@ impl ShortcutAction for TranscribeAction {
                                 let ah_clone = ah.clone();
                                 let paste_time = Instant::now();
                                 let final_text = processed.final_text;
+                                let words = crate::transform_rules::word_count(&final_text);
                                 let ai_problem = processed.ai_problem;
+                                let transform_run = processed.transform_run;
                                 let rm_for_paste = Arc::clone(&rm);
                                 let hm_for_paste = Arc::clone(&hm);
                                 let not_pasted =
@@ -813,6 +691,7 @@ impl ShortcutAction for TranscribeAction {
                                         None
                                     };
                                     let paste_result = utils::paste(final_text, ah_clone.clone());
+                                    let pasted = paste_result.is_ok() && !not_pasted;
                                     match &paste_result {
                                         Ok(()) => debug!(
                                             "Text pasted successfully in {:?}",
@@ -861,13 +740,19 @@ impl ShortcutAction for TranscribeAction {
                                     }
                                     utils::hide_recording_overlay(&ah_clone);
                                     set_tray_state(&ah_clone, TrayIconState::Idle);
-                                    // Say when the text went out without the AI's changes.
-                                    if let Some(problem) = &ai_problem {
-                                        crate::overlay::show_overlay_notice(
-                                            &ah_clone,
-                                            &AiNotice::from(problem),
-                                        );
-                                    }
+                                    // The bar says what happened: a skipped AI
+                                    // step, the transform's changes, or the paste.
+                                    crate::transforms::after_dictation_paste(
+                                        &ah_clone,
+                                        crate::transforms::AfterPaste {
+                                            pasted,
+                                            words,
+                                            app: app_info,
+                                            history_id: saved_id,
+                                            transform: transform_run,
+                                            problem: ai_problem,
+                                        },
+                                    );
                                 })
                                 .unwrap_or_else(|e| {
                                     error!("Failed to run paste on main thread: {:?}", e);
@@ -891,7 +776,7 @@ impl ShortcutAction for TranscribeAction {
                             // message is also in legato.log via the line above.
                             let _ = ah.emit("transcription-error", err.to_string());
                             // Save entry with empty text so user can retry
-                            if wav_saved {
+                            if wav_saved && mode != DictationMode::Ask {
                                 let app_info = started_in.as_ref().map(context::resolve);
                                 if let Err(save_err) = hm.save_entry(NewEntry {
                                     file_name,
@@ -963,6 +848,41 @@ impl ShortcutAction for TestAction {
     }
 }
 
+/// Runs on the shortcut's press; the release does nothing.
+struct PressAction(fn(&AppHandle));
+
+impl ShortcutAction for PressAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        (self.0)(app);
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
+/// A transform's own shortcut (`transform:<id>`).
+struct TransformAction;
+
+impl ShortcutAction for TransformAction {
+    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        if let Some(id) = crate::transform_rules::transform_id_of(binding_id) {
+            crate::transforms::run_shortcut(app, id);
+        }
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
+static TRANSFORM_ACTION: Lazy<Arc<dyn ShortcutAction>> =
+    Lazy::new(|| Arc::new(TransformAction) as Arc<dyn ShortcutAction>);
+
+/// The action for a binding, including each transform's.
+pub fn action_for(binding_id: &str) -> Option<Arc<dyn ShortcutAction>> {
+    if crate::transform_rules::transform_id_of(binding_id).is_some() {
+        return Some(TRANSFORM_ACTION.clone());
+    }
+    ACTION_MAP.get(binding_id).cloned()
+}
+
 /// Adds the text selected in another app to the Dictionary.
 struct AddSelectionAction;
 
@@ -980,13 +900,35 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "transcribe".to_string(),
         Arc::new(TranscribeAction {
-            post_process: false,
+            mode: DictationMode::Plain,
         }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "transcribe_with_post_process".to_string(),
-        Arc::new(TranscribeAction { post_process: true }) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction {
+            mode: DictationMode::Transform,
+        }) as Arc<dyn ShortcutAction>,
     );
+    map.insert(
+        "ask".to_string(),
+        Arc::new(TranscribeAction {
+            mode: DictationMode::Ask,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    for (id, run) in [
+        (
+            "transform_selection",
+            crate::transforms::pick_for_selection as fn(&AppHandle),
+        ),
+        ("view_changes", crate::transforms::view_last_changes),
+        ("paste_last", crate::transforms::paste_last),
+        ("copy_last", crate::transforms::copy_last),
+    ] {
+        map.insert(
+            id.to_string(),
+            Arc::new(PressAction(run)) as Arc<dyn ShortcutAction>,
+        );
+    }
     map.insert(
         "cancel".to_string(),
         Arc::new(CancelAction) as Arc<dyn ShortcutAction>,
@@ -1004,10 +946,7 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        complete_unless_cancelled, is_blank_transcription, should_use_streaming_overlay,
-        strip_think_block,
-    };
+    use super::{complete_unless_cancelled, is_blank_transcription, should_use_streaming_overlay};
     use crate::settings::OverlayStyle;
     use std::future;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -1054,32 +993,6 @@ mod tests {
 
         cancel_thread.join().unwrap();
         assert_eq!(result, None);
-    }
-
-    #[test]
-    fn leading_think_block_is_stripped() {
-        assert_eq!(
-            strip_think_block("<think>pondering...</think>Cleaned text."),
-            "Cleaned text."
-        );
-        assert_eq!(
-            strip_think_block("  \n<think>multi\nline</think>\n  Cleaned text."),
-            "Cleaned text."
-        );
-    }
-
-    #[test]
-    fn content_without_think_block_is_unchanged() {
-        assert_eq!(strip_think_block("Cleaned text."), "Cleaned text.");
-        assert_eq!(
-            strip_think_block("Mentions <think> mid-sentence."),
-            "Mentions <think> mid-sentence."
-        );
-        // Unclosed block: leave untouched rather than guess
-        assert_eq!(
-            strip_think_block("<think>never closed"),
-            "<think>never closed"
-        );
     }
 
     #[test]

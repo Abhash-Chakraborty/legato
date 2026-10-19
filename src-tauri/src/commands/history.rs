@@ -1,4 +1,4 @@
-use crate::actions::process_transcription_output;
+use crate::actions::{process_transcription_output, DictationMode};
 use crate::managers::{
     history::{HistoryManager, HistoryQuery, HistorySummary, PaginatedHistory},
     model::ModelManager,
@@ -156,8 +156,14 @@ pub async fn retry_history_entry_transcription(
         return Err("Recording contains no speech".to_string());
     }
 
-    let processed =
-        process_transcription_output(&app, &transcription.text, entry.post_process_requested).await;
+    // A retry transforms the text as the dictation did, without the app's
+    // skips, since it isn't pasted anywhere.
+    let mode = if entry.post_process_requested {
+        DictationMode::Transform
+    } else {
+        DictationMode::Plain
+    };
+    let processed = process_transcription_output(&app, &transcription.text, mode, None).await;
     let fixes = processed.all_fixes(&transcription.fixes);
     let model_id = crate::settings::get_settings(&app).selected_model;
     let model_name = app

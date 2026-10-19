@@ -127,6 +127,25 @@ pub static MIGRATIONS: &[M] = &[
          CREATE UNIQUE INDEX dictionary_heard_form ON dictionary_heard (heard COLLATE NOCASE);
          CREATE INDEX dictionary_heard_entry ON dictionary_heard (entry_id);",
     ),
+    // Transform runs, for the Transforms page's counts and Recent runs.
+    M::up(
+        "CREATE TABLE transform_run (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            at INTEGER NOT NULL,
+            transform_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            source TEXT NOT NULL,
+            app_name TEXT,
+            app_path TEXT,
+            in_words INTEGER NOT NULL DEFAULT 0,
+            out_words INTEGER NOT NULL DEFAULT 0,
+            ms INTEGER NOT NULL DEFAULT 0,
+            result TEXT NOT NULL,
+            error TEXT,
+            history_id INTEGER
+         );
+         CREATE INDEX transform_run_at ON transform_run (at);",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.

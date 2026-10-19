@@ -24,6 +24,8 @@ mod settings;
 mod shortcut;
 mod signal_handle;
 mod transcription_coordinator;
+mod transform_rules;
+mod transforms;
 mod tray;
 mod tray_i18n;
 mod utils;
@@ -657,10 +659,6 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_post_process_model_setting,
             shortcut::set_post_process_provider,
             shortcut::fetch_post_process_models,
-            shortcut::add_post_process_prompt,
-            shortcut::update_post_process_prompt,
-            shortcut::delete_post_process_prompt,
-            shortcut::set_post_process_selected_prompt,
             shortcut::suspend_all_bindings,
             shortcut::resume_all_bindings,
             shortcut::change_mute_while_recording_setting,
@@ -758,11 +756,34 @@ pub fn run(cli_args: CliArgs) {
             commands::ai::change_ai_correction_setting,
             commands::ai::change_ai_min_words_setting,
             commands::ai::change_ai_timeout_setting,
+            commands::transforms::get_transform_runs,
+            commands::transforms::clear_transform_runs,
+            commands::transforms::save_transform,
+            commands::transforms::delete_transform,
+            commands::transforms::restore_transform,
+            commands::transforms::set_transform_enabled,
+            commands::transforms::move_transform,
+            commands::transforms::clear_transform_shortcut,
+            commands::transforms::change_auto_transform_setting,
+            commands::transforms::change_dictate_transform_setting,
+            commands::transforms::change_auto_transform_skip_code_setting,
+            commands::transforms::change_auto_transform_skip_ai_setting,
+            commands::transforms::change_auto_transform_min_words_setting,
+            commands::transforms::change_ask_enabled_setting,
+            commands::transforms::change_bar_confirm_paste_setting,
+            commands::transforms::change_bar_show_changes_setting,
+            commands::transforms::try_transform,
+            commands::transforms::new_transform,
+            commands::transforms::bar_undo,
+            commands::transforms::bar_keep,
+            commands::transforms::bar_pick,
+            commands::transforms::bar_dismiss,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
             managers::dictionary::DictionaryChanged,
             ai::AiStatusChanged,
+            transforms::TransformRunsChanged,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
         ]);

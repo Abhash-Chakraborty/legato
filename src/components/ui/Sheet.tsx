@@ -21,6 +21,8 @@ interface SheetProps {
   closeLabel: string;
   footer: React.ReactNode;
   initialFocusRef?: React.RefObject<HTMLElement>;
+  /** Room for long text, such as a prompt. */
+  wide?: boolean;
   children: React.ReactNode;
 }
 
@@ -36,6 +38,7 @@ export const Sheet: React.FC<SheetProps> = ({
   closeLabel,
   footer,
   initialFocusRef,
+  wide = false,
   children,
 }) => {
   const titleId = useId();
@@ -109,7 +112,7 @@ export const Sheet: React.FC<SheetProps> = ({
           e.preventDefault();
           onSubmit();
         }}
-        className="sheet-panel flex h-full w-[440px] max-w-full flex-col border-s border-line bg-surface shadow-[var(--shadow-3)] outline-none"
+        className={`sheet-panel flex h-full ${wide ? "w-[560px]" : "w-[440px]"} max-w-full flex-col border-s border-line bg-surface shadow-[var(--shadow-3)] outline-none`}
       >
         <div className="flex items-start justify-between gap-3 px-6 pb-4 pt-5">
           <div className="min-w-0">

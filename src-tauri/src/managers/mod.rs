@@ -7,3 +7,4 @@ pub mod history_store;
 pub mod model;
 pub mod model_capabilities;
 pub mod transcription;
+pub mod transform_store;

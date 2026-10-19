@@ -142,7 +142,21 @@ fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool
 }
 
 pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
-    let settings = get_settings(&app_handle);
+    paste_with(text, app_handle, true)
+}
+
+/// Pastes a transform's result: no trailing space and no auto-submit, since
+/// it replaces text the person is still working on.
+pub fn paste_plain(text: String, app_handle: AppHandle) -> Result<(), String> {
+    paste_with(text, app_handle, false)
+}
+
+fn paste_with(text: String, app_handle: AppHandle, dictation: bool) -> Result<(), String> {
+    let mut settings = get_settings(&app_handle);
+    if !dictation {
+        settings.append_trailing_space = false;
+        settings.auto_submit = false;
+    }
     let paste_method = settings.paste_method;
     let paste_delay_ms = settings.paste_delay_ms;
     let paste_delay_after_ms = settings.paste_delay_after_ms;

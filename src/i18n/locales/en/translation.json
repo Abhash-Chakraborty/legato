@@ -141,18 +141,39 @@
           },
           "transcribe_with_post_process": {
             "name": "Dictate then transform",
-            "description": "Dictates, then runs your selected prompt on the text before pasting it."
+            "description": "Dictates, then runs the transform picked on the Transforms page before pasting."
           },
           "add_to_dictionary": {
             "name": "Add selection to Dictionary",
             "description": "Select a word in any app and press this to add it to your Dictionary, spelled exactly as selected."
+          },
+          "transform_selection": {
+            "name": "Transform the selection",
+            "description": "Select text in any app and press this to pick a transform for it."
+          },
+          "ask": {
+            "name": "Ask",
+            "description": "Hold and say what to do with the selected text, or with your last dictation."
+          },
+          "view_changes": {
+            "name": "Show the last changes",
+            "description": "Shows what the last transform changed, with Keep and Undo."
+          },
+          "paste_last": {
+            "name": "Paste last dictation",
+            "description": "Pastes what you last dictated again, wherever the cursor is."
+          },
+          "copy_last": {
+            "name": "Copy last dictation",
+            "description": "Puts what you last dictated on the clipboard."
           }
         },
         "errors": {
           "restore": "Failed to restore original shortcut",
           "set": "Failed to set shortcut: {{error}}",
           "reset": "Failed to reset shortcut to original value"
-        }
+        },
+        "notSet": "Not set"
       },
       "language": {
         "title": "Spoken language",
@@ -626,7 +647,10 @@
       "input": "Input",
       "previews": "Previews",
       "apps": "Apps",
-      "untitled": ""
+      "untitled": "",
+      "transforms": "Transforms",
+      "lastDictation": "Last dictation",
+      "messages": "Messages"
     },
     "requires": {
       "tray": "Needs the tray icon, or there would be no way to open the window.",
@@ -638,7 +662,8 @@
       "languageSelection": "{{model}} picks the language itself. Choose another model in Models to set one.",
       "translation": "{{model}} can't translate. Choose a model that can in Models.",
       "chinese": "Only used when the spoken language is Chinese, Cantonese or detected automatically.",
-      "clipboardPaste": "Only applies when Legato pastes with keys, not when it types the text or doesn't paste."
+      "clipboardPaste": "Only applies when Legato pastes with keys, not when it types the text or doesn't paste.",
+      "ask": "Turn on Ask on the Transforms page to use this shortcut."
     },
     "privacy": {
       "rememberApp": {
@@ -787,6 +812,16 @@
         "local": "{{name}} runs on this PC, so text for these uses never leaves it. Audio is never sent anywhere.",
         "cloud": "Text for the uses you turned on goes to {{name}} ({{host}}). Audio never leaves this PC."
       }
+    },
+    "bar": {
+      "confirmPaste": {
+        "title": "Confirm after pasting",
+        "help": "The bar says how many words went where, with Undo."
+      },
+      "showChanges": {
+        "title": "Show changes after a transform",
+        "help": "The bar shows what a transform changed, with Keep and Undo. Each transform can turn this off."
+      }
     }
   },
   "footer": {
@@ -860,7 +895,46 @@
         "rate_limited": "{{name}} is rate limiting · pasted without AI changes",
         "slow": "{{name}} didn't answer in time · pasted without AI changes",
         "failed": "{{name}} couldn't answer · pasted without AI changes"
+      },
+      "pasted_one": "Pasted {{count}} word",
+      "pasted_other": "Pasted {{count}} words",
+      "pastedInto_one": "Pasted {{count}} word into {{app}}",
+      "pastedInto_other": "Pasted {{count}} words into {{app}}",
+      "transformed_one": "{{name}} · {{count}} word",
+      "transformed_other": "{{name}} · {{count}} words",
+      "copied": "{{name}} · copied to the clipboard",
+      "pasted_last_one": "Pasted your last dictation · {{count}} word",
+      "pasted_last_other": "Pasted your last dictation · {{count}} words",
+      "copied_last_one": "Copied your last dictation · {{count}} word",
+      "copied_last_other": "Copied your last dictation · {{count}} words",
+      "undone": "Undone",
+      "undoneClipboard": "Undone · the original is on the clipboard",
+      "nothing_to_transform": "Select some text, or dictate something first",
+      "no_last_dictation": "Nothing dictated yet",
+      "no_changes": "No changes to show",
+      "ask_empty": "Didn't catch what to do · hold and say it",
+      "transformFailed": "{{name}} didn't run · {{problem}}",
+      "problem": {
+        "none": "no AI model is set up",
+        "unreachableOllama": "Ollama isn't running",
+        "unreachable": "{{name}} isn't reachable",
+        "rejected": "{{name}} turned Legato away",
+        "not_found": "{{name}} can't find the model",
+        "rate_limited": "{{name}} is rate limiting",
+        "slow": "{{name}} didn't answer in time",
+        "failed": "{{name}} couldn't answer"
       }
+    },
+    "working": "{{name}}…",
+    "undo": "Undo",
+    "changes": {
+      "keep": "Keep",
+      "again": "{{keys}} shows these again"
+    },
+    "pick": {
+      "title": "Transform the selection",
+      "close": "Close",
+      "empty": "No transforms are on. Turn one on in Legato › Transforms."
     }
   },
   "titleBar": {
@@ -987,10 +1061,10 @@
         "cleanup": "Cleanup",
         "cleanupOn": "Filler words removed",
         "transform": "Transform",
-        "transformOn": "With its own shortcut",
+        "transformOn": "Only when you ask for one",
         "off": "Off",
         "paste": "Paste",
-        "transformWith": "{{name}}, with its own shortcut"
+        "transformWith": "{{name}} after every dictation"
       },
       "fixedToday_one": "Fixed today · {{count}}",
       "fixedToday_other": "Fixed today · {{count}}",
@@ -1197,15 +1271,178 @@
   },
   "transforms": {
     "title": "Transforms",
-    "subtitle": "Prompts your AI provider runs on a dictation before Legato pastes it.",
+    "subtitle": "Rewrite what you just dictated, or text you select, with your AI model.",
     "switch": "Transforms",
-    "off": "Transforms are off. Turn them on with the switch above to use the Dictate then transform shortcut.",
-    "groups": {
-      "provider": "Provider",
-      "shortcut": "Shortcut",
-      "prompts": "Prompts"
+    "on": "On",
+    "offShort": "Off",
+    "new": "New transform",
+    "turnOn": "Turn on",
+    "off": "Transforms are off, so their shortcuts and Ask do nothing. Text is only sent to your AI model when they're on.",
+    "selectionChip": "transforms the selection",
+    "selectionHelp": "Select text in any app and press this to pick a transform for it.",
+    "ask": {
+      "title": "Ask",
+      "body": "Hold, say what to do with the selected text. Without a selection it works on your last dictation.",
+      "examples": "Say things like “make it shorter”, “answer in German” or “turn this into steps”.",
+      "switch": "Ask"
     },
-    "changeProvider": "Change in Settings"
+    "yours": {
+      "title": "Your transforms",
+      "help": "Each one runs on the text you select, or on your last dictation when nothing is selected. The picker lists them in this order."
+    },
+    "card": {
+      "more": "More for {{name}}",
+      "switch": "{{name}}",
+      "setShortcut": "Set shortcut",
+      "edit": "Edit",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "delete": "Delete",
+      "used_one": "Used once · {{time}} · last run {{when}}",
+      "used_other": "Used {{count}}× · {{time}} · last run {{when}}",
+      "unused": "Not used yet",
+      "yesterday": "yesterday"
+    },
+    "model": {
+      "none": "No AI model · set one up in Settings › AI"
+    },
+    "after": {
+      "title": "After every dictation",
+      "none": "None",
+      "run": {
+        "title": "Run after every dictation",
+        "helpOff": "Nothing runs after dictation, so the skip rules below are off. To transform one dictation, use Dictate then transform.",
+        "helpOn": "Runs on every dictation before Legato pastes it, except where the rules below skip it."
+      },
+      "requires": "Pick a transform to run after every dictation first",
+      "skipCode": {
+        "title": "Skip in code and terminals",
+        "help": "Code editors and terminals get exactly what you said."
+      },
+      "skipAi": {
+        "title": "Skip in AI prompts",
+        "help": "Claude, ChatGPT and other AI apps get your words as spoken; they rewrite prompts anyway."
+      },
+      "minWords": {
+        "title": "Skip dictations under",
+        "help": "Short replies like “on my way” are pasted as you said them. 0 runs it on everything.",
+        "value_one": "{{count}} word",
+        "value_other": "{{count}} words"
+      },
+      "dictate": {
+        "title": "Dictate then transform runs",
+        "help": "The transform {{keys}} runs on what you dictate.",
+        "helpNoKeys": "The transform the Dictate then transform shortcut runs on what you dictate."
+      }
+    },
+    "try": {
+      "title": "Try it",
+      "transform": "Transform to try",
+      "run": "Run",
+      "running": "Running…",
+      "text": "Text",
+      "recent": "Use a recent dictation",
+      "noRecent": "No dictations yet.",
+      "placeholder": "Type or paste something to transform.",
+      "result": "Result",
+      "view": "Show",
+      "changes": "Changes",
+      "empty": "Pick a transform and run it. Changes show here word by word.",
+      "failed": "Couldn't run the transform"
+    },
+    "runs": {
+      "title": "Recent runs",
+      "viewChip": "shows the last changes",
+      "search": "Search runs",
+      "filter": "Filter runs",
+      "filters": {
+        "all": "All",
+        "kept": "Kept",
+        "undone": "Undone",
+        "failed": "Failed"
+      },
+      "result": {
+        "kept": "Kept",
+        "copied": "Copied",
+        "undone": "Undone",
+        "failed": "Failed"
+      },
+      "source": {
+        "last_dictation": "Last dictation",
+        "dictation": "After dictation",
+        "ask": "Ask",
+        "selection": "Selection"
+      },
+      "words_one": "{{from}} → {{count}} word",
+      "words_other": "{{from}} → {{count}} words",
+      "unchanged_one": "{{count}} word, unchanged",
+      "unchanged_other": "{{count}} words, unchanged",
+      "error": "{{error}} · the original text stayed",
+      "empty": {
+        "title": "No runs yet",
+        "body": "Select text in any app and press a transform's shortcut. Each run shows here with what happened to it."
+      },
+      "noResults": {
+        "title": "No runs match this filter",
+        "titleSearch": "No runs match “{{query}}”",
+        "clear": "Clear search and filter"
+      }
+    },
+    "editor": {
+      "newTitle": "New transform",
+      "editTitle": "Edit transform",
+      "description": "What it asks your AI model to do with the text.",
+      "builtInDescription": "Built into Legato. You can change it, but not delete it.",
+      "name": "Name",
+      "namePlaceholder": "Shorter",
+      "summary": "Description",
+      "summaryPlaceholder": "Cuts it to half the length, same meaning.",
+      "prompt": "Prompt",
+      "promptPlaceholder": "Make this about half as long. Keep names, numbers and my tone.",
+      "variables": "Insert",
+      "variable": {
+        "app": "The app the text is in",
+        "dictionary": "Your Dictionary words",
+        "clipboard": "What's on the clipboard"
+      },
+      "model": "Model",
+      "modelDefault": "The one in Settings › AI",
+      "modelOwn": "Its own model",
+      "provider": "Provider",
+      "modelName": "Model name",
+      "modelPlaceholder": "qwen2.5:7b",
+      "modelHelp": "Uses the key saved for that provider in Settings › AI.",
+      "output": "Result",
+      "outputs": {
+        "replace": "Replace the text",
+        "replaceHelp": "Pastes over the selection.",
+        "below": "Add below",
+        "belowHelp": "Keeps the selection and pastes the result under it.",
+        "copy": "Copy",
+        "copyHelp": "Puts the result on the clipboard and changes nothing."
+      },
+      "showChanges": "Show changes",
+      "showChangesHelp": "The bar shows what changed, with Keep and Undo.",
+      "shortcut": "Shortcut",
+      "shortcutHelp": "Runs this transform on the selection, in any app.",
+      "shortcutAfterSave": "Save the transform first to give it a shortcut",
+      "removeShortcut": "Remove shortcut",
+      "test": "Test",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "save": "Save",
+      "errors": {
+        "name": "Give the transform a name.",
+        "prompt": "Write what the transform should do.",
+        "model": "Type the model name, or use the one in Settings › AI."
+      }
+    },
+    "toast": {
+      "deleted": "Deleted {{name}}",
+      "undo": "Undo",
+      "created": "Added {{name}}",
+      "saved": "Saved {{name}}"
+    }
   },
   "ai": {
     "provider": "AI",

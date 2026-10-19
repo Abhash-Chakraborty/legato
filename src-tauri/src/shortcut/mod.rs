@@ -20,9 +20,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::settings::{
-    self, get_settings, AutoSubmitKey, ChineseScript, ClipboardHandling, KeyboardImplementation,
-    LLMPrompt, OverlayPosition, OverlayStyle, PasteMethod, ShortcutActivation, ShortcutBinding,
-    SoundTheme, Theme, VadBackend,
+    self, get_settings, AppSettings, AutoSubmitKey, ChineseScript, ClipboardHandling,
+    KeyboardImplementation, OverlayPosition, OverlayStyle, PasteMethod, ShortcutActivation,
+    ShortcutBinding, SoundTheme, Theme, VadBackend,
 };
 use crate::tray;
 
@@ -106,6 +106,60 @@ fn reconcile_cancel_shortcut(app: &AppHandle) {
         match unregister_shortcut(app, cancel_binding) {
             Ok(()) => *registered = false,
             Err(e) => error!("Failed to unregister cancel shortcut: {}", e),
+        }
+    }
+}
+
+/// Whether a binding should be registered with the keyboard hook now: it has
+/// a shortcut, and the feature it belongs to is on.
+pub fn binding_is_active(settings: &AppSettings, id: &str, binding: &ShortcutBinding) -> bool {
+    if id == "cancel" || binding.current_binding.trim().is_empty() {
+        return false;
+    }
+    let transforms_on = settings.post_process_enabled;
+    match id {
+        "transcribe_with_post_process" | "transform_selection" | "view_changes" => transforms_on,
+        "ask" => transforms_on && settings.ask_enabled,
+        _ => match crate::transform_rules::transform_id_of(id) {
+            Some(transform_id) => {
+                transforms_on && settings.transform(transform_id).is_some_and(|t| t.enabled)
+            }
+            None => true,
+        },
+    }
+}
+
+/// Every binding that should be registered, with defaults for any the
+/// settings don't have yet.
+pub fn active_bindings(settings: &AppSettings) -> Vec<ShortcutBinding> {
+    let defaults = settings::get_default_settings().bindings;
+    let ids: std::collections::BTreeSet<&String> =
+        defaults.keys().chain(settings.bindings.keys()).collect();
+    ids.into_iter()
+        .filter_map(|id| {
+            let binding = settings.bindings.get(id).or_else(|| defaults.get(id))?;
+            binding_is_active(settings, id, binding).then(|| binding.clone())
+        })
+        .collect()
+}
+
+/// Brings the registered shortcuts from what `before` wanted to what `after`
+/// wants: a transform switched off releases its keys, one switched on takes
+/// them.
+pub fn sync_bindings(app: &AppHandle, before: &AppSettings, after: &AppSettings) {
+    let old = active_bindings(before);
+    let new = active_bindings(after);
+    let same = |a: &ShortcutBinding, b: &ShortcutBinding| {
+        a.id == b.id && a.current_binding == b.current_binding
+    };
+    for binding in old.iter().filter(|b| !new.iter().any(|n| same(b, n))) {
+        if let Err(e) = unregister_shortcut(app, binding.clone()) {
+            debug!("Couldn't release '{}': {}", binding.id, e);
+        }
+    }
+    for binding in new.iter().filter(|b| !old.iter().any(|o| same(b, o))) {
+        if let Err(e) = register_shortcut(app, binding.clone()) {
+            error!("Couldn't register '{}': {}", binding.id, e);
         }
     }
 }
@@ -195,17 +249,31 @@ pub fn change_binding(
         }
     }
 
+    let was_active = binding_is_active(&settings, &id, &binding_to_modify);
+    let will_be_active = {
+        let mut probe = binding_to_modify.clone();
+        probe.current_binding = binding.clone();
+        binding_is_active(&settings, &id, &probe)
+    };
+    let restore = |app: &AppHandle| {
+        if was_active {
+            restore_registration(app, &binding_to_modify);
+        }
+    };
+
     // Unregister the existing binding
-    if let Err(e) = unregister_shortcut(&app, binding_to_modify.clone()) {
-        let error_msg = format!("Failed to unregister shortcut: {}", e);
-        error!("change_binding error: {}", error_msg);
+    if was_active {
+        if let Err(e) = unregister_shortcut(&app, binding_to_modify.clone()) {
+            let error_msg = format!("Failed to unregister shortcut: {}", e);
+            error!("change_binding error: {}", error_msg);
+        }
     }
 
     // Validate the new shortcut for the current keyboard implementation
     if let Err(e) = validate_shortcut_for_implementation(&binding, settings.keyboard_implementation)
     {
         warn!("change_binding validation error: {}", e);
-        restore_registration(&app, &binding_to_modify);
+        restore(&app);
         return Err(e);
     }
 
@@ -214,10 +282,15 @@ pub fn change_binding(
     updated_binding.current_binding = binding;
 
     // Register the new binding
-    if let Err(e) = register_shortcut(&app, updated_binding.clone()) {
+    if !will_be_active {
+        debug!(
+            "'{}' is saved but stays unregistered while its feature is off",
+            id
+        );
+    } else if let Err(e) = register_shortcut(&app, updated_binding.clone()) {
         let error_msg = format!("Failed to register shortcut: {}", e);
         error!("change_binding error: {}", error_msg);
-        restore_registration(&app, &binding_to_modify);
+        restore(&app);
         return Ok(BindingResponse {
             success: false,
             binding: None,
@@ -262,10 +335,8 @@ pub fn reset_binding(app: AppHandle, id: String) -> Result<BindingResponse, Stri
 /// mid-capture. The "cancel" binding is untouched: it is managed dynamically
 /// by the recording lifecycle.
 pub fn suspend_all_shortcuts(app: &AppHandle) {
-    for (id, binding) in settings::get_bindings(app) {
-        if id == "cancel" {
-            continue;
-        }
+    for binding in active_bindings(&get_settings(app)) {
+        let id = binding.id.clone();
         if let Err(e) = unregister_shortcut(app, binding) {
             debug!(
                 "suspend_all_shortcuts: could not unregister '{}': {}",
@@ -279,15 +350,9 @@ pub fn suspend_all_shortcuts(app: &AppHandle) {
 /// Registering an already-registered shortcut fails cleanly in both
 /// implementations, so this is idempotent and safe on every exit path.
 pub fn resume_all_shortcuts(app: &AppHandle) {
-    let settings = get_settings(app);
-    for (id, binding) in &settings.bindings {
-        if id == "cancel" {
-            continue;
-        }
-        if id == "transcribe_with_post_process" && !settings.post_process_enabled {
-            continue;
-        }
-        if let Err(e) = register_shortcut(app, binding.clone()) {
+    for binding in active_bindings(&get_settings(app)) {
+        let id = binding.id.clone();
+        if let Err(e) = register_shortcut(app, binding) {
             debug!("resume_all_shortcuts: could not register '{}': {}", id, e);
         }
     }
@@ -430,13 +495,8 @@ fn parse_keyboard_implementation(s: &str) -> KeyboardImplementation {
 
 /// Unregister all shortcuts for the current implementation
 fn unregister_all_shortcuts(app: &AppHandle, implementation: KeyboardImplementation) {
-    let bindings = settings::get_bindings(app);
-
-    for (id, binding) in bindings {
-        // Skip cancel shortcut as it's dynamically registered
-        if id == "cancel" {
-            continue;
-        }
+    for binding in active_bindings(&get_settings(app)) {
+        let id = binding.id.clone();
 
         let result = match implementation {
             KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
@@ -458,26 +518,10 @@ fn register_all_shortcuts_for_implementation(
     implementation: KeyboardImplementation,
 ) -> Vec<String> {
     let mut reset_bindings = Vec::new();
-    let default_bindings = settings::get_default_settings().bindings;
     let mut current_settings = settings::get_settings(app);
 
-    for (id, default_binding) in &default_bindings {
-        // Skip cancel shortcut as it's dynamically registered
-        if id == "cancel" {
-            continue;
-        }
-
-        // Skip post-processing shortcut when the feature is disabled
-        if id == "transcribe_with_post_process" && !current_settings.post_process_enabled {
-            continue;
-        }
-
-        let mut binding = current_settings
-            .bindings
-            .get(id)
-            .cloned()
-            .unwrap_or_else(|| default_binding.clone());
-
+    for mut binding in active_bindings(&current_settings) {
+        let id = binding.id.clone();
         // Validate the shortcut for the target implementation
         if let Err(e) =
             validate_shortcut_for_implementation(&binding.current_binding, implementation)
@@ -487,12 +531,15 @@ fn register_all_shortcuts_for_implementation(
                 id, binding.current_binding, implementation, e
             );
 
-            // Reset to default
-            binding.current_binding = default_binding.current_binding.clone();
+            // Reset to default; a transform without one is left without a key.
+            binding.current_binding = binding.default_binding.clone();
             current_settings
                 .bindings
                 .insert(id.clone(), binding.clone());
             reset_bindings.push(id.clone());
+            if binding.current_binding.trim().is_empty() {
+                continue;
+            }
         }
 
         // Register with the appropriate implementation
@@ -984,22 +1031,13 @@ pub fn change_auto_submit_key_setting(app: AppHandle, key: String) -> Result<(),
 #[tauri::command]
 #[specta::specta]
 pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
+    let before = settings::get_settings(&app);
+    let mut settings = before.clone();
     settings.post_process_enabled = enabled;
     settings::write_settings(&app, settings.clone());
 
-    // Register or unregister the post-processing shortcut
-    if let Some(binding) = settings
-        .bindings
-        .get("transcribe_with_post_process")
-        .cloned()
-    {
-        if enabled {
-            let _ = register_shortcut(&app, binding);
-        } else {
-            let _ = unregister_shortcut(&app, binding);
-        }
-    }
+    // Transforms on takes their keys; off gives them back to other apps.
+    sync_bindings(&app, &before, &settings);
 
     Ok(())
 }
@@ -1126,82 +1164,6 @@ pub fn set_post_process_provider(app: AppHandle, provider_id: String) -> Result<
 
 #[tauri::command]
 #[specta::specta]
-pub fn add_post_process_prompt(
-    app: AppHandle,
-    name: String,
-    prompt: String,
-) -> Result<LLMPrompt, String> {
-    let mut settings = settings::get_settings(&app);
-
-    // Generate unique ID using timestamp and random component
-    let id = format!("prompt_{}", chrono::Utc::now().timestamp_millis());
-
-    let new_prompt = LLMPrompt {
-        id: id.clone(),
-        name,
-        prompt,
-    };
-
-    settings.post_process_prompts.push(new_prompt.clone());
-    settings::write_settings(&app, settings);
-
-    Ok(new_prompt)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn update_post_process_prompt(
-    app: AppHandle,
-    id: String,
-    name: String,
-    prompt: String,
-) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-
-    if let Some(existing_prompt) = settings
-        .post_process_prompts
-        .iter_mut()
-        .find(|p| p.id == id)
-    {
-        existing_prompt.name = name;
-        existing_prompt.prompt = prompt;
-        settings::write_settings(&app, settings);
-        Ok(())
-    } else {
-        Err(format!("Prompt with id '{}' not found", id))
-    }
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn delete_post_process_prompt(app: AppHandle, id: String) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-
-    // Don't allow deleting the last prompt
-    if settings.post_process_prompts.len() <= 1 {
-        return Err("Cannot delete the last prompt".to_string());
-    }
-
-    // Find and remove the prompt
-    let original_len = settings.post_process_prompts.len();
-    settings.post_process_prompts.retain(|p| p.id != id);
-
-    if settings.post_process_prompts.len() == original_len {
-        return Err(format!("Prompt with id '{}' not found", id));
-    }
-
-    // If the deleted prompt was selected, select the first one or None
-    if settings.post_process_selected_prompt_id.as_ref() == Some(&id) {
-        settings.post_process_selected_prompt_id =
-            settings.post_process_prompts.first().map(|p| p.id.clone());
-    }
-
-    settings::write_settings(&app, settings);
-    Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn fetch_post_process_models(
     app: AppHandle,
     provider_id: String,
@@ -1226,21 +1188,6 @@ pub async fn fetch_post_process_models(
     }
 
     crate::llm_client::fetch_models(provider, api_key).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn set_post_process_selected_prompt(app: AppHandle, id: String) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-
-    // Verify the prompt exists
-    if !settings.post_process_prompts.iter().any(|p| p.id == id) {
-        return Err(format!("Prompt with id '{}' not found", id));
-    }
-
-    settings.post_process_selected_prompt_id = Some(id);
-    settings::write_settings(&app, settings);
-    Ok(())
 }
 
 #[tauri::command]

@@ -10,13 +10,26 @@ import type {
   StreamWorkKind,
 } from "@/bindings";
 import type { ModelStateEvent } from "@/lib/types/events";
+import { wordDiff } from "@/lib/utils/diff";
+import { formatKeyCombination } from "@/lib/utils/keyboard";
 
 type OverlayState =
   | "recording"
   | "streaming"
   | "transcribing"
   | "processing"
-  | "notice";
+  | "notice"
+  | "changes"
+  | "pick";
+
+type AiProblemKind =
+  | "none"
+  | "unreachable"
+  | "rejected"
+  | "not_found"
+  | "rate_limited"
+  | "slow"
+  | "failed";
 
 /** A one-line message, such as a word added with the selection shortcut. */
 type OverlayNotice =
@@ -25,10 +38,85 @@ type OverlayNotice =
   | { kind: "no_selection" | "not_a_word" | "failed" }
   | {
       kind: "ai_skipped";
-      problem: string;
+      problem: AiProblemKind;
+      provider_id: string;
+      provider_label: string;
+    }
+  | { kind: "pasted"; words: number; app: string | null; undo: boolean }
+  | { kind: "transformed"; name: string; words: number; undo: boolean }
+  | { kind: "copied"; name: string }
+  | { kind: "pasted_last" | "copied_last"; words: number }
+  | { kind: "undone"; clipboard: boolean }
+  | {
+      kind:
+        | "nothing_to_transform"
+        | "no_last_dictation"
+        | "no_changes"
+        | "ask_empty";
+    }
+  | {
+      kind: "transform_failed";
+      name: string;
+      problem: AiProblemKind;
       provider_id: string;
       provider_label: string;
     };
+
+/** A transform's changes, shown with Keep and Undo. */
+interface BarChanges {
+  name: string;
+  before: string;
+  after: string;
+  keys: string;
+}
+
+interface PickItem {
+  id: string;
+  name: string;
+  keys: string;
+}
+
+const GOOD_NOTICES = new Set([
+  "word_added",
+  "pasted",
+  "transformed",
+  "copied",
+  "pasted_last",
+  "copied_last",
+  "undone",
+]);
+const WARN_NOTICES = new Set(["failed", "ai_skipped", "transform_failed"]);
+
+const CheckMark = () => (
+  <svg viewBox="0 0 16 16" aria-hidden="true" className="snotice-ic ok">
+    <path
+      d="M3.5 8.5 L6.5 11.5 L12.5 4.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const WarnMark = () => (
+  <svg viewBox="0 0 16 16" aria-hidden="true" className="snotice-ic warn">
+    <path
+      d="M8 2.5 L14 13 H2 Z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M8 6.5 V9.5 M8 11.4 V11.5"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+    />
+  </svg>
+);
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
@@ -45,6 +133,10 @@ const RecordingOverlay: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
   const [state, setState] = useState<OverlayState>("recording");
   const [notice, setNotice] = useState<OverlayNotice | null>(null);
+  const [changes, setChanges] = useState<BarChanges | null>(null);
+  const [picks, setPicks] = useState<PickItem[]>([]);
+  // "Polish…" while a transform runs; the default label otherwise.
+  const [workingLabel, setWorkingLabel] = useState<string | null>(null);
   // `Stream::play()` returning does not mean hardware callbacks are flowing.
   // Stay visually in an arming state until the backend processes the first
   // actual microphone sample chunk.
@@ -127,6 +219,19 @@ const RecordingOverlay: React.FC = () => {
         (event) => setNotice(event.payload),
       );
 
+      const unlistenChanges = await listen<BarChanges>("bar-changes", (event) =>
+        setChanges(event.payload),
+      );
+
+      const unlistenPick = await listen<PickItem[]>("bar-pick", (event) =>
+        setPicks(event.payload),
+      );
+
+      const unlistenLabel = await listen<string | null>(
+        "overlay-working-label",
+        (event) => setWorkingLabel(event.payload),
+      );
+
       const unlistenHide = await listen("hide-overlay", () => {
         setIsVisible(false);
         setCaptureReady(false);
@@ -189,6 +294,9 @@ const RecordingOverlay: React.FC = () => {
       return () => {
         unlistenShow();
         unlistenNotice();
+        unlistenChanges();
+        unlistenPick();
+        unlistenLabel();
         unlistenHide();
         unlistenReady();
         unlistenLevel();
@@ -365,34 +473,201 @@ const RecordingOverlay: React.FC = () => {
     );
   }
 
-  // ---- Notice: one line of text that hides itself.
+  const providerName = (id: string, label: string) =>
+    id === "custom" ? t("ai.yourServer") : label;
+  const problemText = (
+    problem: AiProblemKind,
+    providerId: string,
+    label: string,
+  ) =>
+    t(
+      providerId === "ollama" && problem === "unreachable"
+        ? "overlay.notice.problem.unreachableOllama"
+        : `overlay.notice.problem.${problem}`,
+      { name: providerName(providerId, label) },
+    );
+
+  const noticeText = (n: OverlayNotice): string => {
+    switch (n.kind) {
+      case "word_added":
+      case "word_exists":
+        return t(`overlay.notice.${n.kind}`, { word: n.word });
+      case "ai_skipped":
+        return t(
+          n.provider_id === "ollama" && n.problem === "unreachable"
+            ? "overlay.notice.ai.unreachableOllama"
+            : `overlay.notice.ai.${n.problem}`,
+          { name: providerName(n.provider_id, n.provider_label) },
+        );
+      case "pasted":
+        return n.app
+          ? t("overlay.notice.pastedInto", { count: n.words, app: n.app })
+          : t("overlay.notice.pasted", { count: n.words });
+      case "transformed":
+        return t("overlay.notice.transformed", {
+          name: n.name,
+          count: n.words,
+        });
+      case "copied":
+        return t("overlay.notice.copied", { name: n.name });
+      case "pasted_last":
+      case "copied_last":
+        return t(`overlay.notice.${n.kind}`, { count: n.words });
+      case "undone":
+        return t(
+          n.clipboard
+            ? "overlay.notice.undoneClipboard"
+            : "overlay.notice.undone",
+        );
+      case "transform_failed":
+        return t("overlay.notice.transformFailed", {
+          name: n.name,
+          problem: problemText(n.problem, n.provider_id, n.provider_label),
+        });
+      default:
+        return t(`overlay.notice.${n.kind}`);
+    }
+  };
+
+  // ---- Notice: one line of text that hides itself, with Undo after a paste.
   if (state === "notice") {
-    const good = notice?.kind === "word_added";
-    const message = !notice
-      ? ""
-      : notice.kind === "word_added" || notice.kind === "word_exists"
-        ? t(`overlay.notice.${notice.kind}`, { word: notice.word })
-        : notice.kind === "ai_skipped"
-          ? t(
-              notice.provider_id === "ollama" &&
-                notice.problem === "unreachable"
-                ? "overlay.notice.ai.unreachableOllama"
-                : `overlay.notice.ai.${notice.problem}`,
-              {
-                name:
-                  notice.provider_id === "custom"
-                    ? t("ai.yourServer")
-                    : notice.provider_label,
-              },
-            )
-          : t(`overlay.notice.${notice.kind}`);
+    const kind = notice?.kind ?? "";
+    const canUndo =
+      !!notice &&
+      (notice.kind === "pasted" ||
+        notice.kind === "transformed" ||
+        notice.kind === "pasted_last") &&
+      ("undo" in notice ? notice.undo : true);
     return (
       <div
         className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
       >
         <div className="scard notice" role="status">
-          <span className={`snotice-dot ${good ? "ok" : ""}`} />
-          <span className="snotice-text">{message}</span>
+          {GOOD_NOTICES.has(kind) ? (
+            <CheckMark />
+          ) : WARN_NOTICES.has(kind) ? (
+            <WarnMark />
+          ) : (
+            <span className="snotice-dot" />
+          )}
+          <span className="snotice-text">
+            {notice ? noticeText(notice) : ""}
+          </span>
+          {canUndo && (
+            <button
+              type="button"
+              className="sbtn ghost"
+              onClick={() => commands.barUndo()}
+            >
+              {t("overlay.undo")}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Changes: the transform's word diff, with Keep and Undo.
+  if (state === "changes" && changes) {
+    const parts = wordDiff(changes.before, changes.after);
+    return (
+      <div
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div className="scard panel" role="dialog" aria-label={changes.name}>
+          <div className="spanel-head">
+            <span className="spanel-title">{changes.name}</span>
+            {changes.keys && (
+              <span className="spanel-keys">
+                {t("overlay.changes.again", {
+                  keys: formatKeyCombination(changes.keys),
+                })}
+              </span>
+            )}
+          </div>
+          <div className="sdiff">
+            {parts.map((part, i) =>
+              part.kind === "same" ? (
+                <span key={i}>{part.text}</span>
+              ) : part.kind === "added" ? (
+                <ins key={i}>{part.text}</ins>
+              ) : (
+                <del key={i}>{part.text}</del>
+              ),
+            )}
+          </div>
+          <div className="spanel-actions">
+            <button
+              type="button"
+              className="sbtn primary"
+              onClick={() => commands.barKeep()}
+            >
+              {t("overlay.changes.keep")}
+            </button>
+            <button
+              type="button"
+              className="sbtn"
+              onClick={() => commands.barUndo()}
+            >
+              {t("overlay.undo")}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Pick: which transform to run on the selection.
+  if (state === "pick") {
+    return (
+      <div
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div
+          className="scard panel pick"
+          role="dialog"
+          aria-label={t("overlay.pick.title")}
+        >
+          <div className="spanel-head">
+            <span className="spanel-title">{t("overlay.pick.title")}</span>
+            <button
+              type="button"
+              className="sx"
+              aria-label={t("overlay.pick.close")}
+              onClick={() => commands.barDismiss()}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M4 4 L12 12 M12 4 L4 12"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+          {picks.length === 0 ? (
+            <p className="spick-empty">{t("overlay.pick.empty")}</p>
+          ) : (
+            <ul className="spick-list">
+              {picks.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    className="spick-row"
+                    onClick={() => commands.barPick(item.id)}
+                  >
+                    <span className="spick-name">{item.name}</span>
+                    {item.keys && (
+                      <span className="spick-keys">
+                        {formatKeyCombination(item.keys)}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
     );
@@ -403,7 +678,11 @@ const RecordingOverlay: React.FC = () => {
   // width between them; the cancel button is in both rows so it stays put.
   const working = state === "transcribing" || state === "processing";
   const workLabel =
-    state === "processing" ? t("overlay.processing") : transcribingLabel;
+    state === "processing"
+      ? workingLabel
+        ? t("overlay.working", { name: workingLabel })
+        : t("overlay.processing")
+      : transcribingLabel;
 
   return (
     <div className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}>

@@ -154,8 +154,21 @@ const settingUpdaters: {
   history_limit: (value) => commands.updateHistoryLimit(value as number),
   post_process_enabled: (value) =>
     commands.changePostProcessEnabledSetting(value as boolean),
-  post_process_selected_prompt_id: (value) =>
-    commands.setPostProcessSelectedPrompt(value as string),
+  auto_transform_id: (value) =>
+    commands.changeAutoTransformSetting((value as string | null) ?? null),
+  dictate_transform_id: (value) =>
+    commands.changeDictateTransformSetting(value as string),
+  auto_transform_skip_code: (value) =>
+    commands.changeAutoTransformSkipCodeSetting(value as boolean),
+  auto_transform_skip_ai: (value) =>
+    commands.changeAutoTransformSkipAiSetting(value as boolean),
+  auto_transform_min_words: (value) =>
+    commands.changeAutoTransformMinWordsSetting(value as number),
+  ask_enabled: (value) => commands.changeAskEnabledSetting(value as boolean),
+  bar_confirm_paste: (value) =>
+    commands.changeBarConfirmPasteSetting(value as boolean),
+  bar_show_changes: (value) =>
+    commands.changeBarShowChangesSetting(value as boolean),
   ai_correction_enabled: (value) =>
     commands.changeAiCorrectionSetting(value as boolean),
   ai_min_words: (value) => commands.changeAiMinWordsSetting(value as number),

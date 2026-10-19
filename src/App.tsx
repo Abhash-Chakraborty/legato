@@ -20,7 +20,7 @@ import {
 } from "./components/settings";
 import { SettingsPage } from "./components/settings/SettingsPage";
 import { DictionaryPage } from "./components/pages/dictionary/DictionaryPage";
-import { TransformsPage } from "./components/pages/TransformsPage";
+import { TransformsPage } from "./components/pages/transforms/TransformsPage";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar } from "./components/Sidebar";
 import { TitleBar } from "./components/shell/TitleBar";

@@ -58,6 +58,7 @@ import {
   TransformsUseRow,
 } from "./ai/AiSettings";
 import { ShowOverlay } from "./ShowOverlay";
+import { ConfirmPaste, ShowChanges } from "./BarMessages";
 import { RememberApp } from "./RememberApp";
 import { HistoryLimit } from "./HistoryLimit";
 import { RecordingRetentionPeriodSelector } from "./RecordingRetentionPeriod";
@@ -121,6 +122,17 @@ export interface SectionDef {
 }
 
 const CLIPBOARD_PASTE = ["ctrl_v", "ctrl_shift_v", "shift_insert"];
+
+const needsTransforms = ({ settings }: RowContext): Unmet | null =>
+  settings?.post_process_enabled
+    ? null
+    : { reasonKey: "settings.requires.transforms" };
+
+const needsAsk = (ctx: RowContext): Unmet | null =>
+  needsTransforms(ctx) ??
+  ((ctx.settings?.ask_enabled ?? true)
+    ? null
+    : { reasonKey: "settings.requires.ask" });
 
 const needsSoundFeedback = ({ settings }: RowContext): Unmet | null =>
   settings?.audio_feedback ? null : { reasonKey: "settings.requires.sound" };
@@ -272,10 +284,7 @@ export const buildSections = (
                 grouped
               />
             ),
-            requires: ({ settings }) =>
-              settings?.post_process_enabled
-                ? null
-                : { reasonKey: "settings.requires.transforms" },
+            requires: needsTransforms,
           },
           {
             id: "cancel",
@@ -294,6 +303,63 @@ export const buildSections = (
             render: () => (
               <ShortcutInput shortcutId="add_to_dictionary" grouped />
             ),
+          },
+        ],
+      },
+      {
+        id: "transforms",
+        titleKey: "settings.groups.transforms",
+        rows: [
+          {
+            id: "transform-selection",
+            searchKeys: [
+              "settings.general.shortcut.bindings.transform_selection.name",
+              "settings.general.shortcut.bindings.transform_selection.description",
+            ],
+            render: () => (
+              <ShortcutInput shortcutId="transform_selection" grouped />
+            ),
+            requires: needsTransforms,
+          },
+          {
+            id: "ask",
+            searchKeys: [
+              "settings.general.shortcut.bindings.ask.name",
+              "settings.general.shortcut.bindings.ask.description",
+            ],
+            render: () => <ShortcutInput shortcutId="ask" grouped />,
+            requires: needsAsk,
+          },
+          {
+            id: "view-changes",
+            searchKeys: [
+              "settings.general.shortcut.bindings.view_changes.name",
+              "settings.general.shortcut.bindings.view_changes.description",
+            ],
+            render: () => <ShortcutInput shortcutId="view_changes" grouped />,
+            requires: needsTransforms,
+          },
+        ],
+      },
+      {
+        id: "last-dictation",
+        titleKey: "settings.groups.lastDictation",
+        rows: [
+          {
+            id: "paste-last",
+            searchKeys: [
+              "settings.general.shortcut.bindings.paste_last.name",
+              "settings.general.shortcut.bindings.paste_last.description",
+            ],
+            render: () => <ShortcutInput shortcutId="paste_last" grouped />,
+          },
+          {
+            id: "copy-last",
+            searchKeys: [
+              "settings.general.shortcut.bindings.copy_last.name",
+              "settings.general.shortcut.bindings.copy_last.description",
+            ],
+            render: () => <ShortcutInput shortcutId="copy_last" grouped />,
           },
         ],
       },
@@ -703,6 +769,28 @@ export const buildSections = (
               "settings.advanced.overlay.position.description",
             ],
             render: () => <ShowOverlay grouped />,
+          },
+        ],
+      },
+      {
+        id: "messages",
+        titleKey: "settings.groups.messages",
+        rows: [
+          {
+            id: "confirm-paste",
+            searchKeys: [
+              "settings.bar.confirmPaste.title",
+              "settings.bar.confirmPaste.help",
+            ],
+            render: () => <ConfirmPaste grouped />,
+          },
+          {
+            id: "show-changes",
+            searchKeys: [
+              "settings.bar.showChanges.title",
+              "settings.bar.showChanges.help",
+            ],
+            render: () => <ShowChanges grouped />,
           },
         ],
       },

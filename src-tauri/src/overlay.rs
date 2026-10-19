@@ -22,6 +22,11 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Webview
 const OVERLAY_WIDTH: f64 = 256.0;
 const OVERLAY_HEIGHT: f64 = 50.0;
 
+const OVERLAY_CHANGES_WIDTH: f64 = 480.0;
+const OVERLAY_CHANGES_HEIGHT: f64 = 250.0;
+const OVERLAY_PICK_WIDTH: f64 = 320.0;
+const OVERLAY_PICK_HEIGHT: f64 = 330.0;
+
 // Actual is 394x118, just a little extra
 const OVERLAY_STREAM_WIDTH: f64 = 400.0;
 const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
@@ -32,6 +37,10 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
         "streaming" => (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT),
         // A notice is one row, as wide as the Live panel so the message fits.
         "notice" => (OVERLAY_STREAM_WIDTH, OVERLAY_HEIGHT),
+        // A transform's word diff with Keep and Undo.
+        "changes" => (OVERLAY_CHANGES_WIDTH, OVERLAY_CHANGES_HEIGHT),
+        // The transform picker for the selection.
+        "pick" => (OVERLAY_PICK_WIDTH, OVERLAY_PICK_HEIGHT),
         _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
 }
@@ -354,19 +363,45 @@ const NOTICE_MS: u64 = 2600;
 /// A one-line message in the overlay, such as a word added from a selection.
 /// It hides itself, unless a dictation shows the overlay in the meantime.
 pub fn show_overlay_notice<T: serde::Serialize>(app_handle: &AppHandle, notice: &T) {
-    let _ = app_handle.emit_to("recording_overlay", "overlay-notice", notice);
-    show_overlay_state(app_handle, "notice");
+    show_overlay_notice_for(app_handle, notice, NOTICE_MS);
+}
+
+/// A notice that stays up for `ms`.
+pub fn show_overlay_notice_for<T: serde::Serialize>(app_handle: &AppHandle, notice: &T, ms: u64) {
+    show_bar(app_handle, "notice", "overlay-notice", notice, Some(ms));
+}
+
+/// Shows a Legato bar state with its payload. With `hide_after_ms`, the bar
+/// hides itself then, unless something else shows it in the meantime.
+pub fn show_bar<T: serde::Serialize>(
+    app_handle: &AppHandle,
+    state: &str,
+    event: &str,
+    payload: &T,
+    hide_after_ms: Option<u64>,
+) {
+    let _ = app_handle.emit_to("recording_overlay", event, payload);
+    show_overlay_state(app_handle, state);
+    let Some(ms) = hide_after_ms else {
+        return;
+    };
     let handle = app_handle.clone();
     std::thread::spawn(move || {
         // Showing runs on the main thread; let it land before taking the
         // generation the hide is tied to.
         std::thread::sleep(std::time::Duration::from_millis(150));
         let shown = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
-        std::thread::sleep(std::time::Duration::from_millis(NOTICE_MS));
+        std::thread::sleep(std::time::Duration::from_millis(ms));
         if OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) == shown {
             hide_recording_overlay(&handle);
         }
     });
+}
+
+/// Sets the working label ("Polishing…") the next processing state shows;
+/// None goes back to the default.
+pub fn set_working_label(app_handle: &AppHandle, label: Option<&str>) {
+    let _ = app_handle.emit_to("recording_overlay", "overlay-working-label", label);
 }
 
 /// Updates the overlay window position based on current settings

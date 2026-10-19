@@ -129,7 +129,8 @@ body {
    Custom Highlight API so the rows' own markup stays untouched. */
 ::highlight(settings-search),
 ::highlight(history-search),
-::highlight(dictionary-search) {
+::highlight(dictionary-search),
+::highlight(runs-search) {
   background-color: var(--teal-100);
   color: var(--text);
 }

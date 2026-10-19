@@ -527,7 +527,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     Ok((menu, version_label))
 }
 
-fn last_transcript_text(entry: &HistoryEntry) -> &str {
+pub(crate) fn last_transcript_text(entry: &HistoryEntry) -> &str {
     entry
         .post_processed_text
         .as_deref()

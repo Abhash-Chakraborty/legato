@@ -161,8 +161,8 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
   const keys = formatKeyCombination(binding).split(" + ").filter(Boolean);
   const activation = settings?.shortcut_activation ?? "hold_or_toggle";
 
-  const prompt = settings?.post_process_prompts?.find(
-    (p) => p.id === settings?.post_process_selected_prompt_id,
+  const autoTransform = settings?.transforms?.find(
+    (tr) => tr.id === settings?.auto_transform_id && tr.enabled !== false,
   );
   const words = dictionary?.entries.length ?? 0;
   const pasteMethod = settings?.paste_method ?? "ctrl_v";
@@ -273,8 +273,10 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
             title={t("home.rail.steps.transform")}
             detail={
               settings?.post_process_enabled
-                ? prompt
-                  ? t("home.rail.steps.transformWith", { name: prompt.name })
+                ? autoTransform
+                  ? t("home.rail.steps.transformWith", {
+                      name: autoTransform.name,
+                    })
                   : t("home.rail.steps.transformOn")
                 : t("home.rail.steps.off")
             }

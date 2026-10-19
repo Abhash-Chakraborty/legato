@@ -14,7 +14,6 @@ export { GlobalShortcutInput } from "./GlobalShortcutInput";
 export { HandyKeysShortcutInput } from "./HandyKeysShortcutInput";
 export { ShortcutInput } from "./ShortcutInput";
 export { TranslateToEnglish } from "./TranslateToEnglish";
-export { PostProcessingSettingsPrompts } from "./PostProcessingSettingsPrompts";
 export { FillerWordRemoval } from "./FillerWordRemoval";
 export { ChineseScriptSetting } from "./ChineseScript";
 export { AppDataDirectory } from "./AppDataDirectory";

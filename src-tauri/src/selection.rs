@@ -44,11 +44,7 @@ pub fn add_selection_to_dictionary(app: &AppHandle) {
     if BUSY.swap(true, Ordering::SeqCst) {
         return;
     }
-    let _ = with_enigo(app, |enigo| {
-        enigo
-            .key(Key::Other(MENU_MASK_VK), Direction::Click)
-            .map_err(|e| e.to_string())
-    });
+    mask_menu_key(app);
     let app = app.clone();
     std::thread::spawn(move || {
         let notice = add(&app).unwrap_or_else(|e| {
@@ -135,6 +131,41 @@ pub fn word_from_selection(selected: &str) -> Option<String> {
     Some(word)
 }
 
+/// Taps an unassigned key while the shortcut's Win or Alt is still down, so
+/// letting go of them doesn't open Start or focus a menu bar.
+pub(crate) fn mask_menu_key(app: &AppHandle) {
+    let _ = with_enigo(app, |enigo| {
+        enigo
+            .key(Key::Other(MENU_MASK_VK), Direction::Click)
+            .map_err(|e| e.to_string())
+    });
+}
+
+/// Sends Ctrl plus a virtual key to the app in front.
+pub(crate) fn send_ctrl(app: &AppHandle, vk: u32) -> Result<(), String> {
+    with_enigo(app, |enigo| {
+        enigo
+            .key(Key::Control, Direction::Press)
+            .map_err(|e| format!("Failed to press Ctrl: {}", e))?;
+        let click = enigo
+            .key(Key::Other(vk), Direction::Click)
+            .map_err(|e| format!("Failed to press the key: {}", e));
+        enigo
+            .key(Key::Control, Direction::Release)
+            .map_err(|e| format!("Failed to release Ctrl: {}", e))?;
+        click
+    })
+}
+
+/// Presses one virtual key in the app in front.
+pub(crate) fn send_key(app: &AppHandle, vk: u32) -> Result<(), String> {
+    with_enigo(app, |enigo| {
+        enigo
+            .key(Key::Other(vk), Direction::Click)
+            .map_err(|e| format!("Failed to press the key: {}", e))
+    })
+}
+
 fn with_enigo<T>(
     app: &AppHandle,
     f: impl FnOnce(&mut Enigo) -> Result<T, String>,
@@ -152,7 +183,7 @@ fn with_enigo<T>(
 /// Waits until Win, Alt, Ctrl and Shift are up, so the Ctrl+C below isn't
 /// read as Win+Alt+Ctrl+C.
 #[cfg(windows)]
-fn wait_for_keys_up() {
+pub(crate) fn wait_for_keys_up() {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
     };
@@ -170,13 +201,13 @@ fn wait_for_keys_up() {
 }
 
 #[cfg(not(windows))]
-fn wait_for_keys_up() {
+pub(crate) fn wait_for_keys_up() {
     std::thread::sleep(Duration::from_millis(200));
 }
 
 /// Sends Ctrl+C and reads what the app copied, then puts back whatever the
 /// clipboard held before.
-fn copy_selection(app: &AppHandle) -> Result<Option<String>, String> {
+pub(crate) fn copy_selection(app: &AppHandle) -> Result<Option<String>, String> {
     let clipboard = app.clipboard();
     let saved_text = clipboard.read_text().ok().filter(|t| !t.is_empty());
     let saved_image = if saved_text.is_none() {
@@ -187,18 +218,7 @@ fn copy_selection(app: &AppHandle) -> Result<Option<String>, String> {
     // Empty first, so an app with nothing selected can't hand back the old text.
     let _ = clipboard.clear();
 
-    let sent = with_enigo(app, |enigo| {
-        enigo
-            .key(Key::Control, Direction::Press)
-            .map_err(|e| format!("Failed to press Ctrl: {}", e))?;
-        let click = enigo
-            .key(Key::Other(0x43), Direction::Click) // VK_C
-            .map_err(|e| format!("Failed to press C: {}", e));
-        enigo
-            .key(Key::Control, Direction::Release)
-            .map_err(|e| format!("Failed to release Ctrl: {}", e))?;
-        click
-    });
+    let sent = send_ctrl(app, 0x43); // VK_C
 
     let mut copied = None;
     if sent.is_ok() {

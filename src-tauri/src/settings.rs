@@ -1,3 +1,4 @@
+pub use crate::transform_rules::{Transform, TransformOutput};
 use crate::utils;
 use log::{debug, warn};
 use serde::de::{self, Visitor};
@@ -463,6 +464,34 @@ pub struct AppSettings {
     /// The last successful Test connection, shown in the AI status line.
     #[serde(default)]
     pub ai_last_test: Option<AiLastTest>,
+    /// Named prompts, in the order the picker lists them. Each one's shortcut
+    /// is the binding `transform:<id>`.
+    #[serde(default = "crate::transform_rules::shipped")]
+    pub transforms: Vec<Transform>,
+    /// The transform Dictate then transform runs when none is set to run
+    /// after every dictation.
+    #[serde(default = "default_dictate_transform_id")]
+    pub dictate_transform_id: String,
+    /// The transform that runs after every dictation, if any.
+    #[serde(default)]
+    pub auto_transform_id: Option<String>,
+    #[serde(default = "default_true")]
+    pub auto_transform_skip_code: bool,
+    #[serde(default = "default_true")]
+    pub auto_transform_skip_ai: bool,
+    /// Dictations with fewer words aren't transformed after dictation.
+    #[serde(default = "default_auto_transform_min_words")]
+    pub auto_transform_min_words: u32,
+    /// Ask about the selection (Win+Alt+A).
+    #[serde(default = "default_true")]
+    pub ask_enabled: bool,
+    /// The Legato bar says what was pasted where, with Undo.
+    #[serde(default = "default_true")]
+    pub bar_confirm_paste: bool,
+    /// The Legato bar shows a transform's changes with Keep and Undo, for
+    /// transforms that ask for it.
+    #[serde(default = "default_true")]
+    pub bar_show_changes: bool,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
@@ -670,6 +699,18 @@ fn default_ai_min_words() -> u32 {
 
 fn default_ai_timeout_secs() -> u32 {
     6
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_dictate_transform_id() -> String {
+    crate::transform_rules::DEFAULT_DICTATE_TRANSFORM.to_string()
+}
+
+fn default_auto_transform_min_words() -> u32 {
+    5
 }
 
 fn default_post_process_providers() -> Vec<PostProcessProvider> {
@@ -917,6 +958,65 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "super+alt+w".to_string(),
         },
     );
+    for (id, name, description, keys) in [
+        (
+            "paste_last",
+            "Paste last transcript",
+            "Pastes your last dictation wherever the cursor is.",
+            "alt+shift+z",
+        ),
+        (
+            "copy_last",
+            "Copy last transcript",
+            "Puts your last dictation on the clipboard.",
+            "alt+shift+x",
+        ),
+        (
+            "transform_selection",
+            "Transform the selection",
+            "Picks a transform for the text selected in any app.",
+            "super+alt+t",
+        ),
+        (
+            "ask",
+            "Ask about the selection",
+            "Hold it and say what to do with the selected text.",
+            "super+alt+a",
+        ),
+        (
+            "view_changes",
+            "View last changes",
+            "Shows what the last transform changed, with Keep and Undo.",
+            "super+alt+o",
+        ),
+    ] {
+        bindings.insert(
+            id.to_string(),
+            ShortcutBinding {
+                id: id.to_string(),
+                name: name.to_string(),
+                description: description.to_string(),
+                default_binding: keys.to_string(),
+                current_binding: keys.to_string(),
+            },
+        );
+    }
+    let shipped = crate::transform_rules::shipped();
+    for ((id, keys), transform) in crate::transform_rules::shipped_shortcuts()
+        .into_iter()
+        .zip(shipped.iter())
+    {
+        bindings.insert(
+            id.clone(),
+            ShortcutBinding {
+                id,
+                name: transform.name.clone(),
+                description: transform.description.clone(),
+                default_binding: keys.to_string(),
+                current_binding: keys.to_string(),
+            },
+        );
+    }
 
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
@@ -962,6 +1062,15 @@ pub fn get_default_settings() -> AppSettings {
         ai_min_words: default_ai_min_words(),
         ai_timeout_secs: default_ai_timeout_secs(),
         ai_last_test: None,
+        transforms: crate::transform_rules::shipped(),
+        dictate_transform_id: default_dictate_transform_id(),
+        auto_transform_id: None,
+        auto_transform_skip_code: true,
+        auto_transform_skip_ai: true,
+        auto_transform_min_words: default_auto_transform_min_words(),
+        ask_enabled: true,
+        bar_confirm_paste: true,
+        bar_show_changes: true,
         mute_while_recording: false,
         append_trailing_space: false,
         theme: default_theme(),
@@ -1054,6 +1163,10 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
                 updated = true;
             }
         }
+        // Every transform has a binding, empty when it has no shortcut.
+        if ensure_transform_bindings(&mut settings) {
+            updated = true;
+        }
 
         if updated {
             store.set("settings", serde_json::to_value(&settings).unwrap());
@@ -1116,6 +1229,32 @@ fn apply_settings_migrations(
     settings_value: &serde_json::Value,
 ) -> bool {
     let mut updated = false;
+
+    // Handy's post-processing prompts become transforms, once.
+    if settings_value.get("transforms").is_none() {
+        let stock = default_post_process_prompts()
+            .into_iter()
+            .next()
+            .map(|p| p.prompt)
+            .unwrap_or_default();
+        let old: Vec<crate::transform_rules::OldPrompt> = settings
+            .post_process_prompts
+            .iter()
+            .map(|p| crate::transform_rules::OldPrompt {
+                id: &p.id,
+                name: &p.name,
+                prompt: &p.prompt,
+            })
+            .collect();
+        let (transforms, dictate) = crate::transform_rules::from_old_prompts(
+            &old,
+            &stock,
+            settings.post_process_selected_prompt_id.as_deref(),
+        );
+        settings.transforms = transforms;
+        settings.dictate_transform_id = dictate;
+        updated = true;
+    }
 
     // One-time onboarding migration: users with an explicit selected model have
     // already made it through model selection. Users who merely have compatible
@@ -1243,10 +1382,32 @@ pub fn write_settings(app: &AppHandle, settings: AppSettings) {
     store.set("settings", serde_json::to_value(&settings).unwrap());
 }
 
-pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
-    let settings = get_settings(app);
+/// Adds an empty binding for each transform that has none. Returns whether
+/// anything was added.
+pub fn ensure_transform_bindings(settings: &mut AppSettings) -> bool {
+    let mut added = false;
+    for transform in &settings.transforms {
+        let id = crate::transform_rules::binding_id(&transform.id);
+        if let std::collections::hash_map::Entry::Vacant(entry) =
+            settings.bindings.entry(id.clone())
+        {
+            entry.insert(ShortcutBinding {
+                id,
+                name: transform.name.clone(),
+                description: transform.description.clone(),
+                default_binding: String::new(),
+                current_binding: String::new(),
+            });
+            added = true;
+        }
+    }
+    added
+}
 
-    settings.bindings
+impl AppSettings {
+    pub fn transform(&self, id: &str) -> Option<&Transform> {
+        self.transforms.iter().find(|t| t.id == id)
+    }
 }
 
 pub fn get_stored_binding(settings: &AppSettings, id: &str) -> Result<ShortcutBinding, String> {

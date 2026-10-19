@@ -106,6 +106,33 @@ impl AiConfig {
         })
     }
 
+    /// A transform's own provider and model when it has them, otherwise the
+    /// active ones.
+    pub fn for_transform(
+        settings: &AppSettings,
+        transform: &crate::settings::Transform,
+    ) -> Option<Self> {
+        let (Some(provider_id), Some(model)) = (&transform.provider_id, &transform.model) else {
+            return Self::from_settings(settings);
+        };
+        let provider = settings
+            .post_process_providers
+            .iter()
+            .find(|p| &p.id == provider_id)?
+            .clone();
+        let model = model.trim().to_string();
+        let api_key = secrets::api_key(settings, &provider.id);
+        if model.is_empty() || (needs_key(&provider.id) && api_key.trim().is_empty()) {
+            return None;
+        }
+        Some(Self {
+            provider,
+            model,
+            api_key,
+            timeout: Duration::from_secs(u64::from(settings.ai_timeout_secs.clamp(1, 60))),
+        })
+    }
+
     fn disable_reasoning(&self) -> bool {
         matches!(
             self.provider.id.as_str(),
@@ -265,6 +292,43 @@ impl AiProblem {
             provider_label: config.provider.label.clone(),
         }
     }
+
+    /// No model is set up for the provider a step needs.
+    pub fn not_set_up(settings: &AppSettings, provider_id: Option<&str>) -> Self {
+        let id = provider_id.unwrap_or(&settings.post_process_provider_id);
+        let label = settings
+            .post_process_providers
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.label.clone())
+            .unwrap_or_default();
+        Self {
+            kind: AiStatusKind::None,
+            provider_id: id.to_string(),
+            provider_label: label,
+        }
+    }
+}
+
+/// Sends one request with no answer format, waits at most `timeout` and
+/// reports how the provider answered.
+pub async fn run(
+    app: &AppHandle,
+    config: &AiConfig,
+    system: &str,
+    user: String,
+    timeout: Duration,
+) -> Result<String, AiProblem> {
+    match ask(config, system, user, None, timeout).await {
+        Ok(text) => {
+            report(app, config, AiStatusKind::Ok);
+            Ok(text)
+        }
+        Err(kind) => {
+            report(app, config, kind);
+            Err(AiProblem::new(config, kind))
+        }
+    }
 }
 
 /// Shown on the recording pill after a paste that went out without the AI's
@@ -285,29 +349,6 @@ impl From<&AiProblem> for AiNotice {
             problem: problem.kind,
             provider_id: problem.provider_id.clone(),
             provider_label: problem.provider_label.clone(),
-        }
-    }
-}
-
-/// Runs a transform's request under the shared time limit and reports how
-/// the provider answered.
-pub async fn guard<T, F>(app: &AppHandle, config: &AiConfig, call: F) -> Result<T, AiProblem>
-where
-    F: std::future::Future<Output = Result<T, String>>,
-{
-    match tokio::time::timeout(config.timeout, call).await {
-        Err(_) => {
-            report(app, config, AiStatusKind::Slow);
-            Err(AiProblem::new(config, AiStatusKind::Slow))
-        }
-        Ok(Err(e)) => {
-            let kind = ai_rules::classify_error(&e);
-            report(app, config, kind);
-            Err(AiProblem::new(config, kind))
-        }
-        Ok(Ok(value)) => {
-            report(app, config, AiStatusKind::Ok);
-            Ok(value)
         }
     }
 }

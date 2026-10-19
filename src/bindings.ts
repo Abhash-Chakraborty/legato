@@ -261,38 +261,6 @@ async fetchPostProcessModels(providerId: string) : Promise<Result<string[], stri
     else return { status: "error", error: e  as any };
 }
 },
-async addPostProcessPrompt(name: string, prompt: string) : Promise<Result<LLMPrompt, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("add_post_process_prompt", { name, prompt }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async updatePostProcessPrompt(id: string, name: string, prompt: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("update_post_process_prompt", { id, name, prompt }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async deletePostProcessPrompt(id: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_post_process_prompt", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async setPostProcessSelectedPrompt(id: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_post_process_selected_prompt", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 /**
  * Temporarily unregister all bindings while the user is recording a
  * shortcut in the UI. This avoids firing actions while keys are recorded.
@@ -1060,6 +1028,157 @@ async changeAiTimeoutSetting(seconds: number) : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getTransformRuns() : Promise<Result<TransformRuns, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_transform_runs") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async clearTransformRuns() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_transform_runs") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveTransform(transform: Transform) : Promise<Result<Transform, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_transform", { transform }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteTransform(id: string) : Promise<Result<DeletedTransform, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_transform", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreTransform(deleted: DeletedTransform) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_transform", { deleted }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setTransformEnabled(id: string, enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_transform_enabled", { id, enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async moveTransform(id: string, to: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("move_transform", { id, to }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async clearTransformShortcut(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_transform_shortcut", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAutoTransformSetting(id: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_auto_transform_setting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeDictateTransformSetting(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_dictate_transform_setting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAutoTransformSkipCodeSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_auto_transform_skip_code_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAutoTransformSkipAiSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_auto_transform_skip_ai_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAutoTransformMinWordsSetting(words: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_auto_transform_min_words_setting", { words }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAskEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_ask_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeBarConfirmPasteSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_bar_confirm_paste_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeBarShowChangesSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_bar_show_changes_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async tryTransform(transform: Transform, text: string) : Promise<Result<TryOutcome, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("try_transform", { transform, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async newTransform() : Promise<Transform> {
+    return await TAURI_INVOKE("new_transform");
+},
+async barUndo() : Promise<void> {
+    return await TAURI_INVOKE("bar_undo");
+},
+async barKeep() : Promise<void> {
+    return await TAURI_INVOKE("bar_keep");
+},
+async barPick(id: string) : Promise<void> {
+    return await TAURI_INVOKE("bar_pick", { id });
+},
+async barDismiss() : Promise<void> {
+    return await TAURI_INVOKE("bar_dismiss");
 }
 }
 
@@ -1071,13 +1190,15 @@ aiStatusChanged: AiStatusChanged,
 dictionaryChanged: DictionaryChanged,
 historyUpdatePayload: HistoryUpdatePayload,
 streamPhaseEvent: StreamPhaseEvent,
-streamTextEvent: StreamTextEvent
+streamTextEvent: StreamTextEvent,
+transformRunsChanged: TransformRunsChanged
 }>({
 aiStatusChanged: "ai-status-changed",
 dictionaryChanged: "dictionary-changed",
 historyUpdatePayload: "history-update-payload",
 streamPhaseEvent: "stream-phase-event",
-streamTextEvent: "stream-text-event"
+streamTextEvent: "stream-text-event",
+transformRunsChanged: "transform-runs-changed"
 })
 
 /** user-defined constants **/
@@ -1332,7 +1453,38 @@ ai_timeout_secs?: number;
 /**
  * The last successful Test connection, shown in the AI status line.
  */
-ai_last_test?: AiLastTest | null; mute_while_recording?: boolean; append_trailing_space?: boolean; theme?: Theme; 
+ai_last_test?: AiLastTest | null; 
+/**
+ * Named prompts, in the order the picker lists them. Each one's shortcut
+ * is the binding `transform:<id>`.
+ */
+transforms?: Transform[]; 
+/**
+ * The transform Dictate then transform runs when none is set to run
+ * after every dictation.
+ */
+dictate_transform_id?: string; 
+/**
+ * The transform that runs after every dictation, if any.
+ */
+auto_transform_id?: string | null; auto_transform_skip_code?: boolean; auto_transform_skip_ai?: boolean; 
+/**
+ * Dictations with fewer words aren't transformed after dictation.
+ */
+auto_transform_min_words?: number; 
+/**
+ * Ask about the selection (Win+Alt+A).
+ */
+ask_enabled?: boolean; 
+/**
+ * The Legato bar says what was pasted where, with Undo.
+ */
+bar_confirm_paste?: boolean; 
+/**
+ * The Legato bar shows a transform's changes with Keep and Undo, for
+ * transforms that ask for it.
+ */
+bar_show_changes?: boolean; mute_while_recording?: boolean; append_trailing_space?: boolean; theme?: Theme; 
 /**
  * Use the standard Windows title bar instead of Legato's own. Applied when
  * the main window is created and whenever the setting changes.
@@ -1454,6 +1606,90 @@ export type ImplementationChangeResult = { success: boolean;
  */
 reset_bindings: string[] }
 export type KeyboardImplementation = "tauri" | "handy_keys"
+/**
+ * A deleted transform with what it held, so Undo can put it back.
+ */
+export type DeletedTransform = { transform: Transform; index: number; shortcut: string; was_auto: boolean; was_dictate: boolean }
+/**
+ * What a transform ran on.
+ */
+export type RunSource = "selection" | 
+/**
+ * Nothing was selected, so it ran on the last dictation.
+ */
+"last_dictation" | 
+/**
+ * Dictate then transform, or the transform after every dictation.
+ */
+"dictation" | "ask"
+export type RunResult = "kept" | "undone" | 
+/**
+ * The result went to the clipboard instead of being pasted.
+ */
+"copied" | "failed"
+/**
+ * A named prompt that rewrites dictated or selected text.
+ */
+export type Transform = { id: string; name: string; description?: string; prompt: string; 
+/**
+ * Shipped with Legato. Built-in transforms can be edited, not deleted.
+ */
+built_in?: boolean; enabled?: boolean; 
+/**
+ * A provider for this transform alone, with `model`. None uses the one
+ * in Settings › AI.
+ */
+provider_id?: string | null; model?: string | null; output?: TransformOutput; 
+/**
+ * Show a word diff with Keep and Undo after it runs.
+ */
+show_changes?: boolean }
+/**
+ * Where a transform's result goes.
+ */
+export type TransformOutput = 
+/**
+ * Pasted over the selection, or at the cursor when nothing was selected.
+ */
+"replace" | 
+/**
+ * Pasted on a new line after the selection, which stays as it was.
+ */
+"below" | 
+/**
+ * Put on the clipboard only.
+ */
+"copy"
+export type TransformRun = { id: number; at: number; transform_id: string; 
+/**
+ * The transform's name when it ran.
+ */
+name: string; source: RunSource; app_name: string | null; app_path: string | null; in_words: number; out_words: number; ms: number; result: RunResult; 
+/**
+ * Why it failed, in the status line's words.
+ */
+error: string | null; history_id: number | null }
+export type TransformRuns = { runs: TransformRun[]; usage: TransformUsage[] }
+/**
+ * Sent when a run is added or its result changes.
+ */
+export type TransformRunsChanged = null
+/**
+ * How much a transform is used, for its card.
+ */
+export type TransformUsage = { transform_id: string; 
+/**
+ * Runs that didn't fail.
+ */
+uses: number; avg_ms: number; last_at: number }
+/**
+ * What Try it got back.
+ */
+export type TryOutcome = { text: string | null; ms: number; 
+/**
+ * Why there is no text, when the provider didn't answer properly.
+ */
+problem: AiStatusKind | null }
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
