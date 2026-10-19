@@ -146,6 +146,22 @@ pub static MIGRATIONS: &[M] = &[
          );
          CREATE INDEX transform_run_at ON transform_run (at);",
     ),
+    // Snippets: a trigger phrase and the text it pastes.
+    M::up(
+        "CREATE TABLE snippet (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trigger TEXT NOT NULL,
+            text TEXT NOT NULL,
+            alone INTEGER NOT NULL DEFAULT 0,
+            uses INTEGER NOT NULL DEFAULT 0,
+            added_at INTEGER NOT NULL,
+            last_used_at INTEGER,
+            last_app TEXT,
+            last_app_path TEXT
+         );",
+    ),
+    // What the model heard, for Style's Heard and Pasted example.
+    M::up("ALTER TABLE transcription_history ADD COLUMN heard_text TEXT;"),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.
@@ -250,12 +266,14 @@ pub struct HistoryEntry {
     pub paste_ms: Option<i64>,
     pub status: Option<DictationStatus>,
     pub error: Option<String>,
+    /// What the model heard, before the Dictionary, cleanup and Style.
+    pub heard_text: Option<String>,
 }
 
 pub const COLUMNS: &str = "id, file_name, timestamp, saved, title, transcription_text,
     post_processed_text, post_process_prompt, post_process_requested, app_exe, app_path,
     app_name, app_title, app_site, category, paste_app_name, speech_ms, word_count,
-    model_id, model_name, transform, fixes, paste_ms, status, error";
+    model_id, model_name, transform, fixes, paste_ms, status, error, heard_text";
 
 pub fn map_entry(row: &Row<'_>) -> rusqlite::Result<HistoryEntry> {
     let fixes: Option<String> = row.get("fixes")?;
@@ -288,6 +306,7 @@ pub fn map_entry(row: &Row<'_>) -> rusqlite::Result<HistoryEntry> {
         paste_ms: row.get("paste_ms")?,
         status: status.as_deref().and_then(DictationStatus::parse),
         error: row.get("error")?,
+        heard_text: row.get("heard_text")?,
     })
 }
 
@@ -319,6 +338,7 @@ pub struct NewEntry {
     pub model_name: Option<String>,
     pub status: Option<DictationStatus>,
     pub fixes: Vec<AppliedFix>,
+    pub heard_text: Option<String>,
 }
 
 /// How the paste went.
@@ -436,8 +456,8 @@ pub fn insert(conn: &mut Connection, new: &NewEntry) -> Result<HistoryEntry> {
             file_name, timestamp, saved, title, transcription_text, post_processed_text,
             post_process_prompt, post_process_requested, app_exe, app_path, app_name,
             app_title, app_site, category, speech_ms, word_count, model_id, model_name,
-            transform, status, fixes
-         ) VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+            transform, status, fixes, heard_text
+         ) VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
         params![
             new.file_name,
             new.timestamp,
@@ -459,6 +479,7 @@ pub fn insert(conn: &mut Connection, new: &NewEntry) -> Result<HistoryEntry> {
             new.transform,
             new.status.map(DictationStatus::as_str),
             fixes_json(&new.fixes),
+            new.heard_text,
         ],
     )?;
     let entry = get(&tx, tx.last_insert_rowid())?.ok_or_else(|| anyhow!("Saved row is missing"))?;
@@ -516,6 +537,7 @@ pub fn update_transcription(
     transform: Option<&str>,
     model: Option<(&str, &str)>,
     fixes: &[AppliedFix],
+    heard_text: Option<&str>,
 ) -> Result<HistoryEntry> {
     let tx = conn.transaction()?;
     let before = get(&tx, id)?.ok_or_else(|| anyhow!("History entry {} not found", id))?;
@@ -531,7 +553,7 @@ pub fn update_transcription(
          SET transcription_text = ?1, post_processed_text = ?2, post_process_prompt = ?3,
              transform = ?4, word_count = ?5, status = ?6, error = NULL,
              model_id = COALESCE(?7, model_id), model_name = COALESCE(?8, model_name),
-             fixes = ?9
+             fixes = ?9, heard_text = COALESCE(?11, heard_text)
          WHERE id = ?10",
         params![
             transcription_text,
@@ -543,7 +565,8 @@ pub fn update_transcription(
             model.map(|(id, _)| id),
             model.map(|(_, name)| name),
             fixes_json(fixes),
-            id
+            id,
+            heard_text
         ],
     )?;
     let after = get(&tx, id)?.ok_or_else(|| anyhow!("History entry {} not found", id))?;
@@ -951,6 +974,37 @@ fn fixed_today(conn: &Connection) -> Result<Vec<TodayFix>> {
     Ok(out)
 }
 
+/// An app dictated into, as Style › Edit apps lists it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SeenApp {
+    pub exe_path: String,
+    /// The latest window title, which tells sites and Claude Code apart.
+    pub title: String,
+    pub words: i64,
+    pub last_at: i64,
+}
+
+/// Apps and sites dictated into, most words first.
+pub fn seen_apps(conn: &Connection, limit: usize) -> Result<Vec<SeenApp>> {
+    let mut stmt = conn.prepare(
+        "SELECT app_path, app_title, SUM(COALESCE(word_count, 0)) AS words, MAX(timestamp) AS last_at
+         FROM transcription_history
+         WHERE app_path IS NOT NULL AND app_path != ''
+         GROUP BY app_exe, COALESCE(app_site, ''), app_name
+         ORDER BY words DESC, last_at DESC
+         LIMIT ?1",
+    )?;
+    let rows = stmt.query_map([limit as i64], |row| {
+        Ok(SeenApp {
+            exe_path: row.get(0)?,
+            title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            words: row.get(2)?,
+            last_at: row.get(3)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
 pub fn summary(conn: &Connection) -> Result<HistorySummary> {
     let today = conn
         .query_row(
@@ -1148,6 +1202,7 @@ mod tests {
             None,
             None,
             &[],
+            None,
         )
         .unwrap();
         assert_eq!(fixed.status, None);
@@ -1187,7 +1242,7 @@ mod tests {
     fn search_follows_deletes_and_updates() {
         let mut conn = db();
         let a = insert(&mut conn, &entry("alpha", None)).unwrap();
-        update_transcription(&mut conn, a.id, "beta", None, None, None, None, &[]).unwrap();
+        update_transcription(&mut conn, a.id, "beta", None, None, None, None, &[], None).unwrap();
         let count = |conn: &Connection, s: &str| {
             query(
                 conn,

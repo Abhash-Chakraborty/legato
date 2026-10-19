@@ -927,6 +927,7 @@ impl TranscriptionManager {
         };
         let settings = get_settings(&self.app_handle);
         let lexicon = crate::managers::dictionary::lexicon();
+        let heard = normalize_transcription_output(outcome.text.trim());
         let (final_result, fixes) = finish_text(outcome, &settings, &lexicon.corrector);
 
         let translation_note = if settings.translate_to_english {
@@ -959,6 +960,7 @@ impl TranscriptionManager {
         Ok(FinishedText {
             text: final_result,
             fixes,
+            heard,
         })
     }
 
@@ -1099,6 +1101,8 @@ struct RunOutcome {
 pub struct FinishedText {
     pub text: String,
     pub fixes: Vec<DictionaryCorrection>,
+    /// What the model heard, before the Dictionary and filler removal.
+    pub heard: String,
 }
 
 /// One transcription's final text: its output language resolved, then
@@ -1498,6 +1502,7 @@ fn post_process_transcription_text(
             OutputLanguageEvidence::Unknown
                 if converts_script
                     || (settings.filler_word_removal_enabled
+                        && settings.cleanup_level != crate::settings::CleanupLevel::None
                         && settings.custom_filler_words.is_none()) =>
             {
                 match detect_output_language(&raw, supported_languages) {
@@ -1534,11 +1539,13 @@ fn post_process_transcription_text(
             )
         };
 
+        // Fillers are part of cleanup; at None the text stays as dictated.
         let without_fillers = remove_filler_words(
             &corrected,
             &output_language,
             &settings.custom_filler_words,
-            settings.filler_word_removal_enabled,
+            settings.filler_word_removal_enabled
+                && settings.cleanup_level != crate::settings::CleanupLevel::None,
         );
 
         (normalize_transcription_output(&without_fillers), fixes)

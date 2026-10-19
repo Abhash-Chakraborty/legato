@@ -6,10 +6,11 @@
 //! the slower lookups (the app's display name, its category) happen later,
 //! when the history row is written.
 
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 
 /// The window in front, as read from Windows.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,6 +44,120 @@ impl AppCategory {
             AppCategory::Code => "code",
             AppCategory::Other => "other",
         }
+    }
+}
+
+/// What an app rule matches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum AppRuleKind {
+    /// An app, by its name ("Claude Code") or executable ("slack.exe").
+    App,
+    /// A website in a browser, by text in its tab title ("Gmail").
+    Site,
+}
+
+/// A move made on Style › Edit apps: this app or site belongs to that kind
+/// of app. Rules win over the built-in lists.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct AppRule {
+    pub kind: AppRuleKind,
+    /// Lower case: an executable, an app name or text in a tab title.
+    pub pattern: String,
+    /// How the Style page names it.
+    pub name: String,
+    pub category: AppCategory,
+}
+
+static RULES: Lazy<RwLock<Vec<AppRule>>> = Lazy::new(Default::default);
+
+/// Replaces the rules `resolve` applies; called at startup and whenever
+/// Edit apps saves.
+pub fn set_rules(rules: Vec<AppRule>) {
+    match RULES.write() {
+        Ok(mut slot) => *slot = rules,
+        Err(e) => *e.into_inner() = rules,
+    }
+}
+
+fn apply_rules(info: &mut AppInfo, rules: &[AppRule]) {
+    if BROWSERS.contains(&info.exe.as_str()) {
+        let title = info.title.to_lowercase();
+        if let Some(rule) = rules.iter().find(|r| {
+            r.kind == AppRuleKind::Site && !r.pattern.is_empty() && title.contains(&r.pattern)
+        }) {
+            info.site = Some(rule.name.clone());
+            info.category = rule.category;
+            return;
+        }
+        if info.site.is_some() {
+            // A built-in site keeps its kind unless a rule names it.
+            if let Some(rule) = rules.iter().find(|r| {
+                r.kind == AppRuleKind::Site
+                    && info
+                        .site
+                        .as_deref()
+                        .is_some_and(|s| s.eq_ignore_ascii_case(&r.pattern))
+            }) {
+                info.category = rule.category;
+            }
+            return;
+        }
+    }
+    let name = info.name.to_lowercase();
+    if let Some(rule) = rules
+        .iter()
+        .filter(|r| r.kind == AppRuleKind::App)
+        .find(|r| r.pattern == name)
+        .or_else(|| {
+            rules
+                .iter()
+                .filter(|r| r.kind == AppRuleKind::App)
+                .find(|r| r.pattern == info.exe)
+        })
+    {
+        info.category = rule.category;
+    }
+}
+
+/// The kind of app a rule's target has without any rules.
+pub fn builtin_category(rule: &AppRule) -> AppCategory {
+    match rule.kind {
+        AppRuleKind::Site => SITES
+            .iter()
+            .find(|(s, _)| s.eq_ignore_ascii_case(&rule.pattern))
+            .map(|(_, c)| *c)
+            .unwrap_or(AppCategory::Other),
+        AppRuleKind::App if rule.pattern == "claude code" => AppCategory::Ai,
+        AppRuleKind::App => APPS
+            .iter()
+            .find(|(e, _)| *e == rule.pattern)
+            .map(|(_, c)| *c)
+            .unwrap_or(AppCategory::Other),
+    }
+}
+
+/// The rule that moves this app or site, for Edit apps.
+pub fn rule_for(info: &AppInfo, category: AppCategory) -> AppRule {
+    match &info.site {
+        Some(site) => AppRule {
+            kind: AppRuleKind::Site,
+            pattern: site.to_lowercase(),
+            name: site.clone(),
+            category,
+        },
+        None if info.name == "Claude Code" => AppRule {
+            kind: AppRuleKind::App,
+            pattern: "claude code".into(),
+            name: info.name.clone(),
+            category,
+        },
+        None => AppRule {
+            kind: AppRuleKind::App,
+            pattern: info.exe.clone(),
+            name: info.name.clone(),
+            category,
+        },
     }
 }
 
@@ -97,7 +212,13 @@ pub fn resolve(window: &ForegroundWindow) -> AppInfo {
         .unwrap_or(&window.exe_path)
         .to_ascii_lowercase();
     let described = cached_description(&window.exe_path);
-    classify(&window.exe_path, &exe, described.as_deref(), &window.title)
+    let mut info = classify(&window.exe_path, &exe, described.as_deref(), &window.title);
+    let rules = RULES
+        .read()
+        .map(|r| r.clone())
+        .unwrap_or_else(|e| e.into_inner().clone());
+    apply_rules(&mut info, &rules);
+    info
 }
 
 /// The app's icon as a PNG, for the history list.
@@ -528,6 +649,52 @@ mod tests {
 
     fn info(exe: &str, described: Option<&str>, title: &str) -> AppInfo {
         classify(&format!("C:\\Apps\\{exe}"), exe, described, title)
+    }
+
+    #[test]
+    fn rules_move_apps_and_sites() {
+        let rules = vec![
+            AppRule {
+                kind: AppRuleKind::App,
+                pattern: "slack.exe".into(),
+                name: "Slack".into(),
+                category: AppCategory::Personal,
+            },
+            AppRule {
+                kind: AppRuleKind::Site,
+                pattern: "linear".into(),
+                name: "Linear".into(),
+                category: AppCategory::Work,
+            },
+            AppRule {
+                kind: AppRuleKind::Site,
+                pattern: "gmail".into(),
+                name: "Gmail".into(),
+                category: AppCategory::Other,
+            },
+        ];
+        let mut slack = info("slack.exe", Some("Slack"), "general - Slack");
+        apply_rules(&mut slack, &rules);
+        assert_eq!(slack.category, AppCategory::Personal);
+        let mut linear = info(
+            "chrome.exe",
+            Some("Google Chrome"),
+            "LIN-12 - Linear - Google Chrome",
+        );
+        apply_rules(&mut linear, &rules);
+        assert_eq!(
+            (linear.site.as_deref(), linear.category),
+            (Some("Linear"), AppCategory::Work)
+        );
+        let mut gmail = info(
+            "chrome.exe",
+            Some("Google Chrome"),
+            "Inbox - Gmail - Google Chrome",
+        );
+        apply_rules(&mut gmail, &rules);
+        assert_eq!(gmail.category, AppCategory::Other);
+        assert_eq!(builtin_category(&rules[0]), AppCategory::Work);
+        assert_eq!(rule_for(&linear, AppCategory::Ai).pattern, "linear");
     }
 
     #[test]

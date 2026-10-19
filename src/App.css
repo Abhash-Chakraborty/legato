@@ -130,7 +130,9 @@ body {
 ::highlight(settings-search),
 ::highlight(history-search),
 ::highlight(dictionary-search),
-::highlight(runs-search) {
+::highlight(runs-search),
+::highlight(snippets-search),
+::highlight(apps-search) {
   background-color: var(--teal-100);
   color: var(--text);
 }

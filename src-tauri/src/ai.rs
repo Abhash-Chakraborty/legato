@@ -360,6 +360,81 @@ pub struct Corrected {
     pub changes: Vec<(String, String)>,
 }
 
+/// Cleanup at Medium: one request that fixes grammar and false starts and,
+/// when the correction pass is on, Dictionary spellings too. `text` carries
+/// snippet placeholders, which the answer must keep. Ok(None) means it
+/// didn't run or the answer was thrown away; the rule-based text is pasted.
+pub async fn medium_pass(
+    app: &AppHandle,
+    settings: &AppSettings,
+    text: &str,
+    placeholders: usize,
+) -> Result<Option<String>, AiProblem> {
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    if (text.split_whitespace().count() as u32) < settings.ai_min_words {
+        debug!("Cleanup at Medium skipped: dictation is shorter than the minimum");
+        return Ok(None);
+    }
+    let Some(config) = AiConfig::from_settings(settings) else {
+        return Ok(None);
+    };
+    let entries = if settings.ai_correction_enabled {
+        let mut entries = app
+            .try_state::<Arc<DictionaryManager>>()
+            .and_then(|d| d.list().ok())
+            .unwrap_or_default();
+        entries.sort_by(|a, b| b.pinned.cmp(&a.pinned).then(b.hits.cmp(&a.hits)));
+        entries
+    } else {
+        Vec::new()
+    };
+    let words: Vec<PromptWord> = entries
+        .iter()
+        .map(|e| PromptWord {
+            text: &e.text,
+            heard: &e.heard,
+        })
+        .collect();
+    let input = crate::snippet_rules::to_ai(text);
+    let request = ai_rules::cleanup_request(&words, &input);
+    let started = Instant::now();
+    let answer = match ask(
+        &config,
+        ai_rules::CLEANUP_SYSTEM_PROMPT,
+        request,
+        None,
+        config.timeout,
+    )
+    .await
+    {
+        Ok(answer) => answer,
+        Err(kind) => {
+            warn!(
+                "Cleanup at Medium skipped: {} answered {:?} after {:?}",
+                config.provider.id,
+                kind,
+                started.elapsed()
+            );
+            report(app, &config, kind);
+            return Err(AiProblem::new(&config, kind));
+        }
+    };
+    report(app, &config, AiStatusKind::Ok);
+    let cleaned = crate::transform_rules::clean_answer(&answer, &input);
+    if !ai_rules::plausible_cleanup(&input, &cleaned) {
+        warn!("Cleanup at Medium: the answer changed too much, kept the rule-based text");
+        return Ok(None);
+    }
+    let Some(restored) = crate::snippet_rules::from_ai(&cleaned, placeholders) else {
+        warn!("Cleanup at Medium: the answer lost a snippet, kept the rule-based text");
+        return Ok(None);
+    };
+    debug!("Cleanup at Medium took {:?}", started.elapsed());
+    Ok(Some(restored))
+}
+
 /// Lets the model fix misheard Dictionary words, when Settings › AI allows
 /// it. Ok(None) means the pass didn't run: it is off, the AI isn't set up,
 /// the Dictionary is empty or the dictation is short.

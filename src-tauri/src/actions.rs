@@ -13,13 +13,14 @@ use crate::managers::model::ModelManager;
 use crate::managers::transcription::policy::{live_decode, LiveDecode, ModelTraits};
 use crate::managers::transcription::TranscriptionManager;
 use crate::managers::transcription::{FinishedText, StreamWorkKind};
-use crate::settings::{get_settings, AppSettings, OverlayStyle, PasteMethod};
+use crate::settings::{get_settings, AppSettings, CleanupLevel, OverlayStyle, PasteMethod};
 use crate::shortcut;
 use crate::tray::{set_tray_state, TrayIconState};
 use crate::utils::{
     self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
 };
 use crate::TranscriptionCoordinator;
+use crate::{cleanup_rules, snippet_rules, style_rules};
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -28,6 +29,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
@@ -117,7 +119,7 @@ fn app_fields(info: AppInfo) -> AppFields {
 }
 
 pub(crate) struct ProcessedTranscription {
-    /// The transcript after the AI correction pass, or as it came in.
+    /// The transcript after the correction pass, snippets, cleanup and Style.
     pub transcription: String,
     /// Words the correction pass fixed, as (heard text, Dictionary word).
     pub ai_fixes: Vec<(String, String)>,
@@ -130,6 +132,8 @@ pub(crate) struct ProcessedTranscription {
     pub transform_run: Option<crate::transforms::DictationTransform>,
     /// An AI step that was skipped because the provider didn't answer.
     pub ai_problem: Option<AiProblem>,
+    /// Snippets the dictation pasted.
+    pub snippet_hits: Vec<i64>,
 }
 
 impl ProcessedTranscription {
@@ -195,15 +199,70 @@ pub(crate) async fn process_transcription_output(
     let mut text = transcription.to_string();
     let mut ai_fixes = Vec::new();
     let mut ai_problem = None;
+    let category = target.map(|a| a.category.as_str()).unwrap_or("other");
 
-    match ai::correction_pass(app, &settings, &text).await {
-        Ok(Some(corrected)) => {
-            text = corrected.text;
-            ai_fixes = corrected.changes;
+    // With Cleanup at Medium the correction pass rides along in its request,
+    // so a dictation waits for one round trip, not two.
+    let medium = settings.cleanup_level == CleanupLevel::Medium
+        && ai::AiConfig::from_settings(&settings).is_some();
+    if !medium {
+        match ai::correction_pass(app, &settings, &text).await {
+            Ok(Some(corrected)) => {
+                text = corrected.text;
+                ai_fixes = corrected.changes;
+            }
+            Ok(None) => {}
+            Err(problem) => ai_problem = Some(problem),
         }
-        Ok(None) => {}
-        Err(problem) => ai_problem = Some(problem),
     }
+
+    // Snippets become placeholders, so cleanup, the AI and Style never touch
+    // the saved text.
+    let snippets = crate::managers::snippets::snippet_set();
+    let marked = snippet_rules::mark(&text, &snippets.rules);
+    let mut styled = marked.text.clone();
+    if !marked.whole {
+        let tone = if settings.style_enabled {
+            settings.styles.get(category).tone
+        } else {
+            style_rules::Tone::Raw
+        };
+        if settings.cleanup_level != CleanupLevel::None {
+            let lists = style_rules::list_style(category, tone, settings.cleanup_rules.lists);
+            styled = cleanup_rules::light(&styled, &settings.cleanup_rules, lists);
+        }
+        if medium {
+            match ai::medium_pass(app, &settings, &styled, marked.hits.len()).await {
+                Ok(Some(cleaned)) => styled = cleaned,
+                Ok(None) => {}
+                Err(problem) => ai_problem = Some(problem),
+            }
+        }
+        styled = style_rules::apply(&styled, category, tone);
+    }
+    let text = if marked.hits.is_empty() {
+        styled
+    } else {
+        let wanted = |test: fn(&str) -> bool| {
+            marked
+                .hits
+                .iter()
+                .any(|id| snippets.text_of(*id).is_some_and(test))
+        };
+        let vars = snippet_rules::Variables {
+            now: chrono::Local::now(),
+            clipboard: wanted(snippet_rules::uses_clipboard)
+                .then(|| app.clipboard().read_text().ok())
+                .flatten(),
+            selection: wanted(snippet_rules::uses_selection)
+                .then(|| crate::selection::copy_selection(app).ok().flatten())
+                .flatten(),
+        };
+        snippet_rules::unmark(&styled, &marked.hits, |id| {
+            snippet_rules::fill(snippets.text_of(id).unwrap_or_default(), &vars)
+        })
+    };
+    let snippet_hits = marked.hits;
 
     let mut final_text = text.clone();
     let mut post_processed_text: Option<String> = None;
@@ -211,8 +270,9 @@ pub(crate) async fn process_transcription_output(
     let mut transform: Option<String> = None;
     let mut transform_run = None;
 
-    let category = target.map(|a| a.category.as_str());
-    if let Some(chosen) = dictation_transform(&settings, mode, category, &final_text) {
+    if let Some(chosen) =
+        dictation_transform(&settings, mode, target.map(|_| category), &final_text)
+    {
         let started = Instant::now();
         let timeout = Duration::from_secs(u64::from(settings.ai_timeout_secs.clamp(1, 60)));
         let app_name = target.map(|a| a.name.as_str());
@@ -250,6 +310,7 @@ pub(crate) async fn process_transcription_output(
         transform,
         transform_run,
         ai_problem,
+        snippet_hits,
     }
 }
 
@@ -575,6 +636,7 @@ impl ShortcutAction for TranscribeAction {
                         Ok(FinishedText {
                             text: transcription,
                             fixes,
+                            heard,
                         }) => {
                             debug!(
                                 "Transcription completed in {:?}: '{}'",
@@ -635,6 +697,14 @@ impl ShortcutAction for TranscribeAction {
                                 );
                             }
 
+                            ah.state::<Arc<crate::managers::snippets::SnippetManager>>()
+                                .record_use(
+                                    &processed.snippet_hits,
+                                    app_info
+                                        .as_ref()
+                                        .map(|a| (a.name.as_str(), Some(a.exe_path.as_str()))),
+                                );
+
                             // Save to history if WAV was saved
                             let saved_id = if wav_saved {
                                 match hm.save_entry(NewEntry {
@@ -649,6 +719,7 @@ impl ShortcutAction for TranscribeAction {
                                     model_id: Some(model_id.clone()),
                                     model_name: model_name.clone(),
                                     fixes,
+                                    heard_text: Some(heard),
                                     ..Default::default()
                                 }) {
                                     Ok(entry) => Some(entry.id),
@@ -673,8 +744,15 @@ impl ShortcutAction for TranscribeAction {
                                 let transform_run = processed.transform_run;
                                 let rm_for_paste = Arc::clone(&rm);
                                 let hm_for_paste = Arc::clone(&hm);
-                                let not_pasted =
-                                    get_settings(&ah).paste_method == PasteMethod::None;
+                                let paste_overrides =
+                                    crate::clipboard::PasteOverrides::for_category(
+                                        &get_settings(&ah),
+                                        app_info.as_ref().map(|a| a.category.as_str()),
+                                    );
+                                let not_pasted = paste_overrides
+                                    .paste_method
+                                    .unwrap_or(get_settings(&ah).paste_method)
+                                    == PasteMethod::None;
                                 ah.run_on_main_thread(move || {
                                     if rm_for_paste.was_cancelled_since(cancel_generation) {
                                         debug!("Transcription operation cancelled before paste");
@@ -690,7 +768,11 @@ impl ShortcutAction for TranscribeAction {
                                     } else {
                                         None
                                     };
-                                    let paste_result = utils::paste(final_text, ah_clone.clone());
+                                    let paste_result = crate::clipboard::paste_dictation(
+                                        final_text,
+                                        ah_clone.clone(),
+                                        paste_overrides,
+                                    );
                                     let pasted = paste_result.is_ok() && !not_pasted;
                                     match &paste_result {
                                         Ok(()) => debug!(

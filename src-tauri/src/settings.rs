@@ -1,3 +1,6 @@
+pub use crate::cleanup_rules::{CleanupLevel, CleanupRules};
+pub use crate::context::AppRule;
+pub use crate::style_rules::Tone;
 pub use crate::transform_rules::{Transform, TransformOutput};
 use crate::utils;
 use log::{debug, warn};
@@ -346,6 +349,115 @@ impl std::ops::DerefMut for SecretMap {
     }
 }
 
+/// What to press once the text is in, for one kind of app.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum AfterPaste {
+    Nothing,
+    Enter,
+    CtrlEnter,
+}
+
+/// How one kind of app gets its text. `None` fields inherit Settings › Output.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+pub struct CategoryStyle {
+    pub tone: Tone,
+    #[serde(default)]
+    pub paste_method: Option<PasteMethod>,
+    #[serde(default)]
+    pub after_paste: Option<AfterPaste>,
+    #[serde(default)]
+    pub trailing_space: Option<bool>,
+}
+
+impl CategoryStyle {
+    fn with_tone(category: &str) -> Self {
+        Self {
+            tone: crate::style_rules::default_tone(category),
+            paste_method: None,
+            after_paste: None,
+            trailing_space: None,
+        }
+    }
+}
+
+/// Style per kind of app, one field each so the settings file reads plainly.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+pub struct Styles {
+    pub personal: CategoryStyle,
+    pub work: CategoryStyle,
+    pub email: CategoryStyle,
+    pub documents: CategoryStyle,
+    pub ai: CategoryStyle,
+    pub code: CategoryStyle,
+    pub other: CategoryStyle,
+}
+
+impl Default for Styles {
+    fn default() -> Self {
+        // Mail and documents aren't sent with Enter; terminals take
+        // Shift+Insert and want no trailing space.
+        let quiet = |category: &str| CategoryStyle {
+            after_paste: Some(AfterPaste::Nothing),
+            ..CategoryStyle::with_tone(category)
+        };
+        Self {
+            personal: CategoryStyle::with_tone("personal"),
+            work: CategoryStyle::with_tone("work"),
+            email: CategoryStyle {
+                trailing_space: Some(false),
+                ..quiet("email")
+            },
+            documents: quiet("documents"),
+            ai: CategoryStyle::with_tone("ai"),
+            code: CategoryStyle {
+                trailing_space: Some(false),
+                paste_method: Some(PasteMethod::ShiftInsert),
+                ..quiet("code")
+            },
+            other: CategoryStyle::with_tone("other"),
+        }
+    }
+}
+
+impl Styles {
+    pub fn get(&self, category: &str) -> CategoryStyle {
+        let style = match category {
+            "personal" => self.personal,
+            "work" => self.work,
+            "email" => self.email,
+            "documents" => self.documents,
+            "ai" => self.ai,
+            "code" => self.code,
+            _ => self.other,
+        };
+        // A tone from another kind of app falls back to this one's default.
+        if crate::style_rules::tones_for(category).contains(&style.tone) {
+            style
+        } else {
+            CategoryStyle {
+                tone: crate::style_rules::default_tone(category),
+                ..style
+            }
+        }
+    }
+
+    pub fn set(&mut self, category: &str, style: CategoryStyle) -> bool {
+        let slot = match category {
+            "personal" => &mut self.personal,
+            "work" => &mut self.work,
+            "email" => &mut self.email,
+            "documents" => &mut self.documents,
+            "ai" => &mut self.ai,
+            "code" => &mut self.code,
+            "other" => &mut self.other,
+            _ => return false,
+        };
+        *slot = style;
+        true
+    }
+}
+
 /* still handy for composing the initial JSON in the store ------------- */
 /// The container-level `serde(default)` (backed by the `Default` impl below)
 /// guarantees every field — including ones added in the future — falls back to
@@ -492,6 +604,20 @@ pub struct AppSettings {
     /// transforms that ask for it.
     #[serde(default = "default_true")]
     pub bar_show_changes: bool,
+    /// Cleanup for every dictation: None, Light (rules) or Medium (rules,
+    /// then the AI model).
+    #[serde(default)]
+    pub cleanup_level: CleanupLevel,
+    #[serde(default)]
+    pub cleanup_rules: CleanupRules,
+    /// Tones and paste settings per kind of app.
+    #[serde(default = "default_true")]
+    pub style_enabled: bool,
+    #[serde(default)]
+    pub styles: Styles,
+    /// Apps and sites moved between kinds of app on Style › Edit apps.
+    #[serde(default)]
+    pub app_rules: Vec<AppRule>,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
@@ -1071,6 +1197,11 @@ pub fn get_default_settings() -> AppSettings {
         ask_enabled: true,
         bar_confirm_paste: true,
         bar_show_changes: true,
+        cleanup_level: CleanupLevel::default(),
+        cleanup_rules: CleanupRules::default(),
+        style_enabled: true,
+        styles: Styles::default(),
+        app_rules: Vec::new(),
         mute_while_recording: false,
         append_trailing_space: false,
         theme: default_theme(),

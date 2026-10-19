@@ -1,5 +1,7 @@
 use crate::input::{self, EnigoState};
-use crate::settings::{get_settings, AutoSubmitKey, ClipboardHandling, PasteMethod};
+use crate::settings::{
+    get_settings, AfterPaste, AppSettings, AutoSubmitKey, ClipboardHandling, PasteMethod,
+};
 use enigo::{Direction, Enigo, Key, Keyboard};
 use log::info;
 use std::time::Duration;
@@ -141,18 +143,76 @@ fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool
     auto_submit && paste_method != PasteMethod::None
 }
 
-pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
-    paste_with(text, app_handle, true)
+/// Paste settings for one kind of app, from Style. `None` fields use
+/// Settings › Output.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PasteOverrides {
+    pub paste_method: Option<PasteMethod>,
+    pub after_paste: Option<AfterPaste>,
+    pub trailing_space: Option<bool>,
+}
+
+impl PasteOverrides {
+    /// What Style says for the app the text goes to.
+    pub fn for_category(settings: &AppSettings, category: Option<&str>) -> Self {
+        match category {
+            Some(category) if settings.style_enabled => {
+                let style = settings.styles.get(category);
+                Self {
+                    paste_method: style.paste_method,
+                    after_paste: style.after_paste,
+                    trailing_space: style.trailing_space,
+                }
+            }
+            _ => Self::default(),
+        }
+    }
+
+    pub fn apply(&self, settings: &mut AppSettings) {
+        if let Some(method) = self.paste_method {
+            settings.paste_method = method;
+        }
+        match self.after_paste {
+            Some(AfterPaste::Nothing) => settings.auto_submit = false,
+            Some(AfterPaste::Enter) => {
+                settings.auto_submit = true;
+                settings.auto_submit_key = AutoSubmitKey::Enter;
+            }
+            Some(AfterPaste::CtrlEnter) => {
+                settings.auto_submit = true;
+                settings.auto_submit_key = AutoSubmitKey::CtrlEnter;
+            }
+            None => {}
+        }
+        if let Some(space) = self.trailing_space {
+            settings.append_trailing_space = space;
+        }
+    }
+}
+
+/// Pastes a dictation with the paste settings of the app it goes to.
+pub fn paste_dictation(
+    text: String,
+    app_handle: AppHandle,
+    overrides: PasteOverrides,
+) -> Result<(), String> {
+    paste_with(text, app_handle, true, overrides)
 }
 
 /// Pastes a transform's result: no trailing space and no auto-submit, since
 /// it replaces text the person is still working on.
 pub fn paste_plain(text: String, app_handle: AppHandle) -> Result<(), String> {
-    paste_with(text, app_handle, false)
+    paste_with(text, app_handle, false, PasteOverrides::default())
 }
 
-fn paste_with(text: String, app_handle: AppHandle, dictation: bool) -> Result<(), String> {
+fn paste_with(
+    text: String,
+    app_handle: AppHandle,
+    dictation: bool,
+    overrides: PasteOverrides,
+) -> Result<(), String> {
     let mut settings = get_settings(&app_handle);
+    overrides.apply(&mut settings);
     if !dictation {
         settings.append_trailing_space = false;
         settings.auto_submit = false;

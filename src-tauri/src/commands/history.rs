@@ -156,14 +156,21 @@ pub async fn retry_history_entry_transcription(
         return Err("Recording contains no speech".to_string());
     }
 
-    // A retry transforms the text as the dictation did, without the app's
-    // skips, since it isn't pasted anywhere.
+    // A retry runs the text through the same steps as the dictation did,
+    // with the style of the app it went to.
     let mode = if entry.post_process_requested {
         DictationMode::Transform
     } else {
         DictationMode::Plain
     };
-    let processed = process_transcription_output(&app, &transcription.text, mode, None).await;
+    let target = entry.app_path.clone().map(|exe_path| {
+        crate::context::resolve(&crate::context::ForegroundWindow {
+            exe_path,
+            title: entry.app_title.clone().unwrap_or_default(),
+        })
+    });
+    let processed =
+        process_transcription_output(&app, &transcription.text, mode, target.as_ref()).await;
     let fixes = processed.all_fixes(&transcription.fixes);
     let model_id = crate::settings::get_settings(&app).selected_model;
     let model_name = app
@@ -180,6 +187,7 @@ pub async fn retry_history_entry_transcription(
             processed.transform,
             Some((model_id, model_name)),
             &fixes,
+            Some(&transcription.heard),
         )
         .map(|_| ())
         .map_err(|e| e.to_string())

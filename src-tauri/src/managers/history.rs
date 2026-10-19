@@ -225,6 +225,7 @@ impl HistoryManager {
         transform: Option<String>,
         model: Option<(String, String)>,
         fixes: &[AppliedFix],
+        heard_text: Option<&str>,
     ) -> Result<HistoryEntry> {
         let mut conn = self.get_connection()?;
         let entry = store::update_transcription(
@@ -238,6 +239,7 @@ impl HistoryManager {
                 .as_ref()
                 .map(|(id, name)| (id.as_str(), name.as_str())),
             fixes,
+            heard_text,
         )?;
         debug!("Updated transcription for history entry {}", id);
         self.emit(HistoryUpdatePayload::Updated {
@@ -415,6 +417,10 @@ impl HistoryManager {
 
     pub fn summary(&self) -> Result<HistorySummary> {
         store::summary(&self.get_connection()?)
+    }
+
+    pub fn seen_apps(&self, limit: usize) -> Result<Vec<store::SeenApp>> {
+        store::seen_apps(&self.get_connection()?, limit)
     }
 
     #[cfg(test)]

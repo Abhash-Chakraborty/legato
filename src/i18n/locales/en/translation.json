@@ -17,6 +17,8 @@
     "label": "Pages",
     "home": "Home",
     "dictionary": "Dictionary",
+    "snippets": "Snippets",
+    "style": "Style",
     "transforms": "Transforms",
     "models": "Models",
     "settings": "Settings"
@@ -1473,5 +1475,347 @@
     },
     "checking": "Checking {{name}}…",
     "connected": "Connected to {{name}} · {{ms}} ms"
+  },
+  "snippets": {
+    "title": "Snippets",
+    "more": "More snippet actions",
+    "add": "New snippet",
+    "subtitleBefore": "Say a trigger phrase and Legato pastes the saved text. ",
+    "subtitleLink": "Dictionary",
+    "subtitleAfter": " handles single-word spellings.",
+    "search": "Search triggers and text",
+    "sort": {
+      "label": "Sort snippets",
+      "used": "Most used",
+      "recent": "Recently used",
+      "newest": "Newest",
+      "az": "A to Z"
+    },
+    "import": {
+      "action": "Import snippets",
+      "files": "Snippets",
+      "failed": "Couldn't import snippets",
+      "done": "Imported: {{added}} added, {{updated}} updated, {{skipped}} skipped"
+    },
+    "export": {
+      "action": "Export snippets",
+      "files": "Snippets",
+      "done_one": "Exported {{count}} snippet",
+      "done_other": "Exported {{count}} snippets",
+      "failed": "Couldn't export snippets"
+    },
+    "selection": {
+      "label": "Selected snippets",
+      "clear": "Clear selection",
+      "count_one": "{{count}} selected",
+      "count_other": "{{count}} selected",
+      "export": "Export",
+      "delete": "Delete"
+    },
+    "empty": {
+      "title": "No snippets yet",
+      "body": "Save text you type often, such as a sign-off, an address or a prompt, and say a short phrase to paste it."
+    },
+    "noResults": "No snippets match “{{query}}”",
+    "clearSearch": "Clear search",
+    "footer": "{{snippets}} · {{uses}} · matched after Dictionary fixes, before cleanup",
+    "counts": {
+      "snippets_one": "{{count}} snippet",
+      "snippets_other": "{{count}} snippets",
+      "uses_one": "expanded {{count}} time",
+      "uses_other": "expanded {{count}} times"
+    },
+    "toast": {
+      "deleteFailed": "Couldn't delete",
+      "deleted": "Deleted “{{trigger}}”",
+      "deletedMany_one": "Deleted {{count}} snippet",
+      "deletedMany_other": "Deleted {{count}} snippets",
+      "undo": "Undo",
+      "saved": "Saved “{{trigger}}”",
+      "added": "Added “{{trigger}}”"
+    },
+    "row": {
+      "lineBreak": "line break",
+      "select": "Select “{{trigger}}”",
+      "alone": "only when said alone",
+      "used_one": "used {{count}}×",
+      "used_other": "used {{count}}×",
+      "lastIn": "{{when}} in",
+      "notUsed": "not used yet",
+      "edit": "Edit “{{trigger}}”",
+      "delete": "Delete “{{trigger}}”"
+    },
+    "editor": {
+      "addTitle": "New snippet",
+      "editTitle": "Edit snippet",
+      "addDescription": "Say the trigger in any app and Legato pastes the text.",
+      "notUsed": "Not used yet",
+      "used_one": "Used once, {{when}}",
+      "used_other": "Used {{count}} times, last {{when}}",
+      "usedIn_one": "Used once, {{when}} in {{app}}",
+      "usedIn_other": "Used {{count}} times, last {{when}} in {{app}}",
+      "trigger": "Trigger",
+      "triggerPlaceholder": "sign off",
+      "triggerHelp": "Say “{{trigger}}” in any app.",
+      "triggerEmpty": "A short phrase you wouldn't say by accident.",
+      "dictionaryClash": "The Dictionary changes “{{heard}}” to “{{word}}” first; use that spelling in the trigger.",
+      "text": "Text",
+      "textPlaceholder": "Best regards,\nAbhash",
+      "textHelp": "Pasted exactly as written; cleanup and Style don't change it.",
+      "charsLeft_one": "{{count}} character left",
+      "charsLeft_other": "{{count}} characters left",
+      "insertVariable": "Insert variable",
+      "expand": "Expand",
+      "anywhere": "Anywhere in a sentence",
+      "alone": "Only when said alone",
+      "anywhereHelp": "Expands wherever you say it, even mid-sentence.",
+      "aloneHelp": "Expands only when it's the whole dictation, never inside a sentence.",
+      "test": "Test",
+      "testPlaceholder": "Type a sentence as you'd say it",
+      "testEmpty": "Add a trigger and text to try it.",
+      "expands": "Expands",
+      "notAlone": "Doesn't expand: the trigger has to be the whole dictation",
+      "noMatch": "The trigger isn't in this sentence",
+      "errors": {
+        "noTrigger": "Type a trigger phrase.",
+        "noText": "Type the text to paste.",
+        "duplicate": "Another snippet has this trigger."
+      },
+      "editThatOne": "Edit that one",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "save": "Save"
+    },
+    "variables": {
+      "date": "Today's date ({{variable}})",
+      "date_long": "Today's date, written out ({{variable}})",
+      "time": "The time ({{variable}})",
+      "clipboard": "What's on the clipboard ({{variable}})",
+      "selection": "The selected text ({{variable}})"
+    }
+  },
+  "style": {
+    "title": "Style",
+    "on": "On",
+    "off": "Off",
+    "toggle": "Style per kind of app",
+    "subtitle": "Formatting per kind of app, picked from the app you dictate into.",
+    "last": {
+      "label": "Last dictation",
+      "tone": "· Tone: {{tone}} · {{when}}",
+      "how": "How apps are matched",
+      "howBody": "Legato looks at the window you dictate into: the program, and in a browser the tab title. Each app or site belongs to one kind; Edit apps moves it to another."
+    },
+    "perKind": {
+      "title": "Per kind of app",
+      "off": "Style is off. Dictations get cleanup and your Settings › Output paste settings, the same in every app."
+    },
+    "categories": {
+      "personal": "Personal messages",
+      "work": "Work messages",
+      "email": "Email",
+      "documents": "Documents",
+      "ai": "AI prompts",
+      "code": "Code & terminals",
+      "other": "Other"
+    },
+    "cleanup": {
+      "title": "Cleanup for every dictation",
+      "levels": {
+        "none": {
+          "label": "None",
+          "help": "Pastes what the model heard, with Dictionary fixes and snippets only."
+        },
+        "light": {
+          "label": "Light",
+          "help": "Removes fillers, repeats and false starts; writes numbers as digits. No AI."
+        },
+        "medium": {
+          "label": "Medium",
+          "help": "Light, then your AI smooths the grammar without changing what you said."
+        }
+      },
+      "mediumUses": "Medium uses",
+      "mediumNeedsAi": "Medium needs an AI provider.",
+      "setUpAi": "Set one up",
+      "mediumPreview": "The example shows the Light rules; the AI step runs on real dictations.",
+      "exampleFrom": "From your {{app}} dictation, {{when}}",
+      "exampleLast": "From your last dictation, {{when}}",
+      "heard": "Heard",
+      "pasted": "Pasted"
+    },
+    "rules": {
+      "title": "Rules",
+      "summary": "{{on}} of {{total}} on · {{names}}",
+      "none": "none",
+      "offWithCleanup": "Off while cleanup is None.",
+      "names": {
+        "fillers": "fillers",
+        "repeats": "repeats",
+        "numbers": "numbers",
+        "punctuation": "spoken punctuation",
+        "corrections": "self-corrections",
+        "lists": "lists"
+      },
+      "fillers": {
+        "title": "Remove filler words",
+        "help": "Drops these when they're filler.",
+        "remove": "Remove “{{word}}”",
+        "add": "Add a filler word",
+        "custom": "Your own list.",
+        "reset": "Use the built-in list",
+        "builtIn": "The built-in list, plus fillers for the language you dictate in. Editing it makes your own list."
+      },
+      "repeats": {
+        "title": "Repeated words",
+        "help": "“the the” becomes “the”."
+      },
+      "numbers": {
+        "title": "Numbers as digits",
+        "help": "“twenty five percent” becomes 25%, “two hundred” becomes 200."
+      },
+      "punctuation": {
+        "title": "Spoken punctuation",
+        "help": "Say “comma”, “period”, “question mark” or “new line” to type them."
+      },
+      "corrections": {
+        "title": "Self-corrections",
+        "help": "“at 3, actually 4” keeps 4; “scratch that” drops what came before it."
+      },
+      "lists": {
+        "title": "Lists",
+        "help": "“first … second … third” becomes a list where the kind of app lays one out."
+      }
+    },
+    "apps": {
+      "none": "No apps yet. Dictate into one, or add it with Edit apps.",
+      "count_one": "{{count}} app: {{names}}",
+      "count_other": "{{count}} apps: {{names}}",
+      "edit": "Edit apps"
+    },
+    "tone": {
+      "title": "Tone",
+      "note": "Rule-based, applied after cleanup"
+    },
+    "tones": {
+      "formal": {
+        "label": "Formal",
+        "help": "Capitals and full punctuation"
+      },
+      "casual": {
+        "label": "Casual",
+        "help": "Capitals, lighter punctuation"
+      },
+      "lower": {
+        "label": "Lowercase",
+        "help": "No capitals, lighter punctuation"
+      },
+      "excited": {
+        "label": "Excited",
+        "help": "Warmer, exclamation marks allowed"
+      },
+      "notes": {
+        "label": "Notes",
+        "help": "Lists when you enumerate, no final periods"
+      },
+      "raw": {
+        "label": "As said",
+        "help": "Exactly what cleanup left"
+      },
+      "light": {
+        "label": "Tidy",
+        "help": "Sentences and capitals only"
+      },
+      "structured": {
+        "label": "Structured",
+        "help": "Paragraphs, numbered lists when you enumerate"
+      },
+      "sentence": {
+        "label": "Sentence",
+        "help": "A capital and a final period"
+      }
+    },
+    "samples": {
+      "personal": "hey Karol, can we move the Datev review to Thursday? i'll bring the open questions",
+      "work": "quick update, the release build passed. i'll push the installer after lunch",
+      "email": "hi Priya thanks for sending the contract. i'll review it by Friday. best regards Abhash",
+      "documents": "the Dokploy migration is blocked on the Netbird routes. the scraper moves to a browser extension.",
+      "ai": "review this diff for correctness first, then readability. list concrete problems with file and line",
+      "code": "fix the paste fallback when the clipboard is busy",
+      "other": "remind me to renew the domain before the end of the month"
+    },
+    "try": {
+      "title": "Try with your words",
+      "from": "From your last {{app}} dictation, {{when}}",
+      "fromLast": "From your last dictation here, {{when}}",
+      "youSay": "You say",
+      "placeholder": "Type a sentence as you'd say it",
+      "pasted": "Legato pastes",
+      "settings": "Cleanup: {{level}} · Tone: {{tone}}"
+    },
+    "paste": {
+      "title": "Paste",
+      "inheritBefore": "Inherit uses ",
+      "inheritLink": "Settings › Output",
+      "inherit": "Inherit ({{value}})",
+      "method": {
+        "title": "Paste with",
+        "help": "How the text gets into the app. Terminals and some editors want Shift+Insert."
+      },
+      "methods": {
+        "ctrl_v": "Ctrl+V",
+        "ctrl_shift_v": "Ctrl+Shift+V",
+        "shift_insert": "Shift+Insert",
+        "direct": "Type it",
+        "none": "Don't paste"
+      },
+      "after": {
+        "title": "After pasting",
+        "help": "Press a key once the text is in, for example Enter to send a chat message."
+      },
+      "afterOptions": {
+        "nothing": "Nothing",
+        "enter": "Enter",
+        "ctrl_enter": "Ctrl+Enter"
+      },
+      "space": {
+        "title": "Trailing space",
+        "help": "Keeps the next dictation from running into this one. Inherit is {{value}}, from Settings › Output.",
+        "inherit": "Inherit",
+        "on": "On",
+        "off": "Off"
+      }
+    },
+    "edit": {
+      "title": "Apps for {{category}}",
+      "description": "Choose which apps and websites use this style. Changes save as you go.",
+      "search": "Search apps and websites",
+      "inCategory": "In {{category}}",
+      "noMatch": "Nothing matches.",
+      "emptyHere": "No apps here yet. Move one from the list below, add a website, or pick a window.",
+      "remove": "Move {{app}} to Other",
+      "add": "Add",
+      "siteLabel": "Website name",
+      "sitePlaceholder": "Linear",
+      "siteHelp": "Text in the browser tab's title, such as Linear or Jira.",
+      "addSite": "Add website",
+      "pick": "Pick a window",
+      "pickHelp_one": "Click it, then switch to the app within {{count}} second.",
+      "pickHelp_other": "Click it, then switch to the app within {{count}} seconds.",
+      "pickCountdown_one": "Switch to the app now: {{count}}…",
+      "pickCountdown_other": "Switch to the app now: {{count}}…",
+      "pickMissed": "No other app came to the front. Try again.",
+      "alreadyHere": "Already here",
+      "moveHere": "Move here",
+      "others": "Other apps seen recently",
+      "emptyOthers": "Apps you dictate into show up here.",
+      "otherDetail_one": "{{category}} · {{words}} word",
+      "otherDetail_other": "{{category}} · {{words}} words",
+      "website": "Website",
+      "moveFailed": "Couldn't move it",
+      "restore": "Restore defaults",
+      "restored": "{{category}} has its built-in apps again",
+      "done": "Done"
+    }
   }
 }

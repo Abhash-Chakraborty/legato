@@ -20,6 +20,8 @@ import {
 } from "./components/settings";
 import { SettingsPage } from "./components/settings/SettingsPage";
 import { DictionaryPage } from "./components/pages/dictionary/DictionaryPage";
+import { SnippetsPage } from "./components/pages/snippets/SnippetsPage";
+import { StylePage } from "./components/pages/style/StylePage";
 import { TransformsPage } from "./components/pages/transforms/TransformsPage";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar } from "./components/Sidebar";
@@ -44,6 +46,10 @@ const renderPage = (
   switch (page) {
     case "dictionary":
       return <DictionaryPage />;
+    case "snippets":
+      return <SnippetsPage />;
+    case "style":
+      return <StylePage />;
     case "transforms":
       return <TransformsPage />;
     case "models":

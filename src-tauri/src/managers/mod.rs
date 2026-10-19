@@ -6,5 +6,7 @@ pub mod history;
 pub mod history_store;
 pub mod model;
 pub mod model_capabilities;
+pub mod snippet_store;
+pub mod snippets;
 pub mod transcription;
 pub mod transform_store;

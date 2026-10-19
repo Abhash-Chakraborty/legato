@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  CleanupLevel,
+  CleanupRules,
   AppSettings as Settings,
   AudioDevice,
   PostProcessApiFormat,
@@ -198,6 +200,14 @@ const settingUpdaters: {
   },
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),
+  custom_filler_words: (value) =>
+    commands.changeCustomFillerWordsSetting(value as string[] | null),
+  cleanup_level: (value) =>
+    commands.changeCleanupLevelSetting(value as CleanupLevel),
+  cleanup_rules: (value) =>
+    commands.changeCleanupRulesSetting(value as CleanupRules),
+  style_enabled: (value) =>
+    commands.changeStyleEnabledSetting(value as boolean),
   chinese_script: (value) =>
     commands.changeChineseScriptSetting(value as ChineseScript),
   show_tray_icon: (value) =>

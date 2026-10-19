@@ -400,6 +400,45 @@ textarea.input {
   cursor: not-allowed;
 }
 
+/* A radio button: a ring that fills with a dot. */
+.radio {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.radio:hover {
+  border-color: var(--text-4);
+  transition-duration: 0ms;
+}
+.radio::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--teal-fill);
+  transform: scale(0);
+  transition: transform var(--dur-2) cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.radio:checked {
+  border-color: var(--teal-fill);
+}
+.radio:checked::after {
+  transform: scale(1);
+}
+.radio:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* ----------------------------------------------------- fixed words */
 /* A word the Dictionary or Fix a word put into a transcript. */
 .fixed-word {

@@ -1179,6 +1179,141 @@ async barPick(id: string) : Promise<void> {
 },
 async barDismiss() : Promise<void> {
     return await TAURI_INVOKE("bar_dismiss");
+},
+async getSnippets() : Promise<Result<SnippetsView, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_snippets") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async addSnippet(input: SnippetInput) : Promise<Result<Snippet, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_snippet", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateSnippet(id: number, input: SnippetInput) : Promise<Result<Snippet, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_snippet", { id, input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteSnippets(ids: number[]) : Promise<Result<Snippet[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_snippets", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreSnippets(removed: Snippet[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_snippets", { removed }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async importSnippets(path: string) : Promise<Result<SnippetImport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_snippets", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async exportSnippets(path: string, ids: number[] | null) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_snippets", { path, ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async testSnippets(text: string, draft: SnippetInput | null, draftId: number | null) : Promise<Result<SnippetTest, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("test_snippets", { text, draft, draftId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getStyleApps() : Promise<Result<StyleApp[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_style_apps") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async moveApp(rule: AppRule, category: AppCategory) : Promise<AppRule[]> {
+    return await TAURI_INVOKE("move_app", { rule, category });
+},
+async addSite(name: string, category: AppCategory) : Promise<Result<AppRule[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_site", { name, category }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreAppDefaults(category: AppCategory) : Promise<AppRule[]> {
+    return await TAURI_INVOKE("restore_app_defaults", { category });
+},
+async pickWindow(delayMs: number) : Promise<StyleApp | null> {
+    return await TAURI_INVOKE("pick_window", { delayMs });
+},
+async previewStyle(text: string, category: string, tone: Tone | null, level: CleanupLevel | null) : Promise<string> {
+    return await TAURI_INVOKE("preview_style", { text, category, tone, level });
+},
+async getDefaultFillerWords() : Promise<string[]> {
+    return await TAURI_INVOKE("get_default_filler_words");
+},
+async changeCleanupLevelSetting(level: CleanupLevel) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_cleanup_level_setting", { level }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeCleanupRulesSetting(rules: CleanupRules) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_cleanup_rules_setting", { rules }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeCustomFillerWordsSetting(words: string[] | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_custom_filler_words_setting", { words }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeStyleEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_style_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeCategoryStyleSetting(category: string, style: CategoryStyle) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_category_style_setting", { category, style }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1190,6 +1325,7 @@ aiStatusChanged: AiStatusChanged,
 dictionaryChanged: DictionaryChanged,
 historyUpdatePayload: HistoryUpdatePayload,
 streamPhaseEvent: StreamPhaseEvent,
+snippetsChanged: SnippetsChanged,
 streamTextEvent: StreamTextEvent,
 transformRunsChanged: TransformRunsChanged
 }>({
@@ -1197,6 +1333,7 @@ aiStatusChanged: "ai-status-changed",
 dictionaryChanged: "dictionary-changed",
 historyUpdatePayload: "history-update-payload",
 streamPhaseEvent: "stream-phase-event",
+snippetsChanged: "snippets-changed",
 streamTextEvent: "stream-text-event",
 transformRunsChanged: "transform-runs-changed"
 })
@@ -1397,6 +1534,86 @@ others: number }
  * Sent whenever a word is added, changed or removed.
  */
 export type DictionaryChanged = null
+export type AfterPaste = "nothing" | "enter" | "ctrl_enter"
+export type AppCategory = "personal" | "work" | "email" | "documents" | "ai" | "code" | "other"
+/**
+ * A move made on Style › Edit apps: this app or site belongs to that kind
+ * of app. Rules win over the built-in lists.
+ */
+export type AppRule = { kind: AppRuleKind; 
+/**
+ * Lower case: an executable, an app name or text in a tab title.
+ */
+pattern: string; 
+/**
+ * How the Style page names it.
+ */
+name: string; category: AppCategory }
+export type AppRuleKind = 
+/**
+ * An app, by its name ("Claude Code") or executable ("slack.exe").
+ */
+"app" | 
+/**
+ * A website in a browser, by text in its tab title ("Gmail").
+ */
+"site"
+/**
+ * How one kind of app gets its text. `None` fields inherit Settings › Output.
+ */
+export type CategoryStyle = { tone: Tone; paste_method?: PasteMethod | null; after_paste?: AfterPaste | null; trailing_space?: boolean | null }
+export type CleanupLevel = "none" | "light" | "medium"
+export type CleanupRules = { repeats?: boolean; numbers?: boolean; punctuation?: boolean; corrections?: boolean; lists?: boolean }
+export type Snippet = { id: number; trigger: string; text: string; 
+/**
+ * Only when the trigger is the whole dictation.
+ */
+alone: boolean; uses: number; added_at: number; last_used_at: number | null; 
+/**
+ * The app the snippet was last pasted into.
+ */
+last_app: string | null; last_app_path: string | null }
+export type SnippetImport = { added: number; updated: number; skipped: number }
+export type SnippetInput = { trigger: string; text: string; alone?: boolean }
+export type SnippetTest = { 
+/**
+ * The dictation with each match swapped for its text.
+ */
+text: string; 
+/**
+ * Ids of the snippets that matched, in order.
+ */
+matched: number[] }
+export type SnippetsChanged = null
+/**
+ * Everything the Snippets page shows.
+ */
+export type SnippetsView = { snippets: Snippet[]; max_trigger_chars: number; max_text_chars: number; 
+/**
+ * The variables Insert variable offers, as written in the text.
+ */
+variables: string[] }
+/**
+ * An app or site on Edit apps.
+ */
+export type StyleApp = { name: string; 
+/**
+ * Empty for a website added by name.
+ */
+exe_path: string; exe: string; site: string | null; category: AppCategory; 
+/**
+ * Words dictated into it.
+ */
+words: number; last_at: number | null; 
+/**
+ * The rule that moves it, and whether one is saved.
+ */
+rule: AppRule; moved: boolean }
+/**
+ * Style per kind of app, one field each so the settings file reads plainly.
+ */
+export type Styles = { personal: CategoryStyle; work: CategoryStyle; email: CategoryStyle; documents: CategoryStyle; ai: CategoryStyle; code: CategoryStyle; other: CategoryStyle }
+export type Tone = "formal" | "casual" | "lower" | "excited" | "notes" | "raw" | "light" | "structured" | "sentence"
 export type AppCount = { name: string; 
 /**
  * An executable to take the app's icon from.
@@ -1484,7 +1701,20 @@ bar_confirm_paste?: boolean;
  * The Legato bar shows a transform's changes with Keep and Undo, for
  * transforms that ask for it.
  */
-bar_show_changes?: boolean; mute_while_recording?: boolean; append_trailing_space?: boolean; theme?: Theme; 
+bar_show_changes?: boolean; 
+/**
+ * Cleanup for every dictation: None, Light (rules) or Medium (rules,
+ * then the AI model).
+ */
+cleanup_level?: CleanupLevel; cleanup_rules?: CleanupRules; 
+/**
+ * Tones and paste settings per kind of app.
+ */
+style_enabled?: boolean; styles?: Styles; 
+/**
+ * Apps and sites moved between kinds of app on Style › Edit apps.
+ */
+app_rules?: AppRule[]; mute_while_recording?: boolean; append_trailing_space?: boolean; theme?: Theme; 
 /**
  * Use the standard Windows title bar instead of Legato's own. Applied when
  * the main window is created and whenever the setting changes.
@@ -1551,7 +1781,11 @@ transform: string | null; fixes: AppliedFix[];
 /**
  * From the end of recording to the paste.
  */
-paste_ms: number | null; status: DictationStatus | null; error: string | null }
+paste_ms: number | null; status: DictationStatus | null; error: string | null; 
+/**
+ * What the model heard, before the Dictionary, cleanup and Style.
+ */
+heard_text: string | null }
 export type HistoryFilter = "all" | "starred" | "fixed" | "transformed"
 export type HistoryQuery = { 
 /**

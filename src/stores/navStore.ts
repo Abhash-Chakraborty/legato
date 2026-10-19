@@ -1,7 +1,14 @@
 import { create } from "zustand";
 
 /** The pages in the sidebar. */
-export type Page = "home" | "dictionary" | "transforms" | "models" | "settings";
+export type Page =
+  | "home"
+  | "dictionary"
+  | "snippets"
+  | "style"
+  | "transforms"
+  | "models"
+  | "settings";
 
 /** The sections inside Settings, in sidebar order. */
 export type SettingsSection =

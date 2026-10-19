@@ -6,6 +6,7 @@ pub mod audio_toolkit;
 mod autostart;
 mod catalog;
 mod chinese_script;
+mod cleanup_rules;
 pub mod cli;
 mod clipboard;
 mod commands;
@@ -23,6 +24,8 @@ mod selection;
 mod settings;
 mod shortcut;
 mod signal_handle;
+mod snippet_rules;
+mod style_rules;
 mod transcription_coordinator;
 mod transform_rules;
 mod transforms;
@@ -230,6 +233,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // After history: it migrates the database the Dictionary lives in.
     let dictionary_manager =
         Arc::new(DictionaryManager::new(app_handle).expect("Failed to initialize the Dictionary"));
+    let snippet_manager = Arc::new(
+        managers::snippets::SnippetManager::new(app_handle).expect("Failed to initialize snippets"),
+    );
+    context::set_rules(settings::get_settings(app_handle).app_rules);
 
     // Add managers to Tauri's managed state
     app_handle.manage(recording_manager.clone());
@@ -237,6 +244,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
     app_handle.manage(dictionary_manager);
+    app_handle.manage(snippet_manager);
     app_handle.manage(context::DictationContext::default());
     app_handle.manage(tray::TrayState::new());
 
@@ -778,12 +786,33 @@ pub fn run(cli_args: CliArgs) {
             commands::transforms::bar_keep,
             commands::transforms::bar_pick,
             commands::transforms::bar_dismiss,
+            commands::snippets::get_snippets,
+            commands::snippets::add_snippet,
+            commands::snippets::update_snippet,
+            commands::snippets::delete_snippets,
+            commands::snippets::restore_snippets,
+            commands::snippets::import_snippets,
+            commands::snippets::export_snippets,
+            commands::snippets::test_snippets,
+            commands::style::get_style_apps,
+            commands::style::move_app,
+            commands::style::add_site,
+            commands::style::restore_app_defaults,
+            commands::style::pick_window,
+            commands::style::preview_style,
+            commands::style::get_default_filler_words,
+            commands::style::change_cleanup_level_setting,
+            commands::style::change_cleanup_rules_setting,
+            commands::style::change_custom_filler_words_setting,
+            commands::style::change_style_enabled_setting,
+            commands::style::change_category_style_setting,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
             managers::dictionary::DictionaryChanged,
             ai::AiStatusChanged,
             transforms::TransformRunsChanged,
+            managers::snippets::SnippetsChanged,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
         ]);
