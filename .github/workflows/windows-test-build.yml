@@ -1,0 +1,62 @@
+name: "Windows Test Build"
+
+# Unsigned Windows installers for testing a branch on a real machine. Forks
+# don't have the Azure Trusted Signing or updater signing secrets, so the
+# config override drops the custom signCommand and the updater artifacts, and
+# points the updater away from upstream releases so a test install is never
+# replaced by an official build.
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Architecture"
+        type: choice
+        default: x64
+        options:
+          - x64
+          - arm64
+          - both
+      debug:
+        description: "Debug build (faster compile, devtools enabled)"
+        type: boolean
+        default: false
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.pick.outputs.include }}
+    steps:
+      - id: pick
+        shell: bash
+        run: |
+          x64='{"platform":"windows-latest","target":"x86_64-pc-windows-msvc","args":""}'
+          arm64='{"platform":"windows-11-arm","target":"aarch64-pc-windows-msvc","args":"--target aarch64-pc-windows-msvc"}'
+          case "${{ inputs.arch }}" in
+            x64) echo "include=[$x64]" >> "$GITHUB_OUTPUT" ;;
+            arm64) echo "include=[$arm64]" >> "$GITHUB_OUTPUT" ;;
+            both) echo "include=[$x64,$arm64]" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  windows:
+    needs: matrix
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.include) }}
+
+    uses: ./.github/workflows/build.yml
+    with:
+      platform: ${{ matrix.platform }}
+      target: ${{ matrix.target }}
+      build-args: >-
+        ${{ matrix.args }} ${{ inputs.debug && '--debug' || '' }}
+        --config '{"bundle":{"createUpdaterArtifacts":false,"windows":{"signCommand":null}},"plugins":{"updater":{"endpoints":["https://github.com/${{ github.repository }}/releases/latest/download/latest.json"]}}}'
+      sign-binaries: false
+      upload-artifacts: true
+      is-debug-build: ${{ inputs.debug }}
+      asset-prefix: "legato-test-${{ github.run_number }}"
+    secrets: inherit
