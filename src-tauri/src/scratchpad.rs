@@ -71,7 +71,21 @@ pub struct ScratchpadState {
     pub target_app_path: Option<String>,
 }
 
-/// The app in front when the window opened.
+/// An app's window Send to can paste into.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct SendTarget {
+    pub handle: i64,
+    pub name: String,
+    pub title: String,
+    pub path: String,
+    /// The one Send to pastes into now.
+    pub current: bool,
+}
+
+/// Windows listed in Send to's picker.
+const MAX_TARGETS: usize = 12;
+
+/// The app in front when the window opened, or the one picked in Send to.
 struct Target {
     handle: isize,
     info: AppInfo,
@@ -256,6 +270,40 @@ pub fn state(app: &AppHandle) -> Result<ScratchpadState> {
         target_app,
         target_app_path,
     })
+}
+
+/// The windows Send to can paste into, front to back.
+pub fn send_targets() -> Vec<SendTarget> {
+    let current = with_state(|s| s.target.as_ref().map(|t| t.handle));
+    context::open_windows()
+        .into_iter()
+        .take(MAX_TARGETS)
+        .map(|(handle, window)| {
+            let info = context::resolve(&window);
+            SendTarget {
+                handle: handle as i64,
+                name: info.name,
+                title: window.title,
+                path: window.exe_path,
+                current: current == Some(handle),
+            }
+        })
+        .collect()
+}
+
+/// Points Send to at another window. False when it has closed since the
+/// picker listed it.
+pub fn set_send_target(handle: i64) -> bool {
+    let handle = handle as isize;
+    let Some((_, window)) = context::open_windows()
+        .into_iter()
+        .find(|(h, _)| *h == handle)
+    else {
+        return false;
+    };
+    let info = context::resolve(&window);
+    with_state(|s| s.target = Some(Target { handle, info }));
+    true
 }
 
 fn build_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
@@ -545,8 +593,13 @@ pub fn receive(app: &AppHandle, text: String) {
 }
 
 /// A paste that failed: the text goes into a new note, which opens when
-/// Settings › Output says so. `admin` when the app runs as administrator.
-pub fn save_failed_paste(app: &AppHandle, text: &str, target: Option<&AppInfo>, reason: &str) {
+/// Settings › Output says so. Returns the note.
+pub fn save_failed_paste(
+    app: &AppHandle,
+    text: &str,
+    target: Option<&AppInfo>,
+    reason: &str,
+) -> Option<i64> {
     let note = manager(app).create(&NewNote {
         text: text.to_string(),
         source: Some(NoteSource::FailedPaste),
@@ -557,6 +610,7 @@ pub fn save_failed_paste(app: &AppHandle, text: &str, target: Option<&AppInfo>, 
     match note {
         Ok(note) => {
             debug!("Saved a failed paste as note {}", note.id);
+            let id = note.id;
             if !get_settings(app).scratchpad_failed_pastes {
                 // Nothing opens to show it, so Windows says where it went.
                 crate::desktop::notify_failed_paste(app, note.id, target.map(|t| t.name.as_str()));
@@ -570,16 +624,26 @@ pub fn save_failed_paste(app: &AppHandle, text: &str, target: Option<&AppInfo>, 
                     }
                 });
             }
+            Some(id)
         }
-        Err(e) => error!("Couldn't save the failed paste: {}", e),
+        Err(e) => {
+            error!("Couldn't save the failed paste: {}", e);
+            None
+        }
     }
 }
 
-/// The bar's word for a failed paste.
-pub fn failed_paste_notice(target: Option<&AppInfo>, admin: bool) -> BarNotice {
+/// The bar's word for a failed paste. `admin` when the app runs as
+/// administrator.
+pub fn failed_paste_notice(
+    target: Option<&AppInfo>,
+    admin: bool,
+    note_id: Option<i64>,
+) -> BarNotice {
     BarNotice::SavedToScratchpad {
         app: target.map(|t| t.name.clone()),
         admin,
+        note_id,
     }
 }
 

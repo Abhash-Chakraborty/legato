@@ -8,6 +8,7 @@ import React, {
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
+  ChevronDown,
   Copy,
   EllipsisVertical,
   History,
@@ -17,12 +18,19 @@ import {
   Pin,
   PinOff,
   Plus,
+  Replace,
   Send,
   Square,
   Trash2,
   X,
 } from "lucide-react";
-import { commands, events, type ScratchNote } from "@/bindings";
+import {
+  commands,
+  events,
+  type ScratchNote,
+  type SendTarget,
+  type Transform,
+} from "@/bindings";
 import { AppToaster } from "@/components/shell/AppToaster";
 import { ActionMenu } from "@/components/ui/ActionMenu";
 import { Segmented } from "@/components/ui/Segmented";
@@ -35,6 +43,9 @@ import { VersionHistory } from "@/components/scratchpad/VersionHistory";
 import { insertAt } from "@/components/scratchpad/notes";
 import { useNoteDraft } from "@/components/scratchpad/useNoteDraft";
 import { useScratchStore, watchScratch } from "@/stores/scratchStore";
+import { useAiStore, watchAi } from "@/stores/aiStore";
+import { providerFor } from "@/components/pages/transforms/model";
+import { useProblemText } from "@/components/pages/transforms/TryIt";
 
 type Mode = "write" | "preview";
 
@@ -59,6 +70,13 @@ export const ScratchpadWindow: React.FC = () => {
   const [renaming, setRenaming] = useState<number | null>(null);
   const [versionsOf, setVersionsOf] = useState<ScratchNote | null>(null);
   const [sending, setSending] = useState(false);
+  const [targets, setTargets] = useState<SendTarget[] | null>(null);
+  const [transforms, setTransforms] = useState<Transform[] | null>(null);
+  const [tfMenu, setTfMenu] = useState(false);
+  const [transforming, setTransforming] = useState<string | null>(null);
+  const run = useRef(0);
+  const ai = useAiStore((s) => s.status);
+  const problemText = useProblemText();
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
   const tabs = useMemo(
@@ -144,6 +162,7 @@ export const ScratchpadWindow: React.FC = () => {
   }, [put]);
 
   const activate = (id: number) => {
+    if (transforming) cancelTransform();
     setActiveId(id);
     setRenaming(null);
     commands.openScratchTab(id).catch(() => {});
@@ -174,6 +193,93 @@ export const ScratchpadWindow: React.FC = () => {
       return;
     }
     if (active?.id === id) activate(rest[Math.min(i, rest.length - 1)].id);
+  };
+
+  // Dragging a tab: where it started, how far it has moved and where it
+  // would land. The other tabs slide aside to show the gap.
+  const [drag, setDrag] = useState<{
+    id: number;
+    from: number;
+    to: number;
+    dx: number;
+    width: number;
+  } | null>(null);
+  const press = useRef<{
+    id: number;
+    x: number;
+    centers: number[];
+    width: number;
+    moved: boolean;
+  } | null>(null);
+  const dragged = useRef(false);
+
+  const onTabPointerDown = (
+    e: React.PointerEvent<HTMLButtonElement>,
+    note: ScratchNote,
+  ) => {
+    if (e.button !== 0 || tabs.length < 2) return;
+    const rects = [
+      ...document.querySelectorAll<HTMLElement>("[data-tab-wrap]"),
+    ].map((w) => w.getBoundingClientRect());
+    const i = tabs.findIndex((n) => n.id === note.id);
+    press.current = {
+      id: note.id,
+      x: e.clientX,
+      centers: rects.map((r) => r.left + r.width / 2),
+      // The tab and the gap after it.
+      width: (rects[i]?.width ?? 0) + 2,
+      moved: false,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onTabPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const p = press.current;
+    if (!p) return;
+    const dx = e.clientX - p.x;
+    if (!p.moved && Math.abs(dx) < 5) return;
+    p.moved = true;
+    const from = tabs.findIndex((n) => n.id === p.id);
+    const center = (p.centers[from] ?? 0) + dx;
+    const to = p.centers.filter((c, j) => j !== from && c < center).length;
+    setDrag({ id: p.id, from, to, dx, width: p.width });
+  };
+
+  const onTabPointerUp = () => {
+    const p = press.current;
+    press.current = null;
+    const done = drag;
+    setDrag(null);
+    if (!p?.moved || !done) return;
+    dragged.current = true;
+    if (done.from === done.to) return;
+    // Show the new order now; the backend's reload confirms it.
+    const order = tabs.map((n) => n.id);
+    order.splice(done.from, 1);
+    order.splice(done.to, 0, done.id);
+    useScratchStore.setState((s) => ({
+      notes:
+        s.notes?.map((n) =>
+          n.tab === null ? n : { ...n, tab: order.indexOf(n.id) },
+        ) ?? null,
+    }));
+    commands.moveScratchTab(done.id, done.to).catch(() => {});
+  };
+
+  const tabShift = (i: number, id: number): React.CSSProperties | undefined => {
+    if (!drag) return undefined;
+    if (id === drag.id)
+      return {
+        transform: `translateX(${drag.dx}px)`,
+        transition: "none",
+        zIndex: 10,
+      };
+    const { from, to, width } = drag;
+    if (from < to && i > from && i <= to)
+      return { transform: `translateX(${-width}px)` };
+    if (to < from && i >= to && i < from)
+      return { transform: `translateX(${width}px)` };
+    return undefined;
   };
 
   const moveTab = (id: number, by: number) => {
@@ -239,9 +345,87 @@ export const ScratchpadWindow: React.FC = () => {
     editorRef.current?.focus();
   };
 
+  const openTransforms = async () => {
+    setTfMenu(true);
+    watchAi();
+    // Fresh each time: transforms change on the Transforms page.
+    const settings = await commands.getAppSettings().catch(() => null);
+    if (settings?.status === "ok")
+      setTransforms((settings.data.transforms ?? []).filter((x) => x.enabled));
+  };
+
+  /** Rewrites the selection, or the whole note when nothing is selected,
+   *  with Undo. Esc or switching notes drops the result. */
+  const transform = async (tf: Transform) => {
+    if (!active || transforming) return;
+    const editor = editorRef.current;
+    const text = draft.text;
+    const selected =
+      mode === "write" && editor && editor.selectionEnd > editor.selectionStart;
+    const [from, to] = selected
+      ? [editor.selectionStart, editor.selectionEnd]
+      : [0, text.length];
+    const part = text.slice(from, to);
+    if (!part.trim()) return;
+    const id = ++run.current;
+    const noteId = active.id;
+    setTransforming(tf.name);
+    const result = await commands.tryTransform(tf, part).catch(() => null);
+    if (id !== run.current) return;
+    setTransforming(null);
+    if (latest.current.active?.id !== noteId) return;
+    const out = result?.status === "ok" ? result.data.text : null;
+    if (out === null || result?.status !== "ok") {
+      toast.error(t("scratchpad.transform.failed", { name: tf.name }), {
+        description:
+          result?.status === "ok"
+            ? problemText(
+                result.data.problem ?? "failed",
+                providerFor(tf, [], ai),
+              )
+            : (result?.error ?? undefined),
+      });
+      return;
+    }
+    const before = latest.current.draft.text;
+    const next = text.slice(0, from) + out + text.slice(to);
+    latest.current.draft.setText(next);
+    setMode("write");
+    requestAnimationFrame(() => {
+      editorRef.current?.focus();
+      editorRef.current?.setSelectionRange(from, from + out.length);
+    });
+    toast(t("scratchpad.transform.done", { name: tf.name }), {
+      action: {
+        label: t("scratchpad.toast.undo"),
+        onClick: () => {
+          if (latest.current.active?.id === noteId)
+            latest.current.draft.setText(before);
+        },
+      },
+    });
+  };
+
+  const cancelTransform = () => {
+    run.current++;
+    setTransforming(null);
+  };
+
   const copyAll = async () => {
     if (!draft.text.trim()) return;
     if (await copyToClipboard(draft.text)) toast(t("scratchpad.toast.copied"));
+  };
+
+  const openTargets = async () => {
+    setTargets([]);
+    setTargets(await commands.getSendTargets().catch(() => []));
+  };
+
+  const pickTarget = async (x: SendTarget) => {
+    const result = await commands.setSendTarget(x.handle);
+    if (result.status === "error")
+      toast.error(t("scratchpad.window.targetGone", { app: x.name }));
+    refresh(active?.id);
   };
 
   const send = async () => {
@@ -262,6 +446,11 @@ export const ScratchpadWindow: React.FC = () => {
   // Window shortcuts. Ctrl+Space dictates, Ctrl+Enter sends, Ctrl+T or
   // Ctrl+N opens a tab, Ctrl+W closes one, Ctrl+Tab moves between them.
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && transforming) {
+      e.preventDefault();
+      cancelTransform();
+      return;
+    }
     if (!e.ctrlKey || e.altKey || e.metaKey) return;
     const key = e.key.toLowerCase();
     if (key === " ") {
@@ -345,13 +534,19 @@ export const ScratchpadWindow: React.FC = () => {
           className="flex h-full min-w-0 flex-[0_1_auto] items-end gap-0.5"
           data-tauri-drag-region
         >
-          {tabs.map((note) => {
+          {tabs.map((note, i) => {
             const on = note.id === active?.id;
             return (
               <div
                 key={note.id}
+                data-tab-wrap
+                style={tabShift(i, note.id)}
                 onAuxClick={(e) => e.button === 1 && closeTab(note.id)}
-                className={`group relative -mb-px flex h-[30px] min-w-[70px] max-w-[176px] flex-[0_1_176px] items-center rounded-t-[7px] border border-b-0 pe-[5px] transition-colors duration-[var(--dur-1)] hover:duration-0 ${
+                className={`group relative -mb-px flex h-[30px] min-w-[70px] max-w-[176px] flex-[0_1_176px] items-center rounded-t-[7px] border border-b-0 pe-[5px] transition-[background-color,color,transform] duration-[var(--dur-2)] hover:duration-0 motion-reduce:transition-none ${
+                  drag?.id === note.id
+                    ? "cursor-grabbing shadow-[var(--shadow-1)]"
+                    : ""
+                } ${
                   on
                     ? "border-line bg-surface text-text"
                     : "border-transparent text-text-2 hover:bg-surface-3 hover:text-text"
@@ -380,7 +575,18 @@ export const ScratchpadWindow: React.FC = () => {
                     data-tab={note.id}
                     aria-selected={on}
                     tabIndex={on ? 0 : -1}
-                    onClick={() => activate(note.id)}
+                    onClick={() => {
+                      // The click that ends a drag doesn't switch tabs.
+                      if (dragged.current) {
+                        dragged.current = false;
+                        return;
+                      }
+                      activate(note.id);
+                    }}
+                    onPointerDown={(e) => onTabPointerDown(e, note)}
+                    onPointerMove={onTabPointerMove}
+                    onPointerUp={onTabPointerUp}
+                    onPointerCancel={onTabPointerUp}
                     onDoubleClick={() => setRenaming(note.id)}
                     onKeyDown={(e) => onTabKey(e, note)}
                     title={title(note)}
@@ -546,6 +752,7 @@ export const ScratchpadWindow: React.FC = () => {
             ) : (
               <NotePreview
                 text={draft.text}
+                onChange={draft.setText}
                 className="absolute inset-0 px-5 pb-[18px] pt-0.5"
               />
             )}
@@ -555,7 +762,7 @@ export const ScratchpadWindow: React.FC = () => {
               type="button"
               onClick={dictate}
               aria-pressed={dictating}
-              className={`inline-flex h-8 items-center gap-[7px] rounded-[var(--r-md)] border pe-2 ps-2.5 text-[13px] font-medium transition-colors duration-[var(--dur-1)] hover:duration-0 active:scale-[0.97] ${
+              className={`inline-flex h-8 flex-none items-center gap-[7px] whitespace-nowrap rounded-[var(--r-md)] border pe-2 ps-2.5 text-[13px] font-medium transition-colors duration-[var(--dur-1)] hover:duration-0 active:scale-[0.97] ${
                 dictating
                   ? "border-teal-500 bg-teal-50 text-teal-700"
                   : "border-line-strong bg-surface text-text shadow-[var(--shadow-1)] hover:bg-surface-2"
@@ -573,12 +780,74 @@ export const ScratchpadWindow: React.FC = () => {
                 ? t("scratchpad.window.listening")
                 : t("scratchpad.window.dictate")}
               {!dictating && (
-                <span className="ms-2 inline-flex gap-[3px]">
+                <span className="ms-2 hidden gap-[3px] min-[600px]:inline-flex">
                   <kbd className="kbd">{t("scratchpad.keys.ctrl")}</kbd>
                   <kbd className="kbd">{t("scratchpad.keys.space")}</kbd>
                 </span>
               )}
             </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() =>
+                  transforming
+                    ? cancelTransform()
+                    : tfMenu
+                      ? setTfMenu(false)
+                      : openTransforms()
+                }
+                disabled={!transforming && !draft.text.trim()}
+                aria-haspopup={transforming ? undefined : "menu"}
+                aria-expanded={transforming ? undefined : tfMenu}
+                title={
+                  transforming
+                    ? t("scratchpad.transform.cancelTip")
+                    : t("scratchpad.transform.tip")
+                }
+                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--r-md)] px-2.5 text-[13px] font-medium text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <Replace
+                  className={`h-4 w-4 ${transforming ? "animate-pulse text-teal-700" : ""}`}
+                  aria-hidden="true"
+                />
+                <span className="max-w-[140px] truncate">
+                  {transforming
+                    ? t("scratchpad.transform.running", { name: transforming })
+                    : t("scratchpad.transform.label")}
+                </span>
+                {!transforming && (
+                  <ChevronDown
+                    className="h-3.5 w-3.5 text-text-3"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+              {tfMenu && !transforming && (
+                <ActionMenu
+                  label={t("scratchpad.transform.label")}
+                  onClose={() => setTfMenu(false)}
+                  className="bottom-full start-0 mb-1 w-60"
+                  items={
+                    transforms === null
+                      ? []
+                      : transforms.length === 0
+                        ? [
+                            {
+                              id: "none",
+                              label: t("scratchpad.transform.none"),
+                              disabled: true,
+                              onSelect: () => {},
+                            },
+                          ]
+                        : transforms.map((tf) => ({
+                            id: tf.id,
+                            label: tf.name,
+                            onSelect: () => transform(tf),
+                          }))
+                  }
+                />
+              )}
+            </div>
             <span className="flex-1" />
             <button
               type="button"
@@ -590,28 +859,72 @@ export const ScratchpadWindow: React.FC = () => {
             >
               <Copy className="h-4 w-4" aria-hidden="true" />
             </button>
-            <button
-              type="button"
-              onClick={send}
-              disabled={!target || !draft.text.trim() || sending}
-              title={
-                target
-                  ? t("scratchpad.window.sendTip", { app: target.name })
-                  : t("scratchpad.window.noTarget")
-              }
-              className="inline-flex h-8 max-w-[220px] items-center gap-[7px] rounded-[var(--r-md)] border border-transparent bg-teal-fill pe-3 ps-[11px] text-[13px] font-medium text-white transition-colors duration-[var(--dur-1)] hover:bg-teal-fill-hover hover:duration-0 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-teal-fill"
-            >
-              {target ? (
-                <AppIcon path={target.path} className="h-4 w-4" />
-              ) : (
-                <Send className="h-4 w-4" aria-hidden="true" />
+            <div className="relative flex">
+              <button
+                type="button"
+                onClick={send}
+                disabled={!target || !draft.text.trim() || sending}
+                title={
+                  target
+                    ? t("scratchpad.window.sendTip", { app: target.name })
+                    : t("scratchpad.window.noTarget")
+                }
+                className="inline-flex h-8 max-w-[220px] items-center gap-[7px] rounded-s-[var(--r-md)] border border-transparent bg-teal-fill pe-3 ps-[11px] text-[13px] font-medium text-white transition-colors duration-[var(--dur-1)] hover:bg-teal-fill-hover hover:duration-0 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-teal-fill"
+              >
+                {target ? (
+                  <AppIcon path={target.path} className="h-4 w-4" />
+                ) : (
+                  <Send className="h-4 w-4" aria-hidden="true" />
+                )}
+                <span className="truncate">
+                  {target
+                    ? t("scratchpad.window.sendTo", { app: target.name })
+                    : t("scratchpad.window.send")}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => (targets ? setTargets(null) : openTargets())}
+                aria-label={t("scratchpad.window.pickTarget")}
+                aria-haspopup="menu"
+                aria-expanded={!!targets}
+                title={t("scratchpad.window.pickTarget")}
+                className="grid h-8 w-7 place-items-center rounded-e-[var(--r-md)] border-s border-white/25 bg-teal-fill text-white transition-colors duration-[var(--dur-1)] hover:bg-teal-fill-hover hover:duration-0 active:scale-[0.97]"
+              >
+                <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+              {targets && (
+                <ActionMenu
+                  label={t("scratchpad.window.pickTarget")}
+                  onClose={() => setTargets(null)}
+                  className="bottom-full end-0 mb-1 w-72"
+                  items={
+                    targets.length === 0
+                      ? [
+                          {
+                            id: "none",
+                            label: t("scratchpad.window.noWindows"),
+                            disabled: true,
+                            onSelect: () => {},
+                          },
+                        ]
+                      : targets.map((x) => ({
+                          id: String(x.handle),
+                          label: x.title
+                            .toLowerCase()
+                            .includes(x.name.toLowerCase())
+                            ? x.title
+                            : t("scratchpad.window.targetLabel", {
+                                app: x.name,
+                                title: x.title,
+                              }),
+                          checked: x.current,
+                          onSelect: () => pickTarget(x),
+                        }))
+                  }
+                />
               )}
-              <span className="truncate">
-                {target
-                  ? t("scratchpad.window.sendTo", { app: target.name })
-                  : t("scratchpad.window.send")}
-              </span>
-            </button>
+            </div>
           </footer>
         </>
       ) : notes ? (

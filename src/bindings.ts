@@ -1538,6 +1538,23 @@ async moveScratchTab(id: number, to: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The windows Send to can paste into, front to back.
+ */
+async getSendTargets() : Promise<SendTarget[]> {
+    return await TAURI_INVOKE("get_send_targets");
+},
+/**
+ * Points Send to at another window.
+ */
+async setSendTarget(handle: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_send_target", { handle }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async openScratchpad(noteId: number | null) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("open_scratchpad", { noteId }) };
@@ -2386,6 +2403,14 @@ export type DeletedNote = { note: ScratchNote; versions: ScratchVersion[] }
 /**
  * What the window needs when it opens.
  */
+/**
+ * An app's window Send to can paste into.
+ */
+export type SendTarget = { handle: number; name: string; title: string; path: string; 
+/**
+ * The one Send to pastes into now.
+ */
+current: boolean }
 export type ScratchpadState = { tabs: ScratchNote[]; active: number | null; keep_on_top: boolean; 
 /**
  * The app Send to pastes into.

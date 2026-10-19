@@ -77,3 +77,13 @@ export const insertAt = (
     cursor: before.length + lead.length + words.trim().length,
   };
 };
+
+/** Flips the task box of the list item that starts at `offset`. */
+export const toggleTask = (text: string, offset: number): string => {
+  const rest = text.slice(offset);
+  const match = /\[( |x|X)\]/.exec(rest);
+  if (!match) return text;
+  const at = offset + match.index;
+  const next = match[1] === " " ? "[x]" : "[ ]";
+  return text.slice(0, at) + next + text.slice(at + 3);
+};

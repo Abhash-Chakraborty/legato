@@ -90,6 +90,8 @@ pub enum BarNotice {
     SavedToScratchpad {
         app: Option<String>,
         admin: bool,
+        /// The note it went into, for the bar's Open.
+        note_id: Option<i64>,
     },
     /// Words corrected after a paste wait under Needs review; `more` counts
     /// the others found with `word`.

@@ -893,6 +893,8 @@ pub fn run(cli_args: CliArgs) {
             commands::scratchpad::close_scratch_tab,
             commands::scratchpad::move_scratch_tab,
             commands::scratchpad::open_scratchpad,
+            commands::scratchpad::get_send_targets,
+            commands::scratchpad::set_send_target,
             commands::scratchpad::hide_scratchpad,
             commands::scratchpad::scratchpad_dictate,
             commands::scratchpad::send_scratch_note,

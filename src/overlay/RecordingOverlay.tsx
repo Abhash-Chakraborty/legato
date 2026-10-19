@@ -58,7 +58,12 @@ type OverlayNotice =
         | "no_changes"
         | "ask_empty";
     }
-  | { kind: "saved_to_scratchpad"; app: string | null; admin: boolean }
+  | {
+      kind: "saved_to_scratchpad";
+      app: string | null;
+      admin: boolean;
+      note_id: number | null;
+    }
   | {
       kind: "spotted" | "learned";
       word: string;
@@ -702,6 +707,17 @@ const RecordingOverlay: React.FC = () => {
               onClick={() => commands.callCardAction("undo_never")}
             >
               {t("overlay.undo")}
+            </button>
+          )}
+          {notice?.kind === "saved_to_scratchpad" && (
+            <button
+              type="button"
+              className="sbtn ghost"
+              onClick={() =>
+                commands.openScratchpad(notice.note_id).catch(() => {})
+              }
+            >
+              {t("overlay.open")}
             </button>
           )}
           {notice?.kind === "note_ready" && (

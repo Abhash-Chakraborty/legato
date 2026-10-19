@@ -870,7 +870,7 @@ impl ShortcutAction for TranscribeAction {
                                         );
                                     }
                                     if let Err(reason) = &paste_result {
-                                        crate::scratchpad::save_failed_paste(
+                                        let note_id = crate::scratchpad::save_failed_paste(
                                             &ah_clone,
                                             &fallback_text,
                                             app_info.as_ref(),
@@ -881,6 +881,7 @@ impl ShortcutAction for TranscribeAction {
                                             &crate::scratchpad::failed_paste_notice(
                                                 app_info.as_ref(),
                                                 admin,
+                                                note_id,
                                             ),
                                         );
                                     }

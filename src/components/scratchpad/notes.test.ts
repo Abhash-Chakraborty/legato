@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { ScratchNote } from "@/bindings";
 import {
   insertAt,
+  toggleTask,
   matchesQuery,
   matchSnippet,
   plainText,
@@ -78,5 +79,11 @@ assert.deepEqual(insertAt("move it to Friday", 11, 17, "Thursday"), {
   text: "move it to Thursday",
   cursor: 19,
 });
+
+// Task boxes tick from the list item's start.
+const list = "Shopping\n\n- [ ] milk\n- [x] eggs\n";
+assert.equal(toggleTask(list, 10), "Shopping\n\n- [x] milk\n- [x] eggs\n");
+assert.equal(toggleTask(list, 20), "Shopping\n\n- [ ] milk\n- [ ] eggs\n");
+assert.equal(toggleTask("no boxes", 0), "no boxes");
 
 console.log("notes tests passed");

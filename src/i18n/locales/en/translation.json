@@ -2188,7 +2188,11 @@
       "sendTip": "Paste into {{app}} (Ctrl+Enter)",
       "noTarget": "Click into the app you want the text in, then open the Scratchpad",
       "emptyTitle": "No notes open",
-      "emptyBody": "Start a new note, or open one from the Scratchpad page in Legato."
+      "emptyBody": "Start a new note, or open one from the Scratchpad page in Legato.",
+      "pickTarget": "Choose the app to send to",
+      "noWindows": "No other windows are open",
+      "targetLabel": "{{app}} · {{title}}",
+      "targetGone": "{{app}} has closed"
     },
     "settings": {
       "title": "Window",
@@ -2207,6 +2211,19 @@
         "new": "a new note",
         "pinned": "your last pinned note"
       }
+    },
+    "preview": {
+      "tick": "Mark as done",
+      "untick": "Mark as not done"
+    },
+    "transform": {
+      "label": "Transform",
+      "tip": "Rewrite the selection, or the whole note when nothing is selected",
+      "running": "{{name}}…",
+      "cancelTip": "Stop (Esc)",
+      "none": "No transforms are turned on",
+      "done": "Rewrote it with {{name}}",
+      "failed": "{{name}} didn't run"
     }
   },
   "notes": {

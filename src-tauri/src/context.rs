@@ -222,6 +222,19 @@ pub fn app_for_process(pid: u32) -> Option<AppInfo> {
     }
 }
 
+/// The apps' windows someone could switch to, front to back, with handles
+/// `focus_window` can bring back. Legato's own windows are left out.
+pub fn open_windows() -> Vec<(isize, ForegroundWindow)> {
+    #[cfg(windows)]
+    {
+        win::open_windows()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
 /// The window in front, as a handle `focus_window` can bring back.
 pub fn foreground_handle() -> Option<isize> {
     #[cfg(windows)]
@@ -592,22 +605,74 @@ mod win {
             if hwnd.0.is_null() {
                 return None;
             }
-            let title = window_title(hwnd);
-            let mut pid = 0u32;
-            GetWindowThreadProcessId(hwnd, Some(&mut pid));
-            let mut exe_path = process_path(pid)?;
-            // Store apps draw inside ApplicationFrameHost; the app itself
-            // owns one of the frame's child windows.
-            if exe_path
-                .to_ascii_lowercase()
-                .ends_with("\\applicationframehost.exe")
-            {
-                if let Some(path) = store_app_child(hwnd, pid).and_then(|child| process_path(child))
-                {
-                    exe_path = path;
-                }
+            window_of(hwnd)
+        }
+    }
+
+    /// A window's title and its app's executable.
+    unsafe fn window_of(hwnd: HWND) -> Option<ForegroundWindow> {
+        let title = window_title(hwnd);
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        let mut exe_path = process_path(pid)?;
+        // Store apps draw inside ApplicationFrameHost; the app itself owns
+        // one of the frame's child windows.
+        if exe_path
+            .to_ascii_lowercase()
+            .ends_with("\\applicationframehost.exe")
+        {
+            if let Some(path) = store_app_child(hwnd, pid).and_then(|child| process_path(child)) {
+                exe_path = path;
             }
-            Some(ForegroundWindow { exe_path, title })
+        }
+        Some(ForegroundWindow { exe_path, title })
+    }
+
+    unsafe extern "system" fn collect_window(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetWindow, GetWindowLongW, IsWindowVisible, GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW,
+        };
+        let found = &mut *(lparam.0 as *mut Vec<HWND>);
+        let owned = GetWindow(hwnd, GW_OWNER).is_ok_and(|owner| !owner.0.is_null());
+        let tool = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0 != 0;
+        // Windows on another desktop, and suspended Store apps, are cloaked.
+        let mut cloaked = 0u32;
+        let _ = DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED,
+            &mut cloaked as *mut u32 as *mut c_void,
+            std::mem::size_of::<u32>() as u32,
+        );
+        if IsWindowVisible(hwnd).as_bool()
+            && !owned
+            && !tool
+            && cloaked == 0
+            && GetWindowTextLengthW(hwnd) > 0
+        {
+            found.push(hwnd);
+        }
+        BOOL(1)
+    }
+
+    pub fn open_windows() -> Vec<(isize, ForegroundWindow)> {
+        use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
+        let mut found: Vec<HWND> = Vec::new();
+        let own = std::process::id();
+        unsafe {
+            let _ = EnumWindows(
+                Some(collect_window),
+                LPARAM(&mut found as *mut Vec<HWND> as isize),
+            );
+            found
+                .into_iter()
+                .filter(|hwnd| {
+                    let mut pid = 0u32;
+                    GetWindowThreadProcessId(*hwnd, Some(&mut pid));
+                    pid != own
+                })
+                .filter_map(|hwnd| window_of(hwnd).map(|w| (hwnd.0 as isize, w)))
+                .collect()
         }
     }
 

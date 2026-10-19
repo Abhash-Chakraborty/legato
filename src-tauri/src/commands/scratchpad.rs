@@ -1,7 +1,7 @@
 //! Commands behind the Scratchpad window and page.
 
 use crate::managers::scratch_store::{DeletedNote, NewNote, ScratchNote, ScratchVersion};
-use crate::scratchpad::{self, ScratchpadManager, ScratchpadState};
+use crate::scratchpad::{self, ScratchpadManager, ScratchpadState, SendTarget};
 use crate::settings::{get_settings, write_settings, ScratchpadOpen};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
@@ -121,6 +121,24 @@ pub fn move_scratch_tab(notes: Notes<'_>, id: i64, to: u32) -> Result<(), String
 #[specta::specta]
 pub fn open_scratchpad(app: AppHandle, note_id: Option<i64>) -> Result<(), String> {
     text(scratchpad::show(&app, note_id))
+}
+
+/// The windows Send to can paste into, front to back.
+#[tauri::command]
+#[specta::specta]
+pub fn get_send_targets() -> Vec<SendTarget> {
+    scratchpad::send_targets()
+}
+
+/// Points Send to at another window.
+#[tauri::command]
+#[specta::specta]
+pub fn set_send_target(handle: i64) -> Result<(), String> {
+    if scratchpad::set_send_target(handle) {
+        Ok(())
+    } else {
+        Err("That window has closed.".into())
+    }
 }
 
 #[tauri::command]
