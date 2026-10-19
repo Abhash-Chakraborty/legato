@@ -1024,6 +1024,42 @@ async undoFixWord(undoToken: number) : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getAiStatus() : Promise<AiStatus> {
+    return await TAURI_INVOKE("get_ai_status");
+},
+async testAiConnection() : Promise<AiTestResult> {
+    return await TAURI_INVOKE("test_ai_connection");
+},
+/**
+ * The last four characters of each saved key.
+ */
+async getAiKeyHints() : Promise<Partial<{ [key in string]: string }>> {
+    return await TAURI_INVOKE("get_ai_key_hints");
+},
+async changeAiCorrectionSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_ai_correction_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAiMinWordsSetting(words: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_ai_min_words_setting", { words }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAiTimeoutSetting(seconds: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_ai_timeout_setting", { seconds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1031,11 +1067,13 @@ async undoFixWord(undoToken: number) : Promise<Result<null, string>> {
 
 
 export const events = __makeEvents__<{
+aiStatusChanged: AiStatusChanged,
 dictionaryChanged: DictionaryChanged,
 historyUpdatePayload: HistoryUpdatePayload,
 streamPhaseEvent: StreamPhaseEvent,
 streamTextEvent: StreamTextEvent
 }>({
+aiStatusChanged: "ai-status-changed",
 dictionaryChanged: "dictionary-changed",
 historyUpdatePayload: "history-update-payload",
 streamPhaseEvent: "stream-phase-event",
@@ -1048,6 +1086,72 @@ streamTextEvent: "stream-text-event"
 
 /** user-defined types **/
 
+/**
+ * A Test connection that answered, for the provider and model it tested.
+ */
+export type AiLastTest = { provider_id: string; model: string; base_url: string; 
+/**
+ * Unix seconds.
+ */
+at: number; latency_ms: number }
+/**
+ * What the status line shows, on every screen that uses the AI.
+ */
+export type AiStatus = { kind: AiStatusKind; provider_id: string; provider_label: string; model: string; base_url: string; local: boolean; needs_key: boolean; has_key: boolean; 
+/**
+ * The last successful Test connection for this provider and model.
+ */
+tested_at: number | null; latency_ms: number | null; 
+/**
+ * When the problem in `kind` was last seen.
+ */
+problem_at: number | null }
+/**
+ * Sent when the provider, model, key or the provider's answers change what
+ * the status line says.
+ */
+export type AiStatusChanged = null
+/**
+ * Where the AI provider stands, in the words every screen uses.
+ */
+export type AiStatusKind = 
+/**
+ * No model chosen yet, or the provider needs a key that isn't saved.
+ */
+"none" | 
+/**
+ * Set up, but not tested and not used yet.
+ */
+"untested" | "ok" | 
+/**
+ * Nothing answered at the address.
+ */
+"unreachable" | 
+/**
+ * 401 or 403: the key was rejected, or a server turned Legato away.
+ */
+"rejected" | 
+/**
+ * 404: the provider has no model by that name.
+ */
+"not_found" | 
+/**
+ * 429.
+ */
+"rate_limited" | 
+/**
+ * No answer within the time limit.
+ */
+"slow" | 
+/**
+ * Any other failed answer.
+ */
+"failed"
+export type AiTestResult = { status: AiStatus; 
+/**
+ * The provider's model list, when it sent one.
+ */
+models: string[] }
 /**
  * The container-level `serde(default)` (backed by the `Default` impl below)
  * guarantees every field — including ones added in the future — falls back to
@@ -1077,7 +1181,11 @@ export type FixSource =
 /**
  * Fixed by hand with Fix a word.
  */
-"manual"
+"manual" | 
+/**
+ * Fixed by the AI correction pass.
+ */
+"ai"
 /**
  * One fix made today, for Home's rail.
  */
@@ -1206,7 +1314,25 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; theme?: Theme; 
+selected_channel?: number | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; 
+/**
+ * Let the AI model fix misheard Dictionary words after the rules have
+ * run. Off until turned on, since it sends dictations to the provider.
+ */
+ai_correction_enabled?: boolean; 
+/**
+ * Dictations with fewer words skip the correction pass.
+ */
+ai_min_words?: number; 
+/**
+ * Every AI step gives up after this long and the text is pasted without
+ * AI changes.
+ */
+ai_timeout_secs?: number; 
+/**
+ * The last successful Test connection, shown in the AI status line.
+ */
+ai_last_test?: AiLastTest | null; mute_while_recording?: boolean; append_trailing_space?: boolean; theme?: Theme; 
 /**
  * Use the standard Windows title bar instead of Legato's own. Applied when
  * the main window is created and whenever the setting changes.

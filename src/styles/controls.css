@@ -272,6 +272,22 @@ textarea.input {
   cursor: not-allowed;
 }
 
+/* ------------------------------------------------------- text links */
+/* An action inside a line of text: "Retry", "Set up", "Change". */
+.link {
+  color: var(--teal-700);
+  font-weight: 500;
+  text-underline-offset: 2px;
+}
+.link:hover {
+  text-decoration: underline;
+}
+.link:disabled {
+  opacity: 0.45;
+  cursor: default;
+  text-decoration: none;
+}
+
 /* ---------------------------------------------------------- key caps */
 .kbd {
   display: inline-grid;

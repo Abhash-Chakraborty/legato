@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useRef } from "react";
 
 interface SettingContainerProps {
   title: string;
-  description: string;
+  description: React.ReactNode;
   children: React.ReactNode;
   /** Kept for existing callers; help text now always shows under the title. */
   descriptionMode?: "inline" | "tooltip";

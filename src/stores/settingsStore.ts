@@ -156,6 +156,10 @@ const settingUpdaters: {
     commands.changePostProcessEnabledSetting(value as boolean),
   post_process_selected_prompt_id: (value) =>
     commands.setPostProcessSelectedPrompt(value as string),
+  ai_correction_enabled: (value) =>
+    commands.changeAiCorrectionSetting(value as boolean),
+  ai_min_words: (value) => commands.changeAiMinWordsSetting(value as number),
+  ai_timeout_secs: (value) => commands.changeAiTimeoutSetting(value as number),
   mute_while_recording: (value) =>
     commands.changeMuteWhileRecordingSetting(value as boolean),
   append_trailing_space: (value) =>

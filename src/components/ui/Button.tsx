@@ -17,6 +17,8 @@ export const Button: React.FC<ButtonProps> = ({
   className = "",
   variant = "primary",
   size = "md",
+  // Only a button that asks for it submits the form it sits in.
+  type = "button",
   ...props
 }) => {
   // Hover arrives at once and fades out over 100 ms; a press scales to 0.97.
@@ -48,6 +50,7 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <button
+      type={type}
       className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
       {...props}
     >

@@ -1,10 +1,14 @@
+use crate::ai::{self, AiConfig, AiNotice, AiProblem, AiStatusKind};
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
+use crate::audio_toolkit::text::DictionaryCorrection;
 use crate::audio_toolkit::VadPolicy;
 use crate::context::{self, AppInfo, DictationContext};
 use crate::managers::audio::{recording_error_type, AudioRecordingManager};
 use crate::managers::dictionary::{applied_fixes, DictionaryManager};
 use crate::managers::history::HistoryManager;
-use crate::managers::history_store::{AppFields, DictationStatus, NewEntry, PasteRecord};
+use crate::managers::history_store::{
+    AppFields, AppliedFix, DictationStatus, FixSource, NewEntry, PasteRecord,
+};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::policy::{live_decode, LiveDecode, ModelTraits};
 use crate::managers::transcription::TranscriptionManager;
@@ -116,39 +120,29 @@ fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool
     style == OverlayStyle::Live && is_streaming
 }
 
-async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
+/// Runs the selected transform on a dictation. Ok(None) means it didn't run
+/// (nothing set up, or an empty answer); Err means the provider didn't answer
+/// properly in time, so the text goes out without it.
+async fn post_process_transcription(
+    app: &AppHandle,
+    settings: &AppSettings,
+    transcription: &str,
+) -> Result<Option<String>, AiProblem> {
     if is_blank_transcription(transcription) {
         debug!("Post-processing skipped because the transcription is empty");
-        return None;
+        return Ok(None);
     }
 
-    let provider = match settings.active_post_process_provider().cloned() {
-        Some(provider) => provider,
-        None => {
-            debug!("Post-processing enabled but no provider is selected");
-            return None;
-        }
+    let Some(config) = AiConfig::from_settings(settings) else {
+        debug!("Post-processing skipped because no AI model is set up");
+        return Ok(None);
     };
-
-    let model = settings
-        .post_process_models
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
-
-    if model.trim().is_empty() {
-        debug!(
-            "Post-processing skipped because provider '{}' has no model configured",
-            provider.id
-        );
-        return None;
-    }
 
     let selected_prompt_id = match &settings.post_process_selected_prompt_id {
         Some(id) => id.clone(),
         None => {
             debug!("Post-processing skipped because no prompt is selected");
-            return None;
+            return Ok(None);
         }
     };
 
@@ -163,30 +157,26 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                 "Post-processing skipped because prompt '{}' was not found",
                 selected_prompt_id
             );
-            return None;
+            return Ok(None);
         }
     };
 
     if prompt.trim().is_empty() {
         debug!("Post-processing skipped because the selected prompt is empty");
-        return None;
+        return Ok(None);
     }
 
+    let provider = &config.provider;
+    let model = &config.model;
     debug!(
         "Starting LLM post-processing with provider '{}' (model: {})",
         provider.id, model
     );
 
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
-
     // Ask these providers to skip reasoning/thinking — post-processing rarely
     // benefits from it and it adds seconds of latency. llm_client picks the
     // field the endpoint understands and retries without it if rejected.
-    let disable_reasoning = matches!(provider.id.as_str(), "custom" | "openrouter");
+    let disable_reasoning = matches!(provider.id.as_str(), "ollama" | "custom" | "openrouter");
 
     if provider.supports_structured_output {
         debug!("Using structured outputs for provider '{}'", provider.id);
@@ -207,17 +197,21 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
             "additionalProperties": false
         });
 
-        match crate::llm_client::send_chat_completion_with_schema(
-            &provider,
-            api_key.clone(),
-            &model,
-            user_content,
-            Some(system_prompt),
-            Some(json_schema),
-            disable_reasoning,
+        let answer = ai::guard(
+            app,
+            &config,
+            crate::llm_client::send_chat_completion_with_schema(
+                provider,
+                config.api_key.clone(),
+                model,
+                user_content,
+                Some(system_prompt),
+                Some(json_schema),
+                disable_reasoning,
+            ),
         )
-        .await
-        {
+        .await;
+        match answer {
             Ok(Some(content)) => {
                 // Parse the JSON response to extract the transcription field
                 let content = strip_think_block(&content);
@@ -232,10 +226,10 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                                 provider.id,
                                 result.len()
                             );
-                            return Some(result);
+                            return Ok(Some(result));
                         } else {
                             error!("Structured output response missing 'transcription' field");
-                            return Some(strip_invisible_chars(content));
+                            return Ok(Some(strip_invisible_chars(content)));
                         }
                     }
                     Err(e) => {
@@ -243,18 +237,20 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                             "Failed to parse structured output JSON: {}. Returning raw content.",
                             e
                         );
-                        return Some(strip_invisible_chars(content));
+                        return Ok(Some(strip_invisible_chars(content)));
                     }
                 }
             }
             Ok(None) => {
                 error!("LLM API response has no content");
-                return None;
+                return Ok(None);
             }
-            Err(e) => {
+            // Out of time: trying again in the other format would only wait longer.
+            Err(problem) if problem.kind == AiStatusKind::Slow => return Err(problem),
+            Err(problem) => {
                 warn!(
-                    "Structured output failed for provider '{}': {}. Falling back to legacy mode.",
-                    provider.id, e
+                    "Structured output failed for provider '{}' ({:?}). Falling back to legacy mode.",
+                    provider.id, problem.kind
                 );
                 // Fall through to legacy mode below
             }
@@ -265,15 +261,19 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
     let processed_prompt = prompt.replace("${output}", transcription);
     debug!("Processed prompt length: {} chars", processed_prompt.len());
 
-    match crate::llm_client::send_chat_completion(
-        &provider,
-        api_key,
-        &model,
-        processed_prompt,
-        disable_reasoning,
+    let answer = ai::guard(
+        app,
+        &config,
+        crate::llm_client::send_chat_completion(
+            provider,
+            config.api_key.clone(),
+            model,
+            processed_prompt,
+            disable_reasoning,
+        ),
     )
-    .await
-    {
+    .await;
+    match answer {
         Ok(Some(content)) => {
             let content = strip_invisible_chars(strip_think_block(&content));
             debug!(
@@ -281,19 +281,18 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                 provider.id,
                 content.len()
             );
-            Some(content)
+            Ok(Some(content))
         }
         Ok(None) => {
             error!("LLM API response has no content");
-            None
+            Ok(None)
         }
-        Err(e) => {
+        Err(problem) => {
             error!(
-                "LLM post-processing failed for provider '{}': {}. Falling back to original transcription.",
-                provider.id,
-                e
+                "LLM post-processing failed for provider '{}' ({:?}). Falling back to original transcription.",
+                provider.id, problem.kind
             );
-            None
+            Err(problem)
         }
     }
 }
@@ -310,11 +309,30 @@ fn app_fields(info: AppInfo) -> AppFields {
 }
 
 pub(crate) struct ProcessedTranscription {
+    /// The transcript after the AI correction pass, or as it came in.
+    pub transcription: String,
+    /// Words the correction pass fixed, as (heard text, Dictionary word).
+    pub ai_fixes: Vec<(String, String)>,
     pub final_text: String,
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
     /// Name of the prompt that rewrote the text.
     pub transform: Option<String>,
+    /// An AI step that was skipped because the provider didn't answer.
+    pub ai_problem: Option<AiProblem>,
+}
+
+impl ProcessedTranscription {
+    /// The fixes to save with the dictation: the Dictionary's, then the AI's.
+    pub fn all_fixes(&self, rule_fixes: &[DictionaryCorrection]) -> Vec<AppliedFix> {
+        let mut fixes = applied_fixes(rule_fixes);
+        fixes.extend(self.ai_fixes.iter().map(|(from, to)| AppliedFix {
+            from: from.clone(),
+            to: to.clone(),
+            source: FixSource::Ai,
+        }));
+        fixes
+    }
 }
 
 pub(crate) async fn process_transcription_output(
@@ -323,34 +341,54 @@ pub(crate) async fn process_transcription_output(
     post_process: bool,
 ) -> ProcessedTranscription {
     let settings = get_settings(app);
-    let mut final_text = transcription.to_string();
+    let mut text = transcription.to_string();
+    let mut ai_fixes = Vec::new();
+    let mut ai_problem = None;
+
+    match ai::correction_pass(app, &settings, &text).await {
+        Ok(Some(corrected)) => {
+            text = corrected.text;
+            ai_fixes = corrected.changes;
+        }
+        Ok(None) => {}
+        Err(problem) => ai_problem = Some(problem),
+    }
+
+    let mut final_text = text.clone();
     let mut post_processed_text: Option<String> = None;
     let mut post_process_prompt: Option<String> = None;
     let mut transform: Option<String> = None;
 
     if post_process {
-        if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
-            post_processed_text = Some(processed_text.clone());
-            final_text = processed_text;
+        match post_process_transcription(app, &settings, &final_text).await {
+            Ok(Some(processed_text)) => {
+                post_processed_text = Some(processed_text.clone());
+                final_text = processed_text;
 
-            if let Some(prompt_id) = &settings.post_process_selected_prompt_id {
-                if let Some(prompt) = settings
-                    .post_process_prompts
-                    .iter()
-                    .find(|prompt| &prompt.id == prompt_id)
-                {
-                    post_process_prompt = Some(prompt.prompt.clone());
-                    transform = Some(prompt.name.clone());
+                if let Some(prompt_id) = &settings.post_process_selected_prompt_id {
+                    if let Some(prompt) = settings
+                        .post_process_prompts
+                        .iter()
+                        .find(|prompt| &prompt.id == prompt_id)
+                    {
+                        post_process_prompt = Some(prompt.prompt.clone());
+                        transform = Some(prompt.name.clone());
+                    }
                 }
             }
+            Ok(None) => {}
+            Err(problem) => ai_problem = Some(problem),
         }
     }
 
     ProcessedTranscription {
+        transcription: text,
+        ai_fixes,
         final_text,
         post_processed_text,
         post_process_prompt,
         transform,
+        ai_problem,
     }
 }
 
@@ -709,6 +747,7 @@ impl ShortcutAction for TranscribeAction {
                             }
 
                             let app_info = started_in.as_ref().map(context::resolve);
+                            let fixes = processed.all_fixes(&fixes);
                             if !fixes.is_empty() {
                                 let words: Vec<&str> =
                                     fixes.iter().map(|f| f.to.as_str()).collect();
@@ -724,7 +763,7 @@ impl ShortcutAction for TranscribeAction {
                             let saved_id = if wav_saved {
                                 match hm.save_entry(NewEntry {
                                     file_name,
-                                    transcription_text: transcription,
+                                    transcription_text: processed.transcription.clone(),
                                     post_process_requested: post_process,
                                     post_processed_text: processed.post_processed_text.clone(),
                                     post_process_prompt: processed.post_process_prompt.clone(),
@@ -733,7 +772,7 @@ impl ShortcutAction for TranscribeAction {
                                     speech_ms: Some(speech_ms),
                                     model_id: Some(model_id.clone()),
                                     model_name: model_name.clone(),
-                                    fixes: applied_fixes(&fixes),
+                                    fixes,
                                     ..Default::default()
                                 }) {
                                     Ok(entry) => Some(entry.id),
@@ -753,6 +792,7 @@ impl ShortcutAction for TranscribeAction {
                                 let ah_clone = ah.clone();
                                 let paste_time = Instant::now();
                                 let final_text = processed.final_text;
+                                let ai_problem = processed.ai_problem;
                                 let rm_for_paste = Arc::clone(&rm);
                                 let hm_for_paste = Arc::clone(&hm);
                                 let not_pasted =
@@ -821,6 +861,13 @@ impl ShortcutAction for TranscribeAction {
                                     }
                                     utils::hide_recording_overlay(&ah_clone);
                                     set_tray_state(&ah_clone, TrayIconState::Idle);
+                                    // Say when the text went out without the AI's changes.
+                                    if let Some(problem) = &ai_problem {
+                                        crate::overlay::show_overlay_notice(
+                                            &ah_clone,
+                                            &AiNotice::from(problem),
+                                        );
+                                    }
                                 })
                                 .unwrap_or_else(|e| {
                                     error!("Failed to run paste on main thread: {:?}", e);

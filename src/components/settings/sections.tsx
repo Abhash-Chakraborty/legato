@@ -12,7 +12,7 @@ import {
   Shield,
   type LucideIcon,
 } from "lucide-react";
-import type { AppSettings, ModelInfo } from "@/bindings";
+import type { AiStatus, AppSettings, ModelInfo } from "@/bindings";
 import type { SettingsSection } from "../../stores/navStore";
 import { useModelStore } from "../../stores/modelStore";
 
@@ -48,7 +48,15 @@ import { ReliablePasteToggle } from "./debug/ReliablePaste";
 import { ClipboardHandlingSetting } from "./ClipboardHandling";
 import { AutoSubmit } from "./AutoSubmit";
 import { AppendTrailingSpace } from "./AppendTrailingSpace";
-import { PostProcessingSettingsApi } from "./PostProcessingSettingsApi";
+import {
+  AiPrivacyNote,
+  AiProviders,
+  AiStatusCard,
+  CorrectionPassRow,
+  MinWordsRow,
+  TimeoutRow,
+  TransformsUseRow,
+} from "./ai/AiSettings";
 import { ShowOverlay } from "./ShowOverlay";
 import { RememberApp } from "./RememberApp";
 import { HistoryLimit } from "./HistoryLimit";
@@ -77,6 +85,7 @@ import {
 export interface RowContext {
   settings: AppSettings | null;
   model: ModelInfo | undefined;
+  ai: AiStatus | null;
 }
 
 /** A dependency that isn't met: the reason key, plus values for it. */
@@ -115,6 +124,11 @@ const CLIPBOARD_PASTE = ["ctrl_v", "ctrl_shift_v", "shift_insert"];
 
 const needsSoundFeedback = ({ settings }: RowContext): Unmet | null =>
   settings?.audio_feedback ? null : { reasonKey: "settings.requires.sound" };
+
+const needsAiModel = ({ ai }: RowContext): Unmet | null =>
+  !ai || ai.kind === "none"
+    ? { reasonKey: "settings.ai.use.needsModel" }
+    : null;
 
 const needsVad = ({ settings }: RowContext): Unmet | null =>
   (settings?.vad_enabled ?? true)
@@ -593,19 +607,80 @@ export const buildSections = (
     icon: Plug,
     groups: [
       {
-        id: "provider",
-        titleKey: "settings.groups.provider",
+        id: "connection",
+        titleKey: "settings.groups.untitled",
         rows: [
+          {
+            id: "ai-status",
+            searchKeys: [
+              "settings.ai.actions.test",
+              "settings.ai.status.connectedTitle",
+            ],
+            render: () => <AiStatusCard />,
+          },
           {
             id: "provider",
             searchKeys: [
-              "settings.postProcessing.api.provider.title",
-              "settings.postProcessing.api.provider.description",
-              "settings.postProcessing.api.apiKey.title",
-              "settings.postProcessing.api.model.title",
-              "settings.postProcessing.api.baseUrl.title",
+              "settings.ai.provider.title",
+              "settings.ai.provider.help",
+              "settings.ai.key.title",
+              "settings.ai.model.title",
+              "settings.ai.baseUrl.title",
             ],
-            render: () => <PostProcessingSettingsApi />,
+            render: () => <AiProviders />,
+          },
+        ],
+      },
+      {
+        id: "ai-use",
+        titleKey: "settings.ai.use.title",
+        rows: [
+          {
+            id: "ai-correction",
+            searchKeys: [
+              "settings.ai.use.correction.title",
+              "settings.ai.use.correction.helpEmpty",
+            ],
+            render: () => <CorrectionPassRow />,
+            requires: needsAiModel,
+          },
+          {
+            id: "ai-transforms",
+            searchKeys: [
+              "settings.ai.use.transforms.title",
+              "settings.ai.use.transforms.help",
+            ],
+            render: () => <TransformsUseRow />,
+            requires: needsAiModel,
+          },
+        ],
+      },
+      {
+        id: "ai-limits",
+        titleKey: "settings.ai.limits.title",
+        rows: [
+          {
+            id: "ai-min-words",
+            searchKeys: [
+              "settings.ai.limits.minWords.title",
+              "settings.ai.limits.minWords.helpOff",
+            ],
+            render: () => <MinWordsRow />,
+            requires: needsAiModel,
+          },
+          {
+            id: "ai-timeout",
+            searchKeys: [
+              "settings.ai.limits.timeout.title",
+              "settings.ai.limits.timeout.help",
+            ],
+            render: () => <TimeoutRow />,
+            requires: needsAiModel,
+          },
+          {
+            id: "ai-privacy",
+            searchKeys: [],
+            render: () => <AiPrivacyNote />,
           },
         ],
       },

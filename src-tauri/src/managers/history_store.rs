@@ -181,6 +181,8 @@ pub enum FixSource {
     Match,
     /// Fixed by hand with Fix a word.
     Manual,
+    /// Fixed by the AI correction pass.
+    Ai,
 }
 
 /// A fix made on one dictation.

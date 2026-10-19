@@ -380,40 +380,6 @@
       "hotkey": {
         "title": "Hotkey"
       },
-      "api": {
-        "title": "API",
-        "provider": {
-          "title": "Provider",
-          "description": "An OpenAI-compatible or Anthropic-compatible provider."
-        },
-        "apiFormat": {
-          "title": "API format",
-          "description": "Request format expected by your custom endpoint.",
-          "options": {
-            "openai": "OpenAI compatible (Chat Completions)",
-            "anthropic": "Anthropic Messages"
-          }
-        },
-        "baseUrl": {
-          "title": "Base URL",
-          "description": "The provider's API address. Only Custom can be edited.",
-          "placeholder": "https://api.openai.com/v1",
-          "placeholderAnthropic": "https://api.anthropic.com/v1"
-        },
-        "apiKey": {
-          "title": "API key",
-          "description": "The key for this provider.",
-          "placeholder": "sk-..."
-        },
-        "model": {
-          "title": "Model",
-          "descriptionCustom": "Provide the model identifier expected by your custom endpoint.",
-          "descriptionDefault": "Choose a model exposed by the selected provider.",
-          "placeholderWithOptions": "Search or select a model",
-          "placeholderNoOptions": "Type a model name",
-          "refreshModels": "Refresh models"
-        }
-      },
       "prompts": {
         "title": "Prompt",
         "selectedPrompt": {
@@ -615,7 +581,7 @@
       },
       "ai": {
         "title": "AI",
-        "subtitle": "Your own AI provider and model, used by Transforms."
+        "subtitle": "Your own AI provider and model, and what Legato may use it for."
       },
       "bar": {
         "title": "Legato bar",
@@ -659,7 +625,8 @@
       "logs": "Logs",
       "input": "Input",
       "previews": "Previews",
-      "apps": "Apps"
+      "apps": "Apps",
+      "untitled": ""
     },
     "requires": {
       "tray": "Needs the tray icon, or there would be no way to open the window.",
@@ -677,6 +644,148 @@
       "rememberApp": {
         "title": "Remember which app I dictated into",
         "description": "Shows the app on each dictation so Home can filter by it. Off, Legato keeps no app names or window titles."
+      }
+    },
+    "ai": {
+      "where": {
+        "local": "Local",
+        "cloud": "Cloud"
+      },
+      "status": {
+        "testingTitle": "Testing {{name}} · {{model}}",
+        "testingHelp": "Sending a short request…",
+        "noKeyTitle": "No AI model connected",
+        "noKeyHelp": "Add your {{name}} API key below, or run a model on this PC with Ollama.",
+        "noModelTitle": "Choose which {{name}} model to use",
+        "noModelServerTitle": "Choose a model on your server",
+        "noModelHelp": "Pick one below, fetch the list, or type a model's exact name.",
+        "unreachableOllamaTitle": "Ollama isn't running",
+        "unreachableOllamaHelp": "Nothing answered at {{host}}. Start Ollama, then retry.",
+        "unreachableServerTitle": "Your server isn't reachable",
+        "unreachableServerHelp": "Nothing answered at {{url}}. Check that the server is running and the address is right.",
+        "unreachableTitle": "{{name}} isn't reachable",
+        "unreachableHelp": "No answer from {{host}}. Check your internet connection, then retry.",
+        "rejectedKeyTitle": "{{name}} rejected the API key (401)",
+        "rejectedKeyHelp": "The key ending in {{last4}} doesn't work any more. Make a new one at {{console}}.",
+        "rejectedKeyHelpPlain": "It turned down the key ending in {{last4}}. Check which key it expects, then replace it.",
+        "rejectedTitle": "{{name}} refused the request (401)",
+        "rejectedHelp": "It answered, but turned Legato away. Check its access settings, then retry.",
+        "notFoundTitle": "{{name}} has no model called {{model}} (404)",
+        "notFoundOllamaHelp": "Download it in a terminal with {{command}}, then retry. Or pick a model you already have below.",
+        "notFoundHelp": "The name may be misspelled, or the model was retired. Pick one from the list below.",
+        "rateLimitedLocalTitle": "{{name}} is turning requests away (429)",
+        "rateLimitedLocalHelp": "It's busy with other requests. Wait a moment, then retry. Dictation keeps pasting without AI changes.",
+        "rateLimitedTitle": "{{name}} is rate limiting Legato (429)",
+        "rateLimitedHelp": "Too many requests in a short time, or your plan's limit is used up. Wait a minute, then retry.",
+        "slowTitle": "{{name}} didn't answer in time",
+        "slowHelp": "It took longer than {{seconds}} seconds, so the text was pasted without AI changes. A smaller model answers faster, or allow more time under Limits.",
+        "failedTitle": "{{name}} couldn't answer",
+        "failedHelp": "The request failed. Legato's log has the details.",
+        "connectedTitle": "{{name}} · {{model}}",
+        "untestedHelp": "Not tested yet",
+        "okHelp": "Connected · tested {{time}} · {{ms}} ms",
+        "okHelpPlain": "Connected"
+      },
+      "actions": {
+        "test": "Test connection",
+        "retry": "Retry",
+        "useOllama": "Use Ollama",
+        "replaceKey": "Replace key",
+        "copyCommand": "Copy command",
+        "chooseModel": "Choose a model"
+      },
+      "copied": "Copied “{{command}}”",
+      "provider": {
+        "title": "Provider",
+        "help": "Choose an AI provider and API key, or Ollama to run models on this PC.",
+        "label": "AI provider",
+        "panel": "{{name}} settings"
+      },
+      "providers": {
+        "ollama": "Runs models on this PC. Nothing leaves it.",
+        "openai": "GPT models, with a key from platform.openai.com.",
+        "anthropic": "Claude models, with a key from console.anthropic.com.",
+        "openrouter": "One key for models from many providers.",
+        "groq": "Hosted open models such as Llama, with a key from console.groq.com.",
+        "custom": "Any OpenAI-compatible server, such as LM Studio or vLLM.",
+        "legacy": "Set up in an earlier version."
+      },
+      "keySaved": "Key saved",
+      "baseUrl": {
+        "title": "Base URL",
+        "ollamaHelp": "Where Ollama listens. Change it only if Ollama runs on another port or PC.",
+        "customHelp": "The server's OpenAI-compatible address, ending in /v1.",
+        "invalid": "Start the address with http:// or https://.",
+        "label": "Base URL for {{name}}"
+      },
+      "apiFormat": {
+        "title": "API format",
+        "help": "How your server expects requests.",
+        "openai": "OpenAI-compatible",
+        "anthropic": "Anthropic Messages"
+      },
+      "key": {
+        "title": "API key",
+        "optionalTitle": "API key (optional)",
+        "help": "Starts with {{prefix}}. Kept in Windows Credential Manager and sent only to {{host}}.",
+        "optionalHelp": "Only if your server asks for one. Kept in Windows Credential Manager.",
+        "label": "API key for {{name}}",
+        "show": "Show key",
+        "hide": "Hide key",
+        "save": "Save",
+        "cancel": "Cancel",
+        "replace": "Replace",
+        "remove": "Remove the {{name}} key",
+        "removeTip": "Remove key",
+        "saved": "Key saved in Windows Credential Manager",
+        "removed": "Key removed",
+        "failed": "Couldn't save the key: {{error}}"
+      },
+      "model": {
+        "title": "Model",
+        "help": "Which AI model gets the text. Pick one from the list or type its exact name.",
+        "placeholder": "Choose a model",
+        "label": "Model",
+        "fetch": "Fetch models",
+        "fetching": "Fetching…",
+        "fetchFailed": "Couldn't get the model list: {{reason}}",
+        "none": "The provider listed no models. Type the model's exact name."
+      },
+      "use": {
+        "title": "Use AI for",
+        "needsModel": "Connect a model above to use these.",
+        "correction": {
+          "title": "Correction pass with your Dictionary",
+          "help_one": "Gives the model your {{count}} Dictionary word, so a name or term you taught comes out right the next time you say it.",
+          "help_other": "Gives the model your {{count}} Dictionary words, so a name or term you taught comes out right the next time you say it.",
+          "helpEmpty": "Gives the model the words in your Dictionary, so a name or term you taught comes out right the next time you say it."
+        },
+        "transforms": {
+          "title": "Transforms",
+          "help": "The Dictate then transform shortcut sends the dictation and the transform's prompt."
+        }
+      },
+      "limits": {
+        "title": "Limits",
+        "minWords": {
+          "title": "Skip short dictations",
+          "help_one": "Dictations under {{count}} word skip the correction pass.",
+          "help_other": "Dictations under {{count}} words skip the correction pass.",
+          "helpOff": "Every dictation goes to the correction pass, however short.",
+          "value_one": "{{count}} word",
+          "value_other": "{{count}} words",
+          "valueOff": "Off"
+        },
+        "timeout": {
+          "title": "Give up after",
+          "help": "If the model hasn't answered by then, Legato pastes the text without AI changes.",
+          "option_one": "{{count}} second",
+          "option_other": "{{count}} seconds"
+        }
+      },
+      "privacy": {
+        "local": "{{name}} runs on this PC, so text for these uses never leaves it. Audio is never sent anywhere.",
+        "cloud": "Text for the uses you turned on goes to {{name}} ({{host}}). Audio never leaves this PC."
       }
     }
   },
@@ -742,7 +851,16 @@
       "word_exists": "“{{word}}” is already in your Dictionary",
       "no_selection": "Select a word first, then press the shortcut",
       "not_a_word": "Select one word or name, up to four words long",
-      "failed": "Couldn't read the selection"
+      "failed": "Couldn't read the selection",
+      "ai": {
+        "unreachableOllama": "Ollama isn't running · pasted without AI changes",
+        "unreachable": "{{name}} isn't reachable · pasted without AI changes",
+        "rejected": "{{name}} turned Legato away · pasted without AI changes",
+        "not_found": "{{name}} can't find the model · pasted without AI changes",
+        "rate_limited": "{{name}} is rate limiting · pasted without AI changes",
+        "slow": "{{name}} didn't answer in time · pasted without AI changes",
+        "failed": "{{name}} couldn't answer · pasted without AI changes"
+      }
     }
   },
   "titleBar": {
@@ -812,7 +930,8 @@
       "fixWordKey": "Fix a word (F)",
       "fixedTip": "{{word}} · fixed from “{{heard}}” · {{by}}",
       "fixedByYou": "by you",
-      "fixedByDictionary": "Dictionary"
+      "fixedByDictionary": "Dictionary",
+      "fixedByAi": "AI correction pass"
     },
     "meta": {
       "siteIn": "{{site}} in {{app}}",
@@ -850,8 +969,6 @@
       "language": "Spoken language",
       "autoLanguage": "Auto",
       "ai": "AI",
-      "aiOff": "Off",
-      "aiModel": "{{provider}} · {{model}}",
       "shortcut": "Dictate shortcut",
       "noShortcut": "Not set",
       "activation": {
@@ -865,6 +982,8 @@
         "dictionary": "Dictionary",
         "dictionaryDetail_one": "{{count}} word",
         "dictionaryDetail_other": "{{count}} words",
+        "dictionaryWithAi_one": "{{count}} word, then the AI pass",
+        "dictionaryWithAi_other": "{{count}} words, then the AI pass",
         "cleanup": "Cleanup",
         "cleanupOn": "Filler words removed",
         "transform": "Transform",
@@ -1014,7 +1133,8 @@
         "normal": "normal matching",
         "loose": "loose matching",
         "pinned": "{{pinned}} of {{limit}} pinned",
-        "hint": "{{used}} of {{limit}} hint words"
+        "hint": "{{used}} of {{limit}} hint words",
+        "ai": "AI pass on"
       },
       "matching": {
         "title": "Matching",
@@ -1036,6 +1156,10 @@
         "close": "Close",
         "empty": "No words yet.",
         "counts": "{{pinned}} pinned, {{recent}} by recent use, {{free}} free."
+      },
+      "ai": {
+        "title": "AI correction pass",
+        "help": "Your AI model reads each dictation with your words and their heard-as forms, and fixes the misses the rules didn't catch."
       }
     },
     "editor": {
@@ -1081,8 +1205,36 @@
       "shortcut": "Shortcut",
       "prompts": "Prompts"
     },
-    "noProvider": "No provider",
-    "noModel": "No model picked yet",
     "changeProvider": "Change in Settings"
+  },
+  "ai": {
+    "provider": "AI",
+    "yourServer": "Your server",
+    "where": {
+      "local": "local",
+      "cloud": "cloud"
+    },
+    "status": {
+      "none": "No AI model",
+      "ok": "{{name}} · {{model}} · {{where}}",
+      "tested": "{{line}} · tested {{time}}",
+      "unreachableOllama": "Ollama isn't running",
+      "unreachable": "{{name}} isn't reachable",
+      "rejectedKey": "{{name}} rejected the API key",
+      "rejected": "{{name}} refused the request",
+      "notFound": "{{name}} can't find {{model}}",
+      "rateLimited": "{{name}} is rate limiting Legato",
+      "slow": "{{name}} didn't answer in time",
+      "failed": "{{name}} couldn't answer",
+      "off": "Off in Settings › AI"
+    },
+    "action": {
+      "setup": "Set up",
+      "retry": "Retry",
+      "fix": "Fix",
+      "change": "Change"
+    },
+    "checking": "Checking {{name}}…",
+    "connected": "Connected to {{name}} · {{ms}} ms"
   }
 }

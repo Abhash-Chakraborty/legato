@@ -6,13 +6,18 @@ import { useSettings } from "../../../hooks/useSettings";
 import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
 import { SettingContainer } from "../../ui/SettingContainer";
+import { AiStatusLine } from "../../shared/AiStatusLine";
+import { useAiStore } from "../../../stores/aiStore";
 import { MATCHING, MATCHING_THRESHOLD, matchingOf } from "./list";
 
 /** How heard words are matched and what goes into the model's vocabulary
  *  hint, folded to one line until opened. */
 export const LearningCard: React.FC<{ view: DictionaryView }> = ({ view }) => {
   const { t } = useTranslation();
-  const { settings, updateSetting } = useSettings();
+  const { settings, updateSetting, isUpdating } = useSettings();
+  const ai = useAiStore((s) => s.status);
+  const aiConnected = !!ai && ai.kind !== "none";
+  const aiOn = settings?.ai_correction_enabled ?? false;
   const [open, setOpen] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const bodyId = useId();
@@ -33,6 +38,7 @@ export const LearningCard: React.FC<{ view: DictionaryView }> = ({ view }) => {
       used: view.hint.length,
       limit: view.hint_limit,
     }),
+    ...(aiOn && aiConnected ? [t("dictionary.learning.summary.ai")] : []),
   ].join(" · ");
 
   return (
@@ -107,6 +113,32 @@ export const LearningCard: React.FC<{ view: DictionaryView }> = ({ view }) => {
               >
                 {t("dictionary.learning.hint.show")}
               </Button>
+            </SettingContainer>
+          </div>
+          <div className="border-t border-line">
+            <SettingContainer
+              title={t("dictionary.learning.ai.title")}
+              description={
+                <>
+                  <span className="block">
+                    {t("dictionary.learning.ai.help")}
+                  </span>
+                  <AiStatusLine className="mt-1" />
+                </>
+              }
+            >
+              <button
+                type="button"
+                role="switch"
+                aria-checked={aiOn && aiConnected}
+                aria-label={t("dictionary.learning.ai.title")}
+                className="toggle"
+                disabled={!aiConnected}
+                onClick={() => {
+                  if (!isUpdating("ai_correction_enabled"))
+                    updateSetting("ai_correction_enabled", !aiOn);
+                }}
+              />
             </SettingContainer>
           </div>
         </div>

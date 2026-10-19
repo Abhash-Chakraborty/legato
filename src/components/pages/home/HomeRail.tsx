@@ -23,6 +23,9 @@ import {
   type Page,
   type SettingsSection,
 } from "../../../stores/navStore";
+import { useAiStore, watchAi } from "../../../stores/aiStore";
+import { describeAi } from "../../../lib/utils/aiStatus";
+import { AiDotMark, useAiAction } from "../../shared/AiStatusLine";
 import { getLanguageLabel } from "../../../lib/constants/languages";
 import { formatKeyCombination } from "../../../lib/utils/keyboard";
 import { getTranslatedModelName } from "../../../lib/utils/modelTranslation";
@@ -145,12 +148,14 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
       ? t("home.rail.autoLanguage")
       : (getLanguageLabel(language) ?? language);
 
-  const providerId = settings?.post_process_provider_id ?? "";
-  const provider = settings?.post_process_providers?.find(
-    (p) => p.id === providerId,
-  );
-  const aiModel = settings?.post_process_models?.[providerId] ?? "";
-  const aiOn = settings?.post_process_enabled ?? false;
+  const aiStatus = useAiStore((s) => s.status);
+  useEffect(watchAi, []);
+  const aiLine = describeAi(aiStatus, t);
+  const runAi = useAiAction();
+  const aiPass =
+    (settings?.ai_correction_enabled ?? false) &&
+    !!aiStatus &&
+    aiStatus.kind !== "none";
 
   const binding = settings?.bindings?.transcribe?.current_binding ?? "";
   const keys = formatKeyCombination(binding).split(" + ").filter(Boolean);
@@ -191,21 +196,23 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
           <Fact
             label={t("home.rail.ai")}
             value={
-              aiOn && provider ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    aria-hidden="true"
-                    className="h-1.5 w-1.5 rounded-full bg-ok"
-                  />
-                  {aiModel
-                    ? t("home.rail.aiModel", {
-                        provider: provider.label,
-                        model: aiModel,
-                      })
-                    : provider.label}
-                </span>
-              ) : (
-                t("home.rail.aiOff")
+              <span
+                className="inline-flex max-w-full items-center gap-1.5"
+                title={aiLine.text}
+              >
+                <AiDotMark dot={aiLine.dot} />
+                <span className="truncate">{aiLine.text}</span>
+              </span>
+            }
+            aside={
+              aiLine.action && (
+                <button
+                  type="button"
+                  className="link flex-none text-[13px]"
+                  onClick={() => runAi(aiLine.action!)}
+                >
+                  {t(`ai.action.${aiLine.action}`)}
+                </button>
               )
             }
           />
@@ -243,7 +250,12 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
           <Step
             icon={BookA}
             title={t("home.rail.steps.dictionary")}
-            detail={t("home.rail.steps.dictionaryDetail", { count: words })}
+            detail={t(
+              aiPass
+                ? "home.rail.steps.dictionaryWithAi"
+                : "home.rail.steps.dictionaryDetail",
+              { count: words },
+            )}
             onClick={open("dictionary")}
           />
           <Step

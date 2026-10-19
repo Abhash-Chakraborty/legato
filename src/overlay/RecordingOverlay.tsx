@@ -22,7 +22,13 @@ type OverlayState =
 type OverlayNotice =
   | { kind: "word_added"; word: string }
   | { kind: "word_exists"; word: string }
-  | { kind: "no_selection" | "not_a_word" | "failed" };
+  | { kind: "no_selection" | "not_a_word" | "failed" }
+  | {
+      kind: "ai_skipped";
+      problem: string;
+      provider_id: string;
+      provider_label: string;
+    };
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
@@ -366,7 +372,20 @@ const RecordingOverlay: React.FC = () => {
       ? ""
       : notice.kind === "word_added" || notice.kind === "word_exists"
         ? t(`overlay.notice.${notice.kind}`, { word: notice.word })
-        : t(`overlay.notice.${notice.kind}`);
+        : notice.kind === "ai_skipped"
+          ? t(
+              notice.provider_id === "ollama" &&
+                notice.problem === "unreachable"
+                ? "overlay.notice.ai.unreachableOllama"
+                : `overlay.notice.ai.${notice.problem}`,
+              {
+                name:
+                  notice.provider_id === "custom"
+                    ? t("ai.yourServer")
+                    : notice.provider_label,
+              },
+            )
+          : t(`overlay.notice.${notice.kind}`);
     return (
       <div
         className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}

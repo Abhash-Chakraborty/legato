@@ -241,7 +241,9 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
                     by: t(
                       seg.fix.source === "manual"
                         ? "home.row.fixedByYou"
-                        : "home.row.fixedByDictionary",
+                        : seg.fix.source === "ai"
+                          ? "home.row.fixedByAi"
+                          : "home.row.fixedByDictionary",
                     ),
                   })}
                 >

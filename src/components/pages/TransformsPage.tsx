@@ -7,6 +7,7 @@ import { ShortcutInput } from "../settings/ShortcutInput";
 import { PostProcessingSettingsPrompts } from "../settings/PostProcessingSettingsPrompts";
 import { useSettings } from "../../hooks/useSettings";
 import { useNavStore } from "../../stores/navStore";
+import { AiStatusLine } from "../shared/AiStatusLine";
 
 /**
  * Prompts your AI provider runs on a dictation before it is pasted. Each
@@ -18,11 +19,6 @@ export const TransformsPage: React.FC = () => {
   const { getSetting, updateSetting, isUpdating } = useSettings();
   const go = useNavStore((state) => state.go);
   const enabled = getSetting("post_process_enabled") ?? false;
-  const providerId = getSetting("post_process_provider_id") ?? "";
-  const provider = getSetting("post_process_providers")?.find(
-    (p) => p.id === providerId,
-  );
-  const model = getSetting("post_process_models")?.[providerId] ?? "";
 
   return (
     <Page
@@ -51,14 +47,7 @@ export const TransformsPage: React.FC = () => {
 
       <SettingsGroup title={t("transforms.groups.provider")}>
         <div className="flex min-h-[60px] items-center justify-between gap-8 py-3.5">
-          <div className="min-w-0">
-            <h3 className="text-[15px] font-medium leading-snug">
-              {provider?.label ?? t("transforms.noProvider")}
-            </h3>
-            <p className="mt-0.5 text-[13px] text-text-3">
-              {model || t("transforms.noModel")}
-            </p>
-          </div>
+          <AiStatusLine />
           <Button variant="secondary" onClick={() => go("settings", "ai")}>
             {t("transforms.changeProvider")}
           </Button>

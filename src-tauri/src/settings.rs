@@ -118,6 +118,17 @@ pub struct PostProcessProvider {
     pub api_format: PostProcessApiFormat,
 }
 
+/// A Test connection that answered, for the provider and model it tested.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct AiLastTest {
+    pub provider_id: String,
+    pub model: String,
+    pub base_url: String,
+    /// Unix seconds.
+    pub at: i64,
+    pub latency_ms: u32,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum OverlayPosition {
@@ -438,6 +449,20 @@ pub struct AppSettings {
     pub post_process_prompts: Vec<LLMPrompt>,
     #[serde(default)]
     pub post_process_selected_prompt_id: Option<String>,
+    /// Let the AI model fix misheard Dictionary words after the rules have
+    /// run. Off until turned on, since it sends dictations to the provider.
+    #[serde(default)]
+    pub ai_correction_enabled: bool,
+    /// Dictations with fewer words skip the correction pass.
+    #[serde(default = "default_ai_min_words")]
+    pub ai_min_words: u32,
+    /// Every AI step gives up after this long and the text is pasted without
+    /// AI changes.
+    #[serde(default = "default_ai_timeout_secs")]
+    pub ai_timeout_secs: u32,
+    /// The last successful Test connection, shown in the AI status line.
+    #[serde(default)]
+    pub ai_last_test: Option<AiLastTest>,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
@@ -636,11 +661,29 @@ fn default_show_tray_icon() -> bool {
 }
 
 fn default_post_process_provider_id() -> String {
-    "openai".to_string()
+    "ollama".to_string()
+}
+
+fn default_ai_min_words() -> u32 {
+    8
+}
+
+fn default_ai_timeout_secs() -> u32 {
+    6
 }
 
 fn default_post_process_providers() -> Vec<PostProcessProvider> {
     let mut providers = vec![
+        // Runs models on this PC, so it comes first.
+        PostProcessProvider {
+            id: "ollama".to_string(),
+            label: "Ollama".to_string(),
+            base_url: "http://localhost:11434/v1".to_string(),
+            allow_base_url_edit: true,
+            models_endpoint: Some("/models".to_string()),
+            supports_structured_output: false,
+            api_format: PostProcessApiFormat::OpenAi,
+        },
         PostProcessProvider {
             id: "openai".to_string(),
             label: "OpenAI".to_string(),
@@ -712,7 +755,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
     providers.push(PostProcessProvider {
         id: "custom".to_string(),
         label: "Custom".to_string(),
-        base_url: "http://localhost:11434/v1".to_string(),
+        base_url: "http://localhost:1234/v1".to_string(),
         allow_base_url_edit: true,
         models_endpoint: Some("/models".to_string()),
         supports_structured_output: false,
@@ -915,6 +958,10 @@ pub fn get_default_settings() -> AppSettings {
         post_process_models: default_post_process_models(),
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
+        ai_correction_enabled: false,
+        ai_min_words: default_ai_min_words(),
+        ai_timeout_secs: default_ai_timeout_secs(),
+        ai_last_test: None,
         mute_while_recording: false,
         append_trailing_space: false,
         theme: default_theme(),

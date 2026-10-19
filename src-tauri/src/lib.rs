@@ -1,4 +1,6 @@
 mod actions;
+mod ai;
+mod ai_rules;
 mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
@@ -16,6 +18,7 @@ mod managers;
 mod overlay;
 mod paste_tx;
 pub mod portable;
+mod secrets;
 mod selection;
 mod settings;
 mod shortcut;
@@ -199,6 +202,10 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
 }
 
 fn initialize_core_logic(app_handle: &AppHandle) {
+    // API keys an older version kept in the settings file go to Credential
+    // Manager before anything reads them.
+    secrets::move_keys_out_of_settings(app_handle);
+
     // Note: Enigo (keyboard/mouse simulation) is NOT initialized here.
     // The frontend is responsible for calling the `initialize_enigo` command
     // after onboarding completes.
@@ -745,10 +752,17 @@ pub fn run(cli_args: CliArgs) {
             commands::dictionary::find_fix_candidates,
             commands::dictionary::fix_word,
             commands::dictionary::undo_fix_word,
+            commands::ai::get_ai_status,
+            commands::ai::test_ai_connection,
+            commands::ai::get_ai_key_hints,
+            commands::ai::change_ai_correction_setting,
+            commands::ai::change_ai_min_words_setting,
+            commands::ai::change_ai_timeout_setting,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
             managers::dictionary::DictionaryChanged,
+            ai::AiStatusChanged,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
         ]);

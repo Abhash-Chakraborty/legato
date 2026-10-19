@@ -11,6 +11,7 @@ import { useSettings } from "../../hooks/useSettings";
 import { useTextHighlight } from "../../hooks/useTextHighlight";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
+import { useAiStore, watchAi } from "../../stores/aiStore";
 import { useNavStore, type SettingsSection } from "../../stores/navStore";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { Requires } from "../ui/SettingContainer";
@@ -94,9 +95,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     if (current.id !== section) go("settings", current.id);
   }, [current.id, section, go]);
 
+  const ai = useAiStore((state) => state.status);
+  useEffect(watchAi, []);
+
   const ctx: RowContext = {
     settings,
     model: models.find((m) => m.id === currentModel),
+    ai,
   };
 
   const q = query.trim().toLowerCase();

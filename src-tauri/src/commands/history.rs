@@ -156,10 +156,9 @@ pub async fn retry_history_entry_transcription(
         return Err("Recording contains no speech".to_string());
     }
 
-    let fixes = crate::managers::dictionary::applied_fixes(&transcription.fixes);
-    let transcription = transcription.text;
     let processed =
-        process_transcription_output(&app, &transcription, entry.post_process_requested).await;
+        process_transcription_output(&app, &transcription.text, entry.post_process_requested).await;
+    let fixes = processed.all_fixes(&transcription.fixes);
     let model_id = crate::settings::get_settings(&app).selected_model;
     let model_name = app
         .state::<Arc<ModelManager>>()
@@ -169,7 +168,7 @@ pub async fn retry_history_entry_transcription(
     history_manager
         .update_transcription(
             id,
-            transcription,
+            processed.transcription,
             processed.post_processed_text,
             processed.post_process_prompt,
             processed.transform,

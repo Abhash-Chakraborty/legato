@@ -1030,15 +1030,16 @@ pub fn change_post_process_base_url_setting(
         .post_process_provider_mut(&provider_id)
         .expect("Provider looked up above must exist");
 
-    if provider.id != "custom" {
+    if !provider.allow_base_url_edit && provider.id != "custom" {
         return Err(format!(
             "Provider '{}' does not allow editing the base URL",
             label
         ));
     }
 
-    provider.base_url = base_url;
+    provider.base_url = base_url.trim().to_string();
     settings::write_settings(&app, settings);
+    crate::ai::notify(&app);
     Ok(())
 }
 
@@ -1088,10 +1089,10 @@ pub fn change_post_process_api_key_setting(
     provider_id: String,
     api_key: String,
 ) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
+    let settings = settings::get_settings(&app);
     validate_provider_exists(&settings, &provider_id)?;
-    settings.post_process_api_keys.insert(provider_id, api_key);
-    settings::write_settings(&app, settings);
+    crate::secrets::set_api_key(&app, &provider_id, &api_key)?;
+    crate::ai::notify(&app);
     Ok(())
 }
 
@@ -1104,8 +1105,11 @@ pub fn change_post_process_model_setting(
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     validate_provider_exists(&settings, &provider_id)?;
-    settings.post_process_models.insert(provider_id, model);
+    settings
+        .post_process_models
+        .insert(provider_id, model.trim().to_string());
     settings::write_settings(&app, settings);
+    crate::ai::notify(&app);
     Ok(())
 }
 
@@ -1116,6 +1120,7 @@ pub fn set_post_process_provider(app: AppHandle, provider_id: String) -> Result<
     validate_provider_exists(&settings, &provider_id)?;
     settings.post_process_provider_id = provider_id;
     settings::write_settings(&app, settings);
+    crate::ai::notify(&app);
     Ok(())
 }
 
@@ -1210,15 +1215,10 @@ pub async fn fetch_post_process_models(
         .find(|p| p.id == provider_id)
         .ok_or_else(|| format!("Provider '{}' not found", provider_id))?;
 
-    // Get API key
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider_id)
-        .cloned()
-        .unwrap_or_default();
+    let api_key = crate::secrets::api_key(&settings, &provider_id);
 
     // Skip fetching if no API key for providers that typically need one
-    if api_key.trim().is_empty() && provider.id != "custom" {
+    if api_key.trim().is_empty() && crate::ai::needs_key(&provider.id) {
         return Err(format!(
             "API key is required for {}. Please add an API key to list available models.",
             provider.label
