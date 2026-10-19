@@ -1526,7 +1526,7 @@
     },
     "yours": {
       "title": "Your transforms",
-      "help": "Each one runs on the text you select, or on your last dictation when nothing is selected. The picker lists them in this order."
+      "help": "Each one runs on the text you select, or on your last dictation when nothing is selected. The picker lists them in this order; drag a card to change it."
     },
     "card": {
       "more": "More for {{name}}",

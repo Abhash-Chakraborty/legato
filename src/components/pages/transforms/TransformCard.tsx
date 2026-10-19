@@ -34,6 +34,10 @@ interface TransformCardProps {
   onMove: (delta: -1 | 1) => void;
   onDelete: () => void;
   formatWhen: (unixSeconds: number) => string;
+  /** Offset while a card is dragged; see useGridDrag. */
+  style?: React.CSSProperties;
+  dragging?: boolean;
+  dragHandlers?: React.HTMLAttributes<HTMLLIElement>;
 }
 
 /** One transform: its keys, switch, what it does, where it runs and how
@@ -50,6 +54,9 @@ export const TransformCard: React.FC<TransformCardProps> = ({
   onMove,
   onDelete,
   formatWhen,
+  style,
+  dragging = false,
+  dragHandlers,
 }) => {
   const { t } = useTranslation();
   const [menu, setMenu] = useState(false);
@@ -58,8 +65,14 @@ export const TransformCard: React.FC<TransformCardProps> = ({
 
   return (
     <li
-      className="group relative flex min-h-[172px] flex-col rounded-[var(--r-lg)] border border-line bg-surface p-4 transition-colors duration-[var(--dur-1)] hover:border-line-strong hover:duration-0"
+      className={`group relative flex min-h-[172px] touch-none select-none flex-col rounded-[var(--r-lg)] border bg-surface p-4 transition-[border-color,transform] duration-[var(--dur-2)] hover:border-line-strong hover:duration-0 motion-reduce:transition-none ${
+        dragging
+          ? "cursor-grabbing border-line-strong shadow-[var(--shadow-1)]"
+          : "cursor-grab border-line"
+      }`}
       data-transform={transform.id}
+      style={style}
+      {...dragHandlers}
     >
       <div className="flex items-center justify-between gap-3">
         {keys.length > 0 ? (

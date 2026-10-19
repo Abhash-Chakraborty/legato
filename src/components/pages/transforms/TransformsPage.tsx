@@ -4,6 +4,7 @@ import { Mic, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { commands, type Transform } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
+import { useSettingsStore } from "../../../stores/settingsStore";
 import { formatKeyCombination } from "../../../lib/utils/keyboard";
 import { useAiStore, watchAi } from "../../../stores/aiStore";
 import {
@@ -22,6 +23,7 @@ import { RecentRuns } from "./RecentRuns";
 import { KeyCaps, TransformCard } from "./TransformCard";
 import { TransformEditor } from "./TransformEditor";
 import { TryIt } from "./TryIt";
+import { reorder, useGridDrag } from "./useGridDrag";
 
 const NONE = "__none__";
 
@@ -110,6 +112,18 @@ export const TransformsPage: React.FC = () => {
     if (result.status === "error") toast.error(result.error);
     await refreshSettings();
   };
+
+  // Dragging a card: the new order shows at once, the backend confirms it.
+  const ids = transforms.map((x) => x.id);
+  const grid = useGridDrag(ids, "[data-transform]", (id, to) => {
+    const from = ids.indexOf(id);
+    useSettingsStore.setState((s) => ({
+      settings: s.settings
+        ? { ...s.settings, transforms: reorder(transforms, from, to) }
+        : null,
+    }));
+    commands.moveTransform(id, to).then(report);
+  });
 
   const remove = async (transform: Transform) => {
     const result = await commands.deleteTransform(transform.id);
@@ -247,6 +261,9 @@ export const TransformsPage: React.FC = () => {
                 report(await commands.moveTransform(transform.id, i + delta))
               }
               onDelete={() => remove(transform)}
+              style={grid.shift(i, transform.id)}
+              dragging={grid.dragging === transform.id}
+              dragHandlers={grid.handlers(transform.id)}
             />
           ))}
         </ul>
