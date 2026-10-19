@@ -1,0 +1,28 @@
+[package]
+name = "stand-in-phone"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "A command-line phone that speaks Legato's phone sync protocol, for testing the PC side"
+
+# Not part of the app's build: it borrows the app's sync modules by path
+# (src/sync/mod.rs) so it runs exactly the code the PC runs.
+[workspace]
+
+[dependencies]
+anyhow = "1.0.95"
+base64 = "0.22"
+chrono = "0.4"
+log = "0.4.25"
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }
+regex = "1"
+ring = "0.17"
+rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite_migration = "2.3"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+specta = { version = "=2.0.0-rc.22", features = ["derive"] }
+tokio = { version = "1.43.0", features = ["net", "io-util", "macros", "time", "sync", "rt-multi-thread", "io-std"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging"] }
