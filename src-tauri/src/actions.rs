@@ -615,11 +615,6 @@ impl ShortcutAction for TranscribeAction {
                     // 16 kHz mono; with voice detection on, silence is
                     // already gone, so this is speaking time.
                     let speech_ms = (sample_count / 16) as i64;
-                    let model_id = get_settings(&ah).selected_model;
-                    let model_name = ah
-                        .state::<Arc<ModelManager>>()
-                        .get_model_info(&model_id)
-                        .map(|m| m.name);
                     let file_name = format!("legato-{}.wav", chrono::Utc::now().timestamp());
                     let wav_path = hm.recordings_dir().join(&file_name);
                     let wav_path_for_verify = wav_path.clone();
@@ -634,6 +629,18 @@ impl ShortcutAction for TranscribeAction {
                     // as an error, so it never starts a batch run.
                     let transcription_time = Instant::now();
                     let transcription_result = tm.transcribe_recording(samples);
+                    // For Insights: the wait once you stopped, and where it ran.
+                    let transcribe_ms = transcription_time.elapsed().as_millis() as i64;
+                    let on_gpu = tm.on_gpu();
+                    // The model that did the work, which Style may have picked
+                    // for this kind of app.
+                    let model_id = tm
+                        .get_current_model()
+                        .unwrap_or_else(|| get_settings(&ah).selected_model);
+                    let model_name = ah
+                        .state::<Arc<ModelManager>>()
+                        .get_model_info(&model_id)
+                        .map(|m| m.name);
 
                     // Await WAV save and verify
                     let wav_saved = match wav_handle.await {
@@ -783,6 +790,8 @@ impl ShortcutAction for TranscribeAction {
                                     heard_text: Some(heard),
                                     fillers,
                                     snippets: processed.snippet_hits.len() as i64,
+                                    transcribe_ms: Some(transcribe_ms),
+                                    on_gpu,
                                     ..Default::default()
                                 }) {
                                     Ok(entry) => Some(entry.id),

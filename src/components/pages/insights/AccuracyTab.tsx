@@ -18,6 +18,14 @@ const fixRate = (m: InsightsModel): number | null =>
 const pasteMs = (m: InsightsModel): number | null =>
   m.pastes > 0 ? Math.round(m.paste_ms / m.pastes) : null;
 
+/** How long the model took once you stopped speaking, on average. */
+const transcribeMs = (m: InsightsModel): number | null =>
+  m.timed > 0 ? Math.round(m.transcribe_ms / m.timed) : null;
+
+/** The share of timed dictations that ran on the GPU, in percent. */
+const gpuShare = (m: InsightsModel): number | null =>
+  m.timed > 0 ? Math.round((m.on_gpu / m.timed) * 100) : null;
+
 /** Each speech model's words, time to paste and fixes, side by side. */
 export const AccuracyTab: React.FC<TabProps> = ({ data }) => {
   const { t, i18n } = useTranslation();
@@ -47,7 +55,7 @@ export const AccuracyTab: React.FC<TabProps> = ({ data }) => {
   };
 
   const head =
-    "px-3 py-2.5 text-start text-xs font-medium text-text-3 whitespace-nowrap";
+    "px-3 py-2.5 align-bottom text-start text-xs font-medium leading-snug text-text-3";
   const cell = "px-3 py-3 tabular-nums whitespace-nowrap";
 
   return (
@@ -67,13 +75,16 @@ export const AccuracyTab: React.FC<TabProps> = ({ data }) => {
                 {t("insights.models.dictations")}
               </th>
               <th scope="col" className={`${head} text-end`}>
+                {t("insights.models.transcribe")}
+              </th>
+              <th scope="col" className={`${head} text-end`}>
+                {t("insights.models.gpu")}
+              </th>
+              <th scope="col" className={`${head} text-end`}>
                 {t("insights.models.paste")}
               </th>
               <th scope="col" className={`${head} text-end`}>
                 {t("insights.models.fixes")}
-              </th>
-              <th scope="col" className={head}>
-                {t("insights.models.languagesHead")}
               </th>
               <th scope="col" className={head}>
                 {t("insights.models.lastUsed")}
@@ -87,6 +98,8 @@ export const AccuracyTab: React.FC<TabProps> = ({ data }) => {
             {data.models.map((m) => {
               const model = info(m.model);
               const ms = pasteMs(m);
+              const took = transcribeMs(m);
+              const gpu = gpuShare(m);
               const rate = fixRate(m);
               const inUse = m.model === current;
               return (
@@ -96,7 +109,7 @@ export const AccuracyTab: React.FC<TabProps> = ({ data }) => {
                 >
                   <th
                     scope="row"
-                    className="px-3 py-3 ps-5 text-start font-medium"
+                    className="whitespace-nowrap px-3 py-3 ps-5 text-start font-medium"
                   >
                     <span className="inline-flex items-center gap-2">
                       {model?.name ?? m.model}
@@ -111,12 +124,27 @@ export const AccuracyTab: React.FC<TabProps> = ({ data }) => {
                         </span>
                       )}
                     </span>
+                    {languages(m.model) !== "—" && (
+                      <span className="block text-xs font-normal text-text-3">
+                        {languages(m.model)}
+                      </span>
+                    )}
                   </th>
                   <td className={`${cell} text-end`}>
                     {m.dictations ? fmt(m.words) : "—"}
                   </td>
                   <td className={`${cell} text-end`}>
                     {m.dictations ? fmt(m.dictations) : "—"}
+                  </td>
+                  <td className={`${cell} text-end`}>
+                    {took === null
+                      ? "—"
+                      : t("insights.models.ms", { ms: fmt(took) })}
+                  </td>
+                  <td className={`${cell} text-end`}>
+                    {gpu === null
+                      ? "—"
+                      : t("insights.models.percent", { value: fmt(gpu) })}
                   </td>
                   <td className={`${cell} text-end`}>
                     {ms === null
@@ -132,9 +160,6 @@ export const AccuracyTab: React.FC<TabProps> = ({ data }) => {
                         })}
                   </td>
                   <td className={`${cell} text-text-2`}>
-                    {languages(m.model)}
-                  </td>
-                  <td className={`${cell} text-text-2`}>
                     {lastUsed(m.last_day)}
                   </td>
                   <td className={`${cell} pe-5 text-end`}>
@@ -142,6 +167,9 @@ export const AccuracyTab: React.FC<TabProps> = ({ data }) => {
                       <Button
                         variant="secondary"
                         size="sm"
+                        aria-label={t("insights.models.useLabel", {
+                          name: model.name,
+                        })}
                         onClick={() => selectModel(m.model)}
                       >
                         {t("insights.models.use")}

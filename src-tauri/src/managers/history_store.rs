@@ -292,6 +292,15 @@ pub static MIGRATIONS: &[M] = &[
          );
          CREATE INDEX note_failed_line_note ON note_failed_line (note_id, at_ms);",
     ),
+    // Accuracy in Insights: how long each model took once you stopped
+    // speaking, and how often it ran on the GPU. Counted from this version.
+    M::up(
+        "ALTER TABLE transcription_history ADD COLUMN transcribe_ms INTEGER;
+         ALTER TABLE transcription_history ADD COLUMN on_gpu INTEGER;
+         ALTER TABLE daily_model_stats ADD COLUMN timed INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE daily_model_stats ADD COLUMN transcribe_ms INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE daily_model_stats ADD COLUMN on_gpu INTEGER NOT NULL DEFAULT 0;",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.
@@ -398,12 +407,17 @@ pub struct HistoryEntry {
     pub error: Option<String>,
     /// What the model heard, before the Dictionary, cleanup and Style.
     pub heard_text: Option<String>,
+    /// From the end of recording to the model's text.
+    pub transcribe_ms: Option<i64>,
+    /// Whether the model ran on the GPU.
+    pub on_gpu: Option<bool>,
 }
 
 pub const COLUMNS: &str = "id, file_name, timestamp, saved, title, transcription_text,
     post_processed_text, post_process_prompt, post_process_requested, app_exe, app_path,
     app_name, app_title, app_site, category, paste_app_name, speech_ms, word_count,
-    model_id, model_name, transform, fixes, paste_ms, status, error, heard_text";
+    model_id, model_name, transform, fixes, paste_ms, status, error, heard_text,
+    transcribe_ms, on_gpu";
 
 pub fn map_entry(row: &Row<'_>) -> rusqlite::Result<HistoryEntry> {
     let fixes: Option<String> = row.get("fixes")?;
@@ -437,6 +451,8 @@ pub fn map_entry(row: &Row<'_>) -> rusqlite::Result<HistoryEntry> {
         status: status.as_deref().and_then(DictationStatus::parse),
         error: row.get("error")?,
         heard_text: row.get("heard_text")?,
+        transcribe_ms: row.get("transcribe_ms")?,
+        on_gpu: row.get("on_gpu")?,
     })
 }
 
@@ -473,6 +489,8 @@ pub struct NewEntry {
     pub fillers: Vec<(String, i64)>,
     /// Snippets the dictation pasted.
     pub snippets: i64,
+    pub transcribe_ms: Option<i64>,
+    pub on_gpu: Option<bool>,
 }
 
 /// How the paste went.
@@ -552,17 +570,34 @@ fn add_to_stats(conn: &Connection, entry: &HistoryEntry, sign: i64) -> Result<()
         )?;
     }
     if let Some(model) = entry.model_id.as_deref().filter(|m| !m.is_empty()) {
+        let timed = sign * i64::from(entry.transcribe_ms.is_some());
+        let transcribe = sign * entry.transcribe_ms.unwrap_or(0);
+        let on_gpu = sign * i64::from(entry.transcribe_ms.is_some() && entry.on_gpu == Some(true));
         conn.execute(
             &format!(
-                "INSERT INTO daily_model_stats (day, model, dictations, words, speech_ms, fixes)
-                 VALUES ({DAY_OF}, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO daily_model_stats
+                    (day, model, dictations, words, speech_ms, fixes, timed, transcribe_ms, on_gpu)
+                 VALUES ({DAY_OF}, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                  ON CONFLICT(day, model) DO UPDATE SET
                     dictations = dictations + excluded.dictations,
                     words = words + excluded.words,
                     speech_ms = speech_ms + excluded.speech_ms,
-                    fixes = fixes + excluded.fixes"
+                    fixes = fixes + excluded.fixes,
+                    timed = timed + excluded.timed,
+                    transcribe_ms = transcribe_ms + excluded.transcribe_ms,
+                    on_gpu = on_gpu + excluded.on_gpu"
             ),
-            params![entry.timestamp, model, sign, words, speech, fixes],
+            params![
+                entry.timestamp,
+                model,
+                sign,
+                words,
+                speech,
+                fixes,
+                timed,
+                transcribe,
+                on_gpu
+            ],
         )?;
     }
     conn.execute(
@@ -626,8 +661,8 @@ pub fn insert(conn: &mut Connection, new: &NewEntry) -> Result<HistoryEntry> {
             file_name, timestamp, saved, title, transcription_text, post_processed_text,
             post_process_prompt, post_process_requested, app_exe, app_path, app_name,
             app_title, app_site, category, speech_ms, word_count, model_id, model_name,
-            transform, status, fixes, heard_text
-         ) VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+            transform, status, fixes, heard_text, transcribe_ms, on_gpu
+         ) VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
         params![
             new.file_name,
             new.timestamp,
@@ -650,6 +685,8 @@ pub fn insert(conn: &mut Connection, new: &NewEntry) -> Result<HistoryEntry> {
             new.status.map(DictationStatus::as_str),
             fixes_json(&new.fixes),
             new.heard_text,
+            new.transcribe_ms,
+            new.on_gpu,
         ],
     )?;
     let entry = get(&tx, tx.last_insert_rowid())?.ok_or_else(|| anyhow!("Saved row is missing"))?;
@@ -1310,6 +1347,11 @@ pub struct InsightsModel {
     pub fixes: i64,
     /// Local date, YYYY-MM-DD.
     pub last_day: String,
+    /// Dictations in the range with a timing, how long the model took on
+    /// them in all once you stopped speaking, and how many ran on the GPU.
+    pub timed: i64,
+    pub transcribe_ms: i64,
+    pub on_gpu: i64,
 }
 
 /// Everything Insights shows.
@@ -1439,7 +1481,10 @@ pub fn insights(conn: &Connection, range: InsightsRange) -> Result<Insights> {
                     SUM(CASE WHEN day >= {since} THEN dictations ELSE 0 END),
                     SUM(CASE WHEN day >= {since} THEN words ELSE 0 END),
                     SUM(words), SUM(pastes), SUM(paste_ms), SUM(fixes),
-                    MAX(CASE WHEN dictations > 0 THEN day END) AS last_day
+                    MAX(CASE WHEN dictations > 0 THEN day END) AS last_day,
+                    SUM(CASE WHEN day >= {since} THEN timed ELSE 0 END),
+                    SUM(CASE WHEN day >= {since} THEN transcribe_ms ELSE 0 END),
+                    SUM(CASE WHEN day >= {since} THEN on_gpu ELSE 0 END)
              FROM daily_model_stats GROUP BY model HAVING last_day IS NOT NULL
              ORDER BY 3 DESC, last_day DESC"
         ))?
@@ -1453,6 +1498,9 @@ pub fn insights(conn: &Connection, range: InsightsRange) -> Result<Insights> {
                 paste_ms: row.get(5)?,
                 fixes: row.get(6)?,
                 last_day: row.get(7)?,
+                timed: row.get(8)?,
+                transcribe_ms: row.get(9)?,
+                on_gpu: row.get(10)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1571,10 +1619,16 @@ mod tests {
             to: "Dokploy".into(),
             source: FixSource::Heard,
         }];
+        first.transcribe_ms = Some(300);
+        first.on_gpu = Some(true);
         let first = insert(&mut conn, &first).unwrap();
         let mut second = entry("ship it today", Some("Slack"));
         second.fillers = vec![("um".into(), 1)];
+        second.transcribe_ms = Some(500);
+        second.on_gpu = Some(false);
         insert(&mut conn, &second).unwrap();
+        // Saved before timings were kept: counted, but not timed.
+        insert(&mut conn, &entry("old one", None)).unwrap();
         record_paste(
             &mut conn,
             first.id,
@@ -1592,13 +1646,13 @@ mod tests {
         let day = &got.days[0];
         assert_eq!(
             (day.dictations, day.words, day.fixes, day.snippets),
-            (2, 9, 1, 1)
+            (3, 11, 1, 1)
         );
         assert!(got.counted_since.is_some());
         assert_eq!(got.apps.len(), 1);
         assert_eq!(got.apps[0].words, 9);
         assert_eq!(got.apps[0].path.as_deref(), Some("C:\\Slack\\slack.exe"));
-        assert_eq!(got.hours.iter().sum::<i64>(), 2);
+        assert_eq!(got.hours.iter().sum::<i64>(), 3);
         assert_eq!(
             got.fillers,
             vec![
@@ -1621,7 +1675,11 @@ mod tests {
                 model.paste_ms,
                 model.fixes
             ),
-            (2, 9, 1, 400, 1)
+            (3, 11, 1, 400, 1)
+        );
+        assert_eq!(
+            (model.timed, model.transcribe_ms, model.on_gpu),
+            (2, 800, 1)
         );
     }
 

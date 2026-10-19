@@ -2709,7 +2709,15 @@ paste_ms: number | null; status: DictationStatus | null; error: string | null;
 /**
  * What the model heard, before the Dictionary, cleanup and Style.
  */
-heard_text: string | null }
+heard_text: string | null; 
+/**
+ * From the end of recording to the model's text.
+ */
+transcribe_ms: number | null; 
+/**
+ * Whether the model ran on the GPU.
+ */
+on_gpu: boolean | null }
 export type HistoryFilter = "all" | "starred" | "fixed" | "transformed"
 export type HistoryQuery = { 
 /**
@@ -2793,7 +2801,12 @@ export type InsightsModel = { model: string; dictations: number; words: number; 
 /**
  * Local date, YYYY-MM-DD.
  */
-last_day: string }
+last_day: string; 
+/**
+ * Dictations in the range with a timing, how long the model took on
+ * them in all once you stopped speaking, and how many ran on the GPU.
+ */
+timed: number; transcribe_ms: number; on_gpu: number }
 /**
  * The span Insights covers.
  */

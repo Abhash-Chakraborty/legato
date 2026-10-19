@@ -737,6 +737,11 @@ impl TranscriptionManager {
         self.engine.loaded().map(|info| info.backend)
     }
 
+    /// Whether the loaded model runs on the GPU; `None` when none is loaded.
+    pub fn on_gpu(&self) -> Option<bool> {
+        self.engine.loaded().map(|info| info.on_gpu)
+    }
+
     /// Whether a live streaming run is currently in flight.
     pub fn is_streaming(&self) -> bool {
         self.stream_active.load(Ordering::Acquire)
