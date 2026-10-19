@@ -7,6 +7,7 @@ import {
   Keyboard,
   Mic,
   PanelBottom,
+  PhoneIncoming,
   Plug,
   Settings2,
   Shield,
@@ -59,6 +60,20 @@ import {
   TransformsUseRow,
   NotesSummaryRow,
 } from "./ai/AiSettings";
+import {
+  AutoStartRow,
+  BrowserTitlesRow,
+  CountdownRow,
+  DetectCallsRow,
+  HideCardRow,
+  LastCallRow,
+  MaxLengthRow,
+  OpenNoteRow,
+  SnoozeRow,
+  StopOnEndRow,
+  TestDetectionRow,
+  WatchedAppsRow,
+} from "./calls/CallSettings";
 import { ShowOverlay } from "./ShowOverlay";
 import { ConfirmPaste, ShowChanges } from "./BarMessages";
 import { RememberApp } from "./RememberApp";
@@ -135,6 +150,11 @@ const needsAsk = (ctx: RowContext): Unmet | null =>
   ((ctx.settings?.ask_enabled ?? true)
     ? null
     : { reasonKey: "settings.requires.ask" });
+
+const needsCallDetection = ({ settings }: RowContext): Unmet | null =>
+  (settings?.calls?.detect ?? true)
+    ? null
+    : { reasonKey: "settings.requires.calls" };
 
 const needsSoundFeedback = ({ settings }: RowContext): Unmet | null =>
   settings?.audio_feedback ? null : { reasonKey: "settings.requires.sound" };
@@ -796,6 +816,143 @@ export const buildSections = (
             id: "ai-privacy",
             searchKeys: [],
             render: () => <AiPrivacyNote />,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "calls",
+    icon: PhoneIncoming,
+    groups: [
+      {
+        id: "calls-master",
+        titleKey: "settings.groups.untitled",
+        rows: [
+          {
+            id: "detect-calls",
+            searchKeys: [
+              "settings.calls.detect.title",
+              "settings.calls.detect.help",
+            ],
+            render: () => <DetectCallsRow />,
+          },
+        ],
+      },
+      {
+        id: "calls-detection",
+        titleKey: "settings.groups.detection",
+        rows: [
+          {
+            id: "browser-titles",
+            searchKeys: [
+              "settings.calls.browserTitles.title",
+              "settings.calls.browserTitles.help",
+            ],
+            render: () => <BrowserTitlesRow />,
+            requires: needsCallDetection,
+          },
+          {
+            id: "watched-apps",
+            searchKeys: [
+              "settings.calls.apps.title",
+              "calls.app.teams",
+              "calls.app.zoom",
+              "calls.app.meet",
+              "calls.app.slack",
+              "calls.app.discord",
+            ],
+            render: () => <WatchedAppsRow />,
+            requires: needsCallDetection,
+          },
+          {
+            id: "last-call",
+            searchKeys: ["settings.calls.last.title"],
+            render: () => <LastCallRow />,
+          },
+          {
+            id: "test-detection",
+            searchKeys: [
+              "settings.calls.test.title",
+              "settings.calls.test.button",
+            ],
+            render: () => <TestDetectionRow />,
+            requires: needsCallDetection,
+          },
+        ],
+      },
+      {
+        id: "call-start",
+        titleKey: "settings.groups.callStart",
+        rows: [
+          {
+            id: "auto-start",
+            searchKeys: [
+              "settings.calls.autoStart.title",
+              "settings.calls.autoStart.help",
+            ],
+            render: () => <AutoStartRow />,
+            requires: needsCallDetection,
+          },
+          {
+            id: "countdown",
+            searchKeys: ["settings.calls.countdown.title"],
+            render: () => <CountdownRow />,
+            requires: (ctx) =>
+              needsCallDetection(ctx) ??
+              ((ctx.settings?.calls?.auto_start ?? false)
+                ? null
+                : { reasonKey: "settings.requires.autoStart" }),
+          },
+          {
+            id: "snooze",
+            searchKeys: [
+              "settings.calls.snooze.title",
+              "settings.calls.snooze.help",
+            ],
+            render: () => <SnoozeRow />,
+            requires: needsCallDetection,
+          },
+          {
+            id: "hide-card",
+            searchKeys: [
+              "settings.calls.hideCard.title",
+              "settings.calls.hideCard.help",
+            ],
+            render: () => <HideCardRow />,
+            requires: needsCallDetection,
+          },
+        ],
+      },
+      {
+        id: "call-end",
+        titleKey: "settings.groups.callEnd",
+        rows: [
+          {
+            id: "stop-on-end",
+            searchKeys: [
+              "settings.calls.stopOnEnd.title",
+              "settings.calls.stopOnEnd.help",
+            ],
+            render: () => <StopOnEndRow />,
+            requires: needsCallDetection,
+          },
+          {
+            id: "max-length",
+            searchKeys: [
+              "settings.calls.maxLength.title",
+              "settings.calls.maxLength.help",
+            ],
+            render: () => <MaxLengthRow />,
+          },
+          {
+            id: "open-note",
+            searchKeys: [
+              "settings.calls.openNote.title",
+              "settings.calls.openNote.help",
+            ],
+            render: () => <OpenNoteRow />,
+            requires: needsCallDetection,
           },
         ],
       },

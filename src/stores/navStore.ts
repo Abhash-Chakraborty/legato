@@ -20,6 +20,7 @@ export type SettingsSection =
   | "transcription"
   | "output"
   | "ai"
+  | "calls"
   | "bar"
   | "privacy"
   | "about"

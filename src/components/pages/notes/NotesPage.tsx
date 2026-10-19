@@ -7,13 +7,14 @@ import React, {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { ChevronDown, Search, Tag } from "lucide-react";
+import { ChevronDown, Search, Settings2, Tag } from "lucide-react";
 import { commands, type Note, type NoteKind, type NoteLine } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";
 import { formatKeyCombination } from "../../../lib/utils/keyboard";
 import { useNavStore } from "../../../stores/navStore";
 import { useNotesStore, watchNotes } from "../../../stores/notesStore";
+import { watchCalls } from "../../../stores/callsStore";
 import { ActionMenu } from "../../ui/ActionMenu";
 import { Button } from "../../ui/Button";
 import {
@@ -26,6 +27,7 @@ import { NoteDetail } from "./NoteDetail";
 import { NoteRow } from "./NoteRow";
 import { RecordDialog } from "./RecordDialog";
 import { RecordingStrip } from "./RecordingStrip";
+import { CallStrip } from "./CallStrip";
 
 /** Search results: matching note ids, with the transcript line that matched
  *  when only the transcript did. */
@@ -112,6 +114,7 @@ export const NotesPage: React.FC = () => {
   const now = new Date();
 
   useEffect(watchNotes, []);
+  useEffect(watchCalls, []);
 
   // Opened from the Legato bar or elsewhere on one note.
   useEffect(() => {
@@ -331,6 +334,15 @@ export const NotesPage: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => go("settings", "calls")}
+            aria-label={t("notes.callSettings")}
+            title={t("notes.callSettings")}
+            className="grid h-9 w-9 place-items-center rounded-[var(--r-md)] border border-line-strong bg-surface text-text-2 shadow-[var(--shadow-1)] transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:text-text hover:duration-0 active:scale-[0.97]"
+          >
+            <Settings2 className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
             onClick={() => go("settings", "shortcuts")}
             title={t("notes.shortcut.change")}
             className="hidden items-center gap-1 rounded-[var(--r-sm)] bg-surface-2 py-1 pe-2.5 ps-1.5 text-[13px] text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:duration-0 active:scale-[0.98] min-[900px]:inline-flex"
@@ -355,7 +367,7 @@ export const NotesPage: React.FC = () => {
         {t("notes.subtitle")}
       </p>
 
-      {session && <RecordingStrip session={session} />}
+      {session ? <RecordingStrip session={session} /> : <CallStrip />}
 
       {!notes ? null : all.length === 0 && !session ? (
         <div className="rounded-[var(--r-lg)] border border-line bg-surface">

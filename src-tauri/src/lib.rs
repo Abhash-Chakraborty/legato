@@ -4,6 +4,8 @@ mod ai_rules;
 mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
+mod calls;
+mod calls_rules;
 mod catalog;
 mod chinese_script;
 mod cleanup_rules;
@@ -280,6 +282,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(notes_manager);
     app_handle.manage(context::DictationContext::default());
     app_handle.manage(tray::TrayState::new());
+    // Watches for calls, to offer notes.
+    calls::init(app_handle);
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -895,6 +899,10 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::open_note,
             commands::notes::change_notes_live_transcript_setting,
             commands::notes::dismiss_notes_reminder,
+            commands::calls::get_call_state,
+            commands::calls::change_call_settings,
+            commands::calls::call_card_action,
+            commands::calls::test_call_card,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -912,6 +920,8 @@ pub fn run(cli_args: CliArgs) {
             notes::NoteLineRemoved,
             notes::NotesSessionChanged,
             notes::NotesTick,
+            calls::CallsChanged,
+            calls::CallTest,
             notes::NoteInsert,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,

@@ -23,7 +23,8 @@ type OverlayState =
   | "notice"
   | "changes"
   | "pick"
-  | "notes";
+  | "notes"
+  | "call";
 
 type AiProblemKind =
   | "none"
@@ -67,6 +68,7 @@ type OverlayNotice =
   | { kind: "note_ready"; id: number; duration_ms: number }
   | { kind: "note_empty"; duration_ms: number }
   | { kind: "notes_failed"; reason: string }
+  | { kind: "call_never"; app: string }
   | {
       kind: "transform_failed";
       name: string;
@@ -74,6 +76,55 @@ type OverlayNotice =
       provider_id: string;
       provider_label: string;
     };
+
+/** The call card: notes offered for a call, or the call ended. */
+type CallCard =
+  | {
+      kind: "offer";
+      app: string;
+      name: string;
+      app_path: string | null;
+      countdown_ms: number | null;
+      test: boolean;
+    }
+  | {
+      kind: "ended";
+      app: string;
+      name: string;
+      app_path: string | null;
+      stop_in_ms: number | null;
+      elapsed_ms: number;
+    };
+
+/** The call app's own icon, or a phone. */
+const CallIcon: React.FC<{ path: string | null }> = ({ path }) => {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setSrc(null);
+    if (path)
+      commands
+        .getAppIcon(path)
+        .then((icon) => live && setSrc(icon))
+        .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [path]);
+  return src ? (
+    <img className="scall-icon" src={src} alt="" aria-hidden="true" />
+  ) : (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="scall-icon glyph">
+      <path
+        d="M5.2 2.5 6.6 5.6 5.3 6.7a7.6 7.6 0 0 0 4 4l1.1-1.3 3.1 1.4-.5 2.2c-5.6.4-10.4-4.4-10-10Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+};
 
 /** A transform's changes, shown with Keep and Undo. */
 interface BarChanges {
@@ -171,6 +222,11 @@ const RecordingOverlay: React.FC = () => {
   const [changes, setChanges] = useState<BarChanges | null>(null);
   const [picks, setPicks] = useState<PickItem[]>([]);
   const [notesTick, setNotesTick] = useState<NotesTick | null>(null);
+  const [callCard, setCallCard] = useState<{
+    card: CallCard;
+    at: number;
+  } | null>(null);
+  const [now, setNow] = useState(Date.now());
   // "Polish…" while a transform runs; the default label otherwise.
   const [workingLabel, setWorkingLabel] = useState<string | null>(null);
   // `Stream::play()` returning does not mean hardware callbacks are flowing.
@@ -259,6 +315,10 @@ const RecordingOverlay: React.FC = () => {
         setChanges(event.payload),
       );
 
+      const unlistenCall = await listen<CallCard>("bar-call", (event) =>
+        setCallCard({ card: event.payload, at: Date.now() }),
+      );
+
       const unlistenNotesTick = await events.notesTick.listen((event) =>
         setNotesTick(event.payload),
       );
@@ -337,6 +397,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenChanges();
         unlistenPick();
         unlistenNotesTick();
+        unlistenCall();
         unlistenLabel();
         unlistenHide();
         unlistenReady();
@@ -379,6 +440,14 @@ const RecordingOverlay: React.FC = () => {
     pinnedRef.current = true;
     setOverflowing(false);
   }, [session]);
+
+  // The call card counts down, and its recorded time runs.
+  useEffect(() => {
+    if (state !== "call" || !isVisible) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(timer);
+  }, [state, isVisible, callCard]);
 
   if (!isVisible) return null;
 
@@ -580,6 +649,8 @@ const RecordingOverlay: React.FC = () => {
         return t("overlay.notice.noteEmpty");
       case "notes_failed":
         return t("overlay.notice.notesFailed", { reason: n.reason });
+      case "call_never":
+        return t("overlay.notice.callNever", { app: n.app });
       case "transform_failed":
         return t("overlay.notice.transformFailed", {
           name: n.name,
@@ -624,6 +695,15 @@ const RecordingOverlay: React.FC = () => {
               {t("overlay.undo")}
             </button>
           )}
+          {notice?.kind === "call_never" && (
+            <button
+              type="button"
+              className="sbtn ghost"
+              onClick={() => commands.callCardAction("undo_never")}
+            >
+              {t("overlay.undo")}
+            </button>
+          )}
           {notice?.kind === "note_ready" && (
             <button
               type="button"
@@ -642,6 +722,113 @@ const RecordingOverlay: React.FC = () => {
               {t("overlay.review")}
             </button>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Call: notes offered for a call that started, or the call ended.
+  if (state === "call" && callCard) {
+    const { card, at } = callCard;
+    const total = card.kind === "offer" ? card.countdown_ms : card.stop_in_ms;
+    const left =
+      total === null
+        ? null
+        : Math.max(0, Math.ceil((total - (now - at)) / 1000));
+    const recorded =
+      card.kind === "ended" ? clock(card.elapsed_ms + (now - at)) : "";
+    const desc =
+      card.kind === "offer"
+        ? left !== null
+          ? t("overlay.call.startsIn", { count: left })
+          : card.test
+            ? t("overlay.call.test")
+            : t("overlay.call.offer", { app: card.name })
+        : left !== null
+          ? t("overlay.call.stopsIn", { count: left, recorded })
+          : t("overlay.call.still", { recorded });
+    return (
+      <div
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div
+          className="scard callcard"
+          role="dialog"
+          aria-label={
+            card.kind === "offer"
+              ? t("overlay.call.started", { app: card.name })
+              : t("overlay.call.ended", { app: card.name })
+          }
+        >
+          <div className="scall-hd">
+            <CallIcon path={card.app_path} />
+            <div className="scall-text">
+              <div className="scall-title">
+                {card.kind === "offer"
+                  ? t("overlay.call.started", { app: card.name })
+                  : t("overlay.call.ended", { app: card.name })}
+              </div>
+              <div className="scall-desc" aria-live="polite">
+                {desc}
+              </div>
+            </div>
+          </div>
+          {total !== null && (
+            <div className="scountdown" aria-hidden="true">
+              <i
+                key={at}
+                style={{
+                  animationDuration: `${total}ms`,
+                }}
+              />
+            </div>
+          )}
+          <div className="spanel-actions">
+            {card.kind === "offer" ? (
+              <>
+                <button
+                  type="button"
+                  className="sbtn primary"
+                  onClick={() => commands.callCardAction("start")}
+                >
+                  {t("overlay.call.start")}
+                </button>
+                <button
+                  type="button"
+                  className="sbtn"
+                  onClick={() => commands.callCardAction("not_now")}
+                >
+                  {t("overlay.call.notNow")}
+                </button>
+                <button
+                  type="button"
+                  className="sbtn quiet"
+                  onClick={() => commands.callCardAction("never")}
+                >
+                  {t("overlay.call.never")}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="sbtn primary"
+                  onClick={() => commands.callCardAction("stop_now")}
+                >
+                  {left !== null
+                    ? t("overlay.call.stopNow")
+                    : t("overlay.call.stop")}
+                </button>
+                <button
+                  type="button"
+                  className="sbtn"
+                  onClick={() => commands.callCardAction("keep")}
+                >
+                  {t("overlay.call.keep")}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );

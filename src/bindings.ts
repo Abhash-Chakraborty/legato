@@ -1693,6 +1693,23 @@ async dismissNotesReminder() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getCallState() : Promise<CallState> {
+    return await TAURI_INVOKE("get_call_state");
+},
+async changeCallSettings(calls: CallSettings) : Promise<void> {
+    await TAURI_INVOKE("change_call_settings", { calls });
+},
+async callCardAction(action: CallAction) : Promise<void> {
+    await TAURI_INVOKE("call_card_action", { action });
+},
+async testCallCard() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("test_call_card") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async scratchpadDictate(noteId: number) : Promise<void> {
     return await TAURI_INVOKE("scratchpad_dictate", { noteId });
 },
@@ -1737,6 +1754,8 @@ export const events = __makeEvents__<{
 aiStatusChanged: AiStatusChanged,
 dictionaryChanged: DictionaryChanged,
 historyUpdatePayload: HistoryUpdatePayload,
+callTest: CallTest,
+callsChanged: CallsChanged,
 noteInsert: NoteInsert,
 noteLineAdded: NoteLineAdded,
 noteLineRemoved: NoteLineRemoved,
@@ -1756,6 +1775,8 @@ transformRunsChanged: TransformRunsChanged
 aiStatusChanged: "ai-status-changed",
 dictionaryChanged: "dictionary-changed",
 historyUpdatePayload: "history-update-payload",
+callTest: "call-test",
+callsChanged: "calls-changed",
 noteInsert: "note-insert",
 noteLineAdded: "note-line-added",
 noteLineRemoved: "note-line-removed",
@@ -1882,6 +1903,30 @@ export type FixSource =
 /**
  * One fix made today, for Home's rail.
  */
+/**
+ * A call Legato noticed, for Settings › Context & calls.
+ */
+export type LastCall = { app: CallApp; 
+/**
+ * Unix seconds.
+ */
+at: number; 
+/**
+ * How long it lasted, once it ended.
+ */
+minutes: number | null; 
+/**
+ * The note taken during it.
+ */
+note_id: number | null }
+/**
+ * A call going on now, as the Notes page shows it.
+ */
+export type LiveCall = { app: CallApp; name: string; 
+/**
+ * Unix seconds.
+ */
+since: number }
 export type TodayFix = { history_id: number; timestamp: number; from: string; to: string; source: FixSource; app: string | null }
 export type DictionaryEntry = { id: number; text: string; 
 /**
@@ -2056,6 +2101,65 @@ export type AppRuleKind =
  * How one kind of app gets its text. `None` fields inherit Settings › Output.
  */
 export type CategoryStyle = { tone: Tone; paste_method?: PasteMethod | null; after_paste?: AfterPaste | null; trailing_space?: boolean | null }
+/**
+ * What a button on the call card, or Start notes on the Notes page, does.
+ */
+export type CallAction = "start" | "not_now" | "never" | "stop_now" | "keep" | "undo_never"
+/**
+ * An app Legato watches for calls.
+ */
+export type CallApp = "teams" | "zoom" | "meet" | "slack" | "discord"
+/**
+ * Settings › Context & calls: noticing calls and offering notes.
+ */
+export type CallSettings = { 
+/**
+ * Offer notes when a watched app starts a call.
+ */
+detect?: boolean; 
+/**
+ * Reads browser window titles, for Google Meet.
+ */
+browser_titles?: boolean; watched?: CallApp[]; 
+/**
+ * Starts notes after a countdown instead of asking.
+ */
+auto_start?: boolean; countdown_secs?: number; 
+/**
+ * Not now asks again this many minutes later; 0 waits for the next
+ * call.
+ */
+snooze_minutes?: number; 
+/**
+ * Screen sharing doesn't show the call card.
+ */
+hide_card_from_capture?: boolean; 
+/**
+ * Notes started for a call stop 20 seconds after it ends.
+ */
+stop_on_end?: boolean; 
+/**
+ * Every recording stops after this many minutes; 0 is no limit.
+ */
+max_minutes?: number; 
+/**
+ * Opens Notes on the note once its summary is ready.
+ */
+open_note?: boolean; 
+/**
+ * The last call Legato noticed.
+ */
+last?: LastCall | null }
+/**
+ * What Notes and Settings show about calls.
+ */
+export type CallState = { detect: boolean; watched: CallApp[]; live: LiveCall | null }
+/**
+ * A button pressed on the card Test detection showed; the page says what
+ * would have happened.
+ */
+export type CallTest = { action: CallAction; app: CallApp; snooze_minutes: number }
+export type CallsChanged = { state: CallState }
 export type CleanupLevel = "none" | "light" | "medium"
 export type CleanupRules = { repeats?: boolean; numbers?: boolean; punctuation?: boolean; corrections?: boolean; lists?: boolean }
 export type Snippet = { id: number; trigger: string; text: string; 
@@ -2302,7 +2406,7 @@ notes_live_transcript?: boolean;
 /**
  * The recorder reminds you to tell people you're recording.
  */
-notes_reminder?: boolean; scratchpad_open?: ScratchpadOpen; 
+notes_reminder?: boolean; calls?: CallSettings; scratchpad_open?: ScratchpadOpen; 
 /**
  * The Scratchpad window floats above other apps.
  */

@@ -3,6 +3,7 @@ use crate::settings;
 use crate::settings::{OverlayPosition, OverlayStyle};
 use log::debug;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindowBuilder};
 
@@ -28,6 +29,8 @@ const OVERLAY_PICK_WIDTH: f64 = 320.0;
 const OVERLAY_PICK_HEIGHT: f64 = 330.0;
 
 const OVERLAY_NOTES_WIDTH: f64 = 300.0;
+const OVERLAY_CALL_WIDTH: f64 = 380.0;
+const OVERLAY_CALL_HEIGHT: f64 = 124.0;
 
 // Actual is 394x118, just a little extra
 const OVERLAY_STREAM_WIDTH: f64 = 400.0;
@@ -45,6 +48,8 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
         "pick" => (OVERLAY_PICK_WIDTH, OVERLAY_PICK_HEIGHT),
         // A Notes recording: its clock, two meters and Stop.
         "notes" => (OVERLAY_NOTES_WIDTH, OVERLAY_HEIGHT),
+        // The call card: offer notes, or say the call ended.
+        "call" => (OVERLAY_CALL_WIDTH, OVERLAY_CALL_HEIGHT),
         _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
 }
@@ -294,6 +299,11 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
 
         WINDOWS_OVERLAY_IS_STREAMING.store(state == "streaming", Ordering::Relaxed);
 
+        exclude_from_capture(
+            &overlay_window,
+            state == "call" && CALL_CARD_HIDDEN_FROM_CAPTURE.load(Ordering::Relaxed),
+        );
+
         let set_pos_started = std::time::Instant::now();
         if let Err(error) = place_windows_overlay(app_handle, &overlay_window, width, height) {
             log::error!("Failed to place recording overlay: {error}");
@@ -454,9 +464,74 @@ pub fn set_notes_pill(app_handle: &AppHandle, on: bool) {
     }
 }
 
-/// Hides the recording overlay window with fade-out animation; during a
-/// Notes recording, goes back to its pill instead.
+/// The call card, while one is up; it comes back whenever the bar would
+/// otherwise go quiet.
+static CALL_CARD: Mutex<Option<serde_json::Value>> = Mutex::new(None);
+static CALL_CARD_HIDDEN_FROM_CAPTURE: AtomicBool = AtomicBool::new(true);
+/// Whether the overlay window is excluded from screen capture now.
+static EXCLUDED_FROM_CAPTURE: AtomicBool = AtomicBool::new(false);
+
+fn call_card() -> Option<serde_json::Value> {
+    CALL_CARD.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Shows the call card, or takes it away with None. A dictation in
+/// progress keeps the bar; the card shows when it's done.
+pub fn set_call_card<T: serde::Serialize>(
+    app_handle: &AppHandle,
+    card: Option<&T>,
+    hide_from_capture: bool,
+) {
+    let value = card.and_then(|c| serde_json::to_value(c).ok());
+    let had = std::mem::replace(
+        &mut *CALL_CARD.lock().unwrap_or_else(|e| e.into_inner()),
+        value.clone(),
+    );
+    CALL_CARD_HIDDEN_FROM_CAPTURE.store(hide_from_capture, Ordering::Relaxed);
+    match value {
+        Some(card) => {
+            let dictating = app_handle
+                .try_state::<std::sync::Arc<crate::managers::audio::AudioRecordingManager>>()
+                .is_some_and(|a| a.is_recording());
+            if !dictating {
+                show_bar(app_handle, "call", "bar-call", &card, None);
+            }
+        }
+        None if had.is_some() => hide_recording_overlay(app_handle),
+        None => {}
+    }
+}
+
+/// Keeps the bar out of screen sharing and recordings while it shows the
+/// call card.
+fn exclude_from_capture(overlay_window: &tauri::webview::WebviewWindow, exclude: bool) {
+    if EXCLUDED_FROM_CAPTURE.swap(exclude, Ordering::Relaxed) == exclude {
+        return;
+    }
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
+    };
+    if let Ok(hwnd) = overlay_window.hwnd() {
+        let affinity = if exclude {
+            WDA_EXCLUDEFROMCAPTURE
+        } else {
+            WDA_NONE
+        };
+        // SAFETY: the overlay window is ours and alive.
+        if let Err(e) = unsafe { SetWindowDisplayAffinity(hwnd, affinity) } {
+            log::warn!("Couldn't change the bar's screen capture setting: {e}");
+        }
+    }
+}
+
+/// Hides the recording overlay window with fade-out animation; while a call
+/// card is up it comes back, and during a Notes recording the bar goes back
+/// to its pill.
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
+    if let Some(card) = call_card() {
+        show_bar(app_handle, "call", "bar-call", &card, None);
+        return;
+    }
     if NOTES_PILL.load(Ordering::SeqCst) {
         show_overlay_state(app_handle, "notes");
         return;

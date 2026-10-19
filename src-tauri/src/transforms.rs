@@ -113,6 +113,10 @@ pub enum BarNotice {
     NoteEmpty {
         duration_ms: i64,
     },
+    /// Never here on the call card: no more offers in this app, with Undo.
+    CallNever {
+        app: String,
+    },
     /// Start or stop notes didn't work.
     NotesFailed {
         reason: String,

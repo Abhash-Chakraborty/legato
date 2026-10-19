@@ -26,6 +26,7 @@ import { StylePage } from "./components/pages/style/StylePage";
 import { TransformsPage } from "./components/pages/transforms/TransformsPage";
 import { NotesPage } from "./components/pages/notes/NotesPage";
 import { watchNotes } from "./stores/notesStore";
+import { watchCalls } from "./stores/callsStore";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar } from "./components/Sidebar";
 import { AppToaster } from "./components/shell/AppToaster";
@@ -191,6 +192,8 @@ function App() {
   // Notes: the recording's state, and words dictated into My notes, arrive
   // on any page.
   useEffect(watchNotes, []);
+  // A test call card's buttons answer with a toast, from any page.
+  useEffect(watchCalls, []);
 
   // The Legato bar's Review and other windows ask for a page.
   useEffect(() => {

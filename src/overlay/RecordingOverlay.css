@@ -694,3 +694,80 @@
 .snotes-meter i.on {
   background: var(--s-accent);
 }
+
+/* The call card (OVERLAY_CALL_* in overlay.rs): notes offered for a call that
+   started, or the call ended, with a countdown when something happens on
+   its own. */
+.scard.callcard {
+  width: 360px;
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--color-text);
+}
+.scall-hd {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.scall-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  margin-top: 1px;
+}
+.scall-icon.glyph {
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  color: var(--s-accent);
+}
+.scall-text {
+  min-width: 0;
+}
+.scall-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scall-desc {
+  margin-top: 2px;
+  color: var(--s-muted);
+  font-variant-numeric: tabular-nums;
+}
+.scountdown {
+  position: relative;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--s-hair);
+  overflow: hidden;
+}
+.scountdown i {
+  position: absolute;
+  inset: 0;
+  background: var(--s-accent);
+  transform-origin: left;
+  animation: scountdown linear both;
+}
+@keyframes scountdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.sbtn.quiet {
+  border-color: transparent;
+  color: var(--s-muted);
+  margin-left: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scountdown i {
+    animation: none;
+  }
+}

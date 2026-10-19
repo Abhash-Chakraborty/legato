@@ -631,6 +631,10 @@
       "debug": {
         "title": "Debug",
         "subtitle": "Tools for tracking down problems."
+      },
+      "calls": {
+        "title": "Context & calls",
+        "subtitle": "Legato notices when a call starts and offers to take notes."
       }
     },
     "groups": {
@@ -664,7 +668,10 @@
       "lastDictation": "Last dictation",
       "scratchpad": "Scratchpad",
       "messages": "Messages",
-      "notes": "Notes"
+      "notes": "Notes",
+      "detection": "Detection",
+      "callStart": "When a call starts",
+      "callEnd": "When the call ends"
     },
     "requires": {
       "tray": "Needs the tray icon, or there would be no way to open the window.",
@@ -677,7 +684,9 @@
       "translation": "{{model}} can't translate. Choose a model that can in Models.",
       "chinese": "Only used when the spoken language is Chinese, Cantonese or detected automatically.",
       "clipboardPaste": "Only applies when Legato pastes with keys, not when it types the text or doesn't paste.",
-      "ask": "Turn on Ask on the Transforms page to use this shortcut."
+      "ask": "Turn on Ask on the Transforms page to use this shortcut.",
+      "calls": "Needs Detect calls and offer notes.",
+      "autoStart": "Only used when notes start automatically."
     },
     "privacy": {
       "rememberApp": {
@@ -846,6 +855,90 @@
         "title": "Open the Scratchpad when a paste fails",
         "description": "A dictation that can't be pasted is always saved there. With this on, the window opens on it so you can copy it or send it again."
       }
+    },
+    "calls": {
+      "detect": {
+        "title": "Detect calls and offer notes",
+        "help": "Windows tells Legato when an app starts using the microphone, and Legato offers notes in the Legato bar without listening to the audio."
+      },
+      "browserTitles": {
+        "title": "Read browser window titles",
+        "help": "Needed for Google Meet in Chrome or Edge; Legato reads the window title, never the page."
+      },
+      "apps": {
+        "title": "Apps to watch",
+        "help": "A call in one of these apps brings up the card.",
+        "count_one": "{{count}} of {{total}} watched",
+        "count_other": "{{count}} of {{total}} watched",
+        "needsTitles": "Needs Read browser window titles.",
+        "watch": "Watch {{app}} for calls",
+        "signal": {
+          "teams": "ms-teams.exe",
+          "zoom": "Zoom.exe",
+          "meet": "meet.google.com",
+          "slack": "slack.exe",
+          "discord": "Discord.exe"
+        },
+        "what": {
+          "teams": "",
+          "zoom": "",
+          "meet": " in a Chrome or Edge tab",
+          "slack": ", huddles",
+          "discord": ", voice channels"
+        }
+      },
+      "last": {
+        "title": "Last call",
+        "none": "No call detected yet.",
+        "minutes_one": "{{count}} min",
+        "minutes_other": "{{count}} min",
+        "going": "going on now",
+        "line": "{{app}} · {{at}} · {{length}}",
+        "noNote": "{{app}} · {{at}} · {{length}} · no notes taken",
+        "open": "Open note"
+      },
+      "test": {
+        "title": "Test detection",
+        "help": "Shows the call card as if {{app}} started a call. Nothing is recorded.",
+        "helpNone": "Turn on at least one app above to test.",
+        "button": "Show the card"
+      },
+      "autoStart": {
+        "title": "Start notes automatically",
+        "help": "Starts after a countdown instead of asking, and Not now on the card still cancels it."
+      },
+      "countdown": {
+        "title": "Countdown",
+        "help": "Seconds before notes start on their own.",
+        "option_one": "{{count}} second",
+        "option_other": "{{count}} seconds"
+      },
+      "snooze": {
+        "title": "After Not now",
+        "help": "What Not now on the call card does.",
+        "minutes_one": "Ask again in {{count}} minute",
+        "minutes_other": "Ask again in {{count}} minutes",
+        "call": "Don't ask again this call"
+      },
+      "hideCard": {
+        "title": "Hide the call card from screen sharing",
+        "help": "Others in the call won't see the card when you share your screen."
+      },
+      "stopOnEnd": {
+        "title": "Stop when the call ends",
+        "help": "Stops about 20 seconds after the app lets go of the microphone."
+      },
+      "maxLength": {
+        "title": "Stop recording after",
+        "help": "A limit for every note, in case a call never ends.",
+        "hours_one": "{{count}} hour",
+        "hours_other": "{{count}} hours",
+        "none": "No limit"
+      },
+      "openNote": {
+        "title": "Open the note when it's ready",
+        "help": "Opens Notes with the summary when processing finishes."
+      }
     }
   },
   "footer": {
@@ -965,7 +1058,8 @@
       },
       "noteReady": "Note saved · {{duration}}",
       "noteEmpty": "Nothing was heard, so no note was saved",
-      "notesFailed": "Notes didn't start · {{reason}}"
+      "notesFailed": "Notes didn't start · {{reason}}",
+      "callNever": "Legato won't offer notes in {{app}}"
     },
     "working": "{{name}}…",
     "undo": "Undo",
@@ -985,6 +1079,23 @@
       "pause": "Pause notes",
       "resume": "Resume notes",
       "stop": "Stop notes"
+    },
+    "call": {
+      "started": "Call started in {{app}}",
+      "ended": "Call ended in {{app}}",
+      "offer": "Take notes? They stay on this PC.",
+      "test": "A test card. Nothing is recorded.",
+      "startsIn_one": "Notes start in {{count}} s. They stay on this PC.",
+      "startsIn_other": "Notes start in {{count}} s. They stay on this PC.",
+      "stopsIn_one": "Notes stop in {{count}} s · {{recorded}} recorded",
+      "stopsIn_other": "Notes stop in {{count}} s · {{recorded}} recorded",
+      "still": "Still taking notes · {{recorded}} recorded",
+      "start": "Start notes",
+      "notNow": "Not now",
+      "never": "Never here",
+      "stopNow": "Stop now",
+      "stop": "Stop notes",
+      "keep": "Keep recording"
     }
   },
   "titleBar": {
@@ -2288,6 +2399,39 @@
       "exported": "Note exported",
       "exportFailed": "Couldn't export the note",
       "summaryFailed": "Couldn't write the summary"
+    },
+    "callSettings": "Call detection settings",
+    "calls": {
+      "label": "Call detection",
+      "off": "Call detection is off",
+      "offHelp": "Legato won't offer to take notes when a call starts. You can still record from here.",
+      "turnOn": "Turn on",
+      "live": "{{app}} call in progress",
+      "liveHelp": "Started at {{time}} · not recording",
+      "start": "Start notes",
+      "none": "No apps to watch",
+      "noneHelp": "Call detection is on, but every call app is switched off.",
+      "chooseApps": "Choose apps",
+      "waiting": "No call right now",
+      "waitingHelp": "Watching {{apps}} for calls.",
+      "test": "Test detection",
+      "list": "{{list}} and {{last}}"
+    }
+  },
+  "calls": {
+    "app": {
+      "teams": "Microsoft Teams",
+      "zoom": "Zoom",
+      "meet": "Google Meet",
+      "slack": "Slack",
+      "discord": "Discord"
+    },
+    "test": {
+      "started": "That was a test, so nothing was recorded. In a real call, notes would start now.",
+      "openNotes": "Open Notes",
+      "snoozed_one": "In a real call, Legato would ask again in {{count}} minute.",
+      "snoozed_other": "In a real call, Legato would ask again in {{count}} minutes.",
+      "snoozedCall": "In a real call, Legato wouldn't ask again until it ends."
     }
   }
 }

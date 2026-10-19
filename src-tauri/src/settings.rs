@@ -1,3 +1,4 @@
+pub use crate::calls_rules::CallApp;
 pub use crate::cleanup_rules::{CleanupLevel, CleanupRules};
 pub use crate::context::AppRule;
 pub use crate::style_rules::Tone;
@@ -180,6 +181,85 @@ pub enum PasteMethod {
     None,
     ShiftInsert,
     CtrlShiftV,
+}
+
+/// Settings › Context & calls: noticing calls and offering notes.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+pub struct CallSettings {
+    /// Offer notes when a watched app starts a call.
+    #[serde(default = "default_true")]
+    pub detect: bool,
+    /// Reads browser window titles, for Google Meet.
+    #[serde(default = "default_true")]
+    pub browser_titles: bool,
+    #[serde(default = "crate::calls_rules::default_watched")]
+    pub watched: Vec<CallApp>,
+    /// Starts notes after a countdown instead of asking.
+    #[serde(default)]
+    pub auto_start: bool,
+    #[serde(default = "default_call_countdown")]
+    pub countdown_secs: u32,
+    /// Not now asks again this many minutes later; 0 waits for the next
+    /// call.
+    #[serde(default = "default_call_snooze")]
+    pub snooze_minutes: u32,
+    /// Screen sharing doesn't show the call card.
+    #[serde(default = "default_true")]
+    pub hide_card_from_capture: bool,
+    /// Notes started for a call stop 20 seconds after it ends.
+    #[serde(default = "default_true")]
+    pub stop_on_end: bool,
+    /// Every recording stops after this many minutes; 0 is no limit.
+    #[serde(default = "default_notes_max_minutes")]
+    pub max_minutes: u32,
+    /// Opens Notes on the note once its summary is ready.
+    #[serde(default)]
+    pub open_note: bool,
+    /// The last call Legato noticed.
+    #[serde(default)]
+    pub last: Option<LastCall>,
+}
+
+impl Default for CallSettings {
+    fn default() -> Self {
+        Self {
+            detect: true,
+            browser_titles: true,
+            watched: crate::calls_rules::default_watched(),
+            auto_start: false,
+            countdown_secs: default_call_countdown(),
+            snooze_minutes: default_call_snooze(),
+            hide_card_from_capture: true,
+            stop_on_end: true,
+            max_minutes: default_notes_max_minutes(),
+            open_note: false,
+            last: None,
+        }
+    }
+}
+
+/// A call Legato noticed, for Settings › Context & calls.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+pub struct LastCall {
+    pub app: CallApp,
+    /// Unix seconds.
+    pub at: i64,
+    /// How long it lasted, once it ended.
+    pub minutes: Option<u32>,
+    /// The note taken during it.
+    pub note_id: Option<i64>,
+}
+
+fn default_call_countdown() -> u32 {
+    10
+}
+
+fn default_call_snooze() -> u32 {
+    10
+}
+
+fn default_notes_max_minutes() -> u32 {
+    120
 }
 
 /// What Learn from my edits does with a word it finds.
@@ -656,6 +736,8 @@ pub struct AppSettings {
     /// The recorder reminds you to tell people you're recording.
     #[serde(default = "default_true")]
     pub notes_reminder: bool,
+    #[serde(default)]
+    pub calls: CallSettings,
     #[serde(default)]
     pub scratchpad_open: ScratchpadOpen,
     /// The Scratchpad window floats above other apps.
@@ -1268,6 +1350,7 @@ pub fn get_default_settings() -> AppSettings {
         ai_notes_enabled: true,
         notes_live_transcript: true,
         notes_reminder: true,
+        calls: CallSettings::default(),
         scratchpad_open: ScratchpadOpen::default(),
         scratchpad_keep_on_top: true,
         scratchpad_failed_pastes: true,

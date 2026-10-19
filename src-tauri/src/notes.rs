@@ -29,8 +29,6 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
-/// A recording that never stops is stopped here.
-const MAX_RECORDING: Duration = Duration::from_secs(2 * 60 * 60);
 /// How often the meters and the clock update.
 const TICK: Duration = Duration::from_millis(125);
 /// How often a track's WAV header is rewritten, so a crash keeps the audio.
@@ -106,6 +104,7 @@ pub struct SessionInfo {
     pub system_audio: Option<String>,
     /// One app was asked for, but this Windows records everything.
     pub system_fallback: bool,
+    /// The recording stops at this length; 0 is no limit.
     pub max_ms: i64,
 }
 
@@ -515,6 +514,9 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
     if settings.selected_model.is_empty() {
         return Err(anyhow!("Download a speech model in Models first"));
     }
+    // Settings › Context & calls › Stop recording after; 0 is no limit.
+    let max = (settings.calls.max_minutes > 0)
+        .then(|| Duration::from_secs(settings.calls.max_minutes as u64 * 60));
     let m = manager(app);
     let shared = Arc::new(Shared {
         clock: Mutex::new(Clock {
@@ -635,7 +637,7 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
         microphone,
         system_audio: capture.as_ref().map(|c| c.name.clone()),
         system_fallback: capture.as_ref().is_some_and(|c| c.fallback),
-        max_ms: MAX_RECORDING.as_millis() as i64,
+        max_ms: max.map_or(0, |m| m.as_millis() as i64),
     };
     info!(
         "Notes started: {:?}{}",
@@ -645,7 +647,7 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
             .map(|s| format!(" with {s}"))
             .unwrap_or_default()
     );
-    spawn_ticker(app, Arc::clone(&shared), meeting);
+    spawn_ticker(app, Arc::clone(&shared), meeting, max);
     *slot = Some(Session {
         info,
         shared,
@@ -693,6 +695,7 @@ pub fn stop(app: &AppHandle) -> Result<()> {
         .take()
         .ok_or_else(|| anyhow!("Nothing is recording"))?;
     session.shared.stop_ticker.store(true, Ordering::Relaxed);
+    crate::calls::notes_stopped(app);
     *lock(&FINISHING) = Some(Finishing {
         info: SessionInfo {
             phase: SessionPhase::Finishing,
@@ -742,7 +745,7 @@ pub fn toggle(app: &AppHandle) {
     }
 }
 
-fn spawn_ticker(app: &AppHandle, shared: Arc<Shared>, meeting: bool) {
+fn spawn_ticker(app: &AppHandle, shared: Arc<Shared>, meeting: bool, max: Option<Duration>) {
     let app = app.clone();
     std::thread::spawn(move || {
         while !shared.stop_ticker.load(Ordering::Relaxed) {
@@ -756,7 +759,7 @@ fn spawn_ticker(app: &AppHandle, shared: Arc<Shared>, meeting: bool) {
                 pending: shared.pending.load(Ordering::Relaxed),
             }
             .emit(&app);
-            if elapsed >= MAX_RECORDING {
+            if max.is_some_and(|max| elapsed >= max) {
                 info!("Notes reached the recording limit; stopping");
                 let _ = stop(&app);
                 break;
@@ -1040,6 +1043,7 @@ fn finish(app: &AppHandle, session: Session) {
         },
         5000,
     );
+    crate::calls::note_ready(app, note_id);
 }
 
 /// Why a note has no summary, as Notes words it: "short", or how the
