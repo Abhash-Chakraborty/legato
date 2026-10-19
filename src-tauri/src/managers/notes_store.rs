@@ -120,6 +120,9 @@ pub struct Note {
     pub summary_error: Option<String>,
     /// Lines that couldn't be transcribed.
     pub failed_lines: i64,
+    /// Of those, the ones that can be tried again from the audio.
+    #[serde(default)]
+    pub retryable: i64,
     pub lines: i64,
     pub actions: Vec<NoteAction>,
 }
@@ -148,6 +151,19 @@ pub struct NoteAction {
 pub struct DeletedRecording {
     pub note: Note,
     pub lines: Vec<NoteLine>,
+    #[serde(default)]
+    pub failed: Vec<FailedLine>,
+}
+
+/// A stretch of a recording the speech model couldn't transcribe, kept so
+/// it can be tried again from the note's audio.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct FailedLine {
+    pub id: i64,
+    pub note_id: i64,
+    pub at_ms: i64,
+    pub end_ms: i64,
+    pub who: Speaker,
 }
 
 /// What a search matched in a note: a line of its transcript, or None when
@@ -171,7 +187,8 @@ pub struct NewNote<'a> {
 const COLUMNS: &str = "id, title, kind, status, app, app_path, microphone, system_audio,
     started_at, duration_ms, audio_file, my_notes, summary, decisions, summary_model,
     summary_at, summary_error, failed_lines,
-    (SELECT COUNT(*) FROM note_line l WHERE l.note_id = note.id) AS lines";
+    (SELECT COUNT(*) FROM note_line l WHERE l.note_id = note.id) AS lines,
+    (SELECT COUNT(*) FROM note_failed_line f WHERE f.note_id = note.id) AS retryable";
 
 fn map(row: &Row<'_>) -> rusqlite::Result<Note> {
     let kind: String = row.get("kind")?;
@@ -197,6 +214,7 @@ fn map(row: &Row<'_>) -> rusqlite::Result<Note> {
         summary_at: row.get("summary_at")?,
         summary_error: row.get("summary_error")?,
         failed_lines: row.get("failed_lines")?,
+        retryable: row.get("retryable")?,
         lines: row.get("lines")?,
         actions: Vec::new(),
     })
@@ -336,6 +354,51 @@ pub fn set_status(conn: &Connection, id: i64, status: NoteStatus) -> Result<()> 
     conn.execute(
         "UPDATE note SET status = ?2 WHERE id = ?1",
         params![id, status.as_str()],
+    )?;
+    Ok(())
+}
+
+pub fn add_failed_line(
+    conn: &Connection,
+    note_id: i64,
+    at_ms: i64,
+    end_ms: i64,
+    who: Speaker,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO note_failed_line (note_id, at_ms, end_ms, who) VALUES (?1, ?2, ?3, ?4)",
+        params![note_id, at_ms, end_ms, who.as_str()],
+    )?;
+    Ok(())
+}
+
+pub fn failed_lines(conn: &Connection, note_id: i64) -> Result<Vec<FailedLine>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, note_id, at_ms, end_ms, who FROM note_failed_line
+         WHERE note_id = ?1 ORDER BY at_ms",
+    )?;
+    let rows = stmt.query_map(params![note_id], |row| {
+        let who: String = row.get("who")?;
+        Ok(FailedLine {
+            id: row.get("id")?,
+            note_id: row.get("note_id")?,
+            at_ms: row.get("at_ms")?,
+            end_ms: row.get("end_ms")?,
+            who: Speaker::parse(&who),
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// A failed line that was transcribed on a retry; the note's count follows.
+pub fn resolve_failed_line(conn: &Connection, line: &FailedLine) -> Result<()> {
+    conn.execute(
+        "DELETE FROM note_failed_line WHERE id = ?1",
+        params![line.id],
+    )?;
+    conn.execute(
+        "UPDATE note SET failed_lines = MAX(failed_lines - 1, 0) WHERE id = ?1",
+        params![line.note_id],
     )?;
     Ok(())
 }
@@ -511,8 +574,9 @@ pub fn delete(conn: &mut Connection, id: i64) -> Result<Option<DeletedRecording>
         return Ok(None);
     };
     let lines = lines(conn, id)?;
+    let failed = failed_lines(conn, id)?;
     let tx = conn.transaction()?;
-    for table in ["note_line", "note_tag", "note_action"] {
+    for table in ["note_line", "note_tag", "note_action", "note_failed_line"] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE note_id = ?1"),
             params![id],
@@ -520,7 +584,11 @@ pub fn delete(conn: &mut Connection, id: i64) -> Result<Option<DeletedRecording>
     }
     tx.execute("DELETE FROM note WHERE id = ?1", params![id])?;
     tx.commit()?;
-    Ok(Some(DeletedRecording { note, lines }))
+    Ok(Some(DeletedRecording {
+        note,
+        lines,
+        failed,
+    }))
 }
 
 /// Puts a deleted note back with its id.
@@ -571,6 +639,13 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
             "INSERT INTO note_line (id, note_id, at_ms, end_ms, who, text)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![l.id, n.id, l.at_ms, l.end_ms, l.who.as_str(), l.text],
+        )?;
+    }
+    for f in &deleted.failed {
+        tx.execute(
+            "INSERT INTO note_failed_line (id, note_id, at_ms, end_ms, who)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![f.id, n.id, f.at_ms, f.end_ms, f.who.as_str()],
         )?;
     }
     tx.commit()?;
@@ -787,5 +862,32 @@ mod tests {
         assert!(md.starts_with("# Infra sync\n"));
         assert!(md.contains("23:30 Them: Extension, right?"));
         assert_eq!(clock(3_725_000), "1:02:05");
+    }
+
+    #[test]
+    fn failed_lines_wait_for_a_retry_and_survive_undo() {
+        let mut conn = db();
+        let note = meeting(&conn);
+        add_failed_line(&conn, note.id, 9_000, 12_000, Speaker::Them).unwrap();
+        add_failed_line(&conn, note.id, 2_000, 4_000, Speaker::You).unwrap();
+        finish_recording(&conn, note.id, 60_000, Some("a.wav"), 2).unwrap();
+
+        let failed = failed_lines(&conn, note.id).unwrap();
+        assert_eq!(failed.len(), 2);
+        assert_eq!(failed[0].at_ms, 2_000);
+        assert_eq!(failed[1].who, Speaker::Them);
+        assert_eq!(get(&conn, note.id).unwrap().unwrap().retryable, 2);
+
+        resolve_failed_line(&conn, &failed[0]).unwrap();
+        let after = get(&conn, note.id).unwrap().unwrap();
+        assert_eq!((after.failed_lines, after.retryable), (1, 1));
+
+        let deleted = delete(&mut conn, note.id).unwrap().unwrap();
+        assert!(failed_lines(&conn, note.id).unwrap().is_empty());
+        restore(&mut conn, &deleted).unwrap();
+        assert_eq!(
+            failed_lines(&conn, note.id).unwrap(),
+            vec![failed[1].clone()]
+        );
     }
 }

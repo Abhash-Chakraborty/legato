@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Copy, Pause, Play, Search } from "lucide-react";
+import { Copy, Pause, Play, RotateCw, Search } from "lucide-react";
+import { toast } from "sonner";
 import { commands, type Note, type NoteLine } from "@/bindings";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";
 import { useNotesStore } from "../../../stores/notesStore";
+import { Button } from "../../ui/Button";
 import { clock, durationLabel, lineAt, lineMatches } from "../../notes/notes";
 import type { Jump } from "./NoteDetail";
 
@@ -76,6 +78,7 @@ export const TranscriptTab: React.FC<{
   const [lines, setLines] = useState<NoteLine[] | null>(null);
   const [src, setSrc] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [retrying, setRetrying] = useState(false);
   const [at, setAt] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [player, setPlayer] = useState(false);
@@ -183,6 +186,22 @@ export const TranscriptTab: React.FC<{
       </p>
     );
 
+  const retry = async () => {
+    setRetrying(true);
+    const result = await commands.retryNoteLines(note.id);
+    setRetrying(false);
+    if (result.status === "error") {
+      toast.error(t("notes.transcript.retryFailed"), {
+        description: result.error,
+      });
+    } else if (result.data.failed > 0) {
+      toast.warning(
+        t("notes.transcript.retryPartly", { count: result.data.failed }),
+      );
+    } else {
+      toast(t("notes.transcript.retried", { count: result.data.transcribed }));
+    }
+  };
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -245,9 +264,27 @@ export const TranscriptTab: React.FC<{
       </div>
 
       {note.failed_lines > 0 && (
-        <p className="mb-3 text-[13px] text-warn">
-          {t("notes.transcript.failed", { count: note.failed_lines })}
-        </p>
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <p className="text-[13px] text-warn">
+            {t("notes.transcript.failed", { count: note.failed_lines })}
+          </p>
+          {(note.retryable ?? 0) > 0 && note.audio_file && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={retrying}
+              onClick={retry}
+            >
+              <RotateCw
+                className={`h-3.5 w-3.5 ${retrying ? "animate-spin motion-reduce:animate-none" : ""}`}
+                aria-hidden="true"
+              />
+              {retrying
+                ? t("notes.transcript.retrying")
+                : t("notes.transcript.retry")}
+            </Button>
+          )}
+        </div>
       )}
 
       {query.trim() && shown.length === 0 ? (

@@ -922,6 +922,7 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::get_notes_session,
             commands::notes::summarise_note,
             commands::notes::ask_note,
+            commands::notes::retry_note_lines,
             commands::notes::notes_dictate,
             commands::notes::open_note,
             commands::notes::change_notes_live_transcript_setting,

@@ -1724,6 +1724,18 @@ async askNote(id: number, question: string) : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Tries a note's failed lines again from its audio. Each line waits for
+ * the speech model, so it runs off the main thread.
+ */
+async retryNoteLines(id: number) : Promise<Result<RetryResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("retry_note_lines", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async notesDictate(noteId: number) : Promise<void> {
     return await TAURI_INVOKE("notes_dictate", { noteId });
 },
@@ -2126,8 +2138,21 @@ export type LearnMode =
  * Dictionary.
  */
 export type AudioApp = { pid: number; name: string; exe_path: string; active: boolean; call: boolean }
-export type DeletedRecording = { note: Note; lines: NoteLine[] }
-export type Note = { id: number; title: string; kind: NoteKind; status: NoteStatus; app: string | null; app_path: string | null; microphone: string | null; system_audio: string | null; started_at: number; duration_ms: number; audio_file: string | null; tags: string[]; my_notes: string; summary: string; decisions: string[]; summary_model: string | null; summary_at: number | null; summary_error: string | null; failed_lines: number; lines: number; actions: NoteAction[] }
+export type DeletedRecording = { note: Note; lines: NoteLine[]; failed?: FailedLine[] }
+/**
+ * A stretch of a recording the speech model couldn't transcribe, kept so
+ * it can be tried again from the note's audio.
+ */
+export type FailedLine = { id: number; note_id: number; at_ms: number; end_ms: number; who: Speaker }
+export type Note = { id: number; title: string; kind: NoteKind; status: NoteStatus; app: string | null; app_path: string | null; microphone: string | null; system_audio: string | null; started_at: number; duration_ms: number; audio_file: string | null; tags: string[]; my_notes: string; summary: string; decisions: string[]; summary_model: string | null; summary_at: number | null; summary_error: string | null; 
+/**
+ * Lines that couldn't be transcribed.
+ */
+failed_lines: number; 
+/**
+ * Of those, the ones that can be tried again from the audio.
+ */
+retryable?: number; lines: number; actions: NoteAction[] }
 export type NoteAction = { id: number; owner: string; text: string; done: boolean }
 export type NoteInsert = { note_id: number; text: string }
 export type NoteKind = "memo" | "meeting"
@@ -2890,6 +2915,10 @@ export type TryOutcome = { text: string | null; ms: number;
 problem: AiStatusKind | null }
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+/**
+ * What trying a note's failed lines again came to.
+ */
+export type RetryResult = { transcribed: number; failed: number }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**

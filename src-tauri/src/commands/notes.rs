@@ -140,6 +140,17 @@ pub async fn summarise_note(app: AppHandle, id: i64) -> Result<(), String> {
     notes::resummarise(&app, id).await
 }
 
+/// Tries a note's failed lines again from its audio. Each line waits for
+/// the speech model, so it runs off the main thread.
+#[tauri::command]
+#[specta::specta]
+pub async fn retry_note_lines(app: AppHandle, id: i64) -> Result<notes::RetryResult, String> {
+    tauri::async_runtime::spawn_blocking(move || notes::retry_failed_lines(&app, id))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
 /// Ask about this note. Errors are codes the page words.
 #[tauri::command]
 #[specta::specta]

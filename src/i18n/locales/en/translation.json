@@ -2415,7 +2415,14 @@
       "waiting": "Lines appear here as they are transcribed.",
       "noAudio": "The recording's audio is gone; the transcript stays.",
       "failed_one": "{{count}} line couldn't be transcribed.",
-      "failed_other": "{{count}} lines couldn't be transcribed."
+      "failed_other": "{{count}} lines couldn't be transcribed.",
+      "retry": "Try again",
+      "retrying": "Trying again…",
+      "retryFailed": "Couldn't try the lines again",
+      "retried_one": "Transcribed {{count}} line",
+      "retried_other": "Transcribed {{count}} lines",
+      "retryPartly_one": "{{count}} line still couldn't be transcribed",
+      "retryPartly_other": "{{count}} lines still couldn't be transcribed"
     },
     "mine": {
       "help": "Private to you. Included when you copy or export this note.",

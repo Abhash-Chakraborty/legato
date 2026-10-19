@@ -920,6 +920,16 @@ fn transcribe_lines(
         return (0, 0);
     };
     let (mut saved, mut failed) = (0, 0);
+    // A failed line keeps its place, so it can be tried again from the audio.
+    let keep_failed = |job: &Job| {
+        let (at, end) = (job.utterance.start_ms(), job.utterance.end_ms());
+        if let Err(e) = m
+            .conn()
+            .and_then(|c| store::add_failed_line(&c, note_id, at, end, job.who))
+        {
+            error!("Couldn't keep a failed Notes line: {e}");
+        }
+    };
     for job in jobs {
         // A cancelled dictation can stop a run in flight; one retry covers it.
         let text = ensure_model(&tm)
@@ -936,16 +946,88 @@ fn transcribe_lines(
                 Ok(()) => saved += 1,
                 Err(e) => {
                     error!("Couldn't save a Notes line: {e}");
+                    keep_failed(&job);
                     failed += 1;
                 }
             },
             Err(e) => {
                 warn!("A Notes line couldn't be transcribed: {e}");
+                keep_failed(&job);
                 failed += 1;
             }
         }
     }
     (saved, failed)
+}
+
+/// What trying a note's failed lines again came to.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Type)]
+pub struct RetryResult {
+    pub transcribed: u32,
+    pub failed: u32,
+}
+
+/// Tries the lines that failed again, from the note's audio. In a meeting
+/// the audio is the mix of both tracks, so a line can pick up the other
+/// side; the echo check drops what repeats a line already there.
+pub fn retry_failed_lines(app: &AppHandle, note_id: i64) -> Result<RetryResult> {
+    let m = manager(app);
+    let note = m
+        .get(note_id)?
+        .ok_or_else(|| anyhow!("That note is gone"))?;
+    if note.status != NoteStatus::Ready {
+        return Err(anyhow!("The note is still being worked on"));
+    }
+    let path = m
+        .audio_file(note_id)?
+        .ok_or_else(|| anyhow!("The note's audio isn't kept"))?;
+    let tm = app
+        .try_state::<Arc<TranscriptionManager>>()
+        .ok_or_else(|| anyhow!("The speech model isn't ready"))?;
+    let meeting = note.kind == NoteKind::Meeting;
+    let mut reader = hound::WavReader::open(&path)?;
+    let total = reader.duration();
+    let mut result = RetryResult {
+        transcribed: 0,
+        failed: 0,
+    };
+    for line in store::failed_lines(&m.conn()?, note_id)? {
+        let at = |ms: i64| (ms.max(0) as u64 * RATE as u64 / 1000).min(total as u64) as u32;
+        let (start, end) = (at(line.at_ms), at(line.end_ms));
+        reader.seek(start)?;
+        let samples: Vec<f32> = reader
+            .samples::<i16>()
+            .take(end.saturating_sub(start) as usize)
+            .map_while(Result::ok)
+            .map(|s| s as f32 / i16::MAX as f32)
+            .collect();
+        let text = if samples.is_empty() {
+            Ok(String::new())
+        } else {
+            ensure_model(&tm)
+                .and_then(|_| tm.transcribe(samples.clone()))
+                .map(|f| f.text)
+        };
+        match text {
+            Ok(text) => {
+                let utterance = Utterance {
+                    start: start as usize,
+                    samples,
+                };
+                if !text.trim().is_empty() {
+                    m.save_line(note_id, meeting, line.who, &utterance, text.trim())?;
+                }
+                store::resolve_failed_line(&m.conn()?, &line)?;
+                result.transcribed += 1;
+            }
+            Err(e) => {
+                warn!("A Notes line failed again: {e}");
+                result.failed += 1;
+            }
+        }
+    }
+    m.changed();
+    Ok(result)
 }
 
 /// Mixes the tracks into the note's audio file and removes them. Returns

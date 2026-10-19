@@ -280,6 +280,18 @@ pub static MIGRATIONS: &[M] = &[
             WHERE h.model_id = daily_model_stats.model AND h.fixes IS NOT NULL
               AND date(h.timestamp, 'unixepoch', 'localtime') = daily_model_stats.day), 0);",
     ),
+    // Notes: the stretches of a recording the speech model couldn't
+    // transcribe, so they can be tried again from the note's audio.
+    M::up(
+        "CREATE TABLE note_failed_line (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id INTEGER NOT NULL,
+            at_ms INTEGER NOT NULL,
+            end_ms INTEGER NOT NULL,
+            who TEXT NOT NULL
+         );
+         CREATE INDEX note_failed_line_note ON note_failed_line (note_id, at_ms);",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.
