@@ -2252,7 +2252,8 @@ mod tests {
             "overlay_style": "live",
             "chinese_script": "as_transcribed",
             "transcribe_accelerator": "gpu",
-            "transcribe_gpu_device": settings.transcribe_gpu_device
+            "transcribe_gpu_device": settings.transcribe_gpu_device,
+            "transforms": settings.transforms
         });
 
         assert!(!apply_settings_migrations(&mut settings, &raw));
