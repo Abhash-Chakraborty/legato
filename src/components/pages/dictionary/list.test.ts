@@ -43,6 +43,7 @@ assert.deepEqual(ids(sortEntries(all, "az")), [2, 1, 3]);
 assert.equal(inTab(dokploy, "learned"), true);
 assert.equal(inTab(karol, "learned"), false);
 assert.equal(inTab(karol, "mine"), true);
+assert.equal(inTab({ ...karol, source: "spelled" }, "learned"), true);
 assert.equal(matchesQuery(karol, "CAR"), true);
 assert.equal(matchesQuery(karol, "dok"), false);
 

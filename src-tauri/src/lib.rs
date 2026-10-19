@@ -823,6 +823,7 @@ pub fn run(cli_args: CliArgs) {
             commands::dictionary::undo_accept_pending_words,
             commands::dictionary::dismiss_pending_words,
             commands::dictionary::restore_pending_words,
+            commands::dictionary::add_spelling,
             commands::dictionary::add_never_learn_word,
             commands::dictionary::remove_never_learn_word,
             commands::dictionary::change_learn_from_edits_setting,

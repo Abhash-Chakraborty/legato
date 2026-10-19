@@ -1,7 +1,12 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import type { Insights, InsightsRange } from "@/bindings";
 import { useNavStore } from "../../../stores/navStore";
+import {
+  useDictionaryStore,
+  watchDictionary,
+} from "../../../stores/dictionaryStore";
+import { SpellingList } from "../dictionary/SpellingList";
 import { Button } from "../../ui/Button";
 import { formatSpeech } from "../home/format";
 import { busiestHour, parseDay, split, sum } from "./insights";
@@ -72,6 +77,54 @@ const FixedWordsCard: React.FC<TabProps> = ({ data }) => {
           {t("insights.fixedWords.open")}
         </Button>
       </div>
+    </Card>
+  );
+};
+
+/** Terms the model wrote more than one way in the last 30 days, whatever
+ *  range the page shows. */
+const SuggestedWordsCard: React.FC = () => {
+  const { t } = useTranslation();
+  const go = useNavStore((s) => s.go);
+  const spellings = useDictionaryStore((s) => s.view?.spellings ?? null);
+  useEffect(() => {
+    watchDictionary();
+    // New dictations since the Dictionary last loaded may add some.
+    useDictionaryStore.getState().load();
+  }, []);
+  return (
+    <Card
+      title={t("insights.suggested.title")}
+      className="min-[900px]:col-span-2"
+      aside={
+        <span className="text-[13px] text-text-3">
+          {t("insights.suggested.window")}
+        </span>
+      }
+    >
+      <p className="-mt-1 mb-3 text-[13px] text-text-3">
+        {t("insights.suggested.help")}
+      </p>
+      {spellings === null ? null : spellings.length === 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+          <span className="text-[13px] text-text-2">
+            {t("insights.suggested.none")}
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => go("dictionary")}
+          >
+            {t("insights.fixedWords.open")}
+          </Button>
+        </div>
+      ) : (
+        <SpellingList
+          spellings={spellings}
+          now={Date.now() / 1000}
+          className="-mx-5 -mb-5 overflow-hidden rounded-b-[var(--r-lg)] border-t border-line"
+        />
+      )}
     </Card>
   );
 };
@@ -262,9 +315,11 @@ const AverageCard: React.FC<TabProps> = ({ data, range }) => {
   );
 };
 
-/** The words Legato fixes, the fillers it removes, and when you dictate. */
+/** Words to add, the words Legato fixes, the fillers it removes, and when
+ *  you dictate. */
 export const HabitsTab: React.FC<TabProps> = ({ data, range }) => (
   <div className="grid grid-cols-1 gap-4 min-[900px]:grid-cols-2">
+    <SuggestedWordsCard />
     <FixedWordsCard data={data} range={range} />
     <FillersCard data={data} range={range} />
     <HoursCard data={data} range={range} />

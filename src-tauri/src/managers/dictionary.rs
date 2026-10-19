@@ -7,6 +7,7 @@ use super::dictionary_store::{
 };
 use super::history_store::{AppliedFix, FixSource, TextSnapshot};
 use crate::audio_toolkit::text::{CompiledDictionary, DictionaryCorrection};
+use crate::learn_rules::Spelling;
 use anyhow::Result;
 use chrono::Utc;
 use log::{error, info};
@@ -253,6 +254,26 @@ impl DictionaryManager {
         store::restore_pending(&mut self.conn()?, words)?;
         self.changed();
         Ok(())
+    }
+
+    /// Terms the model wrote more than one way lately.
+    pub fn spellings(&self) -> Result<Vec<Spelling>> {
+        store::spellings(&self.conn()?, Self::now())
+    }
+
+    /// Adds a term written more than one way, with its other forms as ways
+    /// it's heard.
+    pub fn add_spelling(&self, word: &str, forms: &[String]) -> Result<DictionaryEntry> {
+        let input = EntryInput {
+            text: word.to_string(),
+            heard: forms
+                .iter()
+                .filter(|f| !f.eq_ignore_ascii_case(word))
+                .cloned()
+                .collect(),
+            ..Default::default()
+        };
+        self.add(&input, DictionarySource::Spelled)
     }
 
     pub fn add_never(&self, word: &str) -> Result<()> {

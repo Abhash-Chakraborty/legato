@@ -1,5 +1,6 @@
 //! Commands behind the Dictionary page and Fix a word on Home.
 
+use crate::learn_rules::Spelling;
 use crate::managers::dictionary::{applied_fixes, DictionaryManager, FixUndo};
 use crate::managers::dictionary_store::{
     self as store, DictionaryEntry, DictionarySource, EntryInput, ImportSummary, PendingWord,
@@ -25,6 +26,9 @@ pub struct DictionaryView {
     pub pending: Vec<PendingWord>,
     /// Words Learn from my edits never proposes.
     pub never: Vec<String>,
+    /// Terms the model wrote more than one way lately, also under Needs
+    /// review.
+    pub spellings: Vec<Spelling>,
 }
 
 #[tauri::command]
@@ -41,6 +45,7 @@ pub fn get_dictionary(
         max_word_chars: MAX_WORD_CHARS as u32,
         pending: dictionary.pending().map_err(|e| e.to_string())?,
         never: dictionary.never().map_err(|e| e.to_string())?,
+        spellings: dictionary.spellings().map_err(|e| e.to_string())?,
     })
 }
 
@@ -388,6 +393,20 @@ pub fn restore_pending_words(
 ) -> Result<(), String> {
     dictionary
         .restore_pending(&words)
+        .map_err(|e| e.to_string())
+}
+
+/// Adds a term the model wrote more than one way, with its other forms as
+/// ways it's heard. Undo deletes the entry.
+#[tauri::command]
+#[specta::specta]
+pub fn add_spelling(
+    dictionary: State<'_, Arc<DictionaryManager>>,
+    word: String,
+    forms: Vec<String>,
+) -> Result<DictionaryEntry, String> {
+    dictionary
+        .add_spelling(&word, &forms)
         .map_err(|e| e.to_string())
 }
 

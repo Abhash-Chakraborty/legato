@@ -1,6 +1,11 @@
 //! Learn from my edits: the words someone corrected in a field right after
 //! Legato pasted into it.
 
+use std::collections::{HashMap, HashSet};
+
+use serde::{Deserialize, Serialize};
+use specta::Type;
+
 use crate::audio_toolkit::text::word_distance;
 
 /// A correction is deliberate, so it passes at Loose matching even when the
@@ -433,6 +438,180 @@ pub fn find_edits(pasted: &str, field: &str, threshold: f64) -> Vec<Edit> {
     edits
 }
 
+/// Times a term must be written, in all its forms, before it's suggested.
+pub const MIN_SPELLING_COUNT: u32 = 3;
+/// Most words a term is split into ("cool if I").
+const MAX_SPLIT: usize = 3;
+/// Shorter terms meet too many ordinary words by chance.
+const MIN_KEY_CHARS: usize = 5;
+/// Forms listed for a term.
+const MAX_FORMS: usize = 4;
+
+/// A term the model wrote more than one way, such as "Coolify" and
+/// "cool if I": adding it to the Dictionary fixes every version.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct Spelling {
+    /// The term as one word, the way it was capitalised.
+    pub word: String,
+    /// The ways it was written, most often first, `word` among them.
+    pub forms: Vec<String>,
+    pub count: u32,
+    pub last_at: i64,
+    pub last_app: Option<String>,
+    pub last_app_path: Option<String>,
+}
+
+/// One dictation, as the model wrote it.
+pub struct Said<'a> {
+    pub text: &'a str,
+    pub at: i64,
+    pub app: Option<&'a str>,
+    pub app_path: Option<&'a str>,
+}
+
+/// Letters only, folded so near-spellings meet: case, c and k, y and i,
+/// ph and f, and doubled letters.
+fn spelling_key(form: &str) -> String {
+    let letters: String = form
+        .chars()
+        .filter(|c| c.is_alphabetic())
+        .flat_map(char::to_lowercase)
+        .collect();
+    let mut key = String::new();
+    for c in letters.replace("ph", "f").chars() {
+        let c = match c {
+            'c' => 'k',
+            'y' => 'i',
+            c => c,
+        };
+        if !key.ends_with(c) {
+            key.push(c);
+        }
+    }
+    key
+}
+
+/// Whether the token at `i` is inside a sentence, where a capital marks a
+/// name rather than the start.
+fn mid_sentence(text: &str, toks: &[Token<'_>], i: usize) -> bool {
+    i > 0 && !text[toks[i - 1].end..toks[i].start].contains(['.', '!', '?', '\n', '"', '“', ':'])
+}
+
+/// The words in a dictation as forms of up to three words, kept within a
+/// phrase: (form, words in it, token index).
+fn forms_in<'a>(text: &'a str, toks: &[Token<'a>]) -> Vec<(String, usize, usize)> {
+    let mut out = Vec::new();
+    for i in 0..toks.len() {
+        for n in 1..=MAX_SPLIT.min(toks.len() - i) {
+            if n > 1
+                && !text[toks[i + n - 2].end..toks[i + n - 1].start]
+                    .chars()
+                    .all(char::is_whitespace)
+            {
+                break;
+            }
+            let form = toks[i..i + n]
+                .iter()
+                .map(|t| t.core)
+                .collect::<Vec<_>>()
+                .join(" ");
+            out.push((form, n, i));
+        }
+    }
+    out
+}
+
+/// Terms the model wrote more than one way in these dictations, most often
+/// first. A term counts when it's written as one capitalised word inside a
+/// sentence at least once, which keeps out ordinary pairs like "every day"
+/// and "everyday", and as something else the rest of the time.
+pub fn spelled_differently(said: &[Said<'_>]) -> Vec<Spelling> {
+    // Names first: one capitalised word inside a sentence.
+    let mut names: HashSet<String> = HashSet::new();
+    for s in said {
+        let toks = tokens(s.text);
+        for (i, t) in toks.iter().enumerate() {
+            if t.core.chars().next().is_some_and(char::is_uppercase)
+                && mid_sentence(s.text, &toks, i)
+                && !is_common(t.core)
+                && !looks_like_code(t.core)
+            {
+                let key = spelling_key(t.core);
+                if key.chars().count() >= MIN_KEY_CHARS {
+                    names.insert(key);
+                }
+            }
+        }
+    }
+    if names.is_empty() {
+        return Vec::new();
+    }
+
+    #[derive(Default)]
+    struct Group {
+        forms: HashMap<String, (u32, bool)>,
+        count: u32,
+        last_at: i64,
+        last_app: Option<String>,
+        last_app_path: Option<String>,
+    }
+    let mut groups: HashMap<String, Group> = HashMap::new();
+    for s in said {
+        let toks = tokens(s.text);
+        for (form, n, i) in forms_in(s.text, &toks) {
+            let key = spelling_key(&form);
+            if !names.contains(&key) {
+                continue;
+            }
+            let named = n == 1
+                && form.chars().next().is_some_and(char::is_uppercase)
+                && mid_sentence(s.text, &toks, i);
+            let g = groups.entry(key).or_default();
+            let f = g.forms.entry(form).or_default();
+            f.0 += 1;
+            f.1 |= named;
+            g.count += 1;
+            if s.at >= g.last_at {
+                g.last_at = s.at;
+                g.last_app = s.app.map(str::to_string);
+                g.last_app_path = s.app_path.map(str::to_string);
+            }
+        }
+    }
+
+    let mut out: Vec<Spelling> = groups
+        .into_values()
+        .filter_map(|g| {
+            let distinct: HashSet<String> = g.forms.keys().map(|f| f.to_lowercase()).collect();
+            if g.count < MIN_SPELLING_COUNT || distinct.len() < 2 {
+                return None;
+            }
+            let mut forms: Vec<(String, u32, bool)> = g
+                .forms
+                .into_iter()
+                .map(|(f, (n, named))| (f, n, named))
+                .collect();
+            forms.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            let word = forms.iter().find(|f| f.2)?.0.clone();
+            Some(Spelling {
+                word,
+                forms: forms.into_iter().take(MAX_FORMS).map(|f| f.0).collect(),
+                count: g.count,
+                last_at: g.last_at,
+                last_app: g.last_app,
+                last_app_path: g.last_app_path,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.count
+            .cmp(&a.count)
+            .then(b.last_at.cmp(&a.last_at))
+            .then_with(|| a.word.cmp(&b.word))
+    });
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,5 +685,62 @@ mod tests {
         assert_eq!(words(&edits), vec![("coolify", "Coolify")]);
         assert!(edits[0].context.starts_with("größe of the Coolify"));
         assert!(edits[0].context.ends_with('…'));
+    }
+
+    fn said(texts: &[&'static str]) -> Vec<Said<'static>> {
+        texts
+            .iter()
+            .enumerate()
+            .map(|(i, text)| Said {
+                text,
+                at: i as i64,
+                app: Some("Claude Code"),
+                app_path: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn finds_a_term_written_three_ways() {
+        let found = spelled_differently(&said(&[
+            "move the staging app from cool if I to Dokploy",
+            "the Coolify dashboard is down again",
+            "is coolify still on the old box",
+            "Lunch at noon?",
+        ]));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].word, "Coolify");
+        assert_eq!(found[0].count, 3);
+        assert_eq!(found[0].last_at, 2);
+        assert!(found[0].forms.contains(&"cool if I".to_string()));
+        assert!(found[0].forms.contains(&"coolify".to_string()));
+    }
+
+    #[test]
+    fn ordinary_pairs_and_one_spelling_are_left_out() {
+        let found = spelled_differently(&said(&[
+            "I walk every day. Everyday things.",
+            "Everyday is fine, every day works",
+            "ask Samir about it, Samir knows",
+            "and Samir again",
+        ]));
+        assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn a_split_form_stays_within_a_phrase() {
+        let found = spelled_differently(&said(&[
+            "it was cool. If I go, Coolify stays",
+            "the Coolify box",
+            "Coolify again",
+        ]));
+        assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn spelling_keys_fold_near_spellings() {
+        assert_eq!(spelling_key("doc ploy"), spelling_key("Dokploy"));
+        assert_eq!(spelling_key("cool if I"), spelling_key("Coolify"));
+        assert_ne!(spelling_key("Carol"), spelling_key("Coral"));
     }
 }

@@ -4,11 +4,12 @@
 //! events and the snapshot the pipeline reads.
 
 use crate::audio_toolkit::text::{CompiledDictionary, DictionaryWord};
+use crate::learn_rules::{spelled_differently, Said, Spelling};
 use anyhow::{anyhow, Result};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Words the speech model gets before it listens.
 pub const HINT_LIMIT: usize = 40;
@@ -30,6 +31,9 @@ pub enum DictionarySource {
     Imported,
     /// Corrected in another app right after Legato pasted it.
     Edited,
+    /// Written more than one way by the model, and added from Needs review
+    /// or Insights.
+    Spelled,
 }
 
 impl DictionarySource {
@@ -40,6 +44,7 @@ impl DictionarySource {
             DictionarySource::Selection => "selection",
             DictionarySource::Imported => "imported",
             DictionarySource::Edited => "edited",
+            DictionarySource::Spelled => "spelled",
         }
     }
 
@@ -49,6 +54,7 @@ impl DictionarySource {
             "selection" => DictionarySource::Selection,
             "imported" => DictionarySource::Imported,
             "edited" => DictionarySource::Edited,
+            "spelled" => DictionarySource::Spelled,
             _ => DictionarySource::Manual,
         }
     }
@@ -554,6 +560,45 @@ pub fn remove_never(conn: &Connection, word: &str) -> Result<()> {
         params![clean_word(word)],
     )?;
     Ok(())
+}
+
+/// Days of dictations searched for terms spelled more than one way.
+pub const SPELLING_DAYS: i64 = 30;
+
+/// Terms the model wrote more than one way in the last 30 days, leaving out
+/// words already in the Dictionary and words turned down.
+pub fn spellings(conn: &Connection, now: i64) -> Result<Vec<Spelling>> {
+    let mut stmt = conn.prepare(
+        "SELECT COALESCE(heard_text, transcription_text), timestamp, app_name, app_path
+         FROM transcription_history WHERE timestamp >= ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![now - SPELLING_DAYS * 86_400], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let said: Vec<Said<'_>> = rows
+        .iter()
+        .map(|(text, at, app, path)| Said {
+            text,
+            at: *at,
+            app: app.as_deref(),
+            app_path: path.as_deref(),
+        })
+        .collect();
+    let never: HashSet<String> = never(conn)?.iter().map(|w| w.to_lowercase()).collect();
+    let mut out = Vec::new();
+    for spelling in spelled_differently(&said) {
+        if !never.contains(&spelling.word.to_lowercase()) && find(conn, &spelling.word)?.is_none() {
+            out.push(spelling);
+        }
+    }
+    Ok(out)
 }
 
 /// What `learn` did, with the word as it was before for Undo.
@@ -1172,5 +1217,53 @@ mod tests {
             find(&conn, "samir").unwrap().unwrap().source,
             DictionarySource::Imported
         );
+    }
+
+    #[test]
+    fn spellings_leave_out_known_and_turned_down_words() {
+        let mut conn = db();
+        let now = 2_000_000_000;
+        for (i, text) in [
+            "move the app from cool if I to Dokploy",
+            "the Coolify dashboard is down",
+            "is coolify still up",
+            "the Nemotron model and nemo tron",
+            "try Nemotron again",
+        ]
+        .iter()
+        .enumerate()
+        {
+            conn.execute(
+                "INSERT INTO transcription_history (file_name, timestamp, title, transcription_text, app_name)
+                 VALUES ('a.wav', ?1, 't', ?2, 'Claude Code')",
+                params![now - 100 + i as i64, text],
+            )
+            .unwrap();
+        }
+        // Too old to count.
+        conn.execute(
+            "INSERT INTO transcription_history (file_name, timestamp, title, transcription_text)
+             VALUES ('a.wav', ?1, 't', 'the Granola app, granola, gran ola')",
+            params![now - (SPELLING_DAYS + 1) * 86_400],
+        )
+        .unwrap();
+        let words = |conn: &Connection| -> Vec<String> {
+            spellings(conn, now)
+                .unwrap()
+                .into_iter()
+                .map(|s| s.word)
+                .collect()
+        };
+        // As often as each other; the later one first.
+        assert_eq!(words(&conn), vec!["Nemotron", "Coolify"]);
+        add(
+            &mut conn,
+            &input("Coolify", &["cool if I"]),
+            DictionarySource::Spelled,
+            now,
+        )
+        .unwrap();
+        add_never(&mut conn, "Nemotron", now).unwrap();
+        assert!(words(&conn).is_empty());
     }
 }

@@ -2,28 +2,38 @@ import React, { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Check, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
-import { commands, type LearnMode, type PendingWord } from "@/bindings";
+import {
+  commands,
+  type LearnMode,
+  type PendingWord,
+  type Spelling,
+} from "@/bindings";
 import { Button } from "../../ui/Button";
 import { AppIcon } from "../home/AppIcon";
 import { relativeTime } from "./list";
+import { SpellingList } from "./SpellingList";
 
 interface ReviewListProps {
   pending: PendingWord[];
+  spellings: Spelling[];
   now: number;
   enabled: boolean;
   mode: LearnMode;
   onEdit: (word: PendingWord) => void;
+  onEditSpelling: (spelling: Spelling) => void;
   onTurnOn: () => void;
 }
 
 /** Words corrected right after a paste, waiting to be added, edited first,
- *  or never proposed again. */
+ *  or never proposed again; then terms the model wrote more than one way. */
 export const ReviewList: React.FC<ReviewListProps> = ({
   pending,
+  spellings,
   now,
   enabled,
   mode,
   onEdit,
+  onEditSpelling,
   onTurnOn,
 }) => {
   const { t, i18n } = useTranslation();
@@ -82,7 +92,7 @@ export const ReviewList: React.FC<ReviewListProps> = ({
     });
   };
 
-  if (pending.length === 0) {
+  if (pending.length === 0 && spellings.length === 0) {
     return (
       <div className="grid place-items-center gap-1.5 px-6 py-16 text-center">
         <h2 className="text-[15px] font-medium">
@@ -131,6 +141,20 @@ export const ReviewList: React.FC<ReviewListProps> = ({
       never(word);
     }
   };
+
+  const spelled = spellings.length > 0 && (
+    <div className={pending.length > 0 ? "mt-8" : ""}>
+      <h2 className="text-[15px] font-medium">
+        {t("dictionary.spelled.title")}
+      </h2>
+      <p className="mb-3 mt-0.5 text-[13px] text-text-3">
+        {t("dictionary.spelled.help")}
+      </p>
+      <SpellingList spellings={spellings} now={now} onEdit={onEditSpelling} />
+    </div>
+  );
+
+  if (pending.length === 0) return <div>{spelled}</div>;
 
   return (
     <div>
@@ -233,6 +257,7 @@ export const ReviewList: React.FC<ReviewListProps> = ({
           </Button>
         </div>
       )}
+      {spelled}
     </div>
   );
 };

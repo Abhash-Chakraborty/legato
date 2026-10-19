@@ -1404,7 +1404,7 @@ pub fn insights(conn: &Connection, range: InsightsRange) -> Result<Insights> {
     )?;
     let fixed_words = conn
         .prepare(
-            "SELECT id, text, hits, source IN ('fixed', 'edited') FROM dictionary_entry
+            "SELECT id, text, hits, source IN ('fixed', 'edited', 'spelled') FROM dictionary_entry
              WHERE hits > 0 ORDER BY hits DESC, text LIMIT ?1",
         )?
         .query_map([FIXED_WORDS_SHOWN], |row| {

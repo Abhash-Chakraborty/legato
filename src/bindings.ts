@@ -1049,6 +1049,18 @@ async restorePendingWords(words: PendingWord[]) : Promise<Result<null, string>> 
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Adds a term the model wrote more than one way, with its other forms as
+ * ways it's heard. Undo deletes the entry.
+ */
+async addSpelling(word: string, forms: string[]) : Promise<Result<DictionaryEntry, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_spelling", { word, forms }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async addNeverLearnWord(word: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("add_never_learn_word", { word }) };
@@ -2020,7 +2032,12 @@ export type DictionarySource =
 /**
  * Corrected in another app right after Legato pasted it.
  */
-"edited"
+"edited" | 
+/**
+ * Written more than one way by the model, and added from Needs review
+ * or Insights.
+ */
+"spelled"
 /**
  * A word as the editor saves it, and as files import it.
  */
@@ -2044,7 +2061,25 @@ pending: PendingWord[];
 /**
  * Words Learn from my edits never proposes.
  */
-never: string[] }
+never: string[]; 
+/**
+ * Terms the model wrote more than one way lately, also under Needs
+ * review.
+ */
+spellings: Spelling[] }
+/**
+ * A term the model wrote more than one way, such as "Coolify" and
+ * "cool if I": adding it to the Dictionary fixes every version.
+ */
+export type Spelling = { 
+/**
+ * The term as one word, the way it was capitalised.
+ */
+word: string; 
+/**
+ * The ways it was written, most often first, `word` among them.
+ */
+forms: string[]; count: number; last_at: number; last_app: string | null; last_app_path: string | null }
 /**
  * A word learned from an edit, waiting under Needs review.
  */

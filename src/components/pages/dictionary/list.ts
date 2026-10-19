@@ -6,10 +6,17 @@ export const TABS: Tab[] = ["all", "learned", "mine", "review"];
 export type Sort = "pinned" | "hits" | "recent" | "newest" | "az";
 export const SORTS: Sort[] = ["pinned", "hits", "recent", "newest", "az"];
 
-/** Learned words came from Fix a word or an edit; the rest the user added.
- *  Needs review holds words that aren't in the Dictionary yet. */
+/** Words Legato learned rather than ones the user typed in. */
+export const isLearned = (entry: DictionaryEntry) =>
+  entry.source === "fixed" ||
+  entry.source === "edited" ||
+  entry.source === "spelled";
+
+/** Learned words came from Fix a word, an edit or a term written several
+ *  ways; the rest the user added. Needs review holds words that aren't in
+ *  the Dictionary yet. */
 export const tabOf = (entry: DictionaryEntry): "learned" | "mine" =>
-  entry.source === "fixed" || entry.source === "edited" ? "learned" : "mine";
+  isLearned(entry) ? "learned" : "mine";
 
 export const inTab = (entry: DictionaryEntry, tab: Tab) =>
   tab === "all" || tabOf(entry) === tab;

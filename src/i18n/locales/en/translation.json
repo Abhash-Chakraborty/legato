@@ -1348,7 +1348,8 @@
         "fixed": "first fixed on Home · {{when}}",
         "selection": "added from a selection · {{when}}",
         "imported": "imported · {{when}}",
-        "edited": "learned from your edit · {{when}}"
+        "edited": "learned from your edit · {{when}}",
+        "spelled": "written several ways · {{when}}"
       },
       "caseSensitive": "Case sensitive: pasted with exactly this capitalisation",
       "caseBadge": "Aa",
@@ -1489,6 +1490,19 @@
         "addedMany_other": "Added {{count}} words to your Dictionary",
         "addFailed": "Couldn't add the word",
         "never": "Won't propose “{{word}}” again"
+      }
+    },
+    "spelled": {
+      "title": "Spelled differently each time",
+      "help": "The model wrote these more than one way. Add one and every version comes out the same.",
+      "writtenAs": "· also written {{forms}}",
+      "rowLabel": "{{word}}, also written {{forms}}",
+      "times_one": "{{count}} time",
+      "times_other": "{{count}} times",
+      "last": "last {{when}}",
+      "ignore": "Ignore",
+      "toast": {
+        "ignored": "Won't suggest “{{word}}” again"
       }
     }
   },
@@ -2580,6 +2594,12 @@
       "use": "Use this model",
       "open": "Open Models",
       "note": "Words and dictations follow the range; time to paste (an average, from when you stop speaking) and fixes per 1,000 words cover every dictation since the model was first used. Fixes are Dictionary corrections and words you fixed on Home."
+    },
+    "suggested": {
+      "title": "Suggested words",
+      "window": "Last 30 days",
+      "help": "Terms the model wrote more than one way. Add one and every version comes out the same.",
+      "none": "Nothing to suggest. When the model writes a term two ways, it shows up here."
     }
   },
   "setup": {

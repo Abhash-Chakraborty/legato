@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Pencil, Pin, PinOff, Trash2, type LucideIcon } from "lucide-react";
 import type { DictionaryEntry } from "@/bindings";
 import { AppIcon } from "../home/AppIcon";
-import { relativeTime, shortDate } from "./list";
+import { isLearned, relativeTime, shortDate } from "./list";
 
 const RowButton: React.FC<{
   label: string;
@@ -55,14 +55,13 @@ export const WordRow: React.FC<WordRowProps> = ({
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
 
-  const origin =
-    entry.source === "fixed" || entry.source === "edited"
-      ? t(`dictionary.row.origin.${entry.source}`, {
-          when: relativeTime(entry.added_at, now, lang),
-        })
-      : t(`dictionary.row.origin.${entry.source}`, {
-          when: shortDate(entry.added_at, lang),
-        });
+  const origin = isLearned(entry)
+    ? t(`dictionary.row.origin.${entry.source}`, {
+        when: relativeTime(entry.added_at, now, lang),
+      })
+    : t(`dictionary.row.origin.${entry.source}`, {
+        when: shortDate(entry.added_at, lang),
+      });
 
   return (
     <li
@@ -93,7 +92,7 @@ export const WordRow: React.FC<WordRowProps> = ({
               aria-label={t("dictionary.row.pinned")}
             />
           )}
-          {(entry.source === "fixed" || entry.source === "edited") && (
+          {isLearned(entry) && (
             <span className="inline-flex items-center gap-1 text-xs text-teal-700">
               <span
                 aria-hidden="true"

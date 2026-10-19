@@ -18,7 +18,12 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { commands, type DictionaryEntry, type PendingWord } from "@/bindings";
+import {
+  commands,
+  type DictionaryEntry,
+  type PendingWord,
+  type Spelling,
+} from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useNavStore } from "../../../stores/navStore";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";
@@ -31,6 +36,7 @@ import { ActionMenu } from "../../ui/ActionMenu";
 import { Button } from "../../ui/Button";
 import { LearningCard } from "./LearningCard";
 import { ReviewList } from "./ReviewList";
+import { otherForms } from "./SpellingList";
 import {
   inTab,
   matchesQuery,
@@ -59,6 +65,8 @@ const readIntroHidden = () => {
 type Editing = null | {
   entry: DictionaryEntry | null;
   pending?: PendingWord;
+  /** A term the model wrote more than one way, edited before it's added. */
+  spelling?: Spelling;
 };
 
 /** How words should be spelled: each word, the ways the model mishears it,
@@ -104,7 +112,7 @@ export const DictionaryPage: React.FC = () => {
     all: entries.length,
     learned: entries.filter((e) => inTab(e, "learned")).length,
     mine: entries.filter((e) => inTab(e, "mine")).length,
-    review: view?.pending.length ?? 0,
+    review: (view?.pending.length ?? 0) + (view?.spellings.length ?? 0),
   };
   const reviewing = tab === "review";
   const totalHits = entries.reduce((sum, e) => sum + e.hits, 0);
@@ -491,10 +499,12 @@ export const DictionaryPage: React.FC = () => {
       {!view ? null : reviewing ? (
         <ReviewList
           pending={view.pending}
+          spellings={view.spellings}
           now={now}
           enabled={settings?.learn_from_edits ?? true}
           mode={settings?.learn_mode ?? "ask"}
           onEdit={(pending) => setEditing({ entry: null, pending })}
+          onEditSpelling={(spelling) => setEditing({ entry: null, spelling })}
           onTurnOn={() => updateSetting("learn_from_edits", true)}
         />
       ) : entries.length === 0 ? (
@@ -563,13 +573,23 @@ export const DictionaryPage: React.FC = () => {
 
       {editing && view && (
         <WordEditor
-          key={editing.entry?.id ?? editing.pending?.id ?? "new"}
+          key={
+            editing.entry?.id ??
+            editing.pending?.id ??
+            editing.spelling?.word ??
+            "new"
+          }
           entry={editing.entry}
           initial={
-            editing.pending && {
-              text: editing.pending.word,
-              heard: [editing.pending.heard],
-            }
+            editing.pending
+              ? {
+                  text: editing.pending.word,
+                  heard: [editing.pending.heard],
+                }
+              : editing.spelling && {
+                  text: editing.spelling.word,
+                  heard: otherForms(editing.spelling),
+                }
           }
           entries={entries}
           pinLimit={view.pin_limit}
@@ -585,6 +605,12 @@ export const DictionaryPage: React.FC = () => {
               commands
                 .dismissPendingWords([editing.pending.id])
                 .catch(() => {});
+            // Saved under another spelling: stop suggesting this one.
+            if (
+              editing.spelling &&
+              entry.text.toLowerCase() !== editing.spelling.word.toLowerCase()
+            )
+              commands.addNeverLearnWord(editing.spelling.word).catch(() => {});
             setEditing(null);
             toastSaved(t, entry, created);
             setFocusedId(entry.id);
