@@ -121,6 +121,7 @@ windows = { version = "0.61.3", features = [
   "Win32_UI_Shell_PropertiesSystem",
   "Win32_Storage_EnhancedStorage",
   "Data_Xml_Dom",
+  "Media_Control",
   "Foundation",
   "UI_Notifications",
   "Win32_UI_WindowsAndMessaging",

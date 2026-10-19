@@ -28,7 +28,7 @@ import { HoldThreshold } from "./debug/HoldThreshold";
 import { KeyboardImplementationSelector } from "./debug/KeyboardImplementationSelector";
 import { MicrophoneSelector } from "./MicrophoneSelector";
 import { ChannelSelector } from "./ChannelSelector";
-import { MuteWhileRecording } from "./MuteWhileRecording";
+import { BackgroundAudio } from "./BackgroundAudio";
 import { LazyStreamClose } from "./LazyStreamClose";
 import { AudioFeedback } from "./AudioFeedback";
 import { SoundPicker } from "./SoundPicker";
@@ -462,12 +462,12 @@ export const buildSections = (
         titleKey: "settings.groups.whileDictating",
         rows: [
           {
-            id: "mute",
+            id: "background-audio",
             searchKeys: [
-              "settings.debug.muteWhileRecording.label",
-              "settings.debug.muteWhileRecording.description",
+              "settings.sound.backgroundAudio.title",
+              "settings.sound.backgroundAudio.search",
             ],
-            render: () => <MuteWhileRecording grouped />,
+            render: () => <BackgroundAudio grouped />,
           },
           {
             id: "keep-mic-open",

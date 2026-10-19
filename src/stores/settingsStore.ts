@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  BackgroundAudio,
   CallSettings,
   CleanupLevel,
   CleanupRules,
@@ -180,8 +181,8 @@ const settingUpdaters: {
   calls: (value) => commands.changeCallSettings(value as CallSettings),
   ai_min_words: (value) => commands.changeAiMinWordsSetting(value as number),
   ai_timeout_secs: (value) => commands.changeAiTimeoutSetting(value as number),
-  mute_while_recording: (value) =>
-    commands.changeMuteWhileRecordingSetting(value as boolean),
+  background_audio: (value) =>
+    commands.changeBackgroundAudioSetting(value as BackgroundAudio),
   append_trailing_space: (value) =>
     commands.changeAppendTrailingSpaceSetting(value as boolean),
   log_level: (value) => commands.setLogLevel(value as any),

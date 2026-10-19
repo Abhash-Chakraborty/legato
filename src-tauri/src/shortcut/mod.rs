@@ -1242,9 +1242,12 @@ pub async fn fetch_post_process_models(
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_mute_while_recording_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+pub fn change_background_audio_setting(
+    app: AppHandle,
+    value: settings::BackgroundAudio,
+) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.mute_while_recording = enabled;
+    settings.background_audio = value;
     settings::write_settings(&app, settings);
     Ok(())
 }

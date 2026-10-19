@@ -4,6 +4,7 @@ mod ai_rules;
 mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
+mod background_audio;
 mod calls;
 mod calls_rules;
 mod catalog;
@@ -727,7 +728,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::fetch_post_process_models,
             shortcut::suspend_all_bindings,
             shortcut::resume_all_bindings,
-            shortcut::change_mute_while_recording_setting,
+            shortcut::change_background_audio_setting,
             shortcut::change_append_trailing_space_setting,
             shortcut::change_lazy_stream_close_setting,
             shortcut::change_vad_enabled_setting,

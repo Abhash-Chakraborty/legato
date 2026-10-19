@@ -284,9 +284,9 @@ async resumeAllBindings() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async changeMuteWhileRecordingSetting(enabled: boolean) : Promise<Result<null, string>> {
+async changeBackgroundAudioSetting(value: BackgroundAudio) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("change_mute_while_recording_setting", { enabled }) };
+    return { status: "ok", data: await TAURI_INVOKE("change_background_audio_setting", { value }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2242,6 +2242,26 @@ export type CategoryStyle = { tone: Tone; paste_method?: PasteMethod | null; aft
 /**
  * What a button on the call card, or Start notes on the Notes page, does.
  */
+/**
+ * What other apps' sound does while you dictate.
+ */
+export type BackgroundAudio = 
+/**
+ * Plays on as it was.
+ */
+"leave" | 
+/**
+ * Drops to 5% of its volume, and comes back up afterwards.
+ */
+"lower" | 
+/**
+ * Players in the Windows media controls pause, then play again.
+ */
+"pause" | 
+/**
+ * The whole PC is muted, Legato's sounds included.
+ */
+"mute"
 export type CallAction = "start" | "not_now" | "never" | "stop_now" | "keep" | "undo_never"
 /**
  * An app Legato watches for calls.
@@ -2638,7 +2658,12 @@ scratchpad_failed_pastes?: boolean;
 /**
  * The note the Scratchpad showed last, for Resume.
  */
-scratchpad_last_note?: number | null; mute_while_recording?: boolean; append_trailing_space?: boolean; theme?: Theme; 
+scratchpad_last_note?: number | null; 
+/**
+ * What other apps' sound does while you dictate. Replaces Handy's
+ * `mute_while_recording` switch, which becomes Mute.
+ */
+background_audio?: BackgroundAudio; append_trailing_space?: boolean; theme?: Theme; 
 /**
  * Use the standard Windows title bar instead of Legato's own. Applied when
  * the main window is created and whenever the setting changes.

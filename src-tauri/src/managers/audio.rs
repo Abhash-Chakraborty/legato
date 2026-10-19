@@ -7,7 +7,7 @@ use crate::audio_toolkit::{
     CaptureSink, CaptureVad, SileroVad, SpeechScorer, VadPolicy, VoiceActivityDetector,
 };
 use crate::managers::transcription::StreamRouter;
-use crate::settings::{get_settings, write_settings, AppSettings, VadBackend};
+use crate::settings::{get_settings, write_settings, AppSettings, BackgroundAudio, VadBackend};
 use crate::utils;
 use handy_recorder::{Channels, EndReason, ErrorKind, Recorder, RecorderConfig, StartError};
 use log::{debug, error, info, trace, warn};
@@ -560,14 +560,21 @@ impl AudioRecordingManager {
 
     /* ---------- microphone life-cycle -------------------------------------- */
 
-    /// Applies mute if mute_while_recording is enabled and stream is open.
-    /// Snapshots the system's prior mute state first so `remove_mute` can
+    /// Quiets other apps as Settings › Background audio says, once the
+    /// stream is open: lowers or pauses them, or mutes the PC. Muting
+    /// snapshots the system's prior mute state first so `remove_mute` can
     /// restore it instead of unconditionally unmuting.
     pub fn apply_mute(&self) {
         let settings = get_settings(&self.app_handle);
-        // Muting during a Notes recording would silence the call it records.
-        if !settings.mute_while_recording || crate::notes::is_recording() {
+        // Quieting during a Notes recording would silence the call it records.
+        if crate::notes::is_recording() {
             return;
+        }
+        match settings.background_audio {
+            BackgroundAudio::Leave => return,
+            BackgroundAudio::Lower => return crate::background_audio::lower(),
+            BackgroundAudio::Pause => return crate::background_audio::pause(),
+            BackgroundAudio::Mute => {}
         }
 
         // Lock order: is_open before mute_state (matches stop_microphone_stream).
@@ -590,6 +597,7 @@ impl AudioRecordingManager {
     /// Removes mute if it was applied, restoring the system's prior mute state
     /// (a system already muted before recording stays muted).
     pub fn remove_mute(&self) {
+        crate::background_audio::restore();
         let mut mute_guard = self.mute_state.lock().unwrap();
         if mute_guard.did_mute {
             restore_mute(mute_guard.prev_muted);
@@ -722,6 +730,7 @@ impl AudioRecordingManager {
         }
 
         {
+            crate::background_audio::restore();
             let mut mute_guard = self.mute_state.lock().unwrap();
             if mute_guard.did_mute {
                 restore_mute(mute_guard.prev_muted);

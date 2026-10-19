@@ -267,6 +267,22 @@
       "volume": {
         "title": "Volume",
         "description": "How loud the start and stop sounds are."
+      },
+      "backgroundAudio": {
+        "title": "Music and videos",
+        "search": "Background audio, lower, duck, pause, mute other apps while dictating",
+        "options": {
+          "lower": "Lower to 5%",
+          "pause": "Pause, then play again",
+          "mute": "Mute everything",
+          "leave": "Leave as they are"
+        },
+        "help": {
+          "lower": "Other apps drop to 5% of their volume while you dictate and come back when you stop. Calls stay as they are.",
+          "pause": "Players in the Windows media controls, like Spotify or a video in your browser, pause while you dictate and play again when you stop.",
+          "mute": "The whole PC is muted while you dictate, Legato's sounds included.",
+          "leave": "Other apps keep playing; the microphone may pick them up."
+        }
       }
     },
     "advanced": {
@@ -510,10 +526,6 @@
       "postProcessingToggle": {
         "label": "Post Processing",
         "description": "Enable AI-powered text refinement after transcription"
-      },
-      "muteWhileRecording": {
-        "label": "Mute other audio while dictating",
-        "description": "Mutes system sound while Legato listens, so speakers don't leak into the recording."
       },
       "appendTrailingSpace": {
         "label": "Add a trailing space",

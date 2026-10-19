@@ -158,6 +158,21 @@ pub enum OverlayStyle {
     Live,
 }
 
+/// What other apps' sound does while you dictate.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundAudio {
+    /// Plays on as it was.
+    Leave,
+    /// Drops to 5% of its volume, and comes back up afterwards.
+    #[default]
+    Lower,
+    /// Players in the Windows media controls pause, then play again.
+    Pause,
+    /// The whole PC is muted, Legato's sounds included.
+    Mute,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelUnloadTimeout {
@@ -760,8 +775,10 @@ pub struct AppSettings {
     /// The note the Scratchpad showed last, for Resume.
     #[serde(default)]
     pub scratchpad_last_note: Option<i64>,
+    /// What other apps' sound does while you dictate. Replaces Handy's
+    /// `mute_while_recording` switch, which becomes Mute.
     #[serde(default)]
-    pub mute_while_recording: bool,
+    pub background_audio: BackgroundAudio,
     #[serde(default)]
     pub append_trailing_space: bool,
     #[serde(default = "default_theme")]
@@ -1367,7 +1384,7 @@ pub fn get_default_settings() -> AppSettings {
         scratchpad_keep_on_top: true,
         scratchpad_failed_pastes: true,
         scratchpad_last_note: None,
-        mute_while_recording: false,
+        background_audio: BackgroundAudio::default(),
         append_trailing_space: false,
         theme: default_theme(),
         native_title_bar: false,
@@ -1549,6 +1566,21 @@ fn apply_settings_migrations(
         );
         settings.transforms = transforms;
         settings.dictate_transform_id = dictate;
+        updated = true;
+    }
+
+    // Handy's "mute while recording" switch becomes a choice; whoever had it
+    // on keeps muting, everyone else gets other apps lowered.
+    if settings_value.get("background_audio").is_none() {
+        let muted = settings_value
+            .get("mute_while_recording")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        settings.background_audio = if muted {
+            BackgroundAudio::Mute
+        } else {
+            BackgroundAudio::Lower
+        };
         updated = true;
     }
 
@@ -2253,7 +2285,8 @@ mod tests {
             "chinese_script": "as_transcribed",
             "transcribe_accelerator": "gpu",
             "transcribe_gpu_device": settings.transcribe_gpu_device,
-            "transforms": settings.transforms
+            "transforms": settings.transforms,
+            "background_audio": "lower"
         });
 
         assert!(!apply_settings_migrations(&mut settings, &raw));
@@ -2334,5 +2367,27 @@ mod tests {
         );
         settings.style_enabled = false;
         assert_eq!(settings.speech_model_for(Some("code"), all), "parakeet");
+    }
+
+    #[test]
+    fn handys_mute_switch_becomes_a_background_audio_choice() {
+        let migrate = |raw: serde_json::Value| {
+            let mut settings = get_default_settings();
+            apply_settings_migrations(&mut settings, &raw);
+            settings.background_audio
+        };
+        assert_eq!(
+            migrate(serde_json::json!({ "mute_while_recording": true })),
+            BackgroundAudio::Mute
+        );
+        assert_eq!(
+            migrate(serde_json::json!({ "mute_while_recording": false })),
+            BackgroundAudio::Lower
+        );
+        assert_eq!(migrate(serde_json::json!({})), BackgroundAudio::Lower);
+        assert_eq!(
+            migrate(serde_json::json!({ "background_audio": "pause" })),
+            get_default_settings().background_audio
+        );
     }
 }
