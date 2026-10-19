@@ -1,14 +1,15 @@
 import type { DictionaryEntry } from "@/bindings";
 
-export type Tab = "all" | "learned" | "mine";
-export const TABS: Tab[] = ["all", "learned", "mine"];
+export type Tab = "all" | "learned" | "mine" | "review";
+export const TABS: Tab[] = ["all", "learned", "mine", "review"];
 
 export type Sort = "pinned" | "hits" | "recent" | "newest" | "az";
 export const SORTS: Sort[] = ["pinned", "hits", "recent", "newest", "az"];
 
-/** Learned words came from Fix a word; the rest the user added. */
-export const tabOf = (entry: DictionaryEntry): Exclude<Tab, "all"> =>
-  entry.source === "fixed" ? "learned" : "mine";
+/** Learned words came from Fix a word or an edit; the rest the user added.
+ *  Needs review holds words that aren't in the Dictionary yet. */
+export const tabOf = (entry: DictionaryEntry): "learned" | "mine" =>
+  entry.source === "fixed" || entry.source === "edited" ? "learned" : "mine";
 
 export const inTab = (entry: DictionaryEntry, tab: Tab) =>
   tab === "all" || tabOf(entry) === tab;

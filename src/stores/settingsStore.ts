@@ -10,6 +10,7 @@ import type {
   ChineseScript,
   TranscribeAcceleratorSetting,
   ShortcutActivation,
+  LearnMode,
   ScratchpadOpen,
   VadBackend,
 } from "@/bindings";
@@ -209,6 +210,9 @@ const settingUpdaters: {
     commands.changeCleanupRulesSetting(value as CleanupRules),
   style_enabled: (value) =>
     commands.changeStyleEnabledSetting(value as boolean),
+  learn_from_edits: (value) =>
+    commands.changeLearnFromEditsSetting(value as boolean),
+  learn_mode: (value) => commands.changeLearnModeSetting(value as LearnMode),
   scratchpad_open: (value) =>
     commands.changeScratchpadOpenSetting(value as ScratchpadOpen),
   scratchpad_keep_on_top: (value) =>

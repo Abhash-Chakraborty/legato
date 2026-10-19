@@ -385,6 +385,13 @@ pub fn bar_pick(app: AppHandle, id: String) {
     transforms::pick(&app, &id);
 }
 
+/// The bar's Review, after Learn from my edits found a word.
+#[tauri::command]
+#[specta::specta]
+pub fn bar_review(app: AppHandle) {
+    transforms::review(&app);
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn bar_dismiss(app: AppHandle) {

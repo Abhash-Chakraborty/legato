@@ -206,7 +206,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 data-section={s.id}
                 onClick={() => openSection(s.id)}
                 aria-current={on ? "true" : undefined}
-                className={`group flex h-[34px] w-full items-center gap-2.5 rounded-[var(--r-sm)] px-2.5 text-sm transition-colors duration-[var(--dur-1)] hover:duration-0 focus-visible:outline-offset-[-2px] ${
+                className={`group flex h-[34px] w-full items-center gap-2.5 rounded-[var(--r-sm)] px-2.5 text-sm transition-colors duration-[var(--dur-1)] hover:duration-0 ring-inside ${
                   on
                     ? "bg-surface-2 font-medium text-text"
                     : "text-text-2 hover:bg-surface-2 hover:text-text"

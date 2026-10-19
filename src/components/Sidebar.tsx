@@ -58,7 +58,7 @@ const NavButton: React.FC<{ item: NavItem }> = ({ item }) => {
       type="button"
       onClick={() => go(item.id)}
       aria-current={current ? "page" : undefined}
-      className={`group relative flex h-[38px] w-full items-center gap-3 rounded-[var(--r-md)] px-2.5 text-[15px] text-text transition-colors duration-[var(--dur-1)] hover:duration-0 focus-visible:outline-offset-[-2px] ${
+      className={`group relative flex h-[38px] w-full items-center gap-3 rounded-[var(--r-md)] px-2.5 text-[15px] text-text transition-colors duration-[var(--dur-1)] hover:duration-0 ring-inside ${
         current
           ? "bg-sidebar-active font-medium"
           : "hover:bg-surface-3 active:bg-surface-4"

@@ -182,6 +182,17 @@ pub enum PasteMethod {
     CtrlShiftV,
 }
 
+/// What Learn from my edits does with a word it finds.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LearnMode {
+    /// It waits under Needs review.
+    #[default]
+    Ask,
+    /// It goes straight into the Dictionary, and the bar says so.
+    Auto,
+}
+
 /// What the Scratchpad shortcut opens.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
@@ -631,6 +642,11 @@ pub struct AppSettings {
     /// Apps and sites moved between kinds of app on Style › Edit apps.
     #[serde(default)]
     pub app_rules: Vec<AppRule>,
+    /// Reads the field after a paste and proposes the words you corrected.
+    #[serde(default = "default_true")]
+    pub learn_from_edits: bool,
+    #[serde(default)]
+    pub learn_mode: LearnMode,
     #[serde(default)]
     pub scratchpad_open: ScratchpadOpen,
     /// The Scratchpad window floats above other apps.
@@ -1232,6 +1248,8 @@ pub fn get_default_settings() -> AppSettings {
         style_enabled: true,
         styles: Styles::default(),
         app_rules: Vec::new(),
+        learn_from_edits: true,
+        learn_mode: LearnMode::default(),
         scratchpad_open: ScratchpadOpen::default(),
         scratchpad_keep_on_top: true,
         scratchpad_failed_pastes: true,

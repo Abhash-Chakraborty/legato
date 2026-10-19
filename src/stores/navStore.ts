@@ -27,13 +27,22 @@ export type SettingsSection =
 interface NavStore {
   page: Page;
   settingsSection: SettingsSection;
+  /** A part of the page to show first, such as the Dictionary's Needs
+   *  review; the page clears it once shown. */
+  hint: string | null;
   /** Opens a page; for Settings, optionally a section of it. */
   go: (page: Page, section?: SettingsSection) => void;
+  /** Opens a page on one of its parts. */
+  goTo: (page: Page, hint: string | null) => void;
+  clearHint: () => void;
 }
 
 export const useNavStore = create<NavStore>()((set) => ({
   page: "home",
   settingsSection: "general",
+  hint: null,
+  goTo: (page, hint) => set({ page, hint }),
+  clearHint: () => set({ hint: null }),
   go: (page, section) =>
     set((state) => ({
       page,

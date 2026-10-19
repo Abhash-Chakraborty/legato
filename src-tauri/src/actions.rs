@@ -823,6 +823,15 @@ impl ShortcutAction for TranscribeAction {
                                         )
                                     };
                                     let pasted = paste_result.is_ok() && !not_pasted;
+                                    if pasted {
+                                        // Learn from my edits reads the field
+                                        // again in ten seconds.
+                                        crate::edit_reader::watch(
+                                            &ah_clone,
+                                            &fallback_text,
+                                            app_info.as_ref(),
+                                        );
+                                    }
                                     if let Err(reason) = &paste_result {
                                         crate::scratchpad::save_failed_paste(
                                             &ah_clone,

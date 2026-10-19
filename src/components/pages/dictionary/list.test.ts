@@ -54,4 +54,10 @@ const now = 1_000_000;
 assert.equal(relativeTime(now - 240, now, "en"), "4 min. ago");
 assert.equal(relativeTime(now - 10, now, "en"), "now");
 
+// Words learned from edits count as learned; Needs review holds no entries.
+const coolify = entry(9, "Coolify", { source: "edited" });
+assert.ok(inTab(coolify, "learned"));
+assert.ok(!inTab(coolify, "mine"));
+assert.ok(!inTab(coolify, "review"));
+
 console.log("dictionary list: ok");

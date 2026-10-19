@@ -87,6 +87,10 @@ body {
 .note-editor:focus-visible {
   outline: none;
 }
+/* Rows in clipped lists draw their ring inside, or only one edge shows. */
+.ring-inside:focus-visible {
+  outline-offset: -2px;
+}
 
 .container {
   margin: 0;

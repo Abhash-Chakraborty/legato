@@ -6,6 +6,7 @@
 use crate::ai::{self, AiConfig, AiProblem, AiStatusKind};
 use crate::context::{self, AppInfo};
 use crate::managers::dictionary::DictionaryManager;
+use crate::managers::dictionary_store::Learned;
 use crate::managers::history::HistoryManager;
 use crate::managers::transform_store::{self as store, NewRun, RunResult, RunSource};
 use crate::selection;
@@ -90,6 +91,19 @@ pub enum BarNotice {
         app: Option<String>,
         admin: bool,
     },
+    /// Words corrected after a paste wait under Needs review; `more` counts
+    /// the others found with `word`.
+    Spotted {
+        word: String,
+        more: usize,
+        app: Option<String>,
+    },
+    /// Words corrected after a paste went straight into the Dictionary.
+    Learned {
+        word: String,
+        more: usize,
+        app: Option<String>,
+    },
     /// A transform didn't run; the text stayed as it was.
     TransformFailed {
         name: String,
@@ -128,8 +142,12 @@ struct Change {
 
 /// What the bar's Undo undoes.
 enum Undoable {
-    Paste { run_id: Option<i64> },
+    Paste {
+        run_id: Option<i64>,
+    },
     Change(Change),
+    /// Words Learn from my edits added on its own.
+    Learned(Vec<Learned>),
 }
 
 static LAST_CHANGE: Mutex<Option<Change>> = Mutex::new(None);
@@ -717,6 +735,10 @@ pub fn undo(app: &AppHandle) {
     let Some(undoable) = undoable else {
         return;
     };
+    if let Undoable::Learned(learned) = undoable {
+        unlearn(app, &learned);
+        return;
+    }
     let app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(120));
@@ -730,6 +752,7 @@ pub fn undo(app: &AppHandle) {
                 let saved = app.clipboard().write_text(change.before).is_ok();
                 (change.run_id, saved)
             }
+            Undoable::Learned(_) => return,
         };
         if let Some(id) = run_id {
             set_run_result(&app, id, RunResult::Undone);
@@ -737,6 +760,30 @@ pub fn undo(app: &AppHandle) {
         info!("Undid the last paste from the Legato bar");
         overlay::show_overlay_notice(&app, &BarNotice::Undone { clipboard });
     });
+}
+
+/// Lets the bar's Undo take back words Learn from my edits just added.
+pub fn offer_unlearn(learned: Vec<Learned>) {
+    *lock(&UNDO) = Some(Undoable::Learned(learned));
+}
+
+fn unlearn(app: &AppHandle, learned: &[Learned]) {
+    let Some(dictionary) = app.try_state::<Arc<DictionaryManager>>() else {
+        return;
+    };
+    for l in learned.iter().rev() {
+        if let Err(e) = dictionary.unlearn(l) {
+            error!("Couldn't take back a learned word: {e}");
+        }
+    }
+    info!("Took back words learned from an edit");
+    overlay::show_overlay_notice(app, &BarNotice::Undone { clipboard: false });
+}
+
+/// The bar's Review: opens Needs review in the Dictionary.
+pub fn review(app: &AppHandle) {
+    overlay::hide_recording_overlay(app);
+    crate::open_page(app, "dictionary", Some("review"));
 }
 
 /// The bar's Keep, or a click that dismisses it.

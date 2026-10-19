@@ -70,7 +70,7 @@ export const NoteRow: React.FC<NoteRowProps> = ({
       aria-current={selected || undefined}
       onFocus={(e) => e.target === e.currentTarget && onFocusRow()}
       onClick={onOpen}
-      className={`group relative flex min-h-16 cursor-default items-start border-b border-line px-4 py-3 transition-colors duration-[var(--dur-1)] last:border-b-0 hover:duration-0 focus-visible:outline-offset-[-2px] ${
+      className={`ring-inside group relative flex min-h-16 cursor-default items-start border-b border-line px-4 py-3 transition-colors duration-[var(--dur-1)] last:border-b-0 hover:duration-0 ${
         selected
           ? "bg-teal-50"
           : "hover:bg-surface-2 focus-visible:bg-surface-2"

@@ -195,7 +195,7 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
         onFocusRow();
         setMenuOpen(true);
       }}
-      className={`group relative grid grid-cols-[68px_minmax(0,1fr)_auto] gap-x-3 rounded-[var(--r-md)] px-3 py-3 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 focus-visible:bg-surface-2 focus-visible:outline-offset-[-2px] ${menuOpen ? "bg-surface-2" : ""}`}
+      className={`group relative grid grid-cols-[68px_minmax(0,1fr)_auto] gap-x-3 rounded-[var(--r-md)] px-3 py-3 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 focus-visible:bg-surface-2 ring-inside ${menuOpen ? "bg-surface-2" : ""}`}
     >
       <div className="flex flex-col gap-1.5 pt-0.5 text-[13px] tabular-nums text-text-3">
         <span className="whitespace-nowrap">{time}</span>

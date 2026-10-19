@@ -3,6 +3,7 @@
 
 use super::dictionary_store::{
     self as store, DictionaryEntry, DictionarySource, EntryInput, FixApp, ImportSummary, Learned,
+    PendingWord,
 };
 use super::history_store::{AppliedFix, FixSource, TextSnapshot};
 use crate::audio_toolkit::text::{CompiledDictionary, DictionaryCorrection};
@@ -57,10 +58,13 @@ pub fn applied_fixes(fixes: &[DictionaryCorrection]) -> Vec<AppliedFix> {
 #[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct DictionaryChanged;
 
-/// What a Fix a word changed, kept until it is undone or forgotten.
+/// What a Fix a word or a review changed, kept until it is undone or
+/// forgotten.
 pub struct FixUndo {
     pub rows: Vec<TextSnapshot>,
-    pub learned: Option<Learned>,
+    pub learned: Vec<Learned>,
+    /// Words taken off Needs review.
+    pub pending: Vec<PendingWord>,
 }
 
 /// Fixes that can still be undone; old ones are dropped.
@@ -203,6 +207,62 @@ impl DictionaryManager {
 
     pub fn unlearn(&self, learned: &Learned) -> Result<()> {
         store::unlearn(&mut self.conn()?, learned)?;
+        self.changed();
+        Ok(())
+    }
+
+    pub fn pending(&self) -> Result<Vec<PendingWord>> {
+        store::pending(&self.conn()?)
+    }
+
+    pub fn never(&self) -> Result<Vec<String>> {
+        store::never(&self.conn()?)
+    }
+
+    /// Puts corrections under Needs review; returns the ones that weren't
+    /// already covered.
+    pub fn add_pending(
+        &self,
+        words: &[(String, String, String)],
+        app: FixApp<'_>,
+    ) -> Result<Vec<PendingWord>> {
+        let conn = self.conn()?;
+        let mut added = Vec::new();
+        for (word, heard, context) in words {
+            if let Some(p) = store::add_pending(&conn, word, heard, context, app, Self::now())? {
+                added.push(p);
+            }
+        }
+        if !added.is_empty() {
+            self.changed();
+        }
+        Ok(added)
+    }
+
+    pub fn is_known(&self, word: &str, heard: &str) -> Result<bool> {
+        store::is_known(&self.conn()?, word, heard)
+    }
+
+    pub fn remove_pending(&self, ids: &[i64]) -> Result<Vec<PendingWord>> {
+        let gone = store::remove_pending(&mut self.conn()?, ids)?;
+        self.changed();
+        Ok(gone)
+    }
+
+    pub fn restore_pending(&self, words: &[PendingWord]) -> Result<()> {
+        store::restore_pending(&mut self.conn()?, words)?;
+        self.changed();
+        Ok(())
+    }
+
+    pub fn add_never(&self, word: &str) -> Result<()> {
+        store::add_never(&mut self.conn()?, word, Self::now())?;
+        self.changed();
+        Ok(())
+    }
+
+    pub fn remove_never(&self, word: &str) -> Result<()> {
+        store::remove_never(&self.conn()?, word)?;
         self.changed();
         Ok(())
     }

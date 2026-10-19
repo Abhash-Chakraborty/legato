@@ -28,6 +28,8 @@ pub enum DictionarySource {
     /// Selected in another app and added with the shortcut.
     Selection,
     Imported,
+    /// Corrected in another app right after Legato pasted it.
+    Edited,
 }
 
 impl DictionarySource {
@@ -37,6 +39,7 @@ impl DictionarySource {
             DictionarySource::Fixed => "fixed",
             DictionarySource::Selection => "selection",
             DictionarySource::Imported => "imported",
+            DictionarySource::Edited => "edited",
         }
     }
 
@@ -45,6 +48,7 @@ impl DictionarySource {
             "fixed" => DictionarySource::Fixed,
             "selection" => DictionarySource::Selection,
             "imported" => DictionarySource::Imported,
+            "edited" => DictionarySource::Edited,
             _ => DictionarySource::Manual,
         }
     }
@@ -392,6 +396,166 @@ pub fn record_fixes(
     Ok(())
 }
 
+/// A word learned from an edit, waiting under Needs review.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct PendingWord {
+    pub id: i64,
+    pub word: String,
+    /// What Legato had pasted.
+    pub heard: String,
+    /// The text around the correction, about 60 characters.
+    pub context: String,
+    pub app: Option<String>,
+    pub app_path: Option<String>,
+    pub at: i64,
+}
+
+fn map_pending(row: &Row<'_>) -> rusqlite::Result<PendingWord> {
+    Ok(PendingWord {
+        id: row.get("id")?,
+        word: row.get("word")?,
+        heard: row.get("heard")?,
+        context: row.get("context")?,
+        app: row.get("app")?,
+        app_path: row.get("app_path")?,
+        at: row.get("at")?,
+    })
+}
+
+/// Whether a correction is already covered: the word is never to be
+/// proposed, or the Dictionary already turns this heard form into it.
+pub fn is_known(conn: &Connection, word: &str, heard: &str) -> Result<bool> {
+    let never: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM dictionary_never WHERE word = ?1 COLLATE NOCASE",
+        params![clean_word(word)],
+        |row| row.get(0),
+    )?;
+    if never {
+        return Ok(true);
+    }
+    let Some(entry) = find(conn, word)? else {
+        return Ok(false);
+    };
+    Ok(entry.text == clean_word(word)
+        && (entry.heard.iter().any(|h| h.eq_ignore_ascii_case(heard))
+            || heard.eq_ignore_ascii_case(&entry.text)))
+}
+
+/// Puts a correction under Needs review, or brings one already there back to
+/// the top. None when it's already covered.
+pub fn add_pending(
+    conn: &Connection,
+    word: &str,
+    heard: &str,
+    context: &str,
+    app: FixApp<'_>,
+    now: i64,
+) -> Result<Option<PendingWord>> {
+    let (word, heard) = (clean_word(word), clean_heard(heard));
+    if word.is_empty() || heard.is_empty() || is_known(conn, &word, &heard)? {
+        return Ok(None);
+    }
+    conn.execute(
+        "INSERT INTO dictionary_pending (word, heard, context, app, app_path, at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT (word COLLATE NOCASE, heard COLLATE NOCASE)
+         DO UPDATE SET context = excluded.context, app = excluded.app,
+            app_path = excluded.app_path, at = excluded.at",
+        params![
+            word,
+            heard,
+            context,
+            app.map(|(name, _)| name),
+            app.and_then(|(_, path)| path),
+            now
+        ],
+    )?;
+    Ok(conn
+        .query_row(
+            "SELECT * FROM dictionary_pending
+             WHERE word = ?1 COLLATE NOCASE AND heard = ?2 COLLATE NOCASE",
+            params![word, heard],
+            map_pending,
+        )
+        .optional()?)
+}
+
+/// Words under Needs review, newest first.
+pub fn pending(conn: &Connection) -> Result<Vec<PendingWord>> {
+    let mut stmt = conn.prepare("SELECT * FROM dictionary_pending ORDER BY at DESC, id DESC")?;
+    let rows = stmt.query_map([], map_pending)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Takes words off Needs review and returns them for Undo.
+pub fn remove_pending(conn: &mut Connection, ids: &[i64]) -> Result<Vec<PendingWord>> {
+    let tx = conn.transaction()?;
+    let mut gone = Vec::new();
+    for id in ids {
+        if let Some(p) = tx
+            .query_row(
+                "SELECT * FROM dictionary_pending WHERE id = ?1",
+                params![id],
+                map_pending,
+            )
+            .optional()?
+        {
+            tx.execute("DELETE FROM dictionary_pending WHERE id = ?1", params![id])?;
+            gone.push(p);
+        }
+    }
+    tx.commit()?;
+    Ok(gone)
+}
+
+pub fn restore_pending(conn: &mut Connection, words: &[PendingWord]) -> Result<()> {
+    let tx = conn.transaction()?;
+    for p in words {
+        tx.execute(
+            "INSERT OR REPLACE INTO dictionary_pending (id, word, heard, context, app, app_path, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![p.id, p.word, p.heard, p.context, p.app, p.app_path, p.at],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// Words Learn from my edits never proposes, A to Z.
+pub fn never(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare("SELECT word FROM dictionary_never ORDER BY word COLLATE NOCASE")?;
+    let rows = stmt.query_map([], |row| row.get(0))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Stops proposing a word, and drops it from Needs review.
+pub fn add_never(conn: &mut Connection, word: &str, now: i64) -> Result<()> {
+    let word = clean_word(word);
+    if word.is_empty() {
+        return Ok(());
+    }
+    let tx = conn.transaction()?;
+    tx.execute(
+        "INSERT OR IGNORE INTO dictionary_never (word, added_at) VALUES (?1, ?2)",
+        params![word, now],
+    )?;
+    tx.execute(
+        "DELETE FROM dictionary_pending WHERE word = ?1 COLLATE NOCASE",
+        params![word],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn remove_never(conn: &Connection, word: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM dictionary_never WHERE word = ?1 COLLATE NOCASE",
+        params![clean_word(word)],
+    )?;
+    Ok(())
+}
+
 /// What `learn` did, with the word as it was before for Undo.
 #[derive(Clone, Debug)]
 pub struct Learned {
@@ -725,6 +889,57 @@ mod tests {
             heard: heard.iter().map(|h| h.to_string()).collect(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn edits_wait_for_review_unless_known_or_never() {
+        let mut conn = db();
+        let app = Some(("Slack", Some("C:\\slack.exe")));
+        let p = add_pending(&conn, "Dokploy", "doc ploy", "the Dokploy deploy", app, 10)
+            .unwrap()
+            .unwrap();
+        assert_eq!((p.word.as_str(), p.heard.as_str()), ("Dokploy", "doc ploy"));
+        // The same correction again moves it up instead of adding a row.
+        let again = add_pending(&conn, "Dokploy", "Doc Ploy", "again", app, 20)
+            .unwrap()
+            .unwrap();
+        assert_eq!(again.id, p.id);
+        assert_eq!(again.at, 20);
+        assert_eq!(pending(&conn).unwrap().len(), 1);
+
+        // Already in the Dictionary with that heard form: nothing to review.
+        add(
+            &mut conn,
+            &input("Karol", &["Carol"]),
+            DictionarySource::Manual,
+            1,
+        )
+        .unwrap();
+        assert!(add_pending(&conn, "Karol", "carol", "", None, 30)
+            .unwrap()
+            .is_none());
+        // Known word, new heard form: worth proposing.
+        assert!(add_pending(&conn, "Karol", "Carl", "", None, 30)
+            .unwrap()
+            .is_some());
+
+        // Never learn drops it from review and keeps it out.
+        add_never(&mut conn, "dokploy", 40).unwrap();
+        assert!(pending(&conn).unwrap().iter().all(|p| p.word != "Dokploy"));
+        assert!(add_pending(&conn, "Dokploy", "doc ploy", "", None, 50)
+            .unwrap()
+            .is_none());
+        assert_eq!(never(&conn).unwrap(), vec!["dokploy".to_string()]);
+        remove_never(&conn, "Dokploy").unwrap();
+        assert!(never(&conn).unwrap().is_empty());
+
+        // Removed for review can come back with Undo.
+        let all = pending(&conn).unwrap();
+        let gone =
+            remove_pending(&mut conn, &all.iter().map(|p| p.id).collect::<Vec<_>>()).unwrap();
+        assert!(pending(&conn).unwrap().is_empty());
+        restore_pending(&mut conn, &gone).unwrap();
+        assert_eq!(pending(&conn).unwrap(), all);
     }
 
     #[test]

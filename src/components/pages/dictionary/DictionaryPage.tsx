@@ -18,8 +18,9 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { commands, type DictionaryEntry } from "@/bindings";
+import { commands, type DictionaryEntry, type PendingWord } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
+import { useNavStore } from "../../../stores/navStore";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";
 import { formatKeyCombination } from "../../../lib/utils/keyboard";
 import {
@@ -29,6 +30,7 @@ import {
 import { ActionMenu } from "../../ui/ActionMenu";
 import { Button } from "../../ui/Button";
 import { LearningCard } from "./LearningCard";
+import { ReviewList } from "./ReviewList";
 import {
   inTab,
   matchesQuery,
@@ -52,16 +54,22 @@ const readIntroHidden = () => {
   }
 };
 
-/** Editor state: closed, adding, or editing one word. */
-type Editing = null | { entry: DictionaryEntry | null };
+/** Editor state: closed, adding, or editing one word; `pending` is a word
+ *  from Needs review being edited before it's added. */
+type Editing = null | {
+  entry: DictionaryEntry | null;
+  pending?: PendingWord;
+};
 
 /** How words should be spelled: each word, the ways the model mishears it,
  *  and how often Legato fixed it. */
 export const DictionaryPage: React.FC = () => {
   const { t } = useTranslation();
-  const { settings } = useSettings();
+  const { settings, updateSetting } = useSettings();
   const view = useDictionaryStore((s) => s.view);
-  const [tab, setTab] = useState<Tab>("all");
+  const hint = useNavStore((s) => s.hint);
+  const clearHint = useNavStore((s) => s.clearHint);
+  const [tab, setTab] = useState<Tab>(hint === "review" ? "review" : "all");
   const [sort, setSort] = useState<Sort>("pinned");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
@@ -76,6 +84,13 @@ export const DictionaryPage: React.FC = () => {
 
   useEffect(() => watchDictionary(), []);
 
+  // The Legato bar's Review opens Needs review.
+  useEffect(() => {
+    if (hint !== "review") return;
+    setTab("review");
+    clearHint();
+  }, [hint, clearHint]);
+
   const entries = useMemo(() => view?.entries ?? [], [view]);
   const shown = useMemo(
     () =>
@@ -89,7 +104,9 @@ export const DictionaryPage: React.FC = () => {
     all: entries.length,
     learned: entries.filter((e) => inTab(e, "learned")).length,
     mine: entries.filter((e) => inTab(e, "mine")).length,
+    review: view?.pending.length ?? 0,
   };
+  const reviewing = tab === "review";
   const totalHits = entries.reduce((sum, e) => sum + e.hits, 0);
 
   useTextHighlight(
@@ -400,13 +417,23 @@ export const DictionaryPage: React.FC = () => {
               }`}
             >
               {t(`dictionary.tabs.${id}`)}
-              <span className="tabular-nums text-xs text-text-3">
-                {counts[id]}
-              </span>
+              {id === "review" ? (
+                counts.review > 0 && (
+                  <span className="rounded-full bg-teal-50 px-1.5 text-xs font-medium tabular-nums leading-[18px] text-teal-700">
+                    {counts.review}
+                  </span>
+                )
+              ) : (
+                <span className="tabular-nums text-xs text-text-3">
+                  {counts[id]}
+                </span>
+              )}
             </button>
           ))}
         </div>
-        <div className="mb-2 flex items-center gap-1.5">
+        <div
+          className={`mb-2 flex items-center gap-1.5 ${reviewing ? "invisible" : ""}`}
+        >
           <div className="relative w-[220px]">
             <Search
               className="pointer-events-none absolute start-[10px] top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-text-3"
@@ -461,7 +488,16 @@ export const DictionaryPage: React.FC = () => {
         </div>
       </div>
 
-      {!view ? null : entries.length === 0 ? (
+      {!view ? null : reviewing ? (
+        <ReviewList
+          pending={view.pending}
+          now={now}
+          enabled={settings?.learn_from_edits ?? true}
+          mode={settings?.learn_mode ?? "ask"}
+          onEdit={(pending) => setEditing({ entry: null, pending })}
+          onTurnOn={() => updateSetting("learn_from_edits", true)}
+        />
+      ) : entries.length === 0 ? (
         <div className="grid place-items-center gap-1.5 px-6 py-16 text-center">
           <h2 className="text-[15px] font-medium">
             {t("dictionary.empty.title")}
@@ -527,8 +563,14 @@ export const DictionaryPage: React.FC = () => {
 
       {editing && view && (
         <WordEditor
-          key={editing.entry?.id ?? "new"}
+          key={editing.entry?.id ?? editing.pending?.id ?? "new"}
           entry={editing.entry}
+          initial={
+            editing.pending && {
+              text: editing.pending.word,
+              heard: [editing.pending.heard],
+            }
+          }
           entries={entries}
           pinLimit={view.pin_limit}
           maxChars={view.max_word_chars}
@@ -539,6 +581,10 @@ export const DictionaryPage: React.FC = () => {
             remove(entry);
           }}
           onSaved={(entry, created) => {
+            if (editing.pending)
+              commands
+                .dismissPendingWords([editing.pending.id])
+                .catch(() => {});
             setEditing(null);
             toastSaved(t, entry, created);
             setFocusedId(entry.id);

@@ -819,7 +819,7 @@ export const AiProviders: React.FC = () => {
                 tabIndex={on ? 0 : -1}
                 onClick={() => choose(p.id)}
                 onKeyDown={(e) => onKeyDown(e, i)}
-                className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 focus-visible:outline-offset-[-2px]"
+                className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 ring-inside"
               >
                 <span
                   aria-hidden="true"

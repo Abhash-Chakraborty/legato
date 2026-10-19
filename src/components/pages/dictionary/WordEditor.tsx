@@ -11,6 +11,8 @@ import { TestSentence } from "./TestSentence";
 interface WordEditorProps {
   /** The word to edit, or null to add one. */
   entry: DictionaryEntry | null;
+  /** What a new word starts with, such as one from Needs review. */
+  initial?: { text: string; heard: string[] };
   entries: DictionaryEntry[];
   pinLimit: number;
   maxChars: number;
@@ -24,6 +26,7 @@ interface WordEditorProps {
  *  pin, and a test field that runs the real correction on the draft. */
 export const WordEditor: React.FC<WordEditorProps> = ({
   entry,
+  initial,
   entries,
   pinLimit,
   maxChars,
@@ -37,8 +40,10 @@ export const WordEditor: React.FC<WordEditorProps> = ({
   const heardId = useId();
   const textRef = useRef<HTMLInputElement>(null);
   const heardRef = useRef<HTMLInputElement>(null);
-  const [text, setText] = useState(entry?.text ?? "");
-  const [heard, setHeard] = useState<string[]>(entry?.heard ?? []);
+  const [text, setText] = useState(entry?.text ?? initial?.text ?? "");
+  const [heard, setHeard] = useState<string[]>(
+    entry?.heard ?? initial?.heard ?? [],
+  );
   const [heardInput, setHeardInput] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(
     entry?.case_sensitive ?? false,

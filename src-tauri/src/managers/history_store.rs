@@ -186,6 +186,25 @@ pub static MIGRATIONS: &[M] = &[
          );
          CREATE INDEX scratch_version_note ON scratch_version (note_id, at);",
     ),
+    // Learn from my edits: words waiting under Needs review, and words never
+    // to propose again.
+    M::up(
+        "CREATE TABLE dictionary_pending (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            word TEXT NOT NULL,
+            heard TEXT NOT NULL,
+            context TEXT NOT NULL DEFAULT '',
+            app TEXT,
+            app_path TEXT,
+            at INTEGER NOT NULL
+         );
+         CREATE UNIQUE INDEX dictionary_pending_pair
+            ON dictionary_pending (word COLLATE NOCASE, heard COLLATE NOCASE);
+         CREATE TABLE dictionary_never (
+            word TEXT PRIMARY KEY COLLATE NOCASE,
+            added_at INTEGER NOT NULL
+         );",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.

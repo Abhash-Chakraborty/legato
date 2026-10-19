@@ -1,11 +1,13 @@
 import React, { useId, useState } from "react";
+import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, Pin, Settings2 } from "lucide-react";
-import type { DictionaryView } from "@/bindings";
+import { ChevronDown, Pin, Settings2, X } from "lucide-react";
+import { commands, type DictionaryView, type LearnMode } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
-import { SettingContainer } from "../../ui/SettingContainer";
+import { Requires, SettingContainer } from "../../ui/SettingContainer";
+import { Segmented } from "../../ui/Segmented";
 import { AiStatusLine } from "../../shared/AiStatusLine";
 import { useAiStore } from "../../../stores/aiStore";
 import { MATCHING, MATCHING_THRESHOLD, matchingOf } from "./list";
@@ -20,6 +22,10 @@ export const LearningCard: React.FC<{ view: DictionaryView }> = ({ view }) => {
   const aiOn = settings?.ai_correction_enabled ?? false;
   const [open, setOpen] = useState(false);
   const [showHint, setShowHint] = useState(false);
+  const [showNever, setShowNever] = useState(false);
+  const [neverInput, setNeverInput] = useState("");
+  const learning = settings?.learn_from_edits ?? true;
+  const mode: LearnMode = settings?.learn_mode ?? "ask";
   const bodyId = useId();
 
   const matching = matchingOf(settings?.word_correction_threshold ?? 0.18);
@@ -29,6 +35,9 @@ export const LearningCard: React.FC<{ view: DictionaryView }> = ({ view }) => {
   const free = Math.max(0, view.hint_limit - view.hint.length);
 
   const summary = [
+    learning
+      ? t(`dictionary.learning.summary.edits.${mode}`)
+      : t("dictionary.learning.summary.edits.off"),
     t(`dictionary.learning.summary.${matching}`),
     t("dictionary.learning.summary.pinned", {
       pinned: pinned.length,
@@ -67,37 +76,108 @@ export const LearningCard: React.FC<{ view: DictionaryView }> = ({ view }) => {
       {open && (
         <div id={bodyId} className="border-t border-line px-4">
           <SettingContainer
-            title={t("dictionary.learning.matching.title")}
-            description={t(`dictionary.learning.matching.help.${matching}`)}
+            title={t("dictionary.learning.edits.title")}
+            description={t("dictionary.learning.edits.help")}
           >
-            <div
-              role="radiogroup"
-              aria-label={t("dictionary.learning.matching.title")}
-              className="inline-flex rounded-[var(--r-sm)] border border-line bg-surface-2 p-0.5"
-            >
-              {MATCHING.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  role="radio"
-                  aria-checked={matching === m}
-                  onClick={() =>
-                    updateSetting(
-                      "word_correction_threshold",
-                      MATCHING_THRESHOLD[m],
-                    )
-                  }
-                  className={`h-7 rounded-[calc(var(--r-sm)-2px)] px-3 text-[13px] transition-colors duration-[var(--dur-1)] hover:duration-0 ${
-                    matching === m
-                      ? "bg-surface font-medium text-text shadow-[var(--shadow-1)]"
-                      : "text-text-2 hover:text-text"
-                  }`}
-                >
-                  {t(`dictionary.learning.matching.${m}`)}
-                </button>
-              ))}
-            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={learning}
+              aria-label={t("dictionary.learning.edits.title")}
+              className="toggle"
+              onClick={() => {
+                if (!isUpdating("learn_from_edits"))
+                  updateSetting("learn_from_edits", !learning);
+              }}
+            />
           </SettingContainer>
+          <div className="border-t border-line">
+            <Requires
+              met={learning}
+              reason={t("dictionary.learning.edits.needsOn")}
+            >
+              <SettingContainer
+                title={t("dictionary.learning.mode.title")}
+                description={t(`dictionary.learning.mode.help.${mode}`)}
+              >
+                <Segmented
+                  label={t("dictionary.learning.mode.title")}
+                  value={mode}
+                  onChange={(value) => updateSetting("learn_mode", value)}
+                  options={[
+                    { value: "ask", label: t("dictionary.learning.mode.ask") },
+                    {
+                      value: "auto",
+                      label: t("dictionary.learning.mode.auto"),
+                    },
+                  ]}
+                />
+              </SettingContainer>
+            </Requires>
+          </div>
+          <div className="border-t border-line">
+            <SettingContainer
+              title={t("dictionary.learning.never.title")}
+              description={
+                view.never.length
+                  ? t(
+                      view.never.length > 4
+                        ? "dictionary.learning.never.someMore"
+                        : "dictionary.learning.never.some",
+                      {
+                        words: view.never
+                          .slice(0, 4)
+                          .map((w) => t("dictionary.row.quoted", { text: w }))
+                          .join(", "),
+                        more: view.never.length - 4,
+                      },
+                    )
+                  : t("dictionary.learning.never.none")
+              }
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowNever(true)}
+              >
+                {t("dictionary.learning.never.edit")}
+              </Button>
+            </SettingContainer>
+          </div>
+          <div className="border-t border-line">
+            <SettingContainer
+              title={t("dictionary.learning.matching.title")}
+              description={t(`dictionary.learning.matching.help.${matching}`)}
+            >
+              <div
+                role="radiogroup"
+                aria-label={t("dictionary.learning.matching.title")}
+                className="inline-flex rounded-[var(--r-sm)] border border-line bg-surface-2 p-0.5"
+              >
+                {MATCHING.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={matching === m}
+                    onClick={() =>
+                      updateSetting(
+                        "word_correction_threshold",
+                        MATCHING_THRESHOLD[m],
+                      )
+                    }
+                    className={`h-7 rounded-[calc(var(--r-sm)-2px)] px-3 text-[13px] transition-colors duration-[var(--dur-1)] hover:duration-0 ${
+                      matching === m
+                        ? "bg-surface font-medium text-text shadow-[var(--shadow-1)]"
+                        : "text-text-2 hover:text-text"
+                    }`}
+                  >
+                    {t(`dictionary.learning.matching.${m}`)}
+                  </button>
+                ))}
+              </div>
+            </SettingContainer>
+          </div>
           <div className="border-t border-line">
             <SettingContainer
               title={t("dictionary.learning.hint.title")}
@@ -143,6 +223,70 @@ export const LearningCard: React.FC<{ view: DictionaryView }> = ({ view }) => {
           </div>
         </div>
       )}
+      <Dialog
+        open={showNever}
+        onOpenChange={setShowNever}
+        title={t("dictionary.learning.never.dialogTitle")}
+        description={t("dictionary.learning.never.dialogDescription")}
+        closeLabel={t("dictionary.learning.hint.close")}
+      >
+        <form
+          className="mb-3 flex gap-2"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const word = neverInput.trim();
+            if (!word) return;
+            const result = await commands.addNeverLearnWord(word);
+            if (result.status === "ok") setNeverInput("");
+          }}
+        >
+          <input
+            value={neverInput}
+            onChange={(e) => setNeverInput(e.target.value)}
+            placeholder={t("dictionary.learning.never.placeholder")}
+            aria-label={t("dictionary.learning.never.placeholder")}
+            className="input compact min-w-0 flex-1"
+          />
+          <Button type="submit" size="sm" disabled={!neverInput.trim()}>
+            {t("dictionary.learning.never.add")}
+          </Button>
+        </form>
+        {view.never.length === 0 ? (
+          <p className="text-sm text-text-3">
+            {t("dictionary.learning.never.empty")}
+          </p>
+        ) : (
+          <ul className="flex flex-wrap gap-1.5">
+            {view.never.map((word) => (
+              <li
+                key={word}
+                className="inline-flex h-[26px] items-center gap-1 rounded-[var(--r-xs)] bg-surface-2 ps-2.5 pe-1 text-[13px]"
+              >
+                {word}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await commands.removeNeverLearnWord(word);
+                    toast(t("dictionary.learning.never.removed", { word }), {
+                      action: {
+                        label: t("dictionary.toast.undo"),
+                        onClick: () => {
+                          commands.addNeverLearnWord(word).catch(() => {});
+                        },
+                      },
+                    });
+                  }}
+                  aria-label={t("dictionary.learning.never.remove", { word })}
+                  title={t("dictionary.learning.never.remove", { word })}
+                  className="grid h-5 w-5 place-items-center rounded text-text-3 hover:bg-surface-4 hover:text-text"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Dialog>
       <Dialog
         open={showHint}
         onOpenChange={setShowHint}

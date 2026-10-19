@@ -993,6 +993,70 @@ async undoFixWord(undoToken: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async acceptPendingWords(ids: number[]) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("accept_pending_words", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async undoAcceptPendingWords(undoToken: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("undo_accept_pending_words", { undoToken }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async dismissPendingWords(ids: number[]) : Promise<Result<PendingWord[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("dismiss_pending_words", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restorePendingWords(words: PendingWord[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_pending_words", { words }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async addNeverLearnWord(word: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_never_learn_word", { word }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async removeNeverLearnWord(word: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_never_learn_word", { word }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeLearnFromEditsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_learn_from_edits_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeLearnModeSetting(mode: LearnMode) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_learn_mode_setting", { mode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getAiStatus() : Promise<AiStatus> {
     return await TAURI_INVOKE("get_ai_status");
 },
@@ -1176,6 +1240,9 @@ async barKeep() : Promise<void> {
 },
 async barPick(id: string) : Promise<void> {
     return await TAURI_INVOKE("bar_pick", { id });
+},
+async barReview() : Promise<void> {
+    return await TAURI_INVOKE("bar_review");
 },
 async barDismiss() : Promise<void> {
     return await TAURI_INVOKE("bar_dismiss");
@@ -1482,6 +1549,7 @@ export const events = __makeEvents__<{
 aiStatusChanged: AiStatusChanged,
 dictionaryChanged: DictionaryChanged,
 historyUpdatePayload: HistoryUpdatePayload,
+openPage: OpenPage,
 streamPhaseEvent: StreamPhaseEvent,
 scratchpadChanged: ScratchpadChanged,
 scratchpadDictating: ScratchpadDictating,
@@ -1494,6 +1562,7 @@ transformRunsChanged: TransformRunsChanged
 aiStatusChanged: "ai-status-changed",
 dictionaryChanged: "dictionary-changed",
 historyUpdatePayload: "history-update-payload",
+openPage: "open-page",
 streamPhaseEvent: "stream-phase-event",
 scratchpadChanged: "scratchpad-changed",
 scratchpadDictating: "scratchpad-dictating",
@@ -1642,7 +1711,11 @@ export type DictionarySource =
 /**
  * Selected in another app and added with the shortcut.
  */
-"selection" | "imported"
+"selection" | "imported" | 
+/**
+ * Corrected in another app right after Legato pasted it.
+ */
+"edited"
 /**
  * A word as the editor saves it, and as files import it.
  */
@@ -1658,7 +1731,44 @@ export type DictionaryView = { entries: DictionaryEntry[];
 /**
  * What the speech model gets before it listens, in order.
  */
-hint: string[]; hint_limit: number; pin_limit: number; max_word_chars: number }
+hint: string[]; hint_limit: number; pin_limit: number; max_word_chars: number; 
+/**
+ * Words learned from edits, waiting under Needs review.
+ */
+pending: PendingWord[]; 
+/**
+ * Words Learn from my edits never proposes.
+ */
+never: string[] }
+/**
+ * A word learned from an edit, waiting under Needs review.
+ */
+export type PendingWord = { id: number; word: string; 
+/**
+ * What Legato had pasted.
+ */
+heard: string; 
+/**
+ * The text around the correction, about 60 characters.
+ */
+context: string; app: string | null; app_path: string | null; at: number }
+/**
+ * What Learn from my edits does with a word it finds.
+ */
+export type LearnMode = 
+/**
+ * It waits under Needs review.
+ */
+"ask" | 
+/**
+ * It goes straight into the Dictionary, and the bar says so.
+ */
+"auto"
+/**
+ * Asks the main window to show a page, such as Needs review in the
+ * Dictionary.
+ */
+export type OpenPage = { page: string; section: string | null }
 /**
  * A sentence after the Dictionary corrected it.
  */
@@ -1958,7 +2068,11 @@ style_enabled?: boolean; styles?: Styles;
 /**
  * Apps and sites moved between kinds of app on Style › Edit apps.
  */
-app_rules?: AppRule[]; scratchpad_open?: ScratchpadOpen; 
+app_rules?: AppRule[]; 
+/**
+ * Reads the field after a paste and proposes the words you corrected.
+ */
+learn_from_edits?: boolean; learn_mode?: LearnMode; scratchpad_open?: ScratchpadOpen; 
 /**
  * The Scratchpad window floats above other apps.
  */

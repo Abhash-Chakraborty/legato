@@ -56,6 +56,12 @@ type OverlayNotice =
     }
   | { kind: "saved_to_scratchpad"; app: string | null; admin: boolean }
   | {
+      kind: "spotted" | "learned";
+      word: string;
+      more: number;
+      app: string | null;
+    }
+  | {
       kind: "transform_failed";
       name: string;
       problem: AiProblemKind;
@@ -85,6 +91,7 @@ const GOOD_NOTICES = new Set([
   "pasted_last",
   "copied_last",
   "undone",
+  "learned",
 ]);
 const WARN_NOTICES = new Set([
   "failed",
@@ -525,6 +532,12 @@ const RecordingOverlay: React.FC = () => {
             ? "overlay.notice.undoneClipboard"
             : "overlay.notice.undone",
         );
+      case "spotted":
+      case "learned":
+        return t(
+          `overlay.notice.${n.kind}${n.app ? "In" : ""}${n.more ? "More" : ""}`,
+          { word: n.word, app: n.app, count: n.more },
+        );
       case "saved_to_scratchpad":
         return n.admin && n.app
           ? t("overlay.notice.savedAdmin", { app: n.app })
@@ -548,7 +561,8 @@ const RecordingOverlay: React.FC = () => {
       !!notice &&
       (notice.kind === "pasted" ||
         notice.kind === "transformed" ||
-        notice.kind === "pasted_last") &&
+        notice.kind === "pasted_last" ||
+        notice.kind === "learned") &&
       ("undo" in notice ? notice.undo : true);
     return (
       <div
@@ -572,6 +586,15 @@ const RecordingOverlay: React.FC = () => {
               onClick={() => commands.barUndo()}
             >
               {t("overlay.undo")}
+            </button>
+          )}
+          {notice?.kind === "spotted" && (
+            <button
+              type="button"
+              className="sbtn ghost"
+              onClick={() => commands.barReview()}
+            >
+              {t("overlay.review")}
             </button>
           )}
         </div>

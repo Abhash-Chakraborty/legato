@@ -930,6 +930,18 @@
       "saved": "Couldn't paste · saved in the Scratchpad",
       "savedFrom": "Couldn't paste into {{app}} · saved in the Scratchpad",
       "savedAdmin": "{{app}} runs as administrator · saved in the Scratchpad and copied",
+      "spotted": "Spotted “{{word}}”",
+      "spottedIn": "Spotted “{{word}}” in {{app}}",
+      "spottedMore_one": "Spotted “{{word}}” and {{count}} more",
+      "spottedMore_other": "Spotted “{{word}}” and {{count}} more",
+      "spottedInMore_one": "Spotted “{{word}}” and {{count}} more in {{app}}",
+      "spottedInMore_other": "Spotted “{{word}}” and {{count}} more in {{app}}",
+      "learned": "Learned “{{word}}” from your edit",
+      "learnedIn": "Learned “{{word}}” from your edit in {{app}}",
+      "learnedMore_one": "Learned “{{word}}” and {{count}} more from your edit",
+      "learnedMore_other": "Learned “{{word}}” and {{count}} more from your edit",
+      "learnedInMore_one": "Learned “{{word}}” and {{count}} more from your edit in {{app}}",
+      "learnedInMore_other": "Learned “{{word}}” and {{count}} more from your edit in {{app}}",
       "transformFailed": "{{name}} didn't run · {{problem}}",
       "problem": {
         "none": "no AI model is set up",
@@ -944,6 +956,7 @@
     },
     "working": "{{name}}…",
     "undo": "Undo",
+    "review": "Review",
     "changes": {
       "keep": "Keep",
       "again": "{{keys}} shows these again"
@@ -1158,7 +1171,8 @@
       "label": "Words",
       "all": "All",
       "learned": "Learned",
-      "mine": "Added by me"
+      "mine": "Added by me",
+      "review": "Needs review"
     },
     "sort": {
       "label": "Sort words",
@@ -1200,7 +1214,8 @@
         "manual": "added by you · {{when}}",
         "fixed": "first fixed on Home · {{when}}",
         "selection": "added from a selection · {{when}}",
-        "imported": "imported · {{when}}"
+        "imported": "imported · {{when}}",
+        "edited": "learned from your edit · {{when}}"
       },
       "caseSensitive": "Case sensitive: pasted with exactly this capitalisation",
       "caseBadge": "Aa",
@@ -1225,7 +1240,40 @@
         "loose": "loose matching",
         "pinned": "{{pinned}} of {{limit}} pinned",
         "hint": "{{used}} of {{limit}} hint words",
-        "ai": "AI pass on"
+        "ai": "AI pass on",
+        "edits": {
+          "ask": "learns from your edits, asks first",
+          "auto": "learns from your edits automatically",
+          "off": "not learning from edits"
+        }
+      },
+      "edits": {
+        "title": "Learn from my edits",
+        "help": "Ten seconds after a paste, Legato reads the field once, on this PC, and picks up words you corrected; Slack, Teams and VS Code often don't share their text.",
+        "needsOn": "Turn on Learn from my edits first."
+      },
+      "mode": {
+        "title": "When it finds a word",
+        "ask": "Ask first",
+        "auto": "Add automatically",
+        "help": {
+          "ask": "It waits under Needs review until you add it.",
+          "auto": "It goes straight into the Dictionary, and the Legato bar says so with Undo."
+        }
+      },
+      "never": {
+        "title": "Never learn",
+        "none": "Nothing excluded yet. Words you turn down in Needs review land here.",
+        "some": "{{words}}",
+        "someMore": "{{words}} and {{more}} more",
+        "edit": "Edit",
+        "dialogTitle": "Never learn",
+        "dialogDescription": "Learn from my edits never proposes these words.",
+        "placeholder": "Add a word",
+        "add": "Add",
+        "empty": "No words yet.",
+        "remove": "Stop excluding {{word}}",
+        "removed": "“{{word}}” can be learned again"
       },
       "matching": {
         "title": "Matching",
@@ -1284,6 +1332,31 @@
       "delete": "Delete",
       "cancel": "Cancel",
       "save": "Save"
+    },
+    "review": {
+      "title": "Learned from your edits",
+      "help": "You changed these right after Legato pasted them. Add one and Legato spells it your way from the next dictation.",
+      "rowLabel": "{{heard}} changed to {{word}}",
+      "add": "Add",
+      "edit": "Edit",
+      "never": "Don't learn",
+      "addAll_one": "Add {{count}}",
+      "addAll_other": "Add all {{count}}",
+      "keys": "Enter adds the selected word, E edits it, Delete turns it down.",
+      "empty": {
+        "title": "Nothing to review",
+        "ask": "When you correct a word right after Legato pastes it, it shows up here first.",
+        "auto": "Words you correct go straight into the Dictionary, and the Legato bar says so.",
+        "off": "Learn from my edits is off, so Legato doesn't pick up your corrections.",
+        "turnOn": "Turn it on"
+      },
+      "toast": {
+        "added": "Added “{{word}}” to your Dictionary",
+        "addedMany_one": "Added {{count}} word to your Dictionary",
+        "addedMany_other": "Added {{count}} words to your Dictionary",
+        "addFailed": "Couldn't add the word",
+        "never": "Won't propose “{{word}}” again"
+      }
     }
   },
   "transforms": {

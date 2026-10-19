@@ -29,10 +29,14 @@ import { Sidebar } from "./components/Sidebar";
 import { AppToaster } from "./components/shell/AppToaster";
 import { TitleBar } from "./components/shell/TitleBar";
 import { WhatsNewGate } from "./components/whats-new";
-import { useNavStore, type Page } from "./stores/navStore";
+import {
+  useNavStore,
+  type Page,
+  type SettingsSection,
+} from "./stores/navStore";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
-import { commands } from "@/bindings";
+import { commands, events } from "@/bindings";
 import { HomePage } from "@/components/pages/home/HomePage";
 import { deleteRetiredModel } from "@/components/onboarding/retiredModels";
 
@@ -180,6 +184,24 @@ function App() {
   // The technical error detail is logged to legato.log on the Rust side
   // (see actions.rs `error!("Failed to paste transcription: ...")`),
   // so we show a localized, user-friendly message here instead of the raw error.
+  // The Legato bar's Review and other windows ask for a page.
+  useEffect(() => {
+    const unlisten = events.openPage.listen((event) => {
+      const { page, section } = event.payload;
+      const goTo = useNavStore.getState().goTo;
+      if (page === "settings") {
+        useNavStore
+          .getState()
+          .go("settings", (section ?? undefined) as SettingsSection);
+      } else {
+        goTo(page as Page, section);
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   useEffect(() => {
     const unlisten = listen("paste-error", () => {
       toast.error(t("errors.pasteFailedTitle"), {

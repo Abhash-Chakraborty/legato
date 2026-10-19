@@ -56,8 +56,8 @@ export const WordRow: React.FC<WordRowProps> = ({
   const lang = i18n.language;
 
   const origin =
-    entry.source === "fixed"
-      ? t("dictionary.row.origin.fixed", {
+    entry.source === "fixed" || entry.source === "edited"
+      ? t(`dictionary.row.origin.${entry.source}`, {
           when: relativeTime(entry.added_at, now, lang),
         })
       : t(`dictionary.row.origin.${entry.source}`, {
@@ -71,7 +71,7 @@ export const WordRow: React.FC<WordRowProps> = ({
       aria-label={entry.text}
       onFocus={(e) => e.target === e.currentTarget && onFocusRow()}
       onClick={onEdit}
-      className="group relative flex cursor-pointer items-center gap-4 border-b border-line px-4 py-3 transition-colors duration-[var(--dur-1)] last:border-b-0 hover:bg-surface-2 hover:duration-0 focus-visible:bg-surface-2 focus-visible:outline-offset-[-2px]"
+      className="ring-inside group relative flex cursor-pointer items-center gap-4 border-b border-line px-4 py-3 transition-colors duration-[var(--dur-1)] last:border-b-0 hover:bg-surface-2 hover:duration-0 focus-visible:bg-surface-2"
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -93,7 +93,7 @@ export const WordRow: React.FC<WordRowProps> = ({
               aria-label={t("dictionary.row.pinned")}
             />
           )}
-          {entry.source === "fixed" && (
+          {(entry.source === "fixed" || entry.source === "edited") && (
             <span className="inline-flex items-center gap-1 text-xs text-teal-700">
               <span
                 aria-hidden="true"

@@ -64,6 +64,39 @@ fn supports_soundex(key: &str) -> bool {
     !key.is_empty() && key.chars().all(|c| c.is_ascii_alphabetic())
 }
 
+/// How far apart two match keys are: Levenshtein distance over the longer
+/// length, with a boost when they sound alike. 0.0 is the same.
+fn match_score(a: &str, b: &str) -> f64 {
+    let max_len = a.chars().count().max(b.chars().count()) as f64;
+    // Calculate Levenshtein distance (normalized by length)
+    let levenshtein_score = if max_len > 0.0 {
+        levenshtein(a, b) as f64 / max_len
+    } else {
+        1.0
+    };
+
+    // Soundex is an English/ASCII phonetic algorithm. Numeric terms can
+    // still use edit distance, but must not receive a phonetic boost.
+    let phonetic_match = supports_soundex(a) && supports_soundex(b) && soundex(a, b);
+
+    // Combine scores: favor phonetic matches, but also consider string similarity
+    if phonetic_match {
+        levenshtein_score * 0.3 // Give significant boost to phonetic matches
+    } else {
+        levenshtein_score
+    }
+}
+
+/// The matcher's score for a heard form against a word, ignoring case,
+/// spaces and punctuation ("doc ploy" against "Dokploy"). Lower is closer.
+/// None when either isn't something the matcher compares.
+pub fn word_distance(heard: &str, word: &str) -> Option<f64> {
+    let a = build_match_key(heard);
+    let b = build_match_key(word);
+    let comparable = |k: &str| is_supported_fuzzy_key(k) && k.chars().count() <= 50;
+    (comparable(&a) && comparable(&b)).then(|| match_score(&a, &b))
+}
+
 /// Finds the best matching custom word for a candidate string
 ///
 /// Uses Levenshtein distance and Soundex phonetic matching to find
@@ -102,26 +135,7 @@ fn find_best_match(
             continue;
         }
 
-        // Calculate Levenshtein distance (normalized by length)
-        let levenshtein_dist = levenshtein(candidate, &custom_word_key.key);
-        let levenshtein_score = if max_len > 0.0 {
-            levenshtein_dist as f64 / max_len
-        } else {
-            1.0
-        };
-
-        // Soundex is an English/ASCII phonetic algorithm. Numeric terms can
-        // still use edit distance, but must not receive a phonetic boost.
-        let phonetic_match = supports_soundex(candidate)
-            && supports_soundex(&custom_word_key.key)
-            && soundex(candidate, &custom_word_key.key);
-
-        // Combine scores: favor phonetic matches, but also consider string similarity
-        let combined_score = if phonetic_match {
-            levenshtein_score * 0.3 // Give significant boost to phonetic matches
-        } else {
-            levenshtein_score
-        };
+        let combined_score = match_score(candidate, &custom_word_key.key);
 
         // Accept if the score is good enough (configurable threshold)
         if combined_score < threshold && combined_score < best_score {

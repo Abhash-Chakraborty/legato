@@ -11,9 +11,11 @@ pub mod cli;
 mod clipboard;
 mod commands;
 mod context;
+mod edit_reader;
 pub mod engine_supervisor;
 mod handy_migration;
 mod input;
+mod learn_rules;
 mod llm_client;
 mod managers;
 mod overlay;
@@ -122,6 +124,25 @@ fn show_main_window(app: &AppHandle) {
         "Main window not found. Webview labels: {:?}",
         webview_labels
     );
+}
+
+/// Asks the main window to show a page, such as Needs review in the
+/// Dictionary.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, specta::Type, tauri_specta::Event)]
+pub struct OpenPage {
+    pub page: String,
+    pub section: Option<String>,
+}
+
+/// Brings the main window up on a page.
+pub(crate) fn open_page(app: &AppHandle, page: &str, section: Option<&str>) {
+    use tauri_specta::Event;
+    show_main_window(app);
+    let _ = OpenPage {
+        page: page.to_string(),
+        section: section.map(str::to_string),
+    }
+    .emit_to(app, "main");
 }
 
 /// The main window's first size and its minimum, in logical pixels.
@@ -764,6 +785,14 @@ pub fn run(cli_args: CliArgs) {
             commands::dictionary::find_fix_candidates,
             commands::dictionary::fix_word,
             commands::dictionary::undo_fix_word,
+            commands::dictionary::accept_pending_words,
+            commands::dictionary::undo_accept_pending_words,
+            commands::dictionary::dismiss_pending_words,
+            commands::dictionary::restore_pending_words,
+            commands::dictionary::add_never_learn_word,
+            commands::dictionary::remove_never_learn_word,
+            commands::dictionary::change_learn_from_edits_setting,
+            commands::dictionary::change_learn_mode_setting,
             commands::ai::get_ai_status,
             commands::ai::test_ai_connection,
             commands::ai::get_ai_key_hints,
@@ -792,6 +821,7 @@ pub fn run(cli_args: CliArgs) {
             commands::transforms::bar_keep,
             commands::transforms::bar_pick,
             commands::transforms::bar_dismiss,
+            commands::transforms::bar_review,
             commands::snippets::get_snippets,
             commands::snippets::add_snippet,
             commands::snippets::update_snippet,
@@ -840,6 +870,7 @@ pub fn run(cli_args: CliArgs) {
             ai::AiStatusChanged,
             transforms::TransformRunsChanged,
             managers::snippets::SnippetsChanged,
+            OpenPage,
             scratchpad::ScratchpadChanged,
             scratchpad::ScratchpadShow,
             scratchpad::ScratchpadInsert,

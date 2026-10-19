@@ -64,7 +64,7 @@ export const SnippetRow: React.FC<SnippetRowProps> = ({
       aria-selected={selected}
       onFocus={(e) => e.target === e.currentTarget && onFocusRow()}
       onClick={onEdit}
-      className={`group relative flex cursor-pointer items-center gap-3 border-b border-line py-3 ps-3 pe-4 transition-colors duration-[var(--dur-1)] last:border-b-0 hover:duration-0 focus-visible:outline-offset-[-2px] ${
+      className={`group relative flex cursor-pointer items-center gap-3 border-b border-line py-3 ps-3 pe-4 transition-colors duration-[var(--dur-1)] last:border-b-0 hover:duration-0 ring-inside ${
         selected
           ? "bg-teal-50 hover:bg-teal-50"
           : "hover:bg-surface-2 focus-visible:bg-surface-2"

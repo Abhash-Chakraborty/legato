@@ -2,8 +2,8 @@
 
 use crate::managers::dictionary::{applied_fixes, DictionaryManager, FixUndo};
 use crate::managers::dictionary_store::{
-    self as store, DictionaryEntry, DictionarySource, EntryInput, ImportSummary, HINT_LIMIT,
-    MAX_WORD_CHARS, PIN_LIMIT,
+    self as store, DictionaryEntry, DictionarySource, EntryInput, ImportSummary, PendingWord,
+    HINT_LIMIT, MAX_WORD_CHARS, PIN_LIMIT,
 };
 use crate::managers::history::HistoryManager;
 use crate::managers::history_store::{AppliedFix, FixSource};
@@ -21,6 +21,10 @@ pub struct DictionaryView {
     pub hint_limit: u32,
     pub pin_limit: u32,
     pub max_word_chars: u32,
+    /// Words learned from edits, waiting under Needs review.
+    pub pending: Vec<PendingWord>,
+    /// Words Learn from my edits never proposes.
+    pub never: Vec<String>,
 }
 
 #[tauri::command]
@@ -35,6 +39,8 @@ pub fn get_dictionary(
         hint_limit: HINT_LIMIT as u32,
         pin_limit: PIN_LIMIT as u32,
         max_word_chars: MAX_WORD_CHARS as u32,
+        pending: dictionary.pending().map_err(|e| e.to_string())?,
+        never: dictionary.never().map_err(|e| e.to_string())?,
     })
 }
 
@@ -274,7 +280,11 @@ pub fn fix_word(
         extended: learned.as_ref().is_some_and(|l| l.extended),
         others: others_fixed,
     };
-    let undo_token = dictionary.stash_undo(FixUndo { rows, learned });
+    let undo_token = dictionary.stash_undo(FixUndo {
+        rows,
+        learned: learned.into_iter().collect(),
+        pending: Vec::new(),
+    });
     Ok(FixWordResult {
         undo_token,
         ..result
@@ -294,8 +304,129 @@ pub fn undo_fix_word(
     history
         .restore_texts(&undo.rows)
         .map_err(|e| e.to_string())?;
-    if let Some(learned) = &undo.learned {
+    undo_learned(&dictionary, &undo)
+}
+
+fn undo_learned(dictionary: &DictionaryManager, undo: &FixUndo) -> Result<(), String> {
+    for learned in undo.learned.iter().rev() {
         dictionary.unlearn(learned).map_err(|e| e.to_string())?;
     }
+    if !undo.pending.is_empty() {
+        dictionary
+            .restore_pending(&undo.pending)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Adds words from Needs review to the Dictionary, each with the way it was
+/// pasted as a heard form. Returns a token for Undo.
+#[tauri::command]
+#[specta::specta]
+pub fn accept_pending_words(
+    dictionary: State<'_, Arc<DictionaryManager>>,
+    ids: Vec<i64>,
+) -> Result<u32, String> {
+    let pending = dictionary.remove_pending(&ids).map_err(|e| e.to_string())?;
+    let mut learned = Vec::new();
+    for p in &pending {
+        let app = p.app.as_deref().map(|name| (name, p.app_path.as_deref()));
+        match dictionary.learn(
+            &p.word,
+            Some(&p.heard),
+            DictionarySource::Edited,
+            false,
+            app,
+        ) {
+            Ok(l) => learned.push(l),
+            Err(e) => {
+                // Leave nothing half done.
+                let undo = FixUndo {
+                    rows: Vec::new(),
+                    learned,
+                    pending,
+                };
+                let _ = undo_learned(&dictionary, &undo);
+                return Err(e.to_string());
+            }
+        }
+    }
+    Ok(dictionary.stash_undo(FixUndo {
+        rows: Vec::new(),
+        learned,
+        pending,
+    }))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn undo_accept_pending_words(
+    dictionary: State<'_, Arc<DictionaryManager>>,
+    undo_token: u32,
+) -> Result<(), String> {
+    let undo = dictionary
+        .take_undo(undo_token)
+        .ok_or("Those words can no longer be undone")?;
+    undo_learned(&dictionary, &undo)
+}
+
+/// Takes words off Needs review without adding them; returns them for Undo.
+#[tauri::command]
+#[specta::specta]
+pub fn dismiss_pending_words(
+    dictionary: State<'_, Arc<DictionaryManager>>,
+    ids: Vec<i64>,
+) -> Result<Vec<PendingWord>, String> {
+    dictionary.remove_pending(&ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn restore_pending_words(
+    dictionary: State<'_, Arc<DictionaryManager>>,
+    words: Vec<PendingWord>,
+) -> Result<(), String> {
+    dictionary
+        .restore_pending(&words)
+        .map_err(|e| e.to_string())
+}
+
+/// Stops Learn from my edits proposing a word.
+#[tauri::command]
+#[specta::specta]
+pub fn add_never_learn_word(
+    dictionary: State<'_, Arc<DictionaryManager>>,
+    word: String,
+) -> Result<(), String> {
+    dictionary.add_never(&word).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn remove_never_learn_word(
+    dictionary: State<'_, Arc<DictionaryManager>>,
+    word: String,
+) -> Result<(), String> {
+    dictionary.remove_never(&word).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_learn_from_edits_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = crate::settings::get_settings(&app);
+    settings.learn_from_edits = enabled;
+    crate::settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_learn_mode_setting(
+    app: AppHandle,
+    mode: crate::settings::LearnMode,
+) -> Result<(), String> {
+    let mut settings = crate::settings::get_settings(&app);
+    settings.learn_mode = mode;
+    crate::settings::write_settings(&app, settings);
     Ok(())
 }
