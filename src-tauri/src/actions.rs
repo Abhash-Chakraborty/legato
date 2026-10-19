@@ -1,12 +1,14 @@
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::VadPolicy;
+use crate::context::{self, AppInfo, DictationContext};
 use crate::managers::audio::{recording_error_type, AudioRecordingManager};
 use crate::managers::history::HistoryManager;
+use crate::managers::history_store::{AppFields, DictationStatus, NewEntry, PasteRecord};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::policy::{live_decode, LiveDecode, ModelTraits};
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{get_settings, AppSettings, OverlayStyle};
+use crate::settings::{get_settings, AppSettings, OverlayStyle, PasteMethod};
 use crate::shortcut;
 use crate::tray::{set_tray_state, TrayIconState};
 use crate::utils::{
@@ -295,10 +297,23 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
     }
 }
 
+fn app_fields(info: AppInfo) -> AppFields {
+    AppFields {
+        exe: info.exe,
+        path: info.exe_path,
+        name: info.name,
+        title: info.title,
+        site: info.site,
+        category: info.category.as_str().to_string(),
+    }
+}
+
 pub(crate) struct ProcessedTranscription {
     pub final_text: String,
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
+    /// Name of the prompt that rewrote the text.
+    pub transform: Option<String>,
 }
 
 pub(crate) async fn process_transcription_output(
@@ -310,6 +325,7 @@ pub(crate) async fn process_transcription_output(
     let mut final_text = transcription.to_string();
     let mut post_processed_text: Option<String> = None;
     let mut post_process_prompt: Option<String> = None;
+    let mut transform: Option<String> = None;
 
     if post_process {
         if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
@@ -323,6 +339,7 @@ pub(crate) async fn process_transcription_output(
                     .find(|prompt| &prompt.id == prompt_id)
                 {
                     post_process_prompt = Some(prompt.prompt.clone());
+                    transform = Some(prompt.name.clone());
                 }
             }
         }
@@ -332,6 +349,7 @@ pub(crate) async fn process_transcription_output(
         final_text,
         post_processed_text,
         post_process_prompt,
+        transform,
     }
 }
 
@@ -367,6 +385,15 @@ impl ShortcutAction for TranscribeAction {
                 return;
             }
         }
+
+        // The app the text is meant for. Read before the overlay shows,
+        // though the overlay never takes focus.
+        let remember_app = get_settings(app).remember_app;
+        app.state::<DictationContext>().set(if remember_app {
+            context::foreground_window()
+        } else {
+            None
+        });
 
         let binding_id = binding_id.to_string();
         let tray_started = Instant::now();
@@ -552,6 +579,8 @@ impl ShortcutAction for TranscribeAction {
 
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
+        let started_in = app.state::<DictationContext>().take();
+        let remember_app = get_settings(app).remember_app;
         let cancel_generation = rm.cancel_generation();
 
         tauri::async_runtime::spawn(async move {
@@ -587,6 +616,14 @@ impl ShortcutAction for TranscribeAction {
                 } else {
                     // Save WAV concurrently with transcription
                     let sample_count = samples.len();
+                    // 16 kHz mono; with voice detection on, silence is
+                    // already gone, so this is speaking time.
+                    let speech_ms = (sample_count / 16) as i64;
+                    let model_id = get_settings(&ah).selected_model;
+                    let model_name = ah
+                        .state::<Arc<ModelManager>>()
+                        .get_model_info(&model_id)
+                        .map(|m| m.name);
                     let file_name = format!("legato-{}.wav", chrono::Utc::now().timestamp());
                     let wav_path = hm.recordings_dir().join(&file_name);
                     let wav_path_for_verify = wav_path.clone();
@@ -668,17 +705,30 @@ impl ShortcutAction for TranscribeAction {
                             }
 
                             // Save to history if WAV was saved
-                            if wav_saved {
-                                if let Err(err) = hm.save_entry(
+                            let saved_id = if wav_saved {
+                                let app_info = started_in.as_ref().map(context::resolve);
+                                match hm.save_entry(NewEntry {
                                     file_name,
-                                    transcription,
-                                    post_process,
-                                    processed.post_processed_text.clone(),
-                                    processed.post_process_prompt.clone(),
-                                ) {
-                                    error!("Failed to save history entry: {}", err);
+                                    transcription_text: transcription,
+                                    post_process_requested: post_process,
+                                    post_processed_text: processed.post_processed_text.clone(),
+                                    post_process_prompt: processed.post_process_prompt.clone(),
+                                    transform: processed.transform.clone(),
+                                    app: app_info.map(app_fields),
+                                    speech_ms: Some(speech_ms),
+                                    model_id: Some(model_id.clone()),
+                                    model_name: model_name.clone(),
+                                    ..Default::default()
+                                }) {
+                                    Ok(entry) => Some(entry.id),
+                                    Err(err) => {
+                                        error!("Failed to save history entry: {}", err);
+                                        None
+                                    }
                                 }
-                            }
+                            } else {
+                                None
+                            };
 
                             if processed.final_text.is_empty() {
                                 utils::hide_recording_overlay(&ah);
@@ -688,6 +738,9 @@ impl ShortcutAction for TranscribeAction {
                                 let paste_time = Instant::now();
                                 let final_text = processed.final_text;
                                 let rm_for_paste = Arc::clone(&rm);
+                                let hm_for_paste = Arc::clone(&hm);
+                                let not_pasted =
+                                    get_settings(&ah).paste_method == PasteMethod::None;
                                 ah.run_on_main_thread(move || {
                                     if rm_for_paste.was_cancelled_since(cancel_generation) {
                                         debug!("Transcription operation cancelled before paste");
@@ -696,7 +749,15 @@ impl ShortcutAction for TranscribeAction {
                                         return;
                                     }
 
-                                    match utils::paste(final_text, ah_clone.clone()) {
+                                    // The app in front now, in case focus moved
+                                    // while the dictation was transcribed.
+                                    let paste_into = if remember_app {
+                                        context::foreground_window()
+                                    } else {
+                                        None
+                                    };
+                                    let paste_result = utils::paste(final_text, ah_clone.clone());
+                                    match &paste_result {
                                         Ok(()) => debug!(
                                             "Text pasted successfully in {:?}",
                                             paste_time.elapsed()
@@ -704,6 +765,42 @@ impl ShortcutAction for TranscribeAction {
                                         Err(e) => {
                                             error!("Failed to paste transcription: {}", e);
                                             let _ = ah_clone.emit("paste-error", ());
+                                        }
+                                    }
+                                    if let Some(id) = saved_id {
+                                        let paste_app = match (&started_in, paste_into) {
+                                            (Some(start), Some(now))
+                                                if start.exe_path != now.exe_path =>
+                                            {
+                                                let info = context::resolve(&now);
+                                                Some((info.name, info.title))
+                                            }
+                                            _ => None,
+                                        };
+                                        let record = match paste_result {
+                                            Ok(()) if not_pasted => PasteRecord {
+                                                status: DictationStatus::NotPasted,
+                                                error: None,
+                                                paste_ms: None,
+                                                paste_app: None,
+                                            },
+                                            Ok(()) => PasteRecord {
+                                                status: DictationStatus::Pasted,
+                                                error: None,
+                                                paste_ms: Some(
+                                                    stop_time.elapsed().as_millis() as i64
+                                                ),
+                                                paste_app,
+                                            },
+                                            Err(e) => PasteRecord {
+                                                status: DictationStatus::PasteFailed,
+                                                error: Some(e),
+                                                paste_ms: None,
+                                                paste_app,
+                                            },
+                                        };
+                                        if let Err(e) = hm_for_paste.record_paste(id, record) {
+                                            error!("Failed to record the paste: {}", e);
                                         }
                                     }
                                     utils::hide_recording_overlay(&ah_clone);
@@ -732,13 +829,17 @@ impl ShortcutAction for TranscribeAction {
                             let _ = ah.emit("transcription-error", err.to_string());
                             // Save entry with empty text so user can retry
                             if wav_saved {
-                                if let Err(save_err) = hm.save_entry(
+                                let app_info = started_in.as_ref().map(context::resolve);
+                                if let Err(save_err) = hm.save_entry(NewEntry {
                                     file_name,
-                                    String::new(),
-                                    post_process,
-                                    None,
-                                    None,
-                                ) {
+                                    post_process_requested: post_process,
+                                    app: app_info.map(app_fields),
+                                    speech_ms: Some(speech_ms),
+                                    model_id: Some(model_id.clone()),
+                                    model_name: model_name.clone(),
+                                    status: Some(DictationStatus::Failed),
+                                    ..Default::default()
+                                }) {
                                     error!("Failed to save failed history entry: {}", save_err);
                                 }
                             }

@@ -1,23 +1,86 @@
 use crate::actions::process_transcription_output;
 use crate::managers::{
-    history::{HistoryManager, PaginatedHistory},
+    history::{HistoryManager, HistoryQuery, HistorySummary, PaginatedHistory},
+    model::ModelManager,
     transcription::TranscriptionManager,
 };
-use std::sync::Arc;
-use tauri::{AppHandle, State};
+use base64::Engine;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Manager, State};
 
+/// History rows, newest first, narrowed by search, filter and app.
 #[tauri::command]
 #[specta::specta]
 pub async fn get_history_entries(
     _app: AppHandle,
     history_manager: State<'_, Arc<HistoryManager>>,
-    cursor: Option<i64>,
-    limit: Option<usize>,
+    query: HistoryQuery,
 ) -> Result<PaginatedHistory, String> {
-    history_manager
-        .get_history_entries(cursor, limit)
+    history_manager.query(&query).map_err(|e| e.to_string())
+}
+
+/// Today's totals, the filter counts and the apps for Home's header.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_history_summary(
+    _app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+) -> Result<HistorySummary, String> {
+    history_manager.summary().map_err(|e| e.to_string())
+}
+
+/// Copies a dictation's recording to where the person chose to save it.
+#[tauri::command]
+#[specta::specta]
+pub async fn save_history_audio(
+    _app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    id: i64,
+    destination: String,
+) -> Result<(), String> {
+    let entry = history_manager
+        .get_entry_by_id(id)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("History entry {} not found", id))?;
+    let source = history_manager.get_audio_file_path(&entry.file_name);
+    std::fs::copy(&source, &destination)
+        .map(|_| ())
+        .map_err(|e| format!("Couldn't save the recording: {e}"))
+}
+
+/// An app's icon as a PNG data URL, or None when it has none. Cached per
+/// executable for the life of the app.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_app_icon(path: String) -> Option<String> {
+    static ICONS: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
+    if let Some(hit) = ICONS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .get(&path)
+    {
+        return hit.clone();
+    }
+    let lookup = path.clone();
+    let icon = tauri::async_runtime::spawn_blocking(move || crate::context::app_icon_png(&lookup))
+        .await
+        .ok()
+        .flatten()
+        .map(|png| {
+            format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(png)
+            )
+        });
+    ICONS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(path, icon.clone());
+    icon
 }
 
 #[tauri::command]
@@ -95,12 +158,20 @@ pub async fn retry_history_entry_transcription(
 
     let processed =
         process_transcription_output(&app, &transcription, entry.post_process_requested).await;
+    let model_id = crate::settings::get_settings(&app).selected_model;
+    let model_name = app
+        .state::<Arc<ModelManager>>()
+        .get_model_info(&model_id)
+        .map(|m| m.name)
+        .unwrap_or_else(|| model_id.clone());
     history_manager
         .update_transcription(
             id,
             transcription,
             processed.post_processed_text,
             processed.post_process_prompt,
+            processed.transform,
+            Some((model_id, model_name)),
         )
         .map(|_| ())
         .map_err(|e| e.to_string())

@@ -7,17 +7,12 @@ import { useModelStore } from "../../stores/modelStore";
 import ModelStatusButton from "./ModelStatusButton";
 import ModelDropdown from "./ModelDropdown";
 import { useNavStore } from "../../stores/navStore";
+import {
+  useModelStatusStore,
+  type ModelStatus,
+} from "../../stores/modelStatusStore";
 
 import { ModelStateEvent } from "@/lib/types/events";
-
-type ModelStatus =
-  | "ready"
-  | "loading"
-  | "downloading"
-  | "verifying"
-  | "error"
-  | "unloaded"
-  | "none";
 
 interface ModelSelectorProps {
   onError?: (error: string) => void;
@@ -41,6 +36,12 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const go = useNavStore((state) => state.go);
+  const publishStatus = useModelStatusStore((state) => state.setStatus);
+
+  // Home's right rail shows the same state.
+  useEffect(() => {
+    publishStatus(modelStatus);
+  }, [modelStatus, publishStatus]);
 
   // Put focus on the active model when the menu opens.
   useEffect(() => {

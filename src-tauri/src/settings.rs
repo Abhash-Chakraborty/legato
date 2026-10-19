@@ -446,6 +446,9 @@ pub struct AppSettings {
     /// the main window is created and whenever the setting changes.
     #[serde(default)]
     pub native_title_bar: bool,
+    /// Record which app each dictation went into (history, Home's app filter).
+    #[serde(default = "default_remember_app")]
+    pub remember_app: bool,
     #[serde(default)]
     pub experimental_enabled: bool,
     #[serde(default)]
@@ -599,11 +602,15 @@ fn default_auto_submit() -> bool {
 }
 
 fn default_history_limit() -> usize {
-    5
+    500
 }
 
 fn default_recording_retention_period() -> RecordingRetentionPeriod {
-    RecordingRetentionPeriod::PreserveLimit
+    RecordingRetentionPeriod::Weeks2
+}
+
+fn default_remember_app() -> bool {
+    true
 }
 
 fn default_audio_feedback_volume() -> f32 {
@@ -900,6 +907,7 @@ pub fn get_default_settings() -> AppSettings {
         append_trailing_space: false,
         theme: default_theme(),
         native_title_bar: false,
+        remember_app: default_remember_app(),
         experimental_enabled: false,
         lazy_stream_close: false,
         keyboard_implementation: KeyboardImplementation::default(),

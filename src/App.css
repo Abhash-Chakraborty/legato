@@ -125,9 +125,10 @@ body {
   stroke-width: 1;
 }
 
-/* A search match inside Settings, painted with the CSS Custom Highlight API
+/* A search match in Settings or Home, painted with the CSS Custom Highlight API
    so the rows' own markup stays untouched. */
-::highlight(settings-search) {
+::highlight(settings-search),
+::highlight(history-search) {
   background-color: var(--teal-100);
   color: var(--text);
 }

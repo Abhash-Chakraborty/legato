@@ -7,6 +7,7 @@ mod chinese_script;
 pub mod cli;
 mod clipboard;
 mod commands;
+mod context;
 pub mod engine_supervisor;
 mod handy_migration;
 mod input;
@@ -221,6 +222,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(model_manager.clone());
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
+    app_handle.manage(context::DictationContext::default());
     app_handle.manage(tray::TrayState::new());
 
     // Note: Shortcuts are NOT initialized here.
@@ -664,6 +666,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::get_keyboard_implementation,
             shortcut::change_show_tray_icon_setting,
             shortcut::change_native_title_bar_setting,
+            shortcut::change_remember_app_setting,
             shortcut::change_transcribe_accelerator_setting,
             shortcut::change_transcribe_gpu_device,
             shortcut::get_available_accelerators,
@@ -715,6 +718,10 @@ pub fn run(cli_args: CliArgs) {
             commands::transcription::get_model_load_status,
             commands::transcription::unload_model_manually,
             commands::history::get_history_entries,
+            commands::history::get_history_summary,
+            commands::history::save_history_audio,
+            commands::history::get_app_icon,
+            commands::audio::watch_mic_level,
             commands::history::toggle_history_entry_saved,
             commands::history::get_audio_file_path,
             commands::history::delete_history_entry,

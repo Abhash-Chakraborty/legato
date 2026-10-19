@@ -193,6 +193,7 @@ const settingUpdaters: {
       throw new Error(result.error);
     }
   },
+  remember_app: (value) => commands.changeRememberAppSetting(value as boolean),
   transcribe_accelerator: (value) =>
     commands.changeTranscribeAcceleratorSetting(
       value as TranscribeAcceleratorSetting,

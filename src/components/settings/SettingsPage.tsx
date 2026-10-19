@@ -8,6 +8,7 @@ import React, {
 import { useTranslation } from "react-i18next";
 import { Check, Search, X } from "lucide-react";
 import { useSettings } from "../../hooks/useSettings";
+import { useTextHighlight } from "../../hooks/useTextHighlight";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useModelStore } from "../../stores/modelStore";
 import { useNavStore, type SettingsSection } from "../../stores/navStore";
@@ -20,51 +21,6 @@ import {
   type SectionDef,
   type SettingRow,
 } from "./sections";
-
-const HIGHLIGHT = "settings-search";
-
-/** Paints every match of `query` inside the rows' titles and help with the
- *  CSS Custom Highlight API, so the rows' markup stays as it is. */
-const useSearchHighlight = (
-  root: React.RefObject<HTMLElement>,
-  query: string,
-) => {
-  useLayoutEffect(() => {
-    const registry = (CSS as unknown as { highlights?: Map<string, unknown> })
-      .highlights;
-    const HighlightCtor = (
-      window as unknown as { Highlight?: new (...r: Range[]) => unknown }
-    ).Highlight;
-    if (!registry || !HighlightCtor) return;
-    registry.delete(HIGHLIGHT);
-    const q = query.trim().toLowerCase();
-    if (!q || !root.current) return;
-
-    const ranges: Range[] = [];
-    root.current
-      .querySelectorAll("[data-setting-title], [data-setting-help]")
-      .forEach((el) => {
-        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-          const text = node.textContent?.toLowerCase() ?? "";
-          for (
-            let i = text.indexOf(q);
-            i >= 0;
-            i = text.indexOf(q, i + q.length)
-          ) {
-            const range = new Range();
-            range.setStart(node, i);
-            range.setEnd(node, i + q.length);
-            ranges.push(range);
-          }
-        }
-      });
-    registry.set(HIGHLIGHT, new HighlightCtor(...ranges));
-    return () => {
-      registry.delete(HIGHLIGHT);
-    };
-  });
-};
 
 /** Wraps a row in its dependency, so it greys out and says why. */
 const Row: React.FC<{ row: SettingRow; ctx: RowContext }> = ({ row, ctx }) => {
@@ -155,7 +111,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         .filter((r) => r.rows.length > 0)
     : [];
 
-  useSearchHighlight(contentRef, query);
+  useTextHighlight(
+    contentRef,
+    "settings-search",
+    query.trim() ? [query.trim()] : [],
+    "[data-setting-title], [data-setting-help]",
+  );
 
   // Keep the page at the top when switching sections.
   useLayoutEffect(() => {

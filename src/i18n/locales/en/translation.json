@@ -433,20 +433,7 @@
       }
     },
     "history": {
-      "title": "History",
-      "openFolder": "Open recordings folder",
-      "loading": "Loading history...",
-      "empty": "No transcriptions yet. Start recording to build your history!",
-      "copyToClipboard": "Copy transcription to clipboard",
-      "copyError": "Failed to copy transcription to clipboard.",
-      "save": "Save transcription",
-      "unsave": "Remove from saved",
-      "delete": "Delete entry",
-      "deleteError": "Failed to delete entry. Please try again.",
-      "retranscribe": "Re-transcribe",
-      "retranscribeError": "Failed to re-transcribe. Please try again.",
-      "transcribing": "Transcribing...",
-      "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon."
+      "openFolder": "Open recordings folder"
     },
     "debug": {
       "title": "Debug",
@@ -667,7 +654,8 @@
       "debugMode": "Debug mode",
       "logs": "Logs",
       "input": "Input",
-      "previews": "Previews"
+      "previews": "Previews",
+      "apps": "Apps"
     },
     "requires": {
       "tray": "Needs the tray icon, or there would be no way to open the window.",
@@ -680,6 +668,12 @@
       "translation": "{{model}} can't translate. Choose a model that can in Models.",
       "chinese": "Only used when the spoken language is Chinese, Cantonese or detected automatically.",
       "clipboardPaste": "Only applies when Legato pastes with keys, not when it types the text or doesn't paste."
+    },
+    "privacy": {
+      "rememberApp": {
+        "title": "Remember which app I dictated into",
+        "description": "Shows the app on each dictation so Home can filter by it. Off, Legato keeps no app names or window titles."
+      }
     }
   },
   "footer": {
@@ -748,7 +742,122 @@
   },
   "home": {
     "title": "Home",
-    "subtitle": "Everything you've dictated, newest first."
+    "search": {
+      "placeholder": "Search transcripts or apps",
+      "clear": "Clear search"
+    },
+    "today": "Today · {{dictations}} · {{words}} · {{speech}} of speech",
+    "nothingToday": "Nothing dictated today yet.",
+    "counts": {
+      "dictations_one": "{{count}} dictation",
+      "dictations_other": "{{count}} dictations",
+      "words_one": "{{count}} word",
+      "words_other": "{{count}} words"
+    },
+    "filters": {
+      "label": "Filter history",
+      "all": "All",
+      "starred": "Starred",
+      "fixed": "Fixed",
+      "transformed": "Transformed",
+      "allApps": "All apps",
+      "appCount": "{{name}} ({{count}})",
+      "appLabel": "Filter by app"
+    },
+    "day": {
+      "today": "Today",
+      "yesterday": "Yesterday"
+    },
+    "empty": {
+      "title": "No dictations yet",
+      "body": "Press {{shortcut}} in any app and start talking. Everything you dictate shows up here.",
+      "bodyNoShortcut": "Set a Dictate shortcut in Settings › Shortcuts, then press it in any app and start talking."
+    },
+    "noResults": {
+      "titleSearch": "Nothing matches “{{query}}”",
+      "title": "Nothing matches these filters",
+      "body": "Try fewer words, or another filter.",
+      "clear": "Clear search and filters"
+    },
+    "row": {
+      "play": "Play recording",
+      "hidePlayer": "Close player",
+      "copy": "Copy text",
+      "copied": "Copied",
+      "more": "More actions",
+      "transcribeAgain": "Transcribe again",
+      "copyOriginal": "Copy the text before the transform",
+      "star": "Star",
+      "unstar": "Remove star",
+      "starred": "Starred",
+      "saveAudio": "Save audio as WAV…",
+      "wavFiles": "WAV audio",
+      "delete": "Delete",
+      "deleteKey": "Del",
+      "transcribing": "Transcribing again…",
+      "failed": "This one didn't transcribe.",
+      "tryAgain": "Try again"
+    },
+    "meta": {
+      "siteIn": "{{site}} in {{app}}",
+      "pastedIn": "pasted in {{time}}",
+      "pastedInto": "pasted into {{app}}",
+      "pasted": "pasted",
+      "notPasted": "not pasted (paste method is None)",
+      "transformed": "{{name}} transform",
+      "fixes_one": "{{count}} fix",
+      "fixes_other": "{{count}} fixes",
+      "pasteFailed": "Not pasted: {{reason}}",
+      "unknownReason": "Windows didn't say why."
+    },
+    "toast": {
+      "deleted": "Dictation deleted",
+      "undo": "Undo",
+      "deleteFailed": "Couldn't delete that dictation.",
+      "copyFailed": "Couldn't copy the text.",
+      "starFailed": "Couldn't change the star.",
+      "retryFailed": "Couldn't transcribe it again.",
+      "audioSaved": "Recording saved",
+      "audioFailed": "Couldn't save the recording."
+    },
+    "rail": {
+      "label": "Right now and what happens to a dictation",
+      "now": "Right now",
+      "model": "Model",
+      "noModel": "No model yet",
+      "modelLoaded": "Loaded",
+      "modelLoading": "Loading…",
+      "modelError": "Didn't load",
+      "modelIdle": "Loads when you dictate",
+      "microphone": "Microphone",
+      "defaultMic": "Windows default",
+      "language": "Spoken language",
+      "autoLanguage": "Auto",
+      "ai": "AI",
+      "aiOff": "Off",
+      "aiModel": "{{provider}} · {{model}}",
+      "shortcut": "Dictate shortcut",
+      "noShortcut": "Not set",
+      "activation": {
+        "hold_or_toggle": "hold to talk, tap to keep listening",
+        "push_to_talk": "hold to talk",
+        "toggle": "tap to start, tap again to paste"
+      },
+      "pipeline": "What happens to a dictation",
+      "steps": {
+        "transcribe": "Transcribe",
+        "dictionary": "Dictionary",
+        "dictionaryDetail_one": "{{count}} word",
+        "dictionaryDetail_other": "{{count}} words",
+        "cleanup": "Cleanup",
+        "cleanupOn": "Filler words removed",
+        "transform": "Transform",
+        "transformOn": "With its own shortcut",
+        "off": "Off",
+        "paste": "Paste",
+        "transformWith": "{{name}}, with its own shortcut"
+      }
+    }
   },
   "dictionary": {
     "title": "Dictionary",

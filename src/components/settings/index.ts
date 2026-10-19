@@ -1,6 +1,5 @@
 // Settings section components
 export type { OnboardingPreviewStep } from "./debug/OnboardingPreview";
-export { HistorySettings } from "./history/HistorySettings";
 export { ModelsSettings } from "./models/ModelsSettings";
 
 // Individual setting components

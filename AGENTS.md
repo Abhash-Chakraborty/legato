@@ -51,7 +51,8 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
   - `audio.rs` - Audio recording and device management
   - `model.rs` - Model downloading and management
   - `transcription.rs` - Speech-to-text processing pipeline
-  - `history.rs` - Transcription history storage
+  - `history.rs` - Transcription history storage (files, settings, events)
+  - `history_store.rs` - History database: schema, search, daily statistics
 - `audio_toolkit/` - Low-level audio processing:
   - `audio/` - Recording sink (VAD, levels, live streaming feed), output devices, WAV I/O
   - `vad/` - Voice Activity Detection (Silero VAD)
@@ -59,6 +60,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `cli.rs` - CLI argument definitions (clap derive)
 - `shortcut/` - Global keyboard shortcut handling
 - `settings.rs` - Application settings management
+- `context.rs` - Knowing the app in front (name, category, icon)
 - `overlay.rs` - Recording overlay window
 - `signal_handle.rs` - `send_transcription_input()` reusable function
 - `utils.rs` - Shared helpers (operation cancellation, env flags, log redaction, x64-on-ARM64 detection)

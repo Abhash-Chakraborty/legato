@@ -659,6 +659,15 @@ pub fn change_native_title_bar_setting(app: AppHandle, enabled: bool) -> Result<
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_remember_app_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.remember_app = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_translate_to_english_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.translate_to_english = enabled;

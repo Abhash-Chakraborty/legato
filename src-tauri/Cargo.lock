@@ -3069,6 +3069,7 @@ name = "legato"
 version = "0.9.8"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "clap",
  "earshot",
@@ -3080,6 +3081,7 @@ dependencies = [
  "handy-recorder",
  "hf-hub",
  "hound",
+ "image",
  "isolang",
  "libc",
  "log",

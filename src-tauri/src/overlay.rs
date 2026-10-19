@@ -36,6 +36,13 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
 }
 
 static LAST_MIC_LEVEL_EMIT: AtomicU64 = AtomicU64::new(0);
+/// Set while the main window shows a level meter (Home's right rail).
+static MAIN_WANTS_MIC_LEVEL: AtomicBool = AtomicBool::new(false);
+
+/// Lets the main window ask for microphone levels while it shows a meter.
+pub fn set_main_wants_mic_level(enabled: bool) {
+    MAIN_WANTS_MIC_LEVEL.store(enabled, Ordering::Relaxed);
+}
 const EMIT_THROTTLE_MS: u64 = 33; // ~30 FPS
 
 const OVERLAY_TOP_OFFSET: f64 = 4.0;
@@ -438,6 +445,9 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // `emit_to` with the overlay's window label produces a single
     // eval_script call per callback, cutting the per-callback webview
     // dispatch work in half.
+    if MAIN_WANTS_MIC_LEVEL.load(Ordering::Relaxed) {
+        let _ = app_handle.emit_to("main", "mic-level", levels);
+    }
     let _ = app_handle.emit_to("recording_overlay", "mic-level", levels);
 }
 

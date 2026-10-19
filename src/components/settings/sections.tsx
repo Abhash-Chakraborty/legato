@@ -50,6 +50,7 @@ import { AutoSubmit } from "./AutoSubmit";
 import { AppendTrailingSpace } from "./AppendTrailingSpace";
 import { PostProcessingSettingsApi } from "./PostProcessingSettingsApi";
 import { ShowOverlay } from "./ShowOverlay";
+import { RememberApp } from "./RememberApp";
 import { HistoryLimit } from "./HistoryLimit";
 import { RecordingRetentionPeriodSelector } from "./RecordingRetentionPeriod";
 import { UpdateChecksToggle } from "./UpdateChecksToggle";
@@ -645,6 +646,20 @@ export const buildSections = (
               "settings.debug.recordingRetention.description",
             ],
             render: () => <RecordingRetentionPeriodSelector grouped />,
+          },
+        ],
+      },
+      {
+        id: "apps",
+        titleKey: "settings.groups.apps",
+        rows: [
+          {
+            id: "remember-app",
+            searchKeys: [
+              "settings.privacy.rememberApp.title",
+              "settings.privacy.rememberApp.description",
+            ],
+            render: () => <RememberApp />,
           },
         ],
       },

@@ -46,6 +46,7 @@ rusqlite_migration = "2.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1.0.95"
+base64 = "0.22"
 hound = "3.5.1"
 log = "0.4.25"
 env_filter = "0.1.0"
@@ -103,8 +104,12 @@ windows = { version = "0.61.3", features = [
   "Win32_System_Variant",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_Storage_FileSystem",
+  "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
+# App icons for the history list (context.rs); the version tauri already uses.
+image = { version = "0.25", default-features = false, features = ["png"] }
 winreg = "0.55"
 
 # Whisper backend per Windows arch. x86_64 ships the Vulkan GPU backend and

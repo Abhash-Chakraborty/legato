@@ -15,7 +15,6 @@ import Onboarding, {
   ModelMigration,
 } from "./components/onboarding";
 import {
-  HistorySettings,
   ModelsSettings,
   type OnboardingPreviewStep,
 } from "./components/settings";
@@ -30,6 +29,7 @@ import { useNavStore, type Page } from "./stores/navStore";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
+import { HomePage } from "@/components/pages/home/HomePage";
 import { deleteRetiredModel } from "@/components/onboarding/retiredModels";
 
 type OnboardingStep = "accessibility" | "migration" | "model" | "done";
@@ -51,7 +51,7 @@ const renderPage = (
     case "settings":
       return <SettingsPage onPreviewOnboarding={onPreviewOnboarding} />;
     default:
-      return <HistorySettings />;
+      return <HomePage />;
   }
 };
 

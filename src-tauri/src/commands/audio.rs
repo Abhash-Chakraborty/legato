@@ -23,6 +23,14 @@ fn custom_sound_exists(app: &AppHandle, sound_type: &str) -> bool {
         .is_ok_and(|path| path.exists())
 }
 
+/// Turns microphone levels for the main window on or off; Home's meter asks
+/// for them while it is on screen.
+#[tauri::command]
+#[specta::specta]
+pub fn watch_mic_level(enabled: bool) {
+    crate::overlay::set_main_wants_mic_level(enabled);
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn check_custom_sounds(app: AppHandle) -> CustomSounds {

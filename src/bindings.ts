@@ -448,6 +448,14 @@ async changeNativeTitleBarSetting(enabled: boolean) : Promise<Result<null, strin
     else return { status: "error", error: e  as any };
 }
 },
+async changeRememberAppSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_remember_app_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeTranscribeAcceleratorSetting(accelerator: TranscribeAcceleratorSetting) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_transcribe_accelerator_setting", { accelerator }) };
@@ -823,13 +831,52 @@ async unloadModelManually() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getHistoryEntries(cursor: number | null, limit: number | null) : Promise<Result<PaginatedHistory, string>> {
+/**
+ * History rows, newest first, narrowed by search, filter and app.
+ */
+async getHistoryEntries(query: HistoryQuery) : Promise<Result<PaginatedHistory, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_history_entries", { cursor, limit }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_history_entries", { query }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Today's totals, the filter counts and the apps for Home's header.
+ */
+async getHistorySummary() : Promise<Result<HistorySummary, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_history_summary") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Copies a dictation's recording to where the person chose to save it.
+ */
+async saveHistoryAudio(id: number, destination: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_history_audio", { id, destination }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Turns microphone levels for the main window on or off; Home's meter asks
+ * for them while it is on screen.
+ */
+async watchMicLevel(enabled: boolean) : Promise<void> {
+    await TAURI_INVOKE("watch_mic_level", { enabled });
+},
+/**
+ * An app's icon as a PNG data URL, or None when it has none. Cached per
+ * executable for the life of the app.
+ */
+async getAppIcon(path: string) : Promise<string | null> {
+    return await TAURI_INVOKE("get_app_icon", { path });
 },
 async toggleHistoryEntrySaved(id: number) : Promise<Result<null, string>> {
     try {
@@ -907,6 +954,15 @@ streamTextEvent: "stream-text-event"
  * object, so a partial store can never fail the whole load (#1619).
  * Field-level defaults below take precedence where present.
  */
+/**
+ * A Dictionary fix made on one dictation.
+ */
+export type AppliedFix = { from: string; to: string }
+export type AppCount = { name: string; 
+/**
+ * An executable to take the app's icon from.
+ */
+path: string | null; count: number }
 export type AppSettings = { 
 /**
  * Internal settings schema marker for one-time migrations. Fresh installs
@@ -945,7 +1001,11 @@ selected_channel?: number | null; selected_output_device?: string | null; transl
  * Use the standard Windows title bar instead of Legato's own. Applied when
  * the main window is created and whenever the setting changes.
  */
-native_title_bar?: boolean; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
+native_title_bar?: boolean; 
+/**
+ * Record which app each dictation went into (history, Home's app filter).
+ */
+remember_app?: boolean; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -995,11 +1055,59 @@ export type ChineseScript =
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
-export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
+export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; app_exe: string | null; app_path: string | null; app_name: string | null; app_title: string | null; app_site: string | null; category: string | null; paste_app_name: string | null; speech_ms: number | null; word_count: number | null; model_id: string | null; model_name: string | null; 
+/**
+ * Name of the prompt that rewrote the text.
+ */
+transform: string | null; fixes: AppliedFix[]; 
+/**
+ * From the end of recording to the paste.
+ */
+paste_ms: number | null; status: DictationStatus | null; error: string | null }
+export type HistoryFilter = "all" | "starred" | "fixed" | "transformed"
+export type HistoryQuery = { 
+/**
+ * Return rows older than this id.
+ */
+cursor: number | null; limit: number | null; search: string | null; filter?: HistoryFilter; 
+/**
+ * An app's name, as in `HistoryEntry::app_name`.
+ */
+app: string | null }
+/**
+ * What Home shows above the list.
+ */
+export type HistorySummary = { today: DayStats; counts: FilterCounts; 
+/**
+ * Apps in the history, most used first.
+ */
+apps: AppCount[] }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
 /**
  * Result of changing keyboard implementation
  */
+export type DayStats = { 
+/**
+ * Local date, YYYY-MM-DD.
+ */
+day: string; dictations: number; words: number; speech_ms: number }
+/**
+ * What happened to a dictation after it was transcribed.
+ */
+export type DictationStatus = "pasted" | 
+/**
+ * The paste itself failed; `error` says why.
+ */
+"paste_failed" | 
+/**
+ * Paste method is None, so the text was only kept here.
+ */
+"not_pasted" | 
+/**
+ * Transcription failed; the audio is kept so it can be tried again.
+ */
+"failed"
+export type FilterCounts = { all: number; starred: number; fixed: number; transformed: number }
 export type ImplementationChangeResult = { success: boolean; 
 /**
  * List of binding IDs that were reset to defaults due to incompatibility
