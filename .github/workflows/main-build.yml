@@ -2,7 +2,9 @@ name: "Main Branch Build"
 
 # Runs the Windows x64 and ARM64 builds on every push to main so breakage is
 # caught before a manual release is triggered. Artifacts are kept for 30 days
-# so any commit on main has a downloadable, testable build.
+# so any commit on main has a downloadable, testable build. They are unsigned
+# until Legato has its own code-signing certificate: the config override drops
+# the custom signCommand and the updater artifacts, as in the test build.
 
 on:
   push:
@@ -31,7 +33,9 @@ jobs:
     with:
       platform: ${{ matrix.platform }}
       target: ${{ matrix.target }}
-      build-args: ${{ matrix.args }}
+      build-args: >-
+        ${{ matrix.args }}
+        --config '{"bundle":{"createUpdaterArtifacts":false,"windows":{"signCommand":null}}}'
       upload-artifacts: true
-      sign-binaries: true
+      sign-binaries: false
     secrets: inherit
