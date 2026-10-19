@@ -36,6 +36,7 @@ import {
   UNDO_MS,
 } from "./pendingDeletes";
 import { useHistory } from "./useHistory";
+import { useNavStore } from "../../../stores/navStore";
 
 const FILTERS: HistoryFilter[] = ["all", "starred", "fixed", "transformed"];
 const ALL_APPS = "__all__";
@@ -56,6 +57,9 @@ export const HomePage: React.FC = () => {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<HistoryFilter>("all");
   const [app, setApp] = useState<string | null>(null);
+  const [day, setDay] = useState<string | null>(null);
+  const hint = useNavStore((s) => s.hint);
+  const clearHint = useNavStore((s) => s.clearHint);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [menuId, setMenuId] = useState<number | null>(null);
@@ -75,7 +79,21 @@ export const HomePage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const history = useHistory({ search, filter, app });
+  // Insights opens Home on an app or a day.
+  useEffect(() => {
+    if (hint?.startsWith("app:")) {
+      setApp(hint.slice(4));
+      setDay(null);
+    } else if (hint?.startsWith("day:")) {
+      setDay(hint.slice(4));
+      setApp(null);
+    } else return;
+    setQuery("");
+    setFilter("all");
+    clearHint();
+  }, [hint, clearHint]);
+
+  const history = useHistory({ search, filter, app, day });
   const {
     entries,
     setEntries,
@@ -267,7 +285,8 @@ export const HomePage: React.FC = () => {
 
   const today = summary?.today;
   const counts = summary?.counts;
-  const filtering = search.trim() !== "" || filter !== "all" || app !== null;
+  const filtering =
+    search.trim() !== "" || filter !== "all" || app !== null || day !== null;
   const now = new Date();
   const binding = formatKeyCombination(
     settings?.bindings?.transcribe?.current_binding ?? "",
@@ -279,7 +298,16 @@ export const HomePage: React.FC = () => {
       value: a.name,
       label: t("home.filters.appCount", { name: a.name, count: a.count }),
     })),
+    ...(app && !summary?.apps.some((a) => a.name === app)
+      ? [{ value: app, label: app }]
+      : []),
   ];
+  const dayText = day
+    ? (() => {
+        const label = dayLabel(day, now, i18n.language);
+        return label.kind === "date" ? label.text : t(`home.day.${label.kind}`);
+      })()
+    : "";
 
   return (
     <div className="grid grid-cols-1 gap-12 min-[1180px]:grid-cols-[minmax(0,1fr)_256px]">
@@ -401,12 +429,24 @@ export const HomePage: React.FC = () => {
           </div>
           {(summary?.apps.length ?? 0) > 0 && (
             <Dropdown
-              className="w-44"
+              className="w-[200px]"
               options={appOptions}
               selectedValue={app ?? ALL_APPS}
               onSelect={(v) => setApp(v === ALL_APPS ? null : v)}
               ariaLabel={t("home.filters.appLabel")}
             />
+          )}
+          {day && (
+            <button
+              type="button"
+              onClick={() => setDay(null)}
+              aria-label={t("home.filters.clearDay", { day: dayText })}
+              title={t("home.filters.clearDay", { day: dayText })}
+              className="inline-flex h-9 items-center gap-1.5 rounded-[var(--r-md)] border border-line bg-surface-2 pe-2 ps-3 text-[13px] text-text transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:duration-0 active:scale-[0.97]"
+            >
+              {dayText}
+              <X className="h-3.5 w-3.5 text-text-3" aria-hidden="true" />
+            </button>
           )}
         </div>
 
@@ -428,6 +468,7 @@ export const HomePage: React.FC = () => {
                     setQuery("");
                     setFilter("all");
                     setApp(null);
+                    setDay(null);
                   }}
                   className="mt-2 text-sm font-medium text-teal-700 underline-offset-2 hover:underline"
                 >

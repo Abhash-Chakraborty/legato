@@ -14,7 +14,9 @@ use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri_specta::Event;
 
-pub use super::history_store::{HistoryEntry, HistoryQuery, HistorySummary, PaginatedHistory};
+pub use super::history_store::{
+    HistoryEntry, HistoryQuery, HistorySummary, Insights, InsightsRange, PaginatedHistory,
+};
 
 // Note: For users upgrading from tauri-plugin-sql, migrate_from_tauri_plugin_sql()
 // converts the old _sqlx_migrations table tracking to the user_version pragma,
@@ -417,6 +419,10 @@ impl HistoryManager {
 
     pub fn summary(&self) -> Result<HistorySummary> {
         store::summary(&self.get_connection()?)
+    }
+
+    pub fn insights(&self, range: InsightsRange) -> Result<Insights> {
+        store::insights(&self.get_connection()?, range)
     }
 
     pub fn seen_apps(&self, limit: usize) -> Result<Vec<store::SeenApp>> {

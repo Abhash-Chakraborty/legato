@@ -252,6 +252,34 @@ pub static MIGRATIONS: &[M] = &[
          );
          CREATE INDEX note_action_note ON note_action (note_id, position);",
     ),
+    // Insights: snippets pasted and fixes per model, dictations by hour, and
+    // filler words removed, which are counted from this version on.
+    M::up(
+        "ALTER TABLE daily_stats ADD COLUMN snippets INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE daily_model_stats ADD COLUMN fixes INTEGER NOT NULL DEFAULT 0;
+         CREATE TABLE daily_hour_stats (
+            day TEXT NOT NULL,
+            hour INTEGER NOT NULL,
+            dictations INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (day, hour)
+         );
+         CREATE TABLE daily_filler_stats (
+            day TEXT NOT NULL,
+            word TEXT NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (day, word)
+         );
+         CREATE TABLE insights_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+         INSERT INTO insights_meta (key, value) VALUES ('counted_since', date('now', 'localtime'));
+         INSERT INTO daily_hour_stats (day, hour, dictations)
+            SELECT date(timestamp, 'unixepoch', 'localtime'),
+                   CAST(strftime('%H', timestamp, 'unixepoch', 'localtime') AS INTEGER), COUNT(*)
+            FROM transcription_history WHERE transcription_text != '' GROUP BY 1, 2;
+         UPDATE daily_model_stats SET fixes = COALESCE((
+            SELECT SUM(json_array_length(h.fixes)) FROM transcription_history h
+            WHERE h.model_id = daily_model_stats.model AND h.fixes IS NOT NULL
+              AND date(h.timestamp, 'unixepoch', 'localtime') = daily_model_stats.day), 0);",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.
@@ -429,6 +457,10 @@ pub struct NewEntry {
     pub status: Option<DictationStatus>,
     pub fixes: Vec<AppliedFix>,
     pub heard_text: Option<String>,
+    /// Filler words removed, with how many times each.
+    pub fillers: Vec<(String, i64)>,
+    /// Snippets the dictation pasted.
+    pub snippets: i64,
 }
 
 /// How the paste went.
@@ -510,14 +542,50 @@ fn add_to_stats(conn: &Connection, entry: &HistoryEntry, sign: i64) -> Result<()
     if let Some(model) = entry.model_id.as_deref().filter(|m| !m.is_empty()) {
         conn.execute(
             &format!(
-                "INSERT INTO daily_model_stats (day, model, dictations, words, speech_ms)
-                 VALUES ({DAY_OF}, ?2, ?3, ?4, ?5)
+                "INSERT INTO daily_model_stats (day, model, dictations, words, speech_ms, fixes)
+                 VALUES ({DAY_OF}, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(day, model) DO UPDATE SET
                     dictations = dictations + excluded.dictations,
                     words = words + excluded.words,
-                    speech_ms = speech_ms + excluded.speech_ms"
+                    speech_ms = speech_ms + excluded.speech_ms,
+                    fixes = fixes + excluded.fixes"
             ),
-            params![entry.timestamp, model, sign, words, speech],
+            params![entry.timestamp, model, sign, words, speech, fixes],
+        )?;
+    }
+    conn.execute(
+        &format!(
+            "INSERT INTO daily_hour_stats (day, hour, dictations)
+             VALUES ({DAY_OF}, CAST(strftime('%H', ?1, 'unixepoch', 'localtime') AS INTEGER), ?2)
+             ON CONFLICT(day, hour) DO UPDATE SET dictations = dictations + excluded.dictations"
+        ),
+        params![entry.timestamp, sign],
+    )?;
+    Ok(())
+}
+
+/// Counts what only a new dictation knows: the fillers removed and the
+/// snippets pasted. Text fixed later doesn't change them.
+fn add_cleanup_stats(conn: &Connection, new: &NewEntry) -> Result<()> {
+    if new.transcription_text.is_empty() {
+        return Ok(());
+    }
+    for (word, count) in &new.fillers {
+        conn.execute(
+            &format!(
+                "INSERT INTO daily_filler_stats (day, word, count) VALUES ({DAY_OF}, ?2, ?3)
+                 ON CONFLICT(day, word) DO UPDATE SET count = count + excluded.count"
+            ),
+            params![new.timestamp, word, count],
+        )?;
+    }
+    if new.snippets > 0 {
+        conn.execute(
+            &format!(
+                "INSERT INTO daily_stats (day, snippets) VALUES ({DAY_OF}, ?2)
+                 ON CONFLICT(day) DO UPDATE SET snippets = snippets + excluded.snippets"
+            ),
+            params![new.timestamp, new.snippets],
         )?;
     }
     Ok(())
@@ -574,6 +642,7 @@ pub fn insert(conn: &mut Connection, new: &NewEntry) -> Result<HistoryEntry> {
     )?;
     let entry = get(&tx, tx.last_insert_rowid())?.ok_or_else(|| anyhow!("Saved row is missing"))?;
     add_to_stats(&tx, &entry, 1)?;
+    add_cleanup_stats(&tx, new)?;
     tx.commit()?;
     Ok(entry)
 }
@@ -905,6 +974,9 @@ pub struct HistoryQuery {
     pub filter: HistoryFilter,
     /// An app's name, as in `HistoryEntry::app_name`.
     pub app: Option<String>,
+    /// A local date, YYYY-MM-DD.
+    #[serde(default)]
+    pub day: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -952,6 +1024,13 @@ pub fn query(conn: &Connection, q: &HistoryQuery) -> Result<PaginatedHistory> {
     if let Some(app) = q.app.as_deref().filter(|a| !a.is_empty()) {
         args.push(Box::new(app.to_string()));
         clauses.push(format!("app_name = ?{}", args.len()));
+    }
+    if let Some(day) = q.day.as_deref().filter(|d| !d.is_empty()) {
+        args.push(Box::new(day.to_string()));
+        clauses.push(format!(
+            "date(timestamp, 'unixepoch', 'localtime') = ?{}",
+            args.len()
+        ));
     }
     let limit = q.limit.map(|l| l.clamp(1, 200));
     let mut sql = format!("SELECT {COLUMNS} FROM transcription_history");
@@ -1148,6 +1227,237 @@ pub fn summary(conn: &Connection) -> Result<HistorySummary> {
     })
 }
 
+/// The span Insights covers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum InsightsRange {
+    Week,
+    Month,
+    All,
+}
+
+impl InsightsRange {
+    /// The first day in the range, as an SQL date expression.
+    fn since(self) -> &'static str {
+        match self {
+            InsightsRange::Week => "date('now', 'localtime', '-6 days')",
+            InsightsRange::Month => "date('now', 'localtime', '-29 days')",
+            InsightsRange::All => "'0000-00-00'",
+        }
+    }
+}
+
+/// One day's totals, for the charts.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct InsightsDay {
+    /// Local date, YYYY-MM-DD.
+    pub day: String,
+    pub dictations: i64,
+    pub words: i64,
+    pub speech_ms: i64,
+    pub fixes: i64,
+    pub transformed: i64,
+    pub snippets: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct InsightsApp {
+    pub name: String,
+    /// An executable to take the app's icon from.
+    pub path: Option<String>,
+    pub category: Option<String>,
+    pub words: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct InsightsCount {
+    pub text: String,
+    pub count: i64,
+}
+
+/// A Dictionary word and how often Legato has fixed it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct InsightsFixedWord {
+    pub id: i64,
+    pub text: String,
+    pub hits: i64,
+    /// Learned from a fix or an edit rather than added by hand.
+    pub learned: bool,
+}
+
+/// A speech model's use: dictations and words in the range, the rest since
+/// it was first used.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct InsightsModel {
+    pub model: String,
+    pub dictations: i64,
+    pub words: i64,
+    pub all_words: i64,
+    pub pastes: i64,
+    pub paste_ms: i64,
+    pub fixes: i64,
+    /// Local date, YYYY-MM-DD.
+    pub last_day: String,
+}
+
+/// Everything Insights shows.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct Insights {
+    /// Every day with dictations, oldest first, for totals, the activity map
+    /// and speed by week.
+    pub days: Vec<InsightsDay>,
+    /// The day fillers, snippets and dictations by hour started being
+    /// counted; earlier days don't have them.
+    pub counted_since: Option<String>,
+    pub apps: Vec<InsightsApp>,
+    /// Dictations in each hour of the day, midnight first.
+    pub hours: Vec<i64>,
+    pub fillers: Vec<InsightsCount>,
+    pub transforms: i64,
+    /// The Dictionary words fixed most, all time.
+    pub fixed_words: Vec<InsightsFixedWord>,
+    /// Dictionary words fixed at least once, and their fixes, all time.
+    pub fixed_word_count: i64,
+    pub fixed_word_hits: i64,
+    pub models: Vec<InsightsModel>,
+}
+
+const FIXED_WORDS_SHOWN: i64 = 8;
+
+pub fn insights(conn: &Connection, range: InsightsRange) -> Result<Insights> {
+    let since = range.since();
+    let days = conn
+        .prepare(
+            "SELECT day, dictations, words, speech_ms, fixes, transformed, snippets
+             FROM daily_stats WHERE dictations > 0 ORDER BY day",
+        )?
+        .query_map([], |row| {
+            Ok(InsightsDay {
+                day: row.get(0)?,
+                dictations: row.get(1)?,
+                words: row.get(2)?,
+                speech_ms: row.get(3)?,
+                fixes: row.get(4)?,
+                transformed: row.get(5)?,
+                snippets: row.get(6)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let counted_since = conn
+        .query_row(
+            "SELECT value FROM insights_meta WHERE key = 'counted_since'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let apps = conn
+        .prepare(&format!(
+            "SELECT a.app,
+                    (SELECT h.app_path FROM transcription_history h
+                     WHERE h.app_name = a.app AND h.app_path IS NOT NULL
+                     ORDER BY h.id DESC LIMIT 1),
+                    (SELECT c.category FROM daily_app_stats c
+                     WHERE c.app = a.app AND c.category IS NOT NULL
+                     ORDER BY c.day DESC LIMIT 1),
+                    SUM(a.words) AS words
+             FROM daily_app_stats a WHERE a.day >= {since}
+             GROUP BY a.app HAVING words > 0 ORDER BY words DESC, a.app"
+        ))?
+        .query_map([], |row| {
+            Ok(InsightsApp {
+                name: row.get(0)?,
+                path: row.get(1)?,
+                category: row.get(2)?,
+                words: row.get(3)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut hours = vec![0i64; 24];
+    let mut stmt = conn.prepare(&format!(
+        "SELECT hour, SUM(dictations) FROM daily_hour_stats WHERE day >= {since} GROUP BY hour"
+    ))?;
+    for row in stmt.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))? {
+        let (hour, count) = row?;
+        if let Some(slot) = usize::try_from(hour).ok().and_then(|h| hours.get_mut(h)) {
+            *slot = count.max(0);
+        }
+    }
+    let fillers = conn
+        .prepare(&format!(
+            "SELECT word, SUM(count) AS n FROM daily_filler_stats WHERE day >= {since}
+             GROUP BY word HAVING n > 0 ORDER BY n DESC, word"
+        ))?
+        .query_map([], |row| {
+            Ok(InsightsCount {
+                text: row.get(0)?,
+                count: row.get(1)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let transforms = conn.query_row(
+        &format!(
+            "SELECT COUNT(*) FROM transform_run
+             WHERE date(at, 'unixepoch', 'localtime') >= {since} AND result != 'failed'"
+        ),
+        [],
+        |row| row.get(0),
+    )?;
+    let fixed_words = conn
+        .prepare(
+            "SELECT id, text, hits, source IN ('fixed', 'edited') FROM dictionary_entry
+             WHERE hits > 0 ORDER BY hits DESC, text LIMIT ?1",
+        )?
+        .query_map([FIXED_WORDS_SHOWN], |row| {
+            Ok(InsightsFixedWord {
+                id: row.get(0)?,
+                text: row.get(1)?,
+                hits: row.get(2)?,
+                learned: row.get(3)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let (fixed_word_count, fixed_word_hits) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(hits), 0) FROM dictionary_entry WHERE hits > 0",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let models = conn
+        .prepare(&format!(
+            "SELECT model,
+                    SUM(CASE WHEN day >= {since} THEN dictations ELSE 0 END),
+                    SUM(CASE WHEN day >= {since} THEN words ELSE 0 END),
+                    SUM(words), SUM(pastes), SUM(paste_ms), SUM(fixes),
+                    MAX(CASE WHEN dictations > 0 THEN day END) AS last_day
+             FROM daily_model_stats GROUP BY model HAVING last_day IS NOT NULL
+             ORDER BY 3 DESC, last_day DESC"
+        ))?
+        .query_map([], |row| {
+            Ok(InsightsModel {
+                model: row.get(0)?,
+                dictations: row.get(1)?,
+                words: row.get(2)?,
+                all_words: row.get(3)?,
+                pastes: row.get(4)?,
+                paste_ms: row.get(5)?,
+                fixes: row.get(6)?,
+                last_day: row.get(7)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(Insights {
+        days,
+        counted_since,
+        apps,
+        hours,
+        fillers,
+        transforms,
+        fixed_words,
+        fixed_word_count,
+        fixed_word_hits,
+        models,
+    })
+}
+
 /// Speaking time of a saved recording: 16 kHz, 16-bit mono after the
 /// 44-byte header.
 fn wav_speech_ms(path: &Path) -> Option<i64> {
@@ -1236,6 +1546,86 @@ mod tests {
             model_name: Some("Parakeet V3".into()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn insights_count_words_fillers_hours_and_models() {
+        let mut conn = db();
+        let mut first = entry("move the staging app to Dokploy", Some("Slack"));
+        first.fillers = vec![("um".into(), 2), ("uh".into(), 1)];
+        first.snippets = 1;
+        first.fixes = vec![AppliedFix {
+            from: "dock ploy".into(),
+            to: "Dokploy".into(),
+            source: FixSource::Heard,
+        }];
+        let first = insert(&mut conn, &first).unwrap();
+        let mut second = entry("ship it today", Some("Slack"));
+        second.fillers = vec![("um".into(), 1)];
+        insert(&mut conn, &second).unwrap();
+        record_paste(
+            &mut conn,
+            first.id,
+            &PasteRecord {
+                status: DictationStatus::Pasted,
+                error: None,
+                paste_ms: Some(400),
+                paste_app: None,
+            },
+        )
+        .unwrap();
+
+        let got = insights(&conn, InsightsRange::Week).unwrap();
+        assert_eq!(got.days.len(), 1);
+        let day = &got.days[0];
+        assert_eq!(
+            (day.dictations, day.words, day.fixes, day.snippets),
+            (2, 9, 1, 1)
+        );
+        assert!(got.counted_since.is_some());
+        assert_eq!(got.apps.len(), 1);
+        assert_eq!(got.apps[0].words, 9);
+        assert_eq!(got.apps[0].path.as_deref(), Some("C:\\Slack\\slack.exe"));
+        assert_eq!(got.hours.iter().sum::<i64>(), 2);
+        assert_eq!(
+            got.fillers,
+            vec![
+                InsightsCount {
+                    text: "um".into(),
+                    count: 3
+                },
+                InsightsCount {
+                    text: "uh".into(),
+                    count: 1
+                }
+            ]
+        );
+        let model = &got.models[0];
+        assert_eq!(
+            (
+                model.dictations,
+                model.words,
+                model.pastes,
+                model.paste_ms,
+                model.fixes
+            ),
+            (2, 9, 1, 400, 1)
+        );
+    }
+
+    #[test]
+    fn the_day_filter_finds_that_days_dictations() {
+        let mut conn = db();
+        insert(&mut conn, &entry("today's words", None)).unwrap();
+        let today: String = conn
+            .query_row("SELECT date('now', 'localtime')", [], |r| r.get(0))
+            .unwrap();
+        let q = |day: &str| HistoryQuery {
+            day: Some(day.into()),
+            ..Default::default()
+        };
+        assert_eq!(query(&conn, &q(&today)).unwrap().entries.len(), 1);
+        assert!(query(&conn, &q("2001-01-01")).unwrap().entries.is_empty());
     }
 
     #[test]

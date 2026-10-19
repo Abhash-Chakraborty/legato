@@ -814,6 +814,17 @@ async getHistorySummary() : Promise<Result<HistorySummary, string>> {
 }
 },
 /**
+ * What Insights shows for a range.
+ */
+async getInsights(range: InsightsRange) : Promise<Result<Insights, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_insights", { range }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Copies a dictation's recording to where the person chose to save it.
  */
 async saveHistoryAudio(id: number, destination: string) : Promise<Result<null, string>> {
@@ -1710,6 +1721,34 @@ async testCallCard() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Where dictations go while setup is open; Off when it closes.
+ */
+async setPracticeMode(mode: PracticeMode) : Promise<void> {
+    await TAURI_INVOKE("set_practice_mode", { mode });
+},
+/**
+ * The practice scene's mic button: starts a dictation, or stops one, the way
+ * the dictate shortcut does.
+ */
+async practiceToggle() : Promise<void> {
+    await TAURI_INVOKE("practice_toggle");
+},
+async startMicCheck() : Promise<void> {
+    await TAURI_INVOKE("start_mic_check");
+},
+async stopMicCheck() : Promise<void> {
+    await TAURI_INVOKE("stop_mic_check");
+},
+/**
+ * The Windows input languages, such as "en-US" and "de-DE".
+ */
+async getInputLanguages() : Promise<string[]> {
+    return await TAURI_INVOKE("get_input_languages");
+},
+async changeSetupStepSetting(step: string) : Promise<void> {
+    await TAURI_INVOKE("change_setup_step_setting", { step });
+},
 async scratchpadDictate(noteId: number) : Promise<void> {
     return await TAURI_INVOKE("scratchpad_dictate", { noteId });
 },
@@ -1762,7 +1801,11 @@ noteLineRemoved: NoteLineRemoved,
 notesChanged: NotesChanged,
 notesSessionChanged: NotesSessionChanged,
 notesTick: NotesTick,
+micCheckLevel: MicCheckLevel,
 openPage: OpenPage,
+practiceHint: PracticeHint,
+practiceResult: PracticeResult,
+practiceStatus: PracticeStatus,
 streamPhaseEvent: StreamPhaseEvent,
 scratchpadChanged: ScratchpadChanged,
 scratchpadDictating: ScratchpadDictating,
@@ -1783,7 +1826,11 @@ noteLineRemoved: "note-line-removed",
 notesChanged: "notes-changed",
 notesSessionChanged: "notes-session-changed",
 notesTick: "notes-tick",
+micCheckLevel: "mic-check-level",
 openPage: "open-page",
+practiceHint: "practice-hint",
+practiceResult: "practice-result",
+practiceStatus: "practice-status",
 streamPhaseEvent: "stream-phase-event",
 scratchpadChanged: "scratchpad-changed",
 scratchpadDictating: "scratchpad-dictating",
@@ -2158,6 +2205,73 @@ export type CallState = { detect: boolean; watched: CallApp[]; live: LiveCall | 
  * A button pressed on the card Test detection showed; the page says what
  * would have happened.
  */
+/**
+ * How loud the microphone is during the check, from 0 to 1.
+ */
+export type MicCheckLevel = { level: number }
+/**
+ * The shortcut was pressed on a setup step that has no scene.
+ */
+export type PracticeHint = null
+/**
+ * Where a dictation goes during setup.
+ */
+export type PracticeMode = 
+/**
+ * Setup isn't open: dictation works as usual.
+ */
+"off" | 
+/**
+ * A setup step without a scene: the shortcut shows a hint.
+ */
+"hint" | 
+/**
+ * A chat scene, styled as personal messages.
+ */
+"chat" | 
+/**
+ * An email scene.
+ */
+"email" | 
+/**
+ * A document scene.
+ */
+"document"
+/**
+ * What a practice dictation is doing.
+ */
+export type PracticePhase = "recording" | "transcribing" | 
+/**
+ * The cancel key stopped it.
+ */
+"cancelled" | "idle"
+/**
+ * A practice dictation: what the model heard, what Legato would have
+ * pasted, and what each step changed on the way.
+ */
+export type PracticeResult = { scene: PracticeMode; heard: string; text: string; 
+/**
+ * Filler words removed, each once.
+ */
+fillers: string[]; 
+/**
+ * The Dictionary's fixes, then the AI's.
+ */
+fixes: AppliedFix[]; 
+/**
+ * Cleanup with self-corrections left in, and with them taken out, so
+ * the scene can show what a correction dropped. Equal when nothing was.
+ */
+uncorrected: string; corrected: string; 
+/**
+ * The Style tone used, or None with Style off.
+ */
+tone: Tone | null; 
+/**
+ * How long transcribing took.
+ */
+ms: number }
+export type PracticeStatus = { phase: PracticePhase }
 export type CallTest = { action: CallAction; app: CallApp; snooze_minutes: number }
 export type CallsChanged = { state: CallState }
 export type CleanupLevel = "none" | "light" | "medium"
@@ -2323,7 +2437,14 @@ hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: nu
  * upgrading from before this key existed are blanked by the migration so they
  * see the current release's notes — see `apply_settings_migrations`.
  */
-whats_new_last_seen_version?: string; selected_model?: string; onboarding_completed?: boolean; always_on_microphone?: boolean; selected_microphone?: string | null; 
+whats_new_last_seen_version?: string; selected_model?: string; onboarding_completed?: boolean; 
+/**
+ * The setup step to come back to ("mic", "model", "message", "email",
+ * "list", "words", "done"), or empty once setup is finished or skipped.
+ * Picking a model sets `onboarding_completed`, so this keeps a restart
+ * part-way through from skipping the practice.
+ */
+setup_step?: string; always_on_microphone?: boolean; selected_microphone?: string | null; 
 /**
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
@@ -2499,7 +2620,11 @@ cursor: number | null; limit: number | null; search: string | null; filter?: His
 /**
  * An app's name, as in `HistoryEntry::app_name`.
  */
-app: string | null }
+app: string | null; 
+/**
+ * A local date, YYYY-MM-DD.
+ */
+day?: string | null }
 /**
  * What Home shows above the list.
  */
@@ -2513,6 +2638,67 @@ apps: AppCount[];
  */
 fixed_today: TodayFix[] }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
+/**
+ * Everything Insights shows.
+ */
+export type Insights = { 
+/**
+ * Every day with dictations, oldest first, for totals, the activity map
+ * and speed by week.
+ */
+days: InsightsDay[]; 
+/**
+ * The day fillers, snippets and dictations by hour started being
+ * counted; earlier days don't have them.
+ */
+counted_since: string | null; apps: InsightsApp[]; 
+/**
+ * Dictations in each hour of the day, midnight first.
+ */
+hours: number[]; fillers: InsightsCount[]; transforms: number; 
+/**
+ * The Dictionary words fixed most, all time.
+ */
+fixed_words: InsightsFixedWord[]; 
+/**
+ * Dictionary words fixed at least once, and their fixes, all time.
+ */
+fixed_word_count: number; fixed_word_hits: number; models: InsightsModel[] }
+export type InsightsApp = { name: string; 
+/**
+ * An executable to take the app's icon from.
+ */
+path: string | null; category: string | null; words: number }
+export type InsightsCount = { text: string; count: number }
+/**
+ * One day's totals, for the charts.
+ */
+export type InsightsDay = { 
+/**
+ * Local date, YYYY-MM-DD.
+ */
+day: string; dictations: number; words: number; speech_ms: number; fixes: number; transformed: number; snippets: number }
+/**
+ * A Dictionary word and how often Legato has fixed it.
+ */
+export type InsightsFixedWord = { id: number; text: string; hits: number; 
+/**
+ * Learned from a fix or an edit rather than added by hand.
+ */
+learned: boolean }
+/**
+ * A speech model's use: dictations and words in the range, the rest since
+ * it was first used.
+ */
+export type InsightsModel = { model: string; dictations: number; words: number; all_words: number; pastes: number; paste_ms: number; fixes: number; 
+/**
+ * Local date, YYYY-MM-DD.
+ */
+last_day: string }
+/**
+ * The span Insights covers.
+ */
+export type InsightsRange = "week" | "month" | "all"
 /**
  * Result of changing keyboard implementation
  */

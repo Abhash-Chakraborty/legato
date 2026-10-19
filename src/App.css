@@ -29,6 +29,7 @@
   --color-text-4: var(--text-4);
   --color-teal-50: var(--teal-50);
   --color-teal-100: var(--teal-100);
+  --color-teal-300: var(--teal-300);
   --color-teal-500: var(--teal-500);
   --color-teal-600: var(--teal-600);
   --color-teal-700: var(--teal-700);
@@ -163,6 +164,147 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .notes-recdot {
+    animation: none;
+  }
+}
+
+/* ---- First-run setup ---- */
+
+/* Steps cross in 220 ms with 16 px of travel in the direction of travel. */
+.setup-enter {
+  animation: setup-in var(--dur-3) var(--ease-out) both;
+}
+@keyframes setup-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--setup-dir, 0) * 16px));
+  }
+}
+
+/* A new dictation lands word by word, 28 ms apart. */
+.setup-typing .setup-word {
+  animation: setup-word var(--dur-2) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 28ms);
+}
+@keyframes setup-word {
+  from {
+    opacity: 0;
+  }
+}
+
+.setup-skeleton {
+  animation: setup-pulse 1.2s ease-in-out infinite;
+}
+@keyframes setup-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.setup-caret {
+  animation: setup-blink 1.1s steps(1) infinite;
+}
+@keyframes setup-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.setup-bubble {
+  animation: setup-bubble var(--dur-3) var(--ease-out) both;
+}
+@keyframes setup-bubble {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.setup-dot {
+  animation: setup-dot 1s ease-in-out infinite;
+}
+@keyframes setup-dot {
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+  60%,
+  100% {
+    transform: none;
+    opacity: 0.5;
+  }
+}
+
+/* The ring around the mic button breathes while it listens. */
+.setup-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
+  border: 2px solid var(--teal-300);
+  animation: setup-ring 1.4s var(--ease-out) infinite;
+  pointer-events: none;
+}
+@keyframes setup-ring {
+  from {
+    transform: scale(0.94);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.18);
+    opacity: 0;
+  }
+}
+
+.setup-live {
+  animation: setup-pulse 1s ease-in-out infinite;
+}
+
+/* "Show me" points at the mic button. */
+.setup-ping {
+  animation: setup-ping 0.5s var(--ease-out) 2;
+}
+@keyframes setup-ping {
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--teal-300) 60%, transparent);
+  }
+}
+
+.setup-row {
+  animation: setup-bubble var(--dur-3) var(--ease-out) both;
+}
+
+/* WhatsApp's own colours for a sent message. */
+.setup-out {
+  background: #d9fdd3;
+  color: #111b21;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .setup-out {
+    background: #005c4b;
+    color: #e9edef;
+  }
+}
+:root[data-theme="dark"] .setup-out {
+  background: #005c4b;
+  color: #e9edef;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .setup-enter,
+  .setup-typing .setup-word,
+  .setup-bubble,
+  .setup-row,
+  .setup-ping {
+    /* Fades only. */
+    animation-name: setup-word;
+    animation-duration: 160ms;
+    animation-delay: 0ms;
+  }
+  .setup-skeleton,
+  .setup-caret,
+  .setup-dot,
+  .setup-ring,
+  .setup-live {
     animation: none;
   }
 }

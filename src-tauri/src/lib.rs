@@ -30,6 +30,7 @@ mod scratchpad;
 mod secrets;
 mod selection;
 mod settings;
+mod setup;
 mod shortcut;
 mod signal_handle;
 mod snippet_rules;
@@ -774,6 +775,7 @@ pub fn run(cli_args: CliArgs) {
             commands::transcription::unload_model_manually,
             commands::history::get_history_entries,
             commands::history::get_history_summary,
+            commands::history::get_insights,
             commands::history::save_history_audio,
             commands::history::get_app_icon,
             commands::audio::watch_mic_level,
@@ -903,6 +905,12 @@ pub fn run(cli_args: CliArgs) {
             commands::calls::change_call_settings,
             commands::calls::call_card_action,
             commands::calls::test_call_card,
+            commands::setup::set_practice_mode,
+            commands::setup::practice_toggle,
+            commands::setup::start_mic_check,
+            commands::setup::stop_mic_check,
+            commands::setup::get_input_languages,
+            commands::setup::change_setup_step_setting,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -922,6 +930,10 @@ pub fn run(cli_args: CliArgs) {
             notes::NotesTick,
             calls::CallsChanged,
             calls::CallTest,
+            setup::PracticeStatus,
+            setup::PracticeResult,
+            setup::PracticeHint,
+            setup::MicCheckLevel,
             notes::NoteInsert,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,

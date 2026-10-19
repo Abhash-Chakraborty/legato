@@ -13,6 +13,8 @@ export interface HistoryView {
   search: string;
   filter: HistoryFilter;
   app: string | null;
+  /** A local date, YYYY-MM-DD. */
+  day: string | null;
 }
 
 /** Home's rows for a search, filter and app, with paging, live updates from
@@ -34,7 +36,7 @@ export const useHistory = (view: HistoryView) => {
   }, []);
 
   const fetchPage = useCallback(async (cursor: number | null) => {
-    const { search, filter, app } = viewRef.current;
+    const { search, filter, app, day } = viewRef.current;
     return commands
       .getHistoryEntries({
         cursor,
@@ -42,6 +44,7 @@ export const useHistory = (view: HistoryView) => {
         search: search.trim() || null,
         filter,
         app,
+        day,
       })
       .catch(() => null);
   }, []);
@@ -76,7 +79,7 @@ export const useHistory = (view: HistoryView) => {
 
   useEffect(() => {
     reload();
-  }, [view.search, view.filter, view.app, reload]);
+  }, [view.search, view.filter, view.app, view.day, reload]);
 
   useEffect(() => {
     refreshSummary();

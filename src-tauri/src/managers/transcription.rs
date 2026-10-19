@@ -1,7 +1,7 @@
 use crate::audio_toolkit::chunking;
 use crate::audio_toolkit::text::{CompiledDictionary, DictionaryCorrection};
 use crate::audio_toolkit::{
-    detect_output_language, normalize_transcription_output, remove_filler_words,
+    detect_output_language, normalize_transcription_output, remove_filler_words_counted,
     OutputLanguageEvidence,
 };
 use crate::chinese_script::{convert_chinese_script, ChineseVariety};
@@ -931,7 +931,7 @@ impl TranscriptionManager {
         let settings = get_settings(&self.app_handle);
         let lexicon = crate::managers::dictionary::lexicon();
         let heard = normalize_transcription_output(outcome.text.trim());
-        let (final_result, fixes) = finish_text(outcome, &settings, &lexicon.corrector);
+        let (final_result, (fixes, fillers)) = finish_text(outcome, &settings, &lexicon.corrector);
 
         let translation_note = if settings.translate_to_english {
             " (translated)"
@@ -964,6 +964,7 @@ impl TranscriptionManager {
             text: final_result,
             fixes,
             heard,
+            fillers,
         })
     }
 
@@ -1106,7 +1107,13 @@ pub struct FinishedText {
     pub fixes: Vec<DictionaryCorrection>,
     /// What the model heard, before the Dictionary and filler removal.
     pub heard: String,
+    /// Filler words removed, with how many times each.
+    pub fillers: Vec<(String, i64)>,
 }
+
+/// The Dictionary's fixes and the filler words removed, with how many times
+/// each.
+type Corrections = (Vec<DictionaryCorrection>, Vec<(String, i64)>);
 
 /// One transcription's final text: its output language resolved, then
 /// post-processed.
@@ -1114,7 +1121,7 @@ fn finish_text(
     outcome: RunOutcome,
     settings: &AppSettings,
     dictionary: &CompiledDictionary,
-) -> (String, Vec<DictionaryCorrection>) {
+) -> (String, Corrections) {
     let RunOutcome {
         setup,
         text,
@@ -1123,7 +1130,7 @@ fn finish_text(
     let output_language = setup.output_language(settings, model_detected_language);
     debug!("Output language evidence: {:?}", output_language);
     // Words the model already got in its hint skip fuzzy correction.
-    post_process_transcription_text(
+    post_process_counting_fillers(
         text,
         settings,
         dictionary,
@@ -1487,6 +1494,7 @@ fn transcribe_cpp_run_plan(
     }
 }
 
+#[cfg(test)]
 fn post_process_transcription_text(
     raw: String,
     settings: &AppSettings,
@@ -1495,6 +1503,27 @@ fn post_process_transcription_text(
     output_language: &OutputLanguageEvidence,
     supported_languages: &[String],
 ) -> (String, Vec<DictionaryCorrection>) {
+    let (text, (fixes, _)) = post_process_counting_fillers(
+        raw,
+        settings,
+        dictionary,
+        custom_words_already_prompted,
+        output_language,
+        supported_languages,
+    );
+    (text, fixes)
+}
+
+/// [`post_process_transcription_text`], also returning the filler words it
+/// removed.
+fn post_process_counting_fillers(
+    raw: String,
+    settings: &AppSettings,
+    dictionary: &CompiledDictionary,
+    custom_words_already_prompted: bool,
+    output_language: &OutputLanguageEvidence,
+    supported_languages: &[String],
+) -> (String, Corrections) {
     let converts_script = settings.chinese_script != ChineseScript::AsTranscribed;
     fail_open_text_transform(raw, |raw| {
         // Last-resort language evidence: confidence-gated detection from the
@@ -1543,7 +1572,7 @@ fn post_process_transcription_text(
         };
 
         // Fillers are part of cleanup; at None the text stays as dictated.
-        let without_fillers = remove_filler_words(
+        let (without_fillers, fillers) = remove_filler_words_counted(
             &corrected,
             &output_language,
             &settings.custom_filler_words,
@@ -1551,7 +1580,10 @@ fn post_process_transcription_text(
                 && settings.cleanup_level != crate::settings::CleanupLevel::None,
         );
 
-        (normalize_transcription_output(&without_fillers), fixes)
+        (
+            normalize_transcription_output(&without_fillers),
+            (fixes, fillers),
+        )
     })
 }
 

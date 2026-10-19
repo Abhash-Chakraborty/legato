@@ -1,6 +1,8 @@
 use crate::actions::{process_transcription_output, DictationMode};
 use crate::managers::{
-    history::{HistoryManager, HistoryQuery, HistorySummary, PaginatedHistory},
+    history::{
+        HistoryManager, HistoryQuery, HistorySummary, Insights, InsightsRange, PaginatedHistory,
+    },
     model::ModelManager,
     transcription::TranscriptionManager,
 };
@@ -28,6 +30,16 @@ pub async fn get_history_summary(
     history_manager: State<'_, Arc<HistoryManager>>,
 ) -> Result<HistorySummary, String> {
     history_manager.summary().map_err(|e| e.to_string())
+}
+
+/// What Insights shows for a range.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_insights(
+    history_manager: State<'_, Arc<HistoryManager>>,
+    range: InsightsRange,
+) -> Result<Insights, String> {
+    history_manager.insights(range).map_err(|e| e.to_string())
 }
 
 /// Copies a dictation's recording to where the person chose to save it.

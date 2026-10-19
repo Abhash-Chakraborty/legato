@@ -6,6 +6,7 @@ pub mod history;
 pub mod models;
 pub mod notes;
 pub mod scratchpad;
+pub mod setup;
 pub mod snippets;
 pub mod style;
 pub mod transcription;

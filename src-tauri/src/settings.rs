@@ -612,6 +612,12 @@ pub struct AppSettings {
     pub selected_model: String,
     #[serde(default)]
     pub onboarding_completed: bool,
+    /// The setup step to come back to ("mic", "model", "message", "email",
+    /// "list", "words", "done"), or empty once setup is finished or skipped.
+    /// Picking a model sets `onboarding_completed`, so this keeps a restart
+    /// part-way through from skipping the practice.
+    #[serde(default)]
+    pub setup_step: String,
     #[serde(default = "default_always_on_microphone")]
     pub always_on_microphone: bool,
     #[serde(default)]
@@ -1302,6 +1308,7 @@ pub fn get_default_settings() -> AppSettings {
         whats_new_last_seen_version: default_whats_new_last_seen_version(),
         selected_model: "".to_string(),
         onboarding_completed: false,
+        setup_step: String::new(),
         always_on_microphone: false,
         selected_microphone: None,
         selected_channel: None,

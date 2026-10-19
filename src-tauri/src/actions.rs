@@ -330,6 +330,11 @@ impl ShortcutAction for TranscribeAction {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
 
+        // During setup the shortcut records only in a practice scene.
+        if crate::setup::intercept_start(app) {
+            return;
+        }
+
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
         let rm = app.state::<Arc<AudioRecordingManager>>();
@@ -435,6 +440,7 @@ impl ShortcutAction for TranscribeAction {
                     "Recording request accepted in {:?}; waiting for first microphone samples",
                     recording_start_time.elapsed()
                 );
+                crate::setup::status(app, crate::setup::PracticePhase::Recording);
                 let generation = readiness.generation();
                 let app_clone = app.clone();
                 let rm_clone = Arc::clone(&rm);
@@ -512,6 +518,10 @@ impl ShortcutAction for TranscribeAction {
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        if crate::setup::take_hinted() {
+            return;
+        }
+
         // Prevent a slow microphone from emitting a ready event or start chime
         // after the user has already requested stop.
         app.state::<Arc<AudioRecordingManager>>()
@@ -555,9 +565,15 @@ impl ShortcutAction for TranscribeAction {
         let started_in = app.state::<DictationContext>().take();
         let remember_app = get_settings(app).remember_app;
         let cancel_generation = rm.cancel_generation();
+        // A practice scene in setup gets the text instead of the app in front.
+        let practice = crate::setup::scene_target();
+        crate::setup::status(app, crate::setup::PracticePhase::Transcribing);
 
         tauri::async_runtime::spawn(async move {
             let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
+            let _practice = practice
+                .is_some()
+                .then(|| crate::setup::PracticeGuard(ah.clone()));
             debug!(
                 "Starting async transcription task for binding: {}",
                 binding_id
@@ -648,12 +664,31 @@ impl ShortcutAction for TranscribeAction {
                             text: transcription,
                             fixes,
                             heard,
+                            fillers,
                         }) => {
                             debug!(
                                 "Transcription completed in {:?}: '{}'",
                                 transcription_time.elapsed(),
                                 utils::redact_text(&transcription)
                             );
+
+                            if let Some(target) = practice.as_ref() {
+                                let _ = std::fs::remove_file(hm.recordings_dir().join(&file_name));
+                                let ms = transcription_time.elapsed().as_millis() as u32;
+                                crate::setup::finish(
+                                    &ah,
+                                    target,
+                                    heard,
+                                    transcription,
+                                    fillers,
+                                    &fixes,
+                                    ms,
+                                )
+                                .await;
+                                utils::hide_recording_overlay(&ah);
+                                set_tray_state(&ah, TrayIconState::Idle);
+                                return;
+                            }
 
                             // Ask: the words are the instruction, not text to paste.
                             if mode == DictationMode::Ask {
@@ -739,6 +774,8 @@ impl ShortcutAction for TranscribeAction {
                                     model_name: model_name.clone(),
                                     fixes,
                                     heard_text: Some(heard),
+                                    fillers,
+                                    snippets: processed.snippet_hits.len() as i64,
                                     ..Default::default()
                                 }) {
                                     Ok(entry) => Some(entry.id),

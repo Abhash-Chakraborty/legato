@@ -25,6 +25,7 @@ import { ScratchpadPage } from "./components/pages/scratchpad/ScratchpadPage";
 import { StylePage } from "./components/pages/style/StylePage";
 import { TransformsPage } from "./components/pages/transforms/TransformsPage";
 import { NotesPage } from "./components/pages/notes/NotesPage";
+import { InsightsPage } from "./components/pages/insights/InsightsPage";
 import { watchNotes } from "./stores/notesStore";
 import { watchCalls } from "./stores/callsStore";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -42,8 +43,15 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { commands, events } from "@/bindings";
 import { HomePage } from "@/components/pages/home/HomePage";
 import { deleteRetiredModel } from "@/components/onboarding/retiredModels";
+import { SetupFlow } from "@/components/setup/SetupFlow";
+import { isStep, type Step } from "@/components/setup/setup";
 
-type OnboardingStep = "accessibility" | "migration" | "model" | "done";
+type OnboardingStep =
+  | "accessibility"
+  | "migration"
+  | "model"
+  | "setup"
+  | "done";
 
 // Stable identity so preview effects do not re-run due to callback changes.
 const NOOP = () => {};
@@ -65,6 +73,8 @@ const renderPage = (
       return <TransformsPage />;
     case "notes":
       return <NotesPage />;
+    case "insights":
+      return <InsightsPage />;
     case "models":
       return <ModelsSettings />;
     case "settings":
@@ -87,6 +97,8 @@ function App() {
   // Set when a returning user's selected model is a retired (ONNX) model that
   // is still on disk: they must update it before the app can transcribe.
   const [migrationModelId, setMigrationModelId] = useState<string | null>(null);
+  // The setup step to open (new users, or setup left part-way).
+  const [setupStep, setSetupStep] = useState<Step>("mic");
   const page = useNavStore((state) => state.page);
   const { settings, updateSetting } = useSettings();
   const refreshAudioDevices = useSettingsStore(
@@ -101,7 +113,8 @@ function App() {
     onboardingPreview !== null ||
     onboardingStep === "accessibility" ||
     onboardingStep === "migration" ||
-    onboardingStep === "model";
+    onboardingStep === "model" ||
+    onboardingStep === "setup";
 
   // The scrollbar consumes layout space. Reserve a matching gutter on the
   // opposite edge while onboarding is visible so its content stays centered in
@@ -119,6 +132,17 @@ function App() {
 
   useEffect(() => {
     checkOnboardingStatus();
+  }, []);
+
+  // "Back to setup" on the toast after skipping it.
+  useEffect(() => {
+    const onSetup = (e: Event) => {
+      const step = (e as CustomEvent<{ step: string }>).detail?.step;
+      setSetupStep(isStep(step) ? step : "mic");
+      setOnboardingStep("setup");
+    };
+    window.addEventListener("legato:setup", onSetup);
+    return () => window.removeEventListener("legato:setup", onSetup);
   }, []);
 
   // Initialize Enigo, shortcuts, and refresh audio devices when main app loads
@@ -290,6 +314,17 @@ function App() {
         settingsResult.status === "ok" &&
         settingsResult.data.onboarding_completed === true;
 
+      // Setup left part-way (picking a model already marks onboarding done)
+      // comes back to the same step.
+      const resume =
+        settingsResult.status === "ok" ? settingsResult.data.setup_step : "";
+      if (isStep(resume)) {
+        await revealMainWindowForPermissions();
+        setSetupStep(resume);
+        setOnboardingStep("setup");
+        return;
+      }
+
       if (hasCompletedOnboarding) {
         // Returning user - check if they need to grant permissions first
         setIsReturningUser(true);
@@ -313,9 +348,10 @@ function App() {
 
         await finishReturningUser(retiredModelId);
       } else {
-        // New user - start full onboarding
+        // New user: setup, which checks microphone access itself.
         setIsReturningUser(false);
-        setOnboardingStep("accessibility");
+        setSetupStep("mic");
+        setOnboardingStep("setup");
       }
     } catch (error) {
       console.error("Failed to check onboarding status:", error);
@@ -381,6 +417,16 @@ function App() {
           {t("settings.debug.onboardingPreview.exitButton")}
         </button>
       </>
+    );
+  } else if (onboardingStep === "setup") {
+    content = (
+      <SetupFlow
+        initialStep={setupStep}
+        onDone={(target, sub) => {
+          setOnboardingStep("done");
+          useNavStore.getState().go(target, sub as SettingsSection | undefined);
+        }}
+      />
     );
   } else if (onboardingStep === "accessibility") {
     content = (

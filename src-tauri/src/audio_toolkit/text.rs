@@ -646,16 +646,24 @@ pub fn remove_filler_words(
     custom_filler_words: &Option<Vec<String>>,
     enabled: bool,
 ) -> String {
+    remove_filler_words_counted(text, language, custom_filler_words, enabled).0
+}
+
+/// [`remove_filler_words`], also returning each filler it removed, in lower
+/// case, with how many times, for Insights.
+pub fn remove_filler_words_counted(
+    text: &str,
+    language: &OutputLanguageEvidence,
+    custom_filler_words: &Option<Vec<String>>,
+    enabled: bool,
+) -> (String, Vec<(String, i64)>) {
     if !enabled {
-        return text.to_string();
+        return (text.to_string(), Vec::new());
     }
 
     // Build filler patterns from custom list or the built-in tiers
-    let patterns: Vec<Regex> = match custom_filler_words {
-        Some(words) => words
-            .iter()
-            .filter_map(|word| Regex::new(&format!(r"(?i)\b{}\b[,.]?", regex::escape(word))).ok())
-            .collect(),
+    let words: Vec<String> = match custom_filler_words {
+        Some(words) => words.clone(),
         None => UNIVERSAL_FILLER_WORDS
             .iter()
             .chain(
@@ -664,17 +672,25 @@ pub fn remove_filler_words(
                     .map(gated_filler_words_for_language)
                     .unwrap_or_default(),
             )
-            .map(|word| Regex::new(&format!(r"(?i)\b{}\b[,.]?", regex::escape(word))).unwrap())
+            .map(|word| word.to_string())
             .collect(),
     };
 
     // Remove filler words
     let mut filtered = text.to_string();
-    for pattern in &patterns {
-        filtered = remove_filler_matches(&filtered, pattern);
+    let mut removed = Vec::new();
+    for word in &words {
+        let Ok(pattern) = Regex::new(&format!(r"(?i)\b{}\b[,.]?", regex::escape(word))) else {
+            continue;
+        };
+        let count = pattern.find_iter(&filtered).count();
+        if count > 0 {
+            filtered = remove_filler_matches(&filtered, &pattern);
+            removed.push((word.to_lowercase(), count as i64));
+        }
     }
 
-    filtered
+    (filtered, removed)
 }
 
 /// Applies non-filler transcription cleanup.
@@ -695,6 +711,25 @@ pub fn normalize_transcription_output(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn removed_fillers_are_counted() {
+        let (text, removed) = remove_filler_words_counted(
+            "Uh, so um the build, um, is green",
+            &OutputLanguageEvidence::Unknown,
+            &Some(vec!["um".into(), "uh".into(), "er".into()]),
+            true,
+        );
+        assert!(!text.to_lowercase().contains("um"));
+        assert_eq!(removed, vec![("um".to_string(), 2), ("uh".to_string(), 1)]);
+        let (_, none) = remove_filler_words_counted(
+            "um yes",
+            &OutputLanguageEvidence::Unknown,
+            &Some(vec!["um".into()]),
+            false,
+        );
+        assert!(none.is_empty());
+    }
+
     use super::*;
 
     /// Exercise the complete cleanup sequence with an explicitly selected

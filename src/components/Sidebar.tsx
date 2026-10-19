@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   AudioLines,
   BookA,
+  ChartColumn,
   Cpu,
   House,
   NotebookPen,
@@ -27,8 +28,8 @@ interface NavItem {
 }
 
 // What you do with dictation first, then the words and prompts you keep,
-// then what you record and jot down; configuration sits at the bottom.
-// Insights joins when it exists.
+// then what you record and jot down, and how you use it; configuration sits
+// at the bottom.
 const TOP: NavItem[] = [
   { id: "home", labelKey: "sidebar.home", icon: House },
   {
@@ -47,6 +48,7 @@ const TOP: NavItem[] = [
     gapBefore: true,
   },
   { id: "scratchpad", labelKey: "sidebar.scratchpad", icon: NotebookPen },
+  { id: "insights", labelKey: "sidebar.insights", icon: ChartColumn },
 ];
 const BOTTOM: NavItem[] = [
   { id: "models", labelKey: "sidebar.models", icon: Cpu },
