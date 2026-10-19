@@ -182,6 +182,11 @@ struct Captured {
     text: String,
     source: RunSource,
     app: Option<AppInfo>,
+    /// The text is selected in the app, so a paste replaces it.
+    selected: bool,
+    /// Whitespace after the selected text that the result keeps, such as
+    /// the trailing space a dictation was pasted with.
+    suffix: String,
 }
 
 fn now() -> i64 {
@@ -224,13 +229,64 @@ fn capture(app: &AppHandle) -> Option<Captured> {
             text,
             source: RunSource::Selection,
             app: app_info,
+            selected: true,
+            suffix: String::new(),
         });
     }
+    if let Some(pasted) = reselect_last_paste(app, app_info.as_ref()) {
+        let text = pasted.trim_end().to_string();
+        return Some(Captured {
+            suffix: pasted[text.len()..].to_string(),
+            text,
+            source: RunSource::LastDictation,
+            app: app_info,
+            selected: true,
+        });
+    }
+    // Pasted elsewhere or too long ago: the result goes in at the cursor.
     last_dictation(app).map(|text| Captured {
         text,
         source: RunSource::LastDictation,
         app: app_info,
+        selected: false,
+        suffix: String::new(),
     })
+}
+
+/// How long after a paste a transform can still select it again.
+const RESELECT_WITHIN: Duration = Duration::from_secs(600);
+/// Longer pastes aren't selected back key by key.
+const MAX_RESELECT_CHARS: usize = 1500;
+
+/// Selects the last paste again when it went into the window in front and
+/// still sits right before the cursor, checked by copying the selection.
+/// Otherwise the cursor goes back where it was. Terminals are left alone:
+/// Shift+Left and Ctrl+C mean other things there.
+fn reselect_last_paste(app: &AppHandle, info: Option<&AppInfo>) -> Option<String> {
+    let pasted = crate::clipboard::last_paste_here(RESELECT_WITHIN)?;
+    if info.is_some_and(|i| rules::is_terminal(&i.exe_path)) {
+        return None;
+    }
+    let count = pasted.chars().filter(|c| *c != '\r').count();
+    if count == 0 || count > MAX_RESELECT_CHARS {
+        return None;
+    }
+    if let Err(e) = selection::select_back(app, count) {
+        warn!("Couldn't select the last paste: {e}");
+        return None;
+    }
+    std::thread::sleep(Duration::from_millis(30));
+    match selection::copy_selection(app) {
+        Ok(Some(copied)) if rules::same_text(&copied, &pasted) => Some(pasted),
+        Ok(Some(_)) => {
+            debug!("The text before the cursor isn't the last paste any more");
+            // Collapses the selection to its end, where the cursor was.
+            let _ = selection::send_key(app, VK_RIGHT);
+            None
+        }
+        // Nothing selected, so nothing to undo.
+        _ => None,
+    }
 }
 
 fn runs_db(app: &AppHandle) -> Option<rusqlite::Connection> {
@@ -443,14 +499,14 @@ where
         return;
     }
 
-    let text = if job.output == TransformOutput::Below && captured.source == RunSource::Selection {
+    let text = if job.output == TransformOutput::Below && captured.selected {
         if let Err(e) = selection::send_key(app, VK_RIGHT) {
             warn!("Couldn't move past the selection: {e}");
         }
         std::thread::sleep(Duration::from_millis(30));
         format!("\n\n{result}")
     } else {
-        result.clone()
+        format!("{result}{}", captured.suffix)
     };
     if let Err(e) = paste_on_main(app, text) {
         error!("Couldn't paste the transform's result: {e}");
@@ -632,6 +688,8 @@ fn run_ask(app: &AppHandle, instruction: String) {
         text: String::new(),
         source: RunSource::Ask,
         app: foreground_app(),
+        selected: false,
+        suffix: String::new(),
     });
     let rewriting = !captured.text.trim().is_empty();
     let user = rules::ask_request(&instruction, rewriting.then_some(captured.text.as_str()));

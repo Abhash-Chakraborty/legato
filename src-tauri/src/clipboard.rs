@@ -4,7 +4,8 @@ use crate::settings::{
 };
 use enigo::{Direction, Enigo, Key, Keyboard};
 use log::info;
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -191,6 +192,27 @@ impl PasteOverrides {
 }
 
 /// Pastes a dictation with the paste settings of the app it goes to.
+/// The last text Legato pasted, the window it went into and when, so a
+/// transform with nothing selected can select it again.
+static LAST_PASTE: Mutex<Option<(isize, String, Instant)>> = Mutex::new(None);
+
+fn remember_paste(text: &str) {
+    let last = crate::context::foreground_handle().map(|h| (h, text.to_string(), Instant::now()));
+    *LAST_PASTE.lock().unwrap_or_else(|e| e.into_inner()) = last;
+}
+
+/// What Legato last pasted, when it went into the window in front within
+/// `within`.
+pub fn last_paste_here(within: Duration) -> Option<String> {
+    let front = crate::context::foreground_handle()?;
+    LAST_PASTE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .filter(|(handle, _, at)| *handle == front && at.elapsed() < within)
+        .map(|(_, text, _)| text.clone())
+}
+
 pub fn paste_dictation(
     text: String,
     app_handle: AppHandle,
@@ -232,6 +254,8 @@ fn paste_with(
         "Using paste method: {:?}, delay before: {}ms, delay after: {}ms",
         paste_method, paste_delay_ms, paste_delay_after_ms
     );
+    // Enter after the paste moves the cursor off the text.
+    let reselectable = paste_method != PasteMethod::None && !settings.auto_submit;
 
     // Perform the paste operation
     match paste_method {
@@ -260,7 +284,12 @@ fn paste_with(
                     )
                 });
                 match reliable_result {
-                    Ok(()) => return Ok(()),
+                    Ok(()) => {
+                        if reselectable {
+                            remember_paste(&text);
+                        }
+                        return Ok(());
+                    }
                     Err(e) => {
                         log::warn!("Reliable paste unavailable ({e}); falling back to legacy paste")
                     }
@@ -283,6 +312,10 @@ fn paste_with(
         }) {
             log::warn!("Paste succeeded, but auto-submit failed: {error}");
         }
+    }
+
+    if reselectable {
+        remember_paste(&text);
     }
 
     // After pasting, optionally copy to clipboard based on settings

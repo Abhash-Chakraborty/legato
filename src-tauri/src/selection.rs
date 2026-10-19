@@ -157,6 +157,26 @@ pub(crate) fn send_ctrl(app: &AppHandle, vk: u32) -> Result<(), String> {
     })
 }
 
+/// Selects `count` characters before the cursor with Shift+Left.
+pub(crate) fn select_back(app: &AppHandle, count: usize) -> Result<(), String> {
+    with_enigo(app, |enigo| {
+        enigo
+            .key(Key::Shift, Direction::Press)
+            .map_err(|e| format!("Failed to press Shift: {}", e))?;
+        let mut moved = Ok(());
+        for _ in 0..count {
+            if let Err(e) = enigo.key(Key::LeftArrow, Direction::Click) {
+                moved = Err(format!("Failed to press Left: {}", e));
+                break;
+            }
+        }
+        enigo
+            .key(Key::Shift, Direction::Release)
+            .map_err(|e| format!("Failed to release Shift: {}", e))?;
+        moved
+    })
+}
+
 /// Presses one virtual key in the app in front.
 pub(crate) fn send_key(app: &AppHandle, vk: u32) -> Result<(), String> {
     with_enigo(app, |enigo| {

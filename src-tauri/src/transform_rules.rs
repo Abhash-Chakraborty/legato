@@ -346,6 +346,35 @@ pub fn auto_applies(rules: &AutoRules, category: Option<&str>, words: usize) -> 
     words >= rules.min_words as usize
 }
 
+/// Terminals, where Shift+Left and Ctrl+C don't select and copy.
+const TERMINALS: &[&str] = &[
+    "windowsterminal.exe",
+    "wt.exe",
+    "cmd.exe",
+    "conhost.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "alacritty.exe",
+    "wezterm-gui.exe",
+    "mintty.exe",
+    "putty.exe",
+];
+
+pub fn is_terminal(exe_path: &str) -> bool {
+    let exe = exe_path
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(exe_path)
+        .to_ascii_lowercase();
+    TERMINALS.contains(&exe.as_str())
+}
+
+/// Whether a copied selection is the text that was pasted, allowing for the
+/// line endings an app turns "\n" into.
+pub fn same_text(copied: &str, pasted: &str) -> bool {
+    copied.replace("\r\n", "\n") == pasted.replace("\r\n", "\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -467,5 +496,20 @@ mod tests {
             min_words: 0,
         };
         assert!(auto_applies(&all, Some("code"), 0));
+    }
+
+    #[test]
+    fn terminals_and_line_endings() {
+        assert!(is_terminal(
+            "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        ));
+        assert!(is_terminal(
+            "C:\\Program Files\\WindowsApps\\WindowsTerminal.exe"
+        ));
+        assert!(!is_terminal(
+            "C:\\Program Files\\Microsoft VS Code\\Code.exe"
+        ));
+        assert!(same_text("one\r\ntwo ", "one\ntwo "));
+        assert!(!same_text("one two", "one two "));
     }
 }
