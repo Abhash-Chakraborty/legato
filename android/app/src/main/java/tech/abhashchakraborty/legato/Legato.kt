@@ -2,11 +2,13 @@ package tech.abhashchakraborty.legato
 
 import android.app.Application
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Build
 import android.provider.Settings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -40,6 +42,11 @@ class Legato(private val context: Context) : CoreListener {
     val state = MutableStateFlow(PhoneState(paired = false, pcName = null, online = false, lastSync = null))
     val model = MutableStateFlow<ModelStatus>(ModelStatus.Missing)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /** Bumped after every change, local or synced, so lists read again. */
+    val version = MutableStateFlow(0)
+    /** Failures worth a snackbar, as opposed to the chatter in [lines]. */
+    val notices = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val prefs: SharedPreferences = context.getSharedPreferences("legato", Context.MODE_PRIVATE)
 
     val core: Core = Core(
         File(context.filesDir, "phone").absolutePath,
@@ -55,6 +62,16 @@ class Legato(private val context: Context) : CoreListener {
     override fun onLine(line: String) {
         lines.update { (it + line).takeLast(60) }
         refresh()
+        bump()
+    }
+
+    fun bump() {
+        version.update { it + 1 }
+    }
+
+    /** Shows [text] in a snackbar on whatever screen is open. */
+    fun notice(text: String) {
+        notices.tryEmit(text)
     }
 
     override fun onUnpaired(why: String) {
@@ -72,9 +89,12 @@ class Legato(private val context: Context) : CoreListener {
             try {
                 core.block()
             } catch (e: Exception) {
-                onLine(e.message ?: e.toString())
+                val why = e.message ?: e.toString()
+                notice(why)
+                onLine(why)
             }
             refresh()
+            bump()
         }
     }
 

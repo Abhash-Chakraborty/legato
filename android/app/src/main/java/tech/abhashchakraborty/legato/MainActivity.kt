@@ -47,10 +47,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,7 +59,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.isSystemInDarkTheme
+import tech.abhashchakraborty.legato.ui.LegatoApp
+import tech.abhashchakraborty.legato.ui.LegatoTheme
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -74,27 +71,28 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * Step A1: a plain screen that proves the pieces on a real phone: pairing
- * and sync through the shared core, speech on the phone, and the clipboard
- * both ways. The real screens come in A3.
+ * Opens Legato's screens, and hands them any pairing link it was opened
+ * with. The A1 test screen below stays reachable from Settings › Advanced.
  */
 class MainActivity : ComponentActivity() {
     private val recorder = Recorder()
+    /** A pairing link this activity was opened with, now or later. */
+    private var link by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val linkFromIntent = pairingLink(intent)
+        link = pairingLink(intent)
         setContent {
             LegatoTheme {
-                DebugScreen(recorder, linkFromIntent)
+                LegatoApp(recorder, link)
             }
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        pairingLink(intent)?.let { link -> legato.run { pair(link) } }
+        pairingLink(intent)?.let { link = it }
     }
 
     override fun onStart() {
@@ -106,19 +104,6 @@ class MainActivity : ComponentActivity() {
         val uri = intent?.data ?: return null
         return if (uri.scheme == "legato" && uri.host == "pair") uri.toString() else null
     }
-}
-
-@Composable
-fun LegatoTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    val context = LocalContext.current
-    val scheme = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-            if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        dark -> darkColorScheme(primary = Color(0xFF66B8AD))
-        else -> lightColorScheme(primary = Color(0xFF1A5C5C))
-    }
-    MaterialTheme(colorScheme = scheme, content = content)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -171,7 +156,7 @@ fun DebugScreen(recorder: Recorder, linkFromIntent: String?) {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Legato · test build") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Advanced") }) }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
