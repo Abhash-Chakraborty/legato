@@ -68,6 +68,14 @@ fn dock(app: &AppHandle, window: &tauri::WebviewWindow) {
     let width = WIDTH.min(w - 2.0 * MARGIN);
     let height = (h - 2.0 * MARGIN).max(320.0);
     let _ = window.set_size(LogicalSize::new(width, height));
+    // An undecorated window with a shadow comes out a title bar taller than
+    // asked on Windows; take the difference back off.
+    if let Ok(inner) = window.inner_size() {
+        let extra = f64::from(inner.height) / scale - height;
+        if extra > 1.0 {
+            let _ = window.set_size(LogicalSize::new(width, height - extra));
+        }
+    }
     let _ = window.set_position(LogicalPosition::new(x + w - width - MARGIN, y + MARGIN));
 }
 

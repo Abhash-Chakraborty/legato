@@ -320,7 +320,54 @@ pub fn expand(app: &AppHandle, expanded: bool) {
     }
     if EXPANDED.swap(expanded, Ordering::SeqCst) != expanded {
         apply(app);
+        if expanded {
+            watch_pointer(app);
+        }
     }
+}
+
+/// Watching whether the pointer left the open bubble.
+static WATCHING: AtomicBool = AtomicBool::new(false);
+
+/// Closes the open bubble once the pointer has been off it for a moment.
+/// The page hears the pointer leave only when it moves out in steps; one
+/// that jumps to another window (a click that opens the Notes panel or the
+/// Scratchpad) leaves it open otherwise.
+fn watch_pointer(app: &AppHandle) {
+    if WATCHING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut away = 0;
+        while EXPANDED.load(Ordering::SeqCst) && away < 3 {
+            std::thread::sleep(Duration::from_millis(150));
+            let inside = (|| {
+                let window = app.get_webview_window(WINDOW)?;
+                let (pos, size) = (window.outer_position().ok()?, window.outer_size().ok()?);
+                let p = app.cursor_position().ok()?;
+                Some(
+                    p.x >= f64::from(pos.x)
+                        && p.x < f64::from(pos.x) + f64::from(size.width)
+                        && p.y >= f64::from(pos.y)
+                        && p.y < f64::from(pos.y) + f64::from(size.height),
+                )
+            })()
+            .unwrap_or(true);
+            away = if inside || DRAGGING.load(Ordering::SeqCst) {
+                0
+            } else {
+                away + 1
+            };
+        }
+        WATCHING.store(false, Ordering::SeqCst);
+        if away >= 3 {
+            expand(&app, false);
+        } else if EXPANDED.load(Ordering::SeqCst) {
+            // Opened again just as this one stopped watching.
+            watch_pointer(&app);
+        }
+    });
 }
 
 /// Follows a drag: the dot's centre in logical screen pixels.
