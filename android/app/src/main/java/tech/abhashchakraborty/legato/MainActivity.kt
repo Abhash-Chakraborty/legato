@@ -197,7 +197,7 @@ fun DebugScreen(recorder: Recorder, linkFromIntent: String?) {
                         }
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilledTonalButton(onClick = { legato.run { if (!syncNow()) onLine("Not connected") } }) { Text("Sync now") }
+                            FilledTonalButton(onClick = { legato.run { if (!syncNow()) legato.onLine("Not connected") } }) { Text("Sync now") }
                             OutlinedButton(onClick = { legato.run { connect() } }) { Text("Connect") }
                             TextButton(onClick = { legato.run { unpair() } }) { Text("Unpair") }
                         }
@@ -254,7 +254,7 @@ fun DebugScreen(recorder: Recorder, linkFromIntent: String?) {
                             val cm = context.getSystemService(ClipboardManager::class.java)
                             val text = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
                             if (text.isBlank()) legato.onLine("Nothing on the clipboard")
-                            else legato.run { if (sendClip(text)) onLine("Sent to the PC: $text") else onLine("Not connected; the clip wasn't sent") }
+                            else legato.run { if (sendClip(text)) legato.onLine("Sent to the PC: $text") else legato.onLine("Not connected; the clip wasn't sent") }
                         }, enabled = state.paired) { Text("Send clipboard to PC") }
                     }
                     val clips = remember(lines.size) { runCatching { legato.core.clips() }.getOrDefault(emptyList()) }
