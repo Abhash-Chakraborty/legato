@@ -652,6 +652,10 @@
         "title": "Context & calls",
         "subtitle": "Legato notices when a call starts and offers to take notes."
       },
+      "connections": {
+        "title": "Connections",
+        "subtitle": "Your calendars, and AI apps that may read Legato."
+      },
       "devices": {
         "title": "Devices",
         "subtitle": "Your phone, sync and the shared clipboard."
@@ -694,7 +698,9 @@
       "callEnd": "When the call ends",
       "phone": "Phone",
       "whatSyncs": "What syncs",
-      "clipboard": "Clipboard"
+      "clipboard": "Clipboard",
+      "calendars": "Meetings",
+      "aiApps": "AI apps"
     },
     "requires": {
       "tray": "Needs the tray icon, or there would be no way to open the window.",
@@ -710,7 +716,8 @@
       "ask": "Turn on Ask on the Transforms page to use this shortcut.",
       "calls": "Needs Detect calls and offer notes.",
       "autoStart": "Only used when notes start automatically.",
-      "clipboardSync": "Turn on Shared clipboard first."
+      "clipboardSync": "Turn on Shared clipboard first.",
+      "mcp": "Turn on Let AI apps read Legato first."
     },
     "privacy": {
       "rememberApp": {
@@ -1157,6 +1164,52 @@
         "image": "Copied image",
         "late": "Arrived more than 2 minutes after it was copied, so it wasn't put on the clipboard."
       }
+    },
+    "connections": {
+      "calendars": {
+        "title": "Calendars",
+        "help": "Legato reads your meetings from each calendar's secret address, so notes take the meeting's name and the bubble shows what's next.",
+        "refresh": "Refresh",
+        "status_one": "Synced {{when}} · {{count}} meeting this week",
+        "status_other": "Synced {{when}} · {{count}} meetings this week",
+        "waiting": "Waiting for the first fetch",
+        "remove": "Remove {{name}}",
+        "removed": "Removed {{name}}",
+        "added_one": "Added {{name}} · {{count}} meeting this week",
+        "added_other": "Added {{name}} · {{count}} meetings this week",
+        "url": "Secret iCal address",
+        "urlPlaceholder": "Paste a secret iCal address",
+        "name": "Calendar name",
+        "namePlaceholder": "Name (optional)",
+        "add": "Add calendar",
+        "checking": "Checking…",
+        "where": "In Google Calendar, open Settings › your calendar › Integrate calendar and copy Secret address in iCal format; in Outlook, publish the calendar and copy its ICS link."
+      },
+      "comingUp": {
+        "title": "Coming up",
+        "help": "The next meetings Legato knows about.",
+        "none": "No meetings in the next two weeks.",
+        "now": "Now",
+        "when": "{{day}}, {{time}}",
+        "days": {
+          "today": "Today",
+          "tomorrow": "Tomorrow"
+        },
+        "hasLink": "Has a meeting link"
+      },
+      "mcp": {
+        "title": "Let AI apps read Legato",
+        "help": "Claude, Cursor and other MCP apps on this PC can search your dictations, notes, Dictionary, Scratchpad and meetings, and add Scratchpad notes.",
+        "setup": {
+          "title": "Add Legato to an AI app",
+          "help": "The app starts Legato's MCP server itself; restart it after adding."
+        },
+        "addTo": "Add to {{name}}",
+        "addedTo": "Added to {{name}}; restart it to use Legato",
+        "inApp": "In {{name}}",
+        "copy": "Copy setup",
+        "copied": "Copied"
+      }
     }
   },
   "footer": {
@@ -1217,6 +1270,8 @@
     "dictate": "Dictate",
     "stopDictating": "Stop dictating",
     "notes": "Take notes",
+    "notesFor": "Take notes for {{title}}",
+    "notesSoon": "Take notes · {{title}} in {{minutes}} min",
     "stopNotes": "Stop notes · {{time}}",
     "scratchpad": "Scratchpad",
     "menu": {

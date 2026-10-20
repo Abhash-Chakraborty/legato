@@ -117,6 +117,10 @@ pub fn write_secret(name: &str, value: &str) -> Result<(), String> {
     vault::write(&target(name), value)
 }
 
+pub fn delete_secret(name: &str) -> Result<(), String> {
+    vault::delete(&target(name))
+}
+
 /// The key for a provider, or an empty string when none is saved. A key
 /// still in the settings file (one Credential Manager refused to take) is
 /// used until it can be moved.

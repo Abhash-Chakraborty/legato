@@ -10,7 +10,7 @@ use specta::Type;
 pub const COLLAPSED: (f64, f64) = (40.0, 40.0);
 /// The window while it's open: three buttons in a column and the label of
 /// the one under the pointer beside them.
-pub const EXPANDED: (f64, f64) = (248.0, 168.0);
+pub const EXPANDED: (f64, f64) = (300.0, 168.0);
 /// Half the collapsed window: how far the dot's centre is from its edges.
 const HALF: f64 = COLLAPSED.0 / 2.0;
 /// Dropped this close to a side, the dot moves flush to it.

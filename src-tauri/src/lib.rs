@@ -7,6 +7,8 @@ mod autostart;
 mod background_audio;
 mod bubble;
 mod bubble_rules;
+mod calendar;
+mod calendar_rules;
 mod calls;
 mod calls_rules;
 mod catalog;
@@ -25,6 +27,8 @@ mod learn_rules;
 mod llm_client;
 mod loopback;
 mod managers;
+pub mod mcp;
+mod mcp_rules;
 mod notes;
 mod notes_rules;
 mod overlay;
@@ -309,6 +313,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(tray::TrayState::new());
     // Watches for calls, to offer notes.
     calls::init(app_handle);
+    // Meetings from the calendars in Settings › Connections.
+    calendar::init(app_handle);
     // After history: the ledger lives in its database.
     sync::init(app_handle);
 
@@ -777,6 +783,14 @@ pub fn run(cli_args: CliArgs) {
             commands::bubble::bubble_move_to,
             commands::bubble::bubble_drop,
             commands::bubble::bubble_action,
+            commands::connections::calendar_list,
+            commands::connections::calendar_add,
+            commands::connections::calendar_remove,
+            commands::connections::calendar_refresh,
+            commands::connections::calendar_meetings,
+            commands::connections::mcp_info,
+            commands::connections::change_mcp_enabled_setting,
+            commands::connections::mcp_add_to,
             commands::is_portable,
             commands::has_mica,
             commands::notify_update,
@@ -994,6 +1008,7 @@ pub fn run(cli_args: CliArgs) {
             notes::NotesSessionChanged,
             notes::NotesTick,
             calls::CallsChanged,
+            calendar::CalendarChanged,
             sync::SyncChanged,
             calls::CallTest,
             setup::PracticeStatus,

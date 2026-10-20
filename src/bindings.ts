@@ -522,6 +522,63 @@ async bubbleAction(action: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async calendarList() : Promise<CalendarStatus[]> {
+    return await TAURI_INVOKE("calendar_list");
+},
+/**
+ * Adds a calendar by its secret iCal address, after fetching it once.
+ */
+async calendarAdd(name: string, url: string) : Promise<Result<CalendarStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("calendar_add", { name, url }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Removes a calendar; the address comes back for Undo.
+ */
+async calendarRemove(id: string) : Promise<Result<RemovedCalendar, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("calendar_remove", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async calendarRefresh() : Promise<void> {
+    await TAURI_INVOKE("calendar_refresh");
+},
+/**
+ * Meetings from a day back to two weeks ahead, by start.
+ */
+async calendarMeetings() : Promise<Meeting[]> {
+    return await TAURI_INVOKE("calendar_meetings");
+},
+async mcpInfo() : Promise<McpInfo> {
+    return await TAURI_INVOKE("mcp_info");
+},
+async changeMcpEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_mcp_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Puts Legato in an AI app's MCP servers, keeping everything else there.
+ * The app picks it up when it restarts.
+ */
+async mcpAddTo(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mcp_add_to", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * The bar's check button: finish the dictation and paste it.
  */
@@ -1998,6 +2055,7 @@ dictionaryChanged: DictionaryChanged,
 historyUpdatePayload: HistoryUpdatePayload,
 callTest: CallTest,
 callsChanged: CallsChanged,
+calendarChanged: CalendarChanged,
 syncChanged: SyncChanged,
 noteInsert: NoteInsert,
 noteLineAdded: NoteLineAdded,
@@ -2024,6 +2082,7 @@ dictionaryChanged: "dictionary-changed",
 historyUpdatePayload: "history-update-payload",
 callTest: "call-test",
 callsChanged: "calls-changed",
+calendarChanged: "calendar-changed",
 syncChanged: "sync-changed",
 noteInsert: "note-insert",
 noteLineAdded: "note-line-added",
@@ -2660,6 +2719,45 @@ export type CleanupLevel = "none" | "light" | "medium"
  * Where the desktop bubble sits: the monitor, and the dot's centre as
  * fractions of that monitor's work area.
  */
+export type CalendarFeed = { id: string; name: string }
+export type CalendarStatus = { id: string; name: string; 
+/**
+ * Unix seconds of the last good fetch.
+ */
+synced_at: number | null; error: string | null; 
+/**
+ * Meetings in the next seven days.
+ */
+upcoming: number }
+export type RemovedCalendar = { name: string; url: string }
+export type CalendarChanged = null
+export type Meeting = { uid: string; title: string; 
+/**
+ * Unix seconds.
+ */
+start: number; end: number; all_day: boolean; 
+/**
+ * A Meet, Zoom, Teams or Webex link, when the event has one.
+ */
+link: string | null; location: string | null; 
+/**
+ * The calendar's name in Legato.
+ */
+calendar: string }
+export type McpClient = { id: string; name: string; 
+/**
+ * Legato is already in its configuration.
+ */
+added: boolean }
+export type McpInfo = { enabled: boolean; 
+/**
+ * The configuration any MCP app takes, to copy.
+ */
+config: string; 
+/**
+ * AI apps found on this PC.
+ */
+clients: McpClient[] }
 export type BubbleSpot = { monitor: string; x: number; y: number }
 export type CleanupRules = { repeats?: boolean; numbers?: boolean; punctuation?: boolean; corrections?: boolean; lists?: boolean; 
 /**
@@ -2935,6 +3033,13 @@ bubble_enabled?: boolean;
  * Where the bubble was left; None puts it against the right side.
  */
 bubble_spot?: BubbleSpot | null; /**
+ * Calendars to read meetings from (Settings › Connections).
+ */
+calendars?: CalendarFeed[]; 
+/**
+ * AI apps on this PC may read Legato's data through `legato --mcp`.
+ */
+mcp_enabled?: boolean; /**
  * The Scratchpad window floats above other apps.
  */
 scratchpad_keep_on_top?: boolean; 

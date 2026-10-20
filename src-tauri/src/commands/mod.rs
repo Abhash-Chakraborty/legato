@@ -2,6 +2,7 @@ pub mod ai;
 pub mod audio;
 pub mod bubble;
 pub mod calls;
+pub mod connections;
 pub mod dictionary;
 pub mod history;
 pub mod models;

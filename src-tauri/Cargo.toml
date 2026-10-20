@@ -67,6 +67,7 @@ regex = "1"
 whatlang = "0.16"
 isolang = "2"
 chrono = "0.4"
+chrono-tz = "0.10"
 rusqlite = { version = "0.37", features = ["bundled"] }
 sha2 = "0.10"
 # Phone sync: TLS with pinned self-signed certificates, on ring like reqwest.

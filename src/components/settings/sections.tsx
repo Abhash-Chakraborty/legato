@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Bug,
+  CalendarDays,
   Captions,
   ClipboardPaste,
   Info,
@@ -91,6 +92,13 @@ import {
   SyncKindRow,
   SyncStatusRow,
 } from "./devices/DeviceSettings";
+import {
+  CalendarsCard,
+  ComingUpRow,
+  hasCalendars,
+  McpSetupRow,
+  McpToggle,
+} from "./connections/ConnectionSettings";
 import { ShowOverlay } from "./ShowOverlay";
 import { ConfirmPaste, ShowBubble, ShowChanges } from "./BarMessages";
 import { RememberApp } from "./RememberApp";
@@ -984,6 +992,62 @@ export const buildSections = (
             ],
             render: () => <OpenNoteRow />,
             requires: needsCallDetection,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "connections",
+    icon: CalendarDays,
+    groups: [
+      {
+        id: "calendars",
+        titleKey: "settings.groups.calendars",
+        rows: [
+          {
+            id: "calendars",
+            searchKeys: [
+              "settings.connections.calendars.title",
+              "settings.connections.calendars.help",
+              "settings.connections.calendars.add",
+            ],
+            render: () => <CalendarsCard />,
+          },
+          {
+            id: "coming-up",
+            searchKeys: [
+              "settings.connections.comingUp.title",
+              "settings.connections.comingUp.help",
+            ],
+            render: () => <ComingUpRow />,
+            when: ({ settings }) => hasCalendars(settings?.calendars),
+          },
+        ],
+      },
+      {
+        id: "ai-apps",
+        titleKey: "settings.groups.aiApps",
+        rows: [
+          {
+            id: "mcp",
+            searchKeys: [
+              "settings.connections.mcp.title",
+              "settings.connections.mcp.help",
+            ],
+            render: () => <McpToggle />,
+          },
+          {
+            id: "mcp-setup",
+            searchKeys: [
+              "settings.connections.mcp.setup.title",
+              "settings.connections.mcp.setup.help",
+            ],
+            render: () => <McpSetupRow />,
+            requires: ({ settings }) =>
+              settings?.mcp_enabled
+                ? null
+                : { reasonKey: "settings.requires.mcp" },
           },
         ],
       },

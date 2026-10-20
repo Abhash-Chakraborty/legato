@@ -163,6 +163,7 @@
   color: rgb(255 255 255 / 0.92);
   font-size: 13px;
   white-space: nowrap;
+  max-width: 240px;
   transform: translateY(-50%);
   animation: blabel-in 140ms ease-out both;
   pointer-events: none;
@@ -173,7 +174,13 @@
 .labels-right .blabel {
   left: 26px;
 }
+.btext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .bkeys {
+  flex-shrink: 0;
   font-weight: 600;
   color: #fff;
 }

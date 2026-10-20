@@ -576,6 +576,13 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
         .map(str::trim)
         .filter(|t| !t.is_empty())
         .map(str::to_string)
+        // A meeting on the calendar names the note.
+        .or_else(|| {
+            (options.kind == NoteKind::Meeting)
+                .then(|| crate::calendar::meeting_now(app))
+                .flatten()
+                .map(|m| m.title)
+        })
         .unwrap_or_else(|| default_title(options.kind));
     let started_at = chrono::Utc::now().timestamp();
     let note = store::create(

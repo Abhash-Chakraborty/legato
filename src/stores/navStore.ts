@@ -22,6 +22,7 @@ export type SettingsSection =
   | "output"
   | "ai"
   | "calls"
+  | "connections"
   | "bar"
   | "devices"
   | "privacy"

@@ -20,6 +20,12 @@ fn main() {
         std::process::exit(legato_app_lib::engine_supervisor::run_worker());
     }
 
+    // `legato --mcp`: an AI app on this PC asking Legato's data over stdio.
+    // Its own process too, so it never starts or reaches the running app.
+    if legato_app_lib::mcp::is_invocation() {
+        std::process::exit(legato_app_lib::mcp::run());
+    }
+
     let cli_args = CliArgs::parse();
     legato_app_lib::run(cli_args)
 }

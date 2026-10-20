@@ -68,7 +68,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
   - `engine.rs` / `link.rs` / `hub.rs` - Merging, connections and pairing, free of Tauri so the phone side (`phone/`) reuses them
   - `mod.rs` / `clipboard.rs` / `net.rs` - Windows glue: `SyncManager`, the clipboard watcher, this PC's addresses
 - `actions.rs` - What each shortcut does; the dictation pipeline from recording to paste
-- `*_rules.rs` - Pure logic kept free of Tauri so it can be unit tested on any OS: `cleanup_rules`, `style_rules`, `snippet_rules`, `transform_rules`, `learn_rules`, `notes_rules`, `calls_rules`, `ai_rules`, `bubble_rules`
+- `*_rules.rs` - Pure logic kept free of Tauri so it can be unit tested on any OS: `cleanup_rules`, `style_rules`, `snippet_rules`, `transform_rules`, `learn_rules`, `notes_rules`, `calls_rules`, `ai_rules`, `bubble_rules`, `calendar_rules`, `mcp_rules`
 - `transforms.rs` - Transforms on the selection or last dictation, the keyboard picker, Ask, the bar's Keep/Undo
 - `clipboard.rs` / `paste_tx/` - Pasting, per-category paste overrides, remembering the last paste
 - `selection.rs` - Copying the selection from another app; Add selection to Dictionary
@@ -76,6 +76,8 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `scratchpad.rs` - The Scratchpad window, failed pastes, Send to
 - `notes.rs` / `loopback.rs` - Notes: voice memos and meetings (per-app loopback capture)
 - `calls.rs` - Noticing calls and offering notes
+- `calendar.rs` - Calendars from secret iCal addresses (Settings › Connections): meetings for the bubble, note titles and MCP, cached in `calendar.json`
+- `mcp.rs` - `legato --mcp`: a Model Context Protocol server over stdio that lets AI apps read dictations, notes, the Dictionary, the Scratchpad and meetings
 - `context.rs` - Knowing the app in front (name, category, icon) and listing open windows
 - `desktop.rs` - Windows shell integration: app ID, jump list, notifications (Do not disturb aware), Mica
 - `setup.rs` - First-run setup: microphone check, model choice, practice scenes
@@ -148,6 +150,7 @@ Settings are stored using Tauri's store plugin with reactive updates:
 - Speech model, plus an optional model per kind of app in Style
 - Style per kind of app: tone, paste keys, Enter after pasting, trailing space
 - Transforms, Ask and your AI provider; Notes, calls, Scratchpad and learning options
+- Connections: calendars (their addresses in Credential Manager) and whether AI apps may read Legato over MCP
 
 ### Single Instance Architecture
 
@@ -207,16 +210,17 @@ Legato supports command-line parameters for integration with scripts, hotkey too
 
 **Implementation:** `cli.rs` (definitions), `main.rs` (parsing), `lib.rs` (applying), `signal_handle.rs` (shared logic)
 
-| Flag                     | Description                                                |
-| ------------------------ | ---------------------------------------------------------- |
-| `--toggle-transcription` | Toggle recording on/off on a running instance              |
-| `--toggle-post-process`  | Toggle recording with post-processing on/off               |
-| `--cancel`               | Cancel the current operation on a running instance         |
-| `--open-scratchpad`      | Open the Scratchpad (also in the jump list)                |
-| `--new-note`             | Open the Scratchpad on a new note (also in the jump list)  |
-| `--start-hidden`         | Launch without showing the main window (tray icon visible) |
-| `--no-tray`              | Launch without system tray (closing window quits the app)  |
-| `--debug`                | Enable debug mode with verbose (Trace) logging             |
+| Flag                     | Description                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| `--toggle-transcription` | Toggle recording on/off on a running instance                                      |
+| `--toggle-post-process`  | Toggle recording with post-processing on/off                                       |
+| `--cancel`               | Cancel the current operation on a running instance                                 |
+| `--open-scratchpad`      | Open the Scratchpad (also in the jump list)                                        |
+| `--new-note`             | Open the Scratchpad on a new note (also in the jump list)                          |
+| `--mcp`                  | Serve MCP over stdio for an AI app (its own process; needs Settings › Connections) |
+| `--start-hidden`         | Launch without showing the main window (tray icon visible)                         |
+| `--no-tray`              | Launch without system tray (closing window quits the app)                          |
+| `--debug`                | Enable debug mode with verbose (Trace) logging                                     |
 
 **Key design decisions:**
 

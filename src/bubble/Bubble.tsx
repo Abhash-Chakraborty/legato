@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { Menu } from "@tauri-apps/api/menu";
 import { Mic, NotebookPen, Square } from "lucide-react";
-import { commands, events, type SessionInfo } from "@/bindings";
+import { commands, events, type Meeting, type SessionInfo } from "@/bindings";
 import { formatKeyCombination } from "@/lib/utils/keyboard";
 import "./Bubble.css";
 
@@ -26,6 +26,16 @@ const clock = (ms: number) => {
   const m = Math.floor(s / 60);
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 };
+
+/** A meeting starting this soon (seconds) shows in the Notes label. */
+const SOON = 15 * 60;
+
+/** The meeting going on now, or the next one starting soon. */
+const meetingNow = (meetings: Meeting[], now: number) =>
+  meetings
+    .filter((m) => !m.all_day && m.start <= now && now < m.end)
+    .sort((a, b) => b.start - a.start)[0] ??
+  meetings.find((m) => !m.all_day && m.start > now && m.start - now <= SOON);
 
 /** Legato's wave, in white, for the dot. */
 const Wave: React.FC = () => (
@@ -73,6 +83,7 @@ const Bubble: React.FC = () => {
   const [recording, setRecording] = useState(false);
   const [notes, setNotes] = useState<SessionInfo | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
   const leaveTimer = useRef<number | null>(null);
   const press = useRef<{
     x: number;
@@ -97,7 +108,17 @@ const Bubble: React.FC = () => {
       ),
       listen("hide-overlay", () => setRecording(false)),
       events.notesSessionChanged.listen((e) => setNotes(e.payload.session)),
+      events.calendarChanged.listen(() =>
+        commands
+          .calendarMeetings()
+          .then(setMeetings)
+          .catch(() => {}),
+      ),
     ];
+    commands
+      .calendarMeetings()
+      .then(setMeetings)
+      .catch(() => {});
     commands
       .getNotesSession()
       .then(setNotes)
@@ -213,6 +234,18 @@ const Bubble: React.FC = () => {
   };
 
   const notesOn = !!notes && notes.phase === "recording";
+  const now = Date.now() / 1000;
+  const meeting = layout.expanded ? meetingNow(meetings, now) : undefined;
+  const notesLabel = notesOn
+    ? t("bubble.stopNotes", { time: clock(elapsed) })
+    : !meeting
+      ? t("bubble.notes")
+      : meeting.start <= now
+        ? t("bubble.notesFor", { title: meeting.title })
+        : t("bubble.notesSoon", {
+            title: meeting.title,
+            minutes: Math.max(1, Math.round((meeting.start - now) / 60)),
+          });
   const buttons: {
     id: Action;
     dy: number;
@@ -234,9 +267,7 @@ const Bubble: React.FC = () => {
     {
       id: "notes",
       dy: 0,
-      label: notesOn
-        ? t("bubble.stopNotes", { time: clock(elapsed) })
-        : t("bubble.notes"),
+      label: notesLabel,
       on: notesOn,
       icon: <span className={`bnotes-mark ${notesOn ? "on" : ""}`} />,
     },
@@ -280,7 +311,7 @@ const Bubble: React.FC = () => {
               </button>
               {hot === b.id && (
                 <span className="blabel" role="tooltip">
-                  {b.label}
+                  <span className="btext">{b.label}</span>
                   {key && !b.on && (
                     <b className="bkeys">{formatKeyCombination(key)}</b>
                   )}

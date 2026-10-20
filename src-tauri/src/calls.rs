@@ -285,7 +285,11 @@ fn start_notes(app: &AppHandle, call: CallApp) {
         app,
         StartNotes {
             kind: NoteKind::Meeting,
-            title: Some(format!("{} call · {}", call.name(), when())),
+            title: Some(
+                crate::calendar::meeting_now(app)
+                    .map(|m| m.title)
+                    .unwrap_or_else(|| format!("{} call · {}", call.name(), when())),
+            ),
             microphone: None,
             app_pid,
         },

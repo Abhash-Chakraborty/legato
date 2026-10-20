@@ -155,6 +155,14 @@ pub struct BubbleSpot {
     pub y: f64,
 }
 
+/// A calendar Legato reads meetings from. Its secret address is in
+/// Credential Manager, not here.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+pub struct CalendarFeed {
+    pub id: String,
+    pub name: String,
+}
+
 /// Which recording overlay to display. `Minimal` and `Live` share one base
 /// (the pill); `Live` grows into the panel that shows live transcription text.
 /// `None` hides the overlay entirely. Decoupled from whether the model runs in
@@ -849,6 +857,12 @@ pub struct AppSettings {
     /// Where the bubble was left; None puts it against the right side.
     #[serde(default)]
     pub bubble_spot: Option<BubbleSpot>,
+    /// Calendars to read meetings from (Settings › Connections).
+    #[serde(default)]
+    pub calendars: Vec<CalendarFeed>,
+    /// AI apps on this PC may read Legato's data through `legato --mcp`.
+    #[serde(default)]
+    pub mcp_enabled: bool,
     /// The Scratchpad window floats above other apps.
     #[serde(default = "default_true")]
     pub scratchpad_keep_on_top: bool,
@@ -1467,6 +1481,8 @@ pub fn get_default_settings() -> AppSettings {
         scratchpad_open: ScratchpadOpen::default(),
         bubble_enabled: true,
         bubble_spot: None,
+        calendars: Vec::new(),
+        mcp_enabled: false,
         scratchpad_keep_on_top: true,
         scratchpad_failed_pastes: true,
         scratchpad_last_note: None,
