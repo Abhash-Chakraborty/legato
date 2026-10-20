@@ -39,7 +39,7 @@ val Context.legato: Legato get() = (applicationContext as LegatoApplication).leg
  */
 class Legato(private val context: Context) : CoreListener {
     val lines = MutableStateFlow<List<String>>(emptyList())
-    val state = MutableStateFlow(PhoneState(paired = false, pcName = null, online = false, lastSync = null))
+    val state = MutableStateFlow(PhoneState(paired = false, pcName = null, online = false, via = null, lastSync = null))
     val model = MutableStateFlow<ModelStatus>(ModelStatus.Missing)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     /** Bumped after every change, local or synced, so lists read again. */
@@ -73,6 +73,9 @@ class Legato(private val context: Context) : CoreListener {
     fun notice(text: String) {
         notices.tryEmit(text)
     }
+
+    override fun openBluetooth(address: String): UShort =
+        BluetoothLink.open(context, address).toUShort()
 
     override fun onUnpaired(why: String) {
         onLine("Unpaired: $why")
@@ -170,6 +173,14 @@ class Legato(private val context: Context) : CoreListener {
         const val MODEL_URL = "https://huggingface.co/handy-computer/moonshine-base-gguf/resolve/main/moonshine-base-Q8_0.gguf"
     }
 }
+
+/** How the phone reaches the PC right now, in words. */
+val PhoneState.connectedText: String
+    get() = when (via) {
+        "bluetooth" -> "Connected over Bluetooth"
+        "netbird" -> "Connected through Netbird"
+        else -> "Connected on Wi-Fi"
+    }
 
 sealed class ModelStatus {
     data object Missing : ModelStatus()

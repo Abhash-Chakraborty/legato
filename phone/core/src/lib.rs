@@ -6,7 +6,6 @@
 pub mod managers;
 pub mod sync;
 
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -21,7 +20,7 @@ use serde_json::Value;
 use sync::engine::{now_s, Engine, Extra};
 use sync::identity::Identity;
 use sync::ledger::{self, Item, Peer};
-use sync::link::{self, Host, Sessions};
+use sync::link::{self, Dialer, Host, Sessions, Via};
 use sync::protocol::{Change, Clip, Hello, Refusal, Welcome, KINDS, PROTOCOL};
 use tokio::sync::watch;
 
@@ -44,6 +43,10 @@ pub struct Phone {
     pub clips: Mutex<Vec<Clip>>,
     /// Connected to the PC right now.
     online: AtomicBool,
+    /// How: "lan", "netbird" or "bluetooth".
+    via: Mutex<Option<&'static str>>,
+    /// The app's way to open Bluetooth to the PC, when it has one.
+    pub bluetooth: Mutex<Option<Dialer>>,
     say: Box<dyn Fn(String) + Send + Sync>,
 }
 
@@ -124,12 +127,19 @@ impl Phone {
             pc_kinds: Mutex::new(Vec::new()),
             clips: Mutex::new(Vec::new()),
             online: AtomicBool::new(false),
+            via: Mutex::new(None),
+            bluetooth: Mutex::new(None),
             say,
         })
     }
 
     pub fn is_online(&self) -> bool {
         self.online.load(Ordering::Relaxed)
+    }
+
+    /// How the phone is connected: "lan", "netbird" or "bluetooth".
+    pub fn via(&self) -> Option<&'static str> {
+        *self.via.lock().unwrap()
     }
 
     /// Keeps a connection to the paired PC: connects, and when the link drops
@@ -146,11 +156,13 @@ impl Phone {
                 return LinkEnd::Stopped;
             };
             let host: Arc<dyn Host> = self.clone();
+            let dial = self.bluetooth.lock().unwrap().clone();
             let result = link::connect(
                 &pc.addrs,
                 &pc.fingerprint,
                 &self.identity,
                 secret.take(),
+                dial,
                 host,
                 sessions.clone(),
                 stop.clone(),
@@ -314,6 +326,7 @@ impl Host for Phone {
             app_version: "stand-in".into(),
             kinds: KINDS.iter().map(|k| k.to_string()).collect(),
             clipboard: true,
+            addrs: Vec::new(),
         }
     }
 
@@ -323,6 +336,14 @@ impl Host for Phone {
 
     fn welcomed(&self, welcome: &Welcome, fingerprint: &str) {
         *self.pc_kinds.lock().unwrap() = welcome.kinds.clone();
+        // Keep where the PC is now (a new Wi-Fi address, Bluetooth turned on
+        // since pairing) for the next connection.
+        if let Some(mut pc) = self.paired_pc() {
+            if !welcome.addrs.is_empty() && pc.addrs != welcome.addrs {
+                pc.addrs = welcome.addrs.clone();
+                let _ = self.save_pc(&pc);
+            }
+        }
         if fingerprint.is_empty() {
             self.say(format!(
                 "{} now syncs: {}",
@@ -418,10 +439,22 @@ impl Host for Phone {
         self.clips.lock().unwrap().push(clip);
     }
 
-    fn online(&self, _peer: &str, addr: Option<SocketAddr>) {
-        self.online.store(addr.is_some(), Ordering::Relaxed);
-        if addr.is_none() {
-            self.say("Disconnected");
+    fn online(&self, _peer: &str, via: Option<Via>) {
+        self.online.store(via.is_some(), Ordering::Relaxed);
+        let kind = via.map(|via| match via {
+            Via::Bluetooth => "bluetooth",
+            Via::Net(addr) => match addr.ip() {
+                std::net::IpAddr::V4(ip) => sync::hub::address_kind(ip).unwrap_or("lan"),
+                std::net::IpAddr::V6(_) => "lan",
+            },
+        });
+        *self.via.lock().unwrap() = kind;
+        // The reconnect loop says when the link drops.
+        match kind {
+            Some("bluetooth") => self.say("Connected over Bluetooth"),
+            Some("netbird") => self.say("Connected through Netbird"),
+            Some(_) => self.say("Connected on Wi-Fi"),
+            None => {}
         }
     }
 

@@ -3,7 +3,6 @@
 //! app (sync/mod.rs) supplies the settings and hears what happened through
 //! `Events`.
 
-use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -12,7 +11,7 @@ use anyhow::Result;
 use super::engine::{now_s, Accepted, Engine};
 use super::identity::{same_secret, secret};
 use super::ledger::{self, Peer};
-use super::link::Host;
+use super::link::{Host, Via};
 use super::protocol::{Change, Clip, Hello, Refusal, Welcome, PROTOCOL};
 
 /// How long a pairing code works, and how many wrong tries cancel it.
@@ -44,7 +43,7 @@ pub struct Config {
 /// What the app hears about. All optional.
 pub trait Events: Send + Sync {
     fn paired(&self, _peer: &Peer) {}
-    fn online(&self, _device_id: &str, _addr: Option<SocketAddr>) {}
+    fn online(&self, _device_id: &str, _via: Option<Via>) {}
     fn synced(&self, _device_id: &str, _accepted: &Accepted) {}
     fn clip(&self, _peer: &Peer, _clip: Clip) {}
     fn forgotten(&self, _device_id: &str) {}
@@ -61,6 +60,8 @@ struct Pairing {
 pub struct Hub {
     pub engine: Engine,
     config: Mutex<Config>,
+    /// Where phones can reach this PC now, for `welcome`.
+    addrs: Mutex<Vec<String>>,
     pairing: Mutex<Option<Pairing>>,
     events: Box<dyn Events>,
 }
@@ -70,6 +71,7 @@ impl Hub {
         Self {
             engine,
             config: Mutex::new(config),
+            addrs: Mutex::new(Vec::new()),
             pairing: Mutex::new(None),
             events,
         }
@@ -84,6 +86,12 @@ impl Hub {
 
     pub fn set_config(&self, config: Config) {
         *self.config.lock().unwrap_or_else(|e| e.into_inner()) = config;
+    }
+
+    /// Where phones can reach this PC now (network addresses and
+    /// Bluetooth), sent in every `welcome`.
+    pub fn set_addrs(&self, addrs: Vec<String>) {
+        *self.addrs.lock().unwrap_or_else(|e| e.into_inner()) = addrs;
     }
 
     fn pairing(&self) -> std::sync::MutexGuard<'_, Option<Pairing>> {
@@ -152,6 +160,7 @@ impl Host for Hub {
             app_version: config.app_version,
             kinds: config.kinds,
             clipboard: config.clipboard,
+            addrs: self.addrs.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         }
     }
 
@@ -235,8 +244,8 @@ impl Host for Hub {
         }
     }
 
-    fn online(&self, peer: &str, addr: Option<SocketAddr>) {
-        self.events.online(peer, addr);
+    fn online(&self, peer: &str, via: Option<Via>) {
+        self.events.online(peer, via);
     }
 
     fn forgotten(&self, peer: &str) {

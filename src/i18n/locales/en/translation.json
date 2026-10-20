@@ -974,7 +974,8 @@
       "whatSyncs": "Both devices keep a full copy and update each other directly.",
       "via": {
         "lan": "Home Wi-Fi",
-        "netbird": "Netbird"
+        "netbird": "Netbird",
+        "bluetooth": "Bluetooth"
       },
       "undo": "Undo",
       "pair": {
@@ -997,8 +998,9 @@
         "again": "New code",
         "copyLink": "Copy link",
         "copied": "Copied the pairing link",
-        "noNetwork": "No network found. Connect this PC to Wi-Fi or Netbird first.",
-        "private": "The phone uses whichever it can reach. Everything is encrypted end to end, and nothing goes through a server.",
+        "noNetwork": "No network or Bluetooth found. Connect this PC to Wi-Fi or turn on Bluetooth first.",
+        "bluetoothOff": "Turn on Bluetooth on this PC to sync when your phone isn't on the same Wi-Fi.",
+        "private": "The phone uses Wi-Fi when it's on the same network and Bluetooth when it's nearby. Everything is encrypted end to end, and nothing goes through a server.",
         "waiting": "Waiting for your phone…"
       },
       "pairCard": {
@@ -1017,14 +1019,15 @@
         "about": "Legato for Android {{version}} · paired {{date}}",
         "online": {
           "lan": "Connected on home Wi-Fi",
-          "netbird": "Connected through Netbird"
+          "netbird": "Connected through Netbird",
+          "bluetooth": "Connected over Bluetooth"
         },
         "synced": "synced {{when}}",
         "offline": "Not connected",
         "syncNow": "Sync now",
         "rename": "Rename…",
         "unpair": "Unpair…",
-        "unreachable": "Can't reach {{name}} on home Wi-Fi or Netbird. Changes wait here until it's back.",
+        "unreachable": "Can't reach {{name}} on Wi-Fi or Bluetooth. Changes wait here until it's back.",
         "lastSynced": "last synced {{when}}"
       },
       "unpair": {

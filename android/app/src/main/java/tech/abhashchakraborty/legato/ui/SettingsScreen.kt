@@ -57,7 +57,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import tech.abhashchakraborty.legato.BluetoothLink
 import tech.abhashchakraborty.legato.Legato
+import tech.abhashchakraborty.legato.connectedText
 import tech.abhashchakraborty.legato.ModelStatus
 import tech.abhashchakraborty.legato.bubble.BubbleAccessibilityService
 import tech.abhashchakraborty.legato.core.coreVersion
@@ -89,7 +91,7 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
                         headlineContent = { Text(state.pcName ?: "PC") },
                         supportingContent = {
                             Text(
-                                if (state.online) "Connected" + (state.lastSync?.let { " · synced ${ago(it)}" } ?: "")
+                                if (state.online) state.connectedText + (state.lastSync?.let { " · synced ${ago(it)}" } ?: "")
                                 else "Not reachable · changes wait on this phone" + (state.lastSync?.let { " · last synced ${ago(it)}" } ?: ""),
                             )
                         },
@@ -105,6 +107,7 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
                         if (!state.online) OutlinedButton(onClick = { legato.run { connect() } }) { Text("Reconnect") }
                         TextButton(onClick = { confirmUnpair = true }) { Text("Unpair") }
                     }
+                    BluetoothRow(onAllowed = { legato.run { connect() } })
                 } else {
                     ListItem(
                         headlineContent = { Text("Pair with your PC") },
@@ -160,6 +163,38 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
             dismissButton = { TextButton(onClick = { confirmUnpair = false }) { Text("Cancel") } },
         )
     }
+}
+
+/** Whether the phone may use Bluetooth, for when it isn't on the PC's network. */
+@Composable
+private fun BluetoothRow(onAllowed: () -> Unit) {
+    val context = LocalContext.current
+    var allowed by remember { mutableStateOf(!BluetoothLink.needsPermission(context)) }
+    var on by remember { mutableStateOf(BluetoothLink.isOn(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        allowed = !BluetoothLink.needsPermission(context)
+        on = BluetoothLink.isOn(context)
+    }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        allowed = it
+        if (it) onAllowed()
+    }
+    ListItem(
+        headlineContent = { Text("Bluetooth") },
+        supportingContent = {
+            Text(
+                when {
+                    !allowed -> "Allow it to sync with your PC when you're not on the same Wi-Fi."
+                    !on -> "Turn on Bluetooth to sync with your PC when you're not on the same Wi-Fi."
+                    else -> "Syncs over Bluetooth when your PC is nearby and not on the same Wi-Fi."
+                },
+            )
+        },
+        trailingContent = {
+            if (!allowed) FilledTonalButton(onClick = { ask.launch(Manifest.permission.BLUETOOTH_CONNECT) }) { Text("Allow") }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
 }
 
 /** The speech model: download it, watch it come in, see that it's loaded. */

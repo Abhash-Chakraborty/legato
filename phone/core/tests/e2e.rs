@@ -10,7 +10,7 @@ use legato_phone::sync::engine::{Accepted, Engine};
 use legato_phone::sync::hub::{Config, Events, Hub};
 use legato_phone::sync::identity::{uuid, Identity};
 use legato_phone::sync::ledger::{self, Peer};
-use legato_phone::sync::link::{self, Command, Host, Sessions};
+use legato_phone::sync::link::{self, Command, Dialer, Host, Sessions, Via};
 use legato_phone::sync::protocol::{Clip, ClipKind, Refusal};
 use legato_phone::{PairedPc, Phone};
 use rusqlite::Connection;
@@ -45,6 +45,15 @@ impl Events for Recorder {
             peer.name,
             clip.text.unwrap_or_default()
         ));
+    }
+    fn online(&self, _device_id: &str, via: Option<Via>) {
+        if via == Some(Via::Bluetooth) {
+            self.0
+                 .0
+                .lock()
+                .unwrap()
+                .push("online over Bluetooth".into());
+        }
     }
     fn pairing_failed(&self, reason: Refusal, closed: bool) {
         self.0
@@ -168,6 +177,7 @@ async fn a_phone_pairs_syncs_both_ways_merges_and_shares_the_clipboard() {
         &pc.identity.fingerprint(),
         &stranger.identity,
         None,
+        None,
         stranger.clone(),
         Sessions::default(),
         stop.clone(),
@@ -182,6 +192,7 @@ async fn a_phone_pairs_syncs_both_ways_merges_and_shares_the_clipboard() {
         &pc.identity.fingerprint(),
         &stranger.identity,
         Some("wrong".into()),
+        None,
         stranger.clone(),
         Sessions::default(),
         stop.clone(),
@@ -197,6 +208,7 @@ async fn a_phone_pairs_syncs_both_ways_merges_and_shares_the_clipboard() {
         &impostor.fingerprint(),
         &stranger.identity,
         Some(secret.clone()),
+        None,
         stranger.clone(),
         Sessions::default(),
         stop.clone(),
@@ -233,6 +245,7 @@ async fn a_phone_pairs_syncs_both_ways_merges_and_shares_the_clipboard() {
                 &fp,
                 &pixel.identity,
                 Some(secret),
+                None,
                 host,
                 sessions,
                 stop,
@@ -375,4 +388,100 @@ async fn a_phone_pairs_syncs_both_ways_merges_and_shares_the_clipboard() {
     assert!(ended.is_ok());
     assert!(pixel.paired_pc().is_none());
     let _ = stop_phone.send(true);
+}
+
+/// With no network address that answers, the phone dials Bluetooth through
+/// the app. Here a localhost socket stands in for the radio, and the PC
+/// takes what comes in on it the way it takes an RFCOMM connection.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
+    let (pc, _stop_pc) = start_pc().await;
+    let radio = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let radio_port = radio.local_addr().unwrap().port();
+    {
+        let (identity, host, sessions) = (
+            pc.identity.clone(),
+            pc.hub.clone() as Arc<dyn Host>,
+            pc.sessions.clone(),
+        );
+        tokio::spawn(async move {
+            let (_keep, stop) = watch::channel(false);
+            while let Ok((stream, _)) = radio.accept().await {
+                let (identity, host, sessions, stop) = (
+                    identity.clone(),
+                    host.clone(),
+                    sessions.clone(),
+                    stop.clone(),
+                );
+                tokio::spawn(async move {
+                    let _ =
+                        link::serve_stream(stream, Via::Bluetooth, &identity, host, sessions, stop)
+                            .await;
+                });
+            }
+        });
+    }
+    let dialled = Arc::new(Mutex::new(Vec::<String>::new()));
+    let dial: Dialer = {
+        let dialled = dialled.clone();
+        Arc::new(move |mac: &str| {
+            dialled.lock().unwrap().push(mac.to_string());
+            Some(radio_port)
+        })
+    };
+
+    let secret = pc.hub.open_pairing();
+    // The PC moved to another network since: its welcome says so.
+    pc.hub
+        .set_addrs(vec!["10.0.0.9:47613".into(), "bt:AA:BB:CC:DD:EE:FF".into()]);
+    let pixel = phone("Pixel 8");
+    pixel.add_word("Bluetooth").unwrap();
+    pixel.refresh().unwrap();
+    let addrs = vec![
+        "127.0.0.1:1".to_string(),
+        "bt:AA:BB:CC:DD:EE:FF".to_string(),
+    ];
+    pixel
+        .save_pc(&PairedPc {
+            device_id: pc.identity.device_id.clone(),
+            name: "Desk PC".into(),
+            fingerprint: pc.identity.fingerprint(),
+            addrs: addrs.clone(),
+        })
+        .unwrap();
+    let (_stop_phone, stop) = watch::channel(false);
+    {
+        let (pixel, fp) = (pixel.clone(), pc.identity.fingerprint());
+        tokio::spawn(async move {
+            let host: Arc<dyn Host> = pixel.clone();
+            link::connect(
+                &addrs,
+                &fp,
+                &pixel.identity,
+                Some(secret),
+                Some(dial),
+                host,
+                Sessions::default(),
+                stop,
+            )
+            .await
+        });
+    }
+    until("the sync over Bluetooth", || {
+        words(&Connection::open(&pc.db).unwrap()) == ["Bluetooth", "Datev"]
+    })
+    .await;
+    assert_eq!(*dialled.lock().unwrap(), ["AA:BB:CC:DD:EE:FF"]);
+    assert!(pc
+        .heard
+        .0
+        .lock()
+        .unwrap()
+        .contains(&"online over Bluetooth".to_string()));
+    assert!(pixel.is_online());
+    assert_eq!(pixel.via(), Some("bluetooth"));
+    assert_eq!(
+        pixel.paired_pc().unwrap().addrs,
+        ["10.0.0.9:47613", "bt:AA:BB:CC:DD:EE:FF"]
+    );
 }

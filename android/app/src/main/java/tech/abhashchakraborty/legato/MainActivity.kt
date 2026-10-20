@@ -177,7 +177,7 @@ fun DebugScreen(recorder: Recorder, linkFromIntent: String?) {
                             Column {
                                 Text(state.pcName ?: "PC", style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    (if (state.online) "Connected" else "Not connected") +
+                                    (if (state.online) state.connectedText else "Not connected") +
                                         (state.lastSync?.let { " · last synced ${timeOf(it)}" } ?: ""),
                                     style = MaterialTheme.typography.bodySmall,
                                 )

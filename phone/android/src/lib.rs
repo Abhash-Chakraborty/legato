@@ -47,6 +47,8 @@ pub struct PhoneState {
     pub paired: bool,
     pub pc_name: Option<String>,
     pub online: bool,
+    /// How it's connected: "lan", "netbird" or "bluetooth".
+    pub via: Option<String>,
     /// Seconds since 1970 of the last sync, if any.
     pub last_sync: Option<i64>,
 }
@@ -78,6 +80,10 @@ pub trait CoreListener: Send + Sync {
     fn on_line(&self, line: String);
     /// The pairing was refused or ended by the PC; the phone is unpaired now.
     fn on_unpaired(&self, why: String);
+    /// Connects to the PC over Bluetooth ("AA:BB:CC:DD:EE:FF") when no
+    /// network address answers, and returns a port on 127.0.0.1 that carries
+    /// the link, or 0 when it can't. It may block while it connects.
+    fn open_bluetooth(&self, address: String) -> u16;
 }
 
 /// The phone's core. One per app process.
@@ -107,6 +113,12 @@ impl Core {
             Box::new(move |line: String| listener.on_line(line))
         };
         let phone = Arc::new(Phone::open(Path::new(&dir), &name, say)?);
+        *phone.bluetooth.lock().unwrap() = Some({
+            let listener = listener.clone();
+            Arc::new(move |address: &str| {
+                Some(listener.open_bluetooth(address.to_string())).filter(|port| *port != 0)
+            })
+        });
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -136,6 +148,7 @@ impl Core {
             paired: pc.is_some(),
             pc_name: pc.map(|p| p.name),
             online: self.phone.is_online(),
+            via: self.phone.via().map(str::to_string),
             last_sync,
         }
     }

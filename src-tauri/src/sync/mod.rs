@@ -1,9 +1,10 @@
 //! Phone sync on the PC: pairing a phone with a QR code, keeping both copies
 //! of the Dictionary, snippets, history, notes, Scratchpad, transforms and
-//! Style up to date over the home network or Netbird, and the shared
+//! Style up to date over the home network, Netbird or Bluetooth, and the shared
 //! clipboard. docs/phone-sync.md has the protocol; the modules below it are
 //! plain code the stand-in phone (tools/stand-in-phone) runs too.
 
+mod bluetooth;
 pub mod clipboard;
 pub mod engine;
 pub mod hub;
@@ -15,7 +16,6 @@ mod net;
 pub mod protocol;
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -36,7 +36,7 @@ use engine::{now_s, Accepted, Engine, Extra};
 use hub::{Config, Hub};
 use identity::Identity;
 use ledger::{ClipRow, Item, Merge, Peer};
-use link::{Command, Host, Sessions};
+use link::{Command, Host, Sessions, Via};
 use protocol::{Clip, ClipKind, PairLink, Refusal};
 
 /// Credential Manager name of this PC's sync identity.
@@ -61,9 +61,9 @@ pub struct SyncChanged;
 /// An address the phone can reach this PC on.
 #[derive(Clone, Debug, Serialize, Type)]
 pub struct SyncAddress {
-    /// "lan" or "netbird".
+    /// "lan", "netbird" or "bluetooth".
     pub kind: String,
-    /// "192.168.1.20:47613".
+    /// "192.168.1.20:47613", or "bt:AA:BB:CC:DD:EE:FF" for Bluetooth.
     pub addr: String,
 }
 
@@ -71,7 +71,7 @@ pub struct SyncAddress {
 pub struct PhoneState {
     pub peer: Peer,
     pub online: bool,
-    /// How it's connected: "lan" or "netbird".
+    /// How it's connected: "lan", "netbird" or "bluetooth".
     pub via: Option<String>,
 }
 
@@ -120,7 +120,10 @@ pub struct SyncManager {
     sessions: Sessions,
     listening: Mutex<Option<Listening>>,
     listen_error: Mutex<Option<String>>,
-    online: Mutex<HashMap<String, SocketAddr>>,
+    /// Listening on Bluetooth too, while listening at all and the PC has a
+    /// radio that's on.
+    bluetooth: Mutex<Option<Arc<bluetooth::Listener>>>,
+    online: Mutex<HashMap<String, Via>>,
     wake: Arc<Notify>,
     clips_dir: PathBuf,
 }
@@ -181,6 +184,7 @@ pub fn init(app: &AppHandle) {
             sessions: Sessions::default(),
             listening: Mutex::new(None),
             listen_error: Mutex::new(None),
+            bluetooth: Mutex::new(None),
             online: Mutex::new(HashMap::new()),
             wake: Arc::new(Notify::new()),
             clips_dir: data.join("clips"),
@@ -253,6 +257,8 @@ impl SyncManager {
             }
             *this.listen_error.lock().unwrap_or_else(|e| e.into_inner()) = None;
             log::info!("Phone sync listening on port {port}");
+            this.listen_bluetooth();
+            this.publish_addrs();
             this.changed();
             let host: Arc<dyn Host> = this.hub.clone();
             if let Err(e) = link::serve(
@@ -281,8 +287,81 @@ impl SyncManager {
             .take()
         {
             let _ = listening.stop.send(true);
+            if let Some(radio) = self
+                .bluetooth
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take()
+            {
+                radio.close();
+            }
             self.sessions.close_all();
+            self.hub.set_addrs(Vec::new());
         }
+    }
+
+    /// Starts listening on Bluetooth as well, when listening and not on it
+    /// yet. Without a radio, or with it off, it tries again later.
+    fn listen_bluetooth(self: &Arc<Self>) {
+        let stop = {
+            let listening = self.listening.lock().unwrap_or_else(|e| e.into_inner());
+            match listening.as_ref() {
+                Some(l) => l.stop.subscribe(),
+                None => return,
+            }
+        };
+        let mut slot = self.bluetooth.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.is_some() {
+            return;
+        }
+        let radio = match bluetooth::Listener::open() {
+            Ok(radio) => Arc::new(radio),
+            Err(e) => {
+                log::debug!("Phone sync isn't on Bluetooth: {e:#}");
+                return;
+            }
+        };
+        log::info!("Phone sync listening on Bluetooth");
+        *slot = Some(radio.clone());
+        drop(slot);
+        self.publish_addrs();
+        let this = self.clone();
+        std::thread::spawn(move || loop {
+            let conn = match radio.accept() {
+                Ok(conn) => conn,
+                Err(e) => {
+                    // Closed on purpose, or the radio went off: drop it and
+                    // let the refresh loop try again.
+                    if !radio.is_closed() {
+                        log::info!("Phone sync stopped on Bluetooth: {e:#}");
+                        radio.close();
+                    }
+                    let mut slot = this.bluetooth.lock().unwrap_or_else(|e| e.into_inner());
+                    if slot.as_ref().is_some_and(|r| Arc::ptr_eq(r, &radio)) {
+                        *slot = None;
+                    }
+                    drop(slot);
+                    this.publish_addrs();
+                    this.changed();
+                    return;
+                }
+            };
+            let stream = bluetooth::bridge(conn);
+            let (identity, host, sessions, stop): (_, Arc<dyn Host>, _, _) = (
+                this.identity.clone(),
+                this.hub.clone(),
+                this.sessions.clone(),
+                stop.clone(),
+            );
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) =
+                    link::serve_stream(stream, Via::Bluetooth, &identity, host, sessions, stop)
+                        .await
+                {
+                    log::info!("Phone connection over Bluetooth ended: {e:#}");
+                }
+            });
+        });
     }
 
     fn port(&self) -> Option<u16> {
@@ -293,15 +372,33 @@ impl SyncManager {
             .map(|l| l.port)
     }
 
+    /// Tells phones, in each `welcome`, where this PC is now.
+    fn publish_addrs(&self) {
+        self.hub
+            .set_addrs(self.addresses().into_iter().map(|a| a.addr).collect());
+    }
+
     fn addresses(&self) -> Vec<SyncAddress> {
         let port = self.port().unwrap_or(protocol::PORT);
-        net::addresses()
+        let mut found: Vec<SyncAddress> = net::addresses()
             .into_iter()
             .map(|(kind, ip)| SyncAddress {
                 kind: kind.into(),
                 addr: format!("{ip}:{port}"),
             })
-            .collect()
+            .collect();
+        if let Some(radio) = self
+            .bluetooth
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            found.push(SyncAddress {
+                kind: "bluetooth".into(),
+                addr: format!("{}{}", protocol::BT_PREFIX, radio.address),
+            });
+        }
+        found
     }
 
     fn any_online(&self) -> bool {
@@ -319,6 +416,24 @@ impl SyncManager {
                 _ = self.wake.notified() => {
                     // Let a burst of changes settle.
                     tokio::time::sleep(Duration::from_millis(700)).await;
+                }
+            }
+            // Bluetooth turned on since, or the radio came back.
+            let off_bluetooth = self.port().is_some()
+                && self
+                    .bluetooth
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .is_none();
+            if off_bluetooth {
+                self.listen_bluetooth();
+                if self
+                    .bluetooth
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .is_some()
+                {
+                    self.changed();
                 }
             }
             if !self.any_online() {
@@ -351,14 +466,17 @@ impl SyncManager {
             .peers()?
             .into_iter()
             .map(|peer| {
-                let addr = online.get(&peer.device_id);
+                let via = online.get(&peer.device_id);
                 PhoneState {
-                    online: addr.is_some(),
-                    via: addr.map(|a| match a.ip() {
-                        std::net::IpAddr::V4(ip) => {
-                            hub::address_kind(ip).unwrap_or("lan").to_string()
-                        }
-                        std::net::IpAddr::V6(_) => "lan".into(),
+                    online: via.is_some(),
+                    via: via.map(|via| match via {
+                        Via::Bluetooth => "bluetooth".into(),
+                        Via::Net(addr) => match addr.ip() {
+                            std::net::IpAddr::V4(ip) => {
+                                hub::address_kind(ip).unwrap_or("lan").to_string()
+                            }
+                            std::net::IpAddr::V6(_) => "lan".into(),
+                        },
                     }),
                     peer,
                 }
@@ -730,11 +848,11 @@ impl hub::Events for AppEvents {
         crate::tray::update_tray_menu(&self.0);
     }
 
-    fn online(&self, device_id: &str, addr: Option<SocketAddr>) {
+    fn online(&self, device_id: &str, via: Option<Via>) {
         if let Some(sync) = self.sync() {
             let mut online = sync.online.lock().unwrap_or_else(|e| e.into_inner());
-            match addr {
-                Some(addr) => online.insert(device_id.to_string(), addr),
+            match via {
+                Some(via) => online.insert(device_id.to_string(), via),
                 None => online.remove(device_id),
             };
         }

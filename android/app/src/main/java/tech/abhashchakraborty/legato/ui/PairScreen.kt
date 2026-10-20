@@ -2,6 +2,7 @@ package tech.abhashchakraborty.legato.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -71,6 +72,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
+import tech.abhashchakraborty.legato.BluetoothLink
 
 private const val LINK_PREFIX = "legato://pair?"
 
@@ -93,8 +95,7 @@ fun PairScreen(link: String?, onDone: () -> Unit) {
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { cameraOn = it }
 
-    fun pairWith(code: String) {
-        if (busy) return
+    fun pairNow(code: String) {
         busy = true
         error = null
         scope.launch {
@@ -103,6 +104,23 @@ fun PairScreen(link: String?, onDone: () -> Unit) {
             legato.bump()
             busy = false
             r.onSuccess { onDone() }.onFailure { error = it.message ?: "That link didn't work; copy it again." }
+        }
+    }
+
+    // A PC with Bluetooth on is reachable away from its Wi-Fi too, once
+    // Android lets Legato use Bluetooth; ask first, and pair either way.
+    var waiting by remember { mutableStateOf<String?>(null) }
+    val bluetooth = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        waiting?.let { code -> waiting = null; pairNow(code) }
+    }
+
+    fun pairWith(code: String) {
+        if (busy || waiting != null) return
+        if (BluetoothLink.needsPermission(context) && Uri.decode(code).contains("bt:")) {
+            waiting = code
+            bluetooth.launch(Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            pairNow(code)
         }
     }
 
@@ -123,6 +141,11 @@ fun PairScreen(link: String?, onDone: () -> Unit) {
             Text(
                 "On your PC, open Legato › Settings › Devices › Pair a phone, then scan the code.",
                 style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                "Your phone syncs over Wi-Fi when it's on the PC's network and over Bluetooth when it's nearby.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Box(
                 Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh),

@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Bluetooth,
+  BluetoothOff,
   Check,
   Copy,
   Network,
@@ -217,7 +219,12 @@ const PairDialog: React.FC<{ open: boolean; onClose: () => void }> = ({
           </div>
           <div className="grid gap-1.5 rounded-[var(--r-md)] bg-surface-2 p-3 text-[13px]">
             {(info?.addresses ?? []).map((a) => {
-              const Icon = a.kind === "netbird" ? Network : Wifi;
+              const Icon =
+                a.kind === "bluetooth"
+                  ? Bluetooth
+                  : a.kind === "netbird"
+                    ? Network
+                    : Wifi;
               return (
                 <div key={a.addr} className="flex items-center gap-2">
                   <Icon className="h-3.5 w-3.5 text-text-3" aria-hidden />
@@ -225,15 +232,26 @@ const PairDialog: React.FC<{ open: boolean; onClose: () => void }> = ({
                     {t(`settings.devices.via.${a.kind}`)}
                   </span>
                   <span className="font-mono text-xs text-text-2">
-                    {a.addr}
+                    {a.addr.replace(/^bt:/, "")}
                   </span>
                 </div>
               );
             })}
-            {info && info.addresses.length === 0 && (
+            {info && info.addresses.length === 0 ? (
               <span className="text-danger">
                 {t("settings.devices.pair.noNetwork")}
               </span>
+            ) : (
+              info &&
+              !info.addresses.some((a) => a.kind === "bluetooth") && (
+                <div className="flex items-center gap-2 text-text-2">
+                  <BluetoothOff
+                    className="h-3.5 w-3.5 text-text-3"
+                    aria-hidden
+                  />
+                  {t("settings.devices.pair.bluetoothOff")}
+                </div>
+              )
             )}
             <p className="text-text-3">{t("settings.devices.pair.private")}</p>
           </div>

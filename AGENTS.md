@@ -67,6 +67,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
   - `ledger.rs` / `kinds.rs` - The change ledger, peers, merges and clips in history.db; export and apply per kind
   - `engine.rs` / `link.rs` / `hub.rs` - Merging, connections and pairing, free of Tauri so the phone side (`phone/`) reuses them
   - `mod.rs` / `clipboard.rs` / `net.rs` - Windows glue: `SyncManager`, the clipboard watcher, this PC's addresses
+  - `bluetooth.rs` - The RFCOMM listener and SDP record for a phone that shares no network with the PC
 - `actions.rs` - What each shortcut does; the dictation pipeline from recording to paste
 - `*_rules.rs` - Pure logic kept free of Tauri so it can be unit tested on any OS: `cleanup_rules`, `style_rules`, `snippet_rules`, `transform_rules`, `learn_rules`, `notes_rules`, `calls_rules`, `ai_rules`, `bubble_rules`, `calendar_rules`, `mcp_rules`
 - `transforms.rs` - Transforms on the selection or last dictation, the keyboard picker, Ask, the bar's Keep/Undo
@@ -160,7 +161,7 @@ The app enforces single instance behavior — launching when already running bri
 
 ## Phone Sync
 
-Settings › Devices pairs Legato for Android by QR code and syncs over Wi-Fi or Netbird with mutual TLS, with no server in between. The wire protocol, merge rules and what syncs are written down in [docs/phone-sync.md](docs/phone-sync.md); keep it current when the protocol changes.
+Settings › Devices pairs Legato for Android by QR code and syncs over Wi-Fi (or Netbird) when they share a network and over Bluetooth when they don't, with mutual TLS and no server in between. The wire protocol, merge rules and what syncs are written down in [docs/phone-sync.md](docs/phone-sync.md); keep it current when the protocol changes.
 
 The phone side lives in `phone/`, a Cargo workspace outside the app's build:
 

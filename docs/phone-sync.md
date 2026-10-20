@@ -1,7 +1,8 @@
 # Phone sync protocol
 
 How Legato on Windows and Legato for Android keep each other up to date. There's no server
-in between: the phone connects straight to the PC over home Wi-Fi or Netbird, both ends
+in between: the phone connects straight to the PC over Wi-Fi when they're on the same
+network (or Netbird, for anyone who runs it) and over Bluetooth when they aren't. Both ends
 check each other's certificate, and each keeps its own full copy.
 
 This page is the contract the Android app implements. The PC side lives in
@@ -26,17 +27,19 @@ On the PC, Settings › Devices › Pair a phone shows a QR code holding a pairi
 
 ```
 legato://pair?v=1&id=<pc device id>&name=<pc name>&fp=<pc fingerprint>
-             &addr=192.168.1.20:47613,100.97.188.40:47613&secret=<secret>
+             &addr=192.168.1.20:47613,100.97.188.40:47613,bt:AA:BB:CC:DD:EE:FF&secret=<secret>
 ```
 
-- `addr` lists every address the phone may try, in order: home network first, then Netbird
-  (any 100.64.0.0/10 address).
+- `addr` lists every address the phone may try: home network first, then Netbird (any
+  100.64.0.0/10 address), then the PC's Bluetooth radio as `bt:` and its address, when
+  Bluetooth is on. Older phones skip a `bt:` address because it doesn't connect.
 - `secret` is 16 random bytes in unpadded base64url. It works once, for 10 minutes. Five wrong
   tries cancel it.
 - Values are percent-encoded.
 
-The phone connects to the first address that answers and checks that the PC's certificate
-matches `fp`. Then it sends `hello` with the secret. If the secret is right, the PC stores the
+The phone tries the network addresses all at once and takes the first that answers; when
+none does within 4 seconds, it tries Bluetooth. Either way it checks that the PC's
+certificate matches `fp`. Then it sends `hello` with the secret. If the secret is right, the PC stores the
 phone's device ID and fingerprint and answers `welcome`. From then on, both sides only accept
 each other's stored fingerprint.
 
@@ -55,6 +58,19 @@ first.
   checks its fingerprint against the paired phones or the pairing secret.
 - The PC listens only while pairing is open or a phone is paired. The first time, Windows asks
   whether to allow Legato on private networks.
+
+### Bluetooth
+
+When the phone can't reach any network address, it connects over Bluetooth Classic RFCOMM
+instead. The PC registers an SDP record for service UUID
+`d33e3e4c-9cb7-4638-b68d-813565eee1a7` while it listens, and the phone connects to that UUID
+on the `bt:` address from the pairing link. RFCOMM carries a byte stream, so everything below
+(TLS, frames, messages) is exactly as over TCP. Bluetooth's own pairing isn't needed for
+security: TLS with pinned certificates covers that. The phone tries without Bluetooth pairing
+first. If the PC won't accept that, Android asks to pair the two once.
+
+On Android, the app opens the RFCOMM socket and hands the core a socket on 127.0.0.1 that
+carries it, so the core's connection code stays the same for both wires.
 
 ### Frames
 
@@ -84,12 +100,17 @@ The phone speaks first:
 
 ```json
 {"type":"welcome","protocol":1,"device_id":"…","name":"Desk PC","platform":"windows",
- "app_version":"0.9.8","kinds":["dictionary","snippets","history"],"clipboard":true}
+ "app_version":"0.9.8","kinds":["dictionary","snippets","history"],"clipboard":true,
+ "addrs":["192.168.1.20:47613","bt:AA:BB:CC:DD:EE:FF"]}
 {"type":"refused","reason":"unknown_device"}
 ```
 
 Reasons: `unknown_device` (not paired, and no secret), `bad_secret`, `expired` (no pairing
 open), `protocol` (a version the PC doesn't speak). The PC closes after `refused`.
+
+`addrs`, when present, lists where the PC can be reached now, in the pairing link's format.
+The phone saves them in place of the ones from pairing, so a new Wi-Fi address, or
+Bluetooth turned on after pairing, works from the next connection.
 
 `kinds` lists what the PC syncs right now. `clipboard` says whether the shared clipboard is
 on. Either can change during a connection. The PC then sends a new `welcome`, and the phone

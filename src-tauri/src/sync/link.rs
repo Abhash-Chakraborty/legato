@@ -1,6 +1,7 @@
 //! Connections between paired devices: the PC's TLS listener, the phone's
 //! side (used by the stand-in phone and the tests), and the session both run
-//! once they've said hello. What a device stores and shows is the `Host`'s
+//! once they've said hello. The wire is TCP over Wi-Fi or Netbird, or
+//! Bluetooth when they share no network; TLS runs the same over either. What a device stores and shows is the `Host`'s
 //! business, so the same session code serves the PC and the stand-in.
 
 use std::collections::HashMap;
@@ -18,6 +19,21 @@ use super::identity::{fingerprint, server_name, Identity};
 use super::protocol::{self, Change, Clip, Hello, Message, Refusal, Welcome, PROTOCOL};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long the phone waits for any network address before Bluetooth.
+const NET_TIMEOUT: Duration = Duration::from_secs(4);
+
+/// How a device reached the other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Via {
+    /// Over TCP from this address (home network or Netbird).
+    Net(SocketAddr),
+    Bluetooth,
+}
+
+/// The phone app's way to open Bluetooth: given the PC's Bluetooth address
+/// ("AA:BB:CC:DD:EE:FF"), it connects and returns a port on 127.0.0.1 that
+/// carries the link, or None. It blocks while it connects.
+pub type Dialer = Arc<dyn Fn(&str) -> Option<u16> + Send + Sync>;
 
 /// What a device does with what arrives. Methods are quick database work and
 /// run on the session's task.
@@ -44,8 +60,8 @@ pub trait Host: Send + Sync + 'static {
     /// The kinds to ask `peer` for.
     fn wanted(&self, peer: &str) -> Vec<String>;
     fn clip(&self, _peer: &str, _clip: Clip) {}
-    /// `peer` connected from `addr`, or went away (None).
-    fn online(&self, _peer: &str, _addr: Option<SocketAddr>) {}
+    /// `peer` connected, and how, or went away (None).
+    fn online(&self, _peer: &str, _via: Option<Via>) {}
     /// `peer` unpaired us.
     fn forgotten(&self, _peer: &str) {}
 }
@@ -151,7 +167,9 @@ pub async fn serve(
             stop.clone(),
         );
         tokio::spawn(async move {
-            if let Err(e) = welcome_phone(tcp, addr, acceptor, host, sessions, stop).await {
+            let _ = tcp.set_nodelay(true);
+            if let Err(e) = welcome_phone(tcp, Via::Net(addr), acceptor, host, sessions, stop).await
+            {
                 // A port probe or a phone that just dropped the socket isn't
                 // worth a line at info level.
                 let text = format!("{e:#}");
@@ -165,16 +183,35 @@ pub async fn serve(
     }
 }
 
-async fn welcome_phone(
-    tcp: TcpStream,
-    addr: SocketAddr,
+/// The PC's side of one phone that came in some other way than the TCP
+/// listener (Bluetooth): the same handshake and session.
+pub async fn serve_stream<S>(
+    stream: S,
+    via: Via,
+    identity: &Identity,
+    host: Arc<dyn Host>,
+    sessions: Sessions,
+    stop: watch::Receiver<bool>,
+) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let acceptor = TlsAcceptor::from(identity.server_config()?);
+    welcome_phone(stream, via, acceptor, host, sessions, stop).await
+}
+
+async fn welcome_phone<S>(
+    stream: S,
+    via: Via,
     acceptor: TlsAcceptor,
     host: Arc<dyn Host>,
     sessions: Sessions,
     stop: watch::Receiver<bool>,
-) -> Result<()> {
-    tcp.set_nodelay(true)?;
-    let mut tls = tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(tcp))
+) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let mut tls = tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(stream))
         .await
         .context("TLS handshake timed out")??;
     let fp = tls
@@ -201,7 +238,7 @@ async fn welcome_phone(
     }
     protocol::write(&mut tls, &Message::Welcome(host.describe())).await?;
     let session = sessions.insert(&hello.device_id);
-    host.online(&hello.device_id, Some(addr));
+    host.online(&hello.device_id, Some(via));
     let result = run(
         tls,
         host.clone(),
@@ -215,33 +252,82 @@ async fn welcome_phone(
     result
 }
 
-/// The phone's side: connects to the first address that answers, says
-/// hello (with `secret` when pairing) and runs the session until it ends.
-/// Commands reach it through `sessions` under the PC's device ID.
-#[allow(dead_code)] // Used by tools/stand-in-phone, not the app.
+/// The first network address to answer, trying them all at once.
+async fn first_answer(addrs: &[&String]) -> Result<(TcpStream, SocketAddr)> {
+    let mut tries = tokio::task::JoinSet::new();
+    for addr in addrs {
+        let addr = addr.to_string();
+        tries.spawn(async move {
+            match tokio::time::timeout(NET_TIMEOUT, TcpStream::connect(&addr)).await {
+                Ok(Ok(stream)) => {
+                    let peer = stream.peer_addr()?;
+                    Ok((stream, peer))
+                }
+                Ok(Err(e)) => Err(anyhow!("{addr}: {e}")),
+                Err(_) => Err(anyhow!("{addr}: timed out")),
+            }
+        });
+    }
+    let mut last = anyhow!("no network address to try");
+    while let Some(done) = tries.join_next().await {
+        match done {
+            Ok(Ok(found)) => return Ok(found),
+            Ok(Err(e)) => last = e,
+            Err(e) => last = anyhow!(e),
+        }
+    }
+    Err(last)
+}
+
+/// Opens the wire to the PC: any network address that answers, else
+/// Bluetooth through the app's `dial`.
+async fn reach(addrs: &[String], dial: Option<Dialer>) -> Result<(TcpStream, Via)> {
+    let (bluetooth, net): (Vec<&String>, Vec<&String>) = addrs
+        .iter()
+        .partition(|a| a.starts_with(protocol::BT_PREFIX));
+    let mut last = match first_answer(&net).await {
+        Ok((stream, addr)) => return Ok((stream, Via::Net(addr))),
+        Err(e) => e,
+    };
+    let Some(dial) = dial.filter(|_| !bluetooth.is_empty()) else {
+        return Err(last);
+    };
+    for addr in bluetooth {
+        let mac = addr[protocol::BT_PREFIX.len()..].to_string();
+        let dial = dial.clone();
+        let port = tokio::task::spawn_blocking(move || dial(&mac))
+            .await
+            .ok()
+            .flatten();
+        let Some(port) = port else {
+            last = anyhow!("{last:#}; Bluetooth didn't connect");
+            continue;
+        };
+        match TcpStream::connect(("127.0.0.1", port)).await {
+            Ok(stream) => return Ok((stream, Via::Bluetooth)),
+            Err(e) => last = anyhow!("Bluetooth: {e}"),
+        }
+    }
+    Err(last)
+}
+
+/// The phone's side: reaches the PC (see `reach`), says hello (with
+/// `secret` when pairing) and runs the session until it ends. Commands
+/// reach it through `sessions` under the PC's device ID.
+#[allow(dead_code)] // Used by the phone (phone/core), not the app.
+#[allow(clippy::too_many_arguments)]
 pub async fn connect(
     addrs: &[String],
     pc_fingerprint: &str,
     identity: &Identity,
     secret: Option<String>,
+    dial: Option<Dialer>,
     host: Arc<dyn Host>,
     sessions: Sessions,
     stop: watch::Receiver<bool>,
 ) -> Result<Welcome> {
     let connector = TlsConnector::from(identity.client_config(pc_fingerprint)?);
-    let mut last = anyhow!("no address to try");
-    let mut tcp = None;
-    for addr in addrs {
-        match tokio::time::timeout(Duration::from_secs(4), TcpStream::connect(addr)).await {
-            Ok(Ok(stream)) => {
-                tcp = Some(stream);
-                break;
-            }
-            Ok(Err(e)) => last = anyhow!("{addr}: {e}"),
-            Err(_) => last = anyhow!("{addr}: timed out"),
-        }
-    }
-    let tcp = tcp.ok_or(last)?;
+    let (tcp, via) = reach(addrs, dial).await?;
     tcp.set_nodelay(true)?;
     let mut tls = connector.connect(server_name(), tcp).await?;
     let me = host.describe();
@@ -263,7 +349,8 @@ pub async fn connect(
     };
     host.welcomed(&welcome, pc_fingerprint);
     let session = sessions.insert(&welcome.device_id);
-    run(
+    host.online(&welcome.device_id, Some(via));
+    let result = run(
         tls,
         host.clone(),
         &welcome.device_id,
@@ -271,7 +358,9 @@ pub async fn connect(
         &sessions,
         stop,
     )
-    .await?;
+    .await;
+    host.online(&welcome.device_id, None);
+    result?;
     Ok(welcome)
 }
 

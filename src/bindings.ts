@@ -2293,7 +2293,7 @@ sent_upto: number;
 recv_upto: number }
 export type PhoneState = { peer: Peer; online: boolean; 
 /**
- * How it's connected: "lan" or "netbird".
+ * How it's connected: "lan", "netbird" or "bluetooth".
  */
 via: string | null }
 /**
@@ -2301,11 +2301,11 @@ via: string | null }
  */
 export type SyncAddress = { 
 /**
- * "lan" or "netbird".
+ * "lan", "netbird" or "bluetooth".
  */
 kind: string; 
 /**
- * "192.168.1.20:47613".
+ * "192.168.1.20:47613", or "bt:AA:BB:CC:DD:EE:FF" for Bluetooth.
  */
 addr: string }
 /**

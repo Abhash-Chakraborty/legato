@@ -16,6 +16,13 @@ pub const PING_EVERY: Duration = Duration::from_secs(30);
 pub const SILENCE_LIMIT: Duration = Duration::from_secs(90);
 /// How many items one `changes` answer carries at most.
 pub const PULL_LIMIT: usize = 500;
+/// A pairing link address that is the PC's Bluetooth radio, as
+/// "bt:AA:BB:CC:DD:EE:FF", rather than an IP address and port.
+pub const BT_PREFIX: &str = "bt:";
+/// The Bluetooth service (RFCOMM, found through SDP) the PC offers sync on.
+/// Legato for Android connects to the same UUID.
+#[allow(dead_code)] // The PC registers it; the phone has it in Kotlin.
+pub const BT_SERVICE: &str = "d33e3e4c-9cb7-4638-b68d-813565eee1a7";
 
 /// Everything that syncs, in the order Settings lists it.
 pub const KINDS: [&str; 7] = [
@@ -80,6 +87,10 @@ pub struct Welcome {
     pub app_version: String,
     pub kinds: Vec<String>,
     pub clipboard: bool,
+    /// Where the PC can be reached now, as in the pairing link; the phone
+    /// keeps them for next time. Absent from older PCs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub addrs: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
