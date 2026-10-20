@@ -331,7 +331,11 @@ impl HistoryManager {
                 params![id],
             )?;
 
-            // Delete WAV file
+            // Delete WAV file. Entries synced from the phone have none, and an
+            // empty name would point at the recordings folder itself.
+            if file_name.is_empty() {
+                continue;
+            }
             let file_path = self.recordings_dir.join(file_name);
             if file_path.exists() {
                 if let Err(e) = fs::remove_file(&file_path) {
@@ -509,7 +513,7 @@ impl HistoryManager {
         if let Some(entry) = self.get_entry_by_id(id).await? {
             // Delete the audio file first
             let file_path = self.get_audio_file_path(&entry.file_name);
-            if file_path.exists() {
+            if !entry.file_name.is_empty() && file_path.exists() {
                 if let Err(e) = fs::remove_file(&file_path) {
                     error!("Failed to delete audio file {}: {}", entry.file_name, e);
                     // Continue with database deletion even if file deletion fails
