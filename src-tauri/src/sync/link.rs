@@ -152,7 +152,14 @@ pub async fn serve(
         );
         tokio::spawn(async move {
             if let Err(e) = welcome_phone(tcp, addr, acceptor, host, sessions, stop).await {
-                log::info!("Phone connection from {addr} ended: {e:#}");
+                // A port probe or a phone that just dropped the socket isn't
+                // worth a line at info level.
+                let text = format!("{e:#}");
+                if text.contains("close_notify") || text.contains("handshake eof") {
+                    log::debug!("Phone connection from {addr} ended: {text}");
+                } else {
+                    log::info!("Phone connection from {addr} ended: {text}");
+                }
             }
         });
     }
@@ -301,6 +308,11 @@ where
     let mut ping = tokio::time::interval(protocol::PING_EVERY);
     ping.tick().await;
     let mut heard = Instant::now();
+    // One pull in flight at a time: nudges that arrive while the answer is
+    // still coming are folded into a single pull afterwards, so three quick
+    // edits on the other side don't fetch the same changes three times.
+    let mut pulling = true;
+    let mut pull_again = false;
     protocol::write(&mut wr, &pull(&host)).await?;
     let result: Result<()> = async {
         loop {
@@ -317,11 +329,20 @@ where
                         }
                         Message::Changes { items, upto, more } => {
                             host.accept(peer, items, upto)?;
-                            if more {
+                            if more || std::mem::take(&mut pull_again) {
+                                protocol::write(&mut wr, &pull(&host)).await?;
+                            } else {
+                                pulling = false;
+                            }
+                        }
+                        Message::Nudge => {
+                            if pulling {
+                                pull_again = true;
+                            } else {
+                                pulling = true;
                                 protocol::write(&mut wr, &pull(&host)).await?;
                             }
                         }
-                        Message::Nudge => protocol::write(&mut wr, &pull(&host)).await?,
                         Message::Clip(clip) => host.clip(peer, clip),
                         Message::Ping => protocol::write(&mut wr, &Message::Pong).await?,
                         Message::Welcome(welcome) => host.welcomed(&welcome, ""),
@@ -337,7 +358,14 @@ where
                     let Some(command) = command else { return Ok(()) };
                     match command {
                         Command::Nudge => protocol::write(&mut wr, &Message::Nudge).await?,
-                        Command::Pull => protocol::write(&mut wr, &pull(&host)).await?,
+                        Command::Pull => {
+                            if pulling {
+                                pull_again = true;
+                            } else {
+                                pulling = true;
+                                protocol::write(&mut wr, &pull(&host)).await?;
+                            }
+                        }
                         Command::Clip(clip) => protocol::write(&mut wr, &Message::Clip(clip)).await?,
                         Command::Welcome(welcome) => protocol::write(&mut wr, &Message::Welcome(welcome)).await?,
                         Command::Bye(reason) => {
