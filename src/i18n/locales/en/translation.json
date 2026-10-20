@@ -869,7 +869,7 @@
     "bar": {
       "bubble": {
         "title": "Bubble on the desktop",
-        "help": "A small Legato dot sits in the middle of a screen edge; hover it for Dictate, Notes and the Scratchpad, drag it to another edge, right-click to hide it."
+        "help": "A small Legato dot in the middle of a screen edge shows your dictation in place of the bar; hover it for Dictate, Notes and the Scratchpad, drag it to another edge, right-click to hide it."
       },
       "confirmPaste": {
         "title": "Confirm after pasting",

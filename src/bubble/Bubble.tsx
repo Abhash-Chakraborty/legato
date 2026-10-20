@@ -77,7 +77,8 @@ const Wave: React.FC = () => (
 );
 
 /** The microphone's level while you talk: bars lying across on a side of
- *  the screen, standing up at the top or bottom. */
+ *  the screen, standing up at the top or bottom. While the words are being
+ *  written up, the bars ripple instead. */
 const Meter: React.FC<{ levels: number[]; upright: boolean }> = ({
   levels,
   upright,
@@ -86,7 +87,12 @@ const Meter: React.FC<{ levels: number[]; upright: boolean }> = ({
     {levels.map((l, i) => (
       <span
         key={i}
-        style={{ "--l": Math.min(1, Math.pow(l, 0.7)) } as React.CSSProperties}
+        style={
+          {
+            "--l": Math.min(1, Math.pow(l, 0.7)),
+            "--i": i,
+          } as React.CSSProperties
+        }
       />
     ))}
   </span>
@@ -114,7 +120,10 @@ const Bubble: React.FC = () => {
     notes: "",
     scratchpad: "",
   });
-  const [recording, setRecording] = useState(false);
+  // A dictation: listening, or writing up what it heard. The bar leaves
+  // both to the bubble while the bubble shows.
+  const [phase, setPhase] = useState<"rec" | "work" | null>(null);
+  const recording = phase === "rec";
   const [notes, setNotes] = useState<SessionInfo | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -133,13 +142,19 @@ const Bubble: React.FC = () => {
         setLayout(e.payload);
         if (!e.payload.expanded) setHot(null);
       }),
-      // The bar's states, which every window hears: the mic button shows
-      // a dictation running.
+      // A dictation's states, sent here instead of the bar while the
+      // bubble shows; the bar's other states reach every window too.
       listen<string>("show-overlay", (e) =>
-        setRecording(e.payload === "recording" || e.payload === "streaming"),
+        setPhase(
+          e.payload === "recording" || e.payload === "streaming"
+            ? "rec"
+            : e.payload === "transcribing" || e.payload === "processing"
+              ? "work"
+              : null,
+        ),
       ),
       listen("hide-overlay", () => {
-        setRecording(false);
+        setPhase(null);
         setLevels(Array(BARS).fill(0));
       }),
       // The bar's sixteen bands, low to high, sent here only while the
@@ -385,7 +400,7 @@ const Bubble: React.FC = () => {
       ) : (
         <button
           type="button"
-          className={`bdot ${recording ? `rec ${upright ? "tall" : "wide"}` : ""} ${notesOn && !panelOpen ? "notes" : ""}`}
+          className={`bdot ${phase ? `${phase} ${upright ? "tall" : "wide"}` : ""} ${notesOn && !panelOpen ? "notes" : ""}`}
           style={{ left: layout.dot_x, top: layout.dot_y }}
           aria-label={t("bubble.label")}
           onPointerDown={(e) => onPointerDown(e, null)}
@@ -393,7 +408,7 @@ const Bubble: React.FC = () => {
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         >
-          {recording ? <Meter levels={levels} upright={upright} /> : <Wave />}
+          {phase ? <Meter levels={levels} upright={upright} /> : <Wave />}
         </button>
       )}
     </div>

@@ -271,6 +271,20 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     }
 }
 
+/// A dictation running or being written up: what the bubble shows in place
+/// of the bar while it's on screen.
+const BUBBLE_STATES: [&str; 4] = ["recording", "streaming", "transcribing", "processing"];
+
+/// Shows a dictation's state: on the bubble while it's on screen, so there
+/// aren't two of them, else on the bar.
+fn show_dictation_state(app_handle: &AppHandle, state: &str) {
+    if crate::bubble::wants_levels() && BUBBLE_STATES.contains(&state) {
+        let _ = app_handle.emit_to(crate::bubble::WINDOW, "show-overlay", state);
+        return;
+    }
+    show_overlay_state(app_handle, state);
+}
+
 fn show_overlay_state(app_handle: &AppHandle, state: &str) {
     // Whether the overlay shows at all is governed by overlay_style; position
     // only chooses Top vs Bottom placement. Checked here (off the main thread)
@@ -353,21 +367,27 @@ pub fn emit_recording_ready(app_handle: &AppHandle) {
 
 /// Shows the recording overlay window with fade-in animation
 pub fn show_recording_overlay(app_handle: &AppHandle) {
-    show_overlay_state(app_handle, "recording");
+    show_dictation_state(app_handle, "recording");
 }
 
 /// Shows the larger streaming overlay that displays live transcription text
 pub fn show_streaming_overlay(app_handle: &AppHandle) {
-    show_overlay_state(app_handle, "streaming");
+    show_dictation_state(app_handle, "streaming");
 }
 
 /// Shows the transcribing overlay window
 pub fn show_transcribing_overlay(app_handle: &AppHandle) {
-    show_overlay_state(app_handle, "transcribing");
+    show_dictation_state(app_handle, "transcribing");
 }
 
-/// Shows the processing overlay window
+/// Shows the processing overlay window after a dictation
 pub fn show_processing_overlay(app_handle: &AppHandle) {
+    show_dictation_state(app_handle, "processing");
+}
+
+/// Shows the processing state on the bar for a transform, whose result
+/// shows there too.
+pub fn show_transform_working(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "processing");
 }
 

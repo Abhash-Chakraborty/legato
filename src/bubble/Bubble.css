@@ -46,8 +46,10 @@
   height: 14px;
 }
 /* A dictation running: the dot stretches along its edge into a level
-   meter with a teal ring, tall on a side and wide at the top or bottom. */
-.bdot.rec {
+   meter with a teal ring, tall on a side and wide at the top or bottom.
+   While the words are written up, the bars ripple. */
+.bdot.rec,
+.bdot.work {
   opacity: 1;
   border-radius: 14px;
   box-shadow: 0 0 0 2px var(--teal-500);
@@ -56,10 +58,10 @@
     height 220ms cubic-bezier(0.22, 1, 0.36, 1),
     opacity 160ms ease-out;
 }
-.bdot.rec.tall {
+.bdot.tall {
   height: 76px;
 }
-.bdot.rec.wide {
+.bdot.wide {
   width: 76px;
 }
 .bmeter {
@@ -88,6 +90,35 @@
   width: 3px;
   height: calc(4px + var(--l) * 12px);
 }
+.bdot.work .bmeter.v span {
+  width: 14px;
+  animation: bwork-v 900ms ease-in-out infinite;
+  animation-delay: calc(var(--i) * 110ms);
+}
+.bdot.work .bmeter.h span {
+  height: 14px;
+  animation: bwork-h 900ms ease-in-out infinite;
+  animation-delay: calc(var(--i) * 110ms);
+}
+@keyframes bwork-v {
+  0%,
+  100% {
+    transform: scaleX(0.35);
+  }
+  50% {
+    transform: scaleX(1);
+  }
+}
+@keyframes bwork-h {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
 /* Notes recording behind everything: a slow green glow. */
 .bdot.notes {
   opacity: 1;
@@ -243,7 +274,8 @@
 @media (prefers-reduced-motion: reduce) {
   .bdot,
   .bbtn,
-  .blabel {
+  .blabel,
+  .bmeter span {
     animation: none !important;
   }
 }

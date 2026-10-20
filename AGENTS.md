@@ -87,7 +87,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `shortcut/` - Global keyboard shortcut handling (handy-keys or Tauri), including the picker's temporary keys
 - `settings.rs` - Application settings management
 - `overlay.rs` - The Legato bar (recording overlay window and its states)
-- `bubble.rs` - The desktop bubble: a dot that stays on screen with Dictate, Notes and the Scratchpad on hover; dragged, it settles in the middle of the nearest edge; steps aside for fullscreen windows
+- `bubble.rs` - The desktop bubble: a dot that stays on screen with Dictate, Notes and the Scratchpad on hover; dragged, it settles in the middle of the nearest edge; steps aside for fullscreen windows. While it shows, a dictation's states go to it instead of the bar (`overlay.rs`)
 - `tray.rs` - System tray icon and menu
 - `signal_handle.rs` - `send_transcription_input()` reusable function
 - `handy_migration.rs` - First-run move of Handy's data into Legato's folders

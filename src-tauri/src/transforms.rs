@@ -450,7 +450,7 @@ where
     let generation = RUN_GENERATION.load(Ordering::SeqCst);
     let settings = get_settings(app);
     overlay::set_working_label(app, Some(&job.name));
-    overlay::show_processing_overlay(app);
+    overlay::show_transform_working(app);
     let started = Instant::now();
     let answer = tauri::async_runtime::block_on(request);
     let ms = started.elapsed().as_millis() as i64;
