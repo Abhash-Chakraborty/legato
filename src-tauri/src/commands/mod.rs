@@ -37,6 +37,36 @@ pub fn finish_dictation(app: AppHandle) {
     }
 }
 
+/// Work in apps run as administrator: makes (or removes) the task that
+/// starts Legato elevated, then restarts Legato that way. Async so the
+/// Windows question doesn't hold up the main thread.
+#[tauri::command]
+#[specta::specta]
+pub async fn change_admin_apps_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    if enabled {
+        crate::elevation::create_task()?;
+    } else {
+        crate::elevation::delete_task();
+    }
+    let mut settings = get_settings(&app);
+    settings.admin_apps = enabled;
+    write_settings(&app, settings);
+    // Already where it should be: nothing to restart.
+    if crate::elevation::is_elevated() == enabled {
+        return Ok(());
+    }
+    crate::elevation::restart(&app, enabled, false)?;
+    app.exit(0);
+    Ok(())
+}
+
+/// Whether Legato runs as administrator now.
+#[tauri::command]
+#[specta::specta]
+pub fn is_elevated() -> bool {
+    crate::elevation::is_elevated()
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn is_portable() -> bool {

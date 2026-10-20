@@ -81,6 +81,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `calendar.rs` - Calendars from secret iCal addresses (Settings › Connections): meetings for the bubble, note titles and MCP, cached in `calendar.json`
 - `mcp.rs` - `legato --mcp`: a Model Context Protocol server over stdio that lets AI apps read dictations, notes, the Dictionary, the Scratchpad and meetings
 - `context.rs` - Knowing the app in front (name, category, icon) and listing open windows
+- `elevation.rs` - Work in apps run as administrator: the scheduled task that starts Legato elevated, and handing over to it at startup
 - `desktop.rs` - Windows shell integration: app ID, jump list, notifications (Do not disturb aware), Mica
 - `setup.rs` - First-run setup: microphone check, model choice, practice scenes
 - `ai.rs` / `llm_client.rs` / `secrets.rs` - Your own AI provider; API keys in Windows Credential Manager

@@ -19,6 +19,7 @@ import type { AiStatus, AppSettings, ModelInfo } from "@/bindings";
 import type { SettingsSection } from "../../stores/navStore";
 import { useModelStore } from "../../stores/modelStore";
 
+import { AdminAppsToggle } from "./AdminAppsToggle";
 import { AutostartToggle } from "./AutostartToggle";
 import { ShowTrayIcon } from "./ShowTrayIcon";
 import { StartHidden } from "./StartHidden";
@@ -258,6 +259,14 @@ export const buildSections = (
               (settings?.show_tray_icon ?? true)
                 ? null
                 : { reasonKey: "settings.requires.tray" },
+          },
+          {
+            id: "admin-apps",
+            searchKeys: [
+              "settings.advanced.adminApps.label",
+              "settings.advanced.adminApps.description",
+            ],
+            render: () => <AdminAppsToggle grouped />,
           },
         ],
       },

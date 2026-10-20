@@ -586,6 +586,25 @@ async mcpAddTo(id: string) : Promise<Result<null, string>> {
 async finishDictation() : Promise<void> {
     await TAURI_INVOKE("finish_dictation");
 },
+/**
+ * Work in apps run as administrator: makes (or removes) the task that
+ * starts Legato elevated, then restarts Legato that way. Async so the
+ * Windows question doesn't hold up the main thread.
+ */
+async changeAdminAppsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_admin_apps_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Whether Legato runs as administrator now.
+ */
+async isElevated() : Promise<boolean> {
+    return await TAURI_INVOKE("is_elevated");
+},
 async isPortable() : Promise<boolean> {
     return await TAURI_INVOKE("is_portable");
 },
@@ -3031,6 +3050,11 @@ notes_reminder?: boolean; calls?: CallSettings; sync?: SyncSettings; scratchpad_
  * Dictate, Notes and the Scratchpad on hover.
  */
 bubble_enabled?: boolean; 
+/**
+ * Run Legato as administrator (through a scheduled task) so dictation
+ * and shortcuts reach apps run as administrator.
+ */
+admin_apps?: boolean; 
 /**
  * Where the bubble was left; None puts it against the right side.
  */

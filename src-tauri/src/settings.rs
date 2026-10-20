@@ -856,6 +856,10 @@ pub struct AppSettings {
     /// Dictate, Notes and the Scratchpad on hover.
     #[serde(default = "default_true")]
     pub bubble_enabled: bool,
+    /// Run Legato as administrator (through a scheduled task) so dictation
+    /// and shortcuts reach apps run as administrator.
+    #[serde(default)]
+    pub admin_apps: bool,
     /// Where the bubble was left; None puts it against the right side.
     #[serde(default)]
     pub bubble_spot: Option<BubbleSpot>,
@@ -1478,6 +1482,7 @@ pub fn get_default_settings() -> AppSettings {
         sync: SyncSettings::default(),
         scratchpad_open: ScratchpadOpen::default(),
         bubble_enabled: true,
+        admin_apps: false,
         bubble_spot: None,
         calendars: Vec::new(),
         mcp_enabled: false,
@@ -1799,6 +1804,16 @@ pub fn update_checks_forced_disabled() -> bool {
 /// directly, so the forced-off state never leaks into the persisted setting.
 pub fn update_checks_effectively_enabled(settings: &AppSettings) -> bool {
     settings.update_checks_enabled && !update_checks_forced_disabled()
+}
+
+/// Writes the settings file now rather than on the store's next save, for
+/// a restart.
+pub fn save_now(app: &AppHandle) {
+    if let Ok(store) = app.store(crate::portable::store_path(SETTINGS_STORE_PATH)) {
+        if let Err(e) = store.save() {
+            warn!("Couldn't save the settings: {e}");
+        }
+    }
 }
 
 pub fn write_settings(app: &AppHandle, settings: AppSettings) {

@@ -313,6 +313,10 @@
         "label": "Start hidden",
         "description": "Opens to the tray instead of showing this window."
       },
+      "adminApps": {
+        "label": "Work in apps run as administrator",
+        "description": "Legato restarts as administrator so dictation and shortcuts reach admin apps like an admin terminal; Windows asks once."
+      },
       "autostart": {
         "label": "Launch at login",
         "description": "Starts Legato when you sign in to Windows."
@@ -1319,7 +1323,7 @@
       "ask_empty": "Didn't catch what to do · hold and say it",
       "saved": "Couldn't paste · saved in the Scratchpad",
       "savedFrom": "Couldn't paste into {{app}} · saved in the Scratchpad",
-      "savedAdmin": "{{app}} runs as administrator · saved in the Scratchpad and copied",
+      "savedAdmin": "{{app}} runs as administrator · saved in the Scratchpad and copied · Settings › General can let Legato type there",
       "spotted": "Spotted “{{word}}”",
       "spottedIn": "Spotted “{{word}}” in {{app}}",
       "spottedMore_one": "Spotted “{{word}}” and {{count}} more",

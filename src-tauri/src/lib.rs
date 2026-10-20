@@ -20,6 +20,7 @@ mod commands;
 mod context;
 mod desktop;
 mod edit_reader;
+mod elevation;
 pub mod engine_supervisor;
 mod handy_migration;
 mod input;
@@ -813,6 +814,8 @@ pub fn run(cli_args: CliArgs) {
             commands::cancel_operation,
             commands::finish_dictation,
             commands::bubble::change_bubble_enabled_setting,
+            commands::change_admin_apps_setting,
+            commands::is_elevated,
             commands::bubble::bubble_expand,
             commands::bubble::bubble_press,
             commands::bubble::bubble_action,
@@ -1209,6 +1212,16 @@ pub fn run(cli_args: CliArgs) {
                 return Ok(());
             }
 
+            // Working in admin apps: a Legato that isn't elevated hands over
+            // to the one the task starts, before it opens anything.
+            {
+                let settings = settings::get_settings(app.handle());
+                let hidden = settings.start_hidden || cli_args.start_hidden;
+                if elevation::hand_over_at_startup(app.handle(), hidden) {
+                    std::process::exit(0);
+                }
+            }
+
             // Before the first window, so the taskbar groups it under the
             // Start menu shortcut and its jump list.
             desktop::set_app_id(app.handle());
@@ -1325,7 +1338,10 @@ pub fn run(cli_args: CliArgs) {
             // The jump list's Scratchpad and New note open just the
             // Scratchpad when Legato wasn't running.
             let scratchpad_only = cli_args.open_scratchpad || cli_args.new_note;
-            let should_hide = settings.start_hidden || cli_args.start_hidden || scratchpad_only;
+            let should_hide = settings.start_hidden
+                || cli_args.start_hidden
+                || scratchpad_only
+                || elevation::take_hidden_marker(&app_handle);
             let should_force_show = should_force_show_permissions_window(&app_handle);
 
             // If start_hidden but tray is disabled, we must show the window
