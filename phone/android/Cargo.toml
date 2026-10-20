@@ -5,6 +5,8 @@ edition = "2021"
 publish = false
 description = "What Legato for Android calls: pairing, sync, the clipboard and speech, through UniFFI"
 
+build = "build.rs"
+
 [lib]
 name = "legato_android"
 crate-type = ["cdylib", "lib"]
