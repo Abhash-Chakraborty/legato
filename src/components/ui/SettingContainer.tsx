@@ -80,7 +80,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
 
   if (layout === "stacked") {
     return (
-      <div data-setting-row className="py-3.5">
+      <div data-setting-row className="py-3">
         <div className="mb-3">{text}</div>
         <div
           ref={controlRef}
@@ -95,7 +95,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   return (
     <div
       data-setting-row
-      className="flex min-h-[60px] flex-wrap items-center justify-between gap-x-8 gap-y-3 py-3.5"
+      className="flex min-h-[56px] flex-wrap items-center justify-between gap-x-8 gap-y-3 py-3"
     >
       {text}
       <div

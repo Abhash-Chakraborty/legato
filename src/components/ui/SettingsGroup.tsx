@@ -13,7 +13,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
   children,
 }) => {
   return (
-    <section data-settings-group className="mb-7">
+    <section data-settings-group className="mb-5">
       {title && (
         <h2 className="mb-1 text-[17px] font-semibold tracking-[-0.01em]">
           {title}

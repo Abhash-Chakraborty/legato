@@ -312,7 +312,10 @@ export const HomePage: React.FC = () => {
   return (
     <div className="grid grid-cols-1 gap-12 min-[1180px]:grid-cols-[minmax(0,1fr)_256px]">
       <div className="min-w-0">
-        <div className="mb-1.5 flex min-h-10 flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        {/* Stays put while the list scrolls under it. It sticks at the scroll
+            root's content edge, so the ::before strip covers the padding
+            band above it. */}
+        <div className="sticky top-0 z-10 -mx-2 mb-1.5 flex min-h-10 flex-wrap items-center justify-between gap-x-6 gap-y-3 bg-surface px-2 pb-2 before:absolute before:inset-x-0 before:-top-8 before:h-8 before:bg-surface before:content-['']">
           <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
             {t("home.title")}
           </h1>
@@ -354,7 +357,7 @@ export const HomePage: React.FC = () => {
                 <X className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             ) : (
-              <kbd className="kbd pointer-events-none absolute end-2 top-1/2 -translate-y-1/2">
+              <kbd className="kbd small pointer-events-none absolute end-[5px] top-1/2 -translate-y-1/2">
                 /
               </kbd>
             )}

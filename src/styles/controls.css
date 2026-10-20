@@ -302,6 +302,14 @@ textarea.input {
   color: var(--text-2);
   font: 500 12px/1 var(--sans);
 }
+/* inside a compact (30 px) input, so it keeps 5 px of air above and below */
+.kbd.small {
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  box-shadow: none;
+}
 
 /* --------------------------------------------------- saved indicator */
 .saved {

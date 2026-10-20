@@ -160,7 +160,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   };
 
   return (
-    <div className="flex items-start gap-8 min-[1180px]:gap-12">
+    <div className="flex items-start gap-8 min-[1180px]:gap-10">
       <div className="sticky top-0 w-[168px] flex-none min-[1180px]:w-[184px]">
         <div className="relative mb-3">
           <Search
@@ -233,10 +233,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         </div>
       </div>
 
-      <div ref={contentRef} className="min-w-0 max-w-[760px] flex-1">
+      <div ref={contentRef} className="min-w-0 max-w-[840px] flex-1">
         {q ? (
           <>
-            <div className="mb-6 flex min-h-10 items-center justify-between gap-4">
+            <div className="mb-5 flex min-h-10 items-center justify-between gap-4">
               <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
                 {t("settings.search.title")}
               </h1>
@@ -266,13 +266,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </>
         ) : (
           <div key={current.id} className="view-enter">
-            <div className="mb-6 flex min-h-10 items-center justify-between gap-4">
+            <div className="mb-5 flex min-h-10 items-center justify-between gap-4">
               <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
                 {t(`settings.sections.${current.id}.title`)}
               </h1>
               <SavedTick />
             </div>
-            <p className="-mt-3.5 mb-6 max-w-[640px] text-sm text-text-2">
+            <p className="-mt-3 mb-5 max-w-[640px] text-sm text-text-2">
               {t(`settings.sections.${current.id}.subtitle`)}
             </p>
             {current.groups.filter(shown).map((g) => (
