@@ -239,13 +239,6 @@ const settingUpdaters: {
     commands.changeChineseScriptSetting(value as ChineseScript),
   show_tray_icon: (value) =>
     commands.changeShowTrayIconSetting(value as boolean),
-  native_title_bar: async (value) => {
-    const result = await commands.changeNativeTitleBarSetting(value as boolean);
-    if (result.status === "error") {
-      toast.error(result.error);
-      throw new Error(result.error);
-    }
-  },
   remember_app: (value) => commands.changeRememberAppSetting(value as boolean),
   transcribe_accelerator: (value) =>
     commands.changeTranscribeAcceleratorSetting(

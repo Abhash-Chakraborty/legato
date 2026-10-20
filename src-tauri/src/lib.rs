@@ -800,7 +800,6 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_keyboard_implementation_setting,
             shortcut::get_keyboard_implementation,
             shortcut::change_show_tray_icon_setting,
-            shortcut::change_native_title_bar_setting,
             shortcut::change_remember_app_setting,
             shortcut::change_transcribe_accelerator_setting,
             shortcut::change_transcribe_gpu_device,
@@ -1214,13 +1213,12 @@ pub fn run(cli_args: CliArgs) {
 
             // Create main window programmatically so we can set data_directory
             // for portable mode (redirects WebView2 cache to portable Data dir)
-            let native_title_bar = get_settings(app.handle()).native_title_bar;
             let mut win_builder =
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
                     .title("Legato")
                     .inner_size(MAIN_WINDOW_SIZE.0, MAIN_WINDOW_SIZE.1)
                     .min_inner_size(MAIN_WINDOW_MIN_SIZE.0, MAIN_WINDOW_MIN_SIZE.1)
-                    .decorations(native_title_bar)
+                    .decorations(false)
                     .resizable(true)
                     .maximizable(true)
                     .visible(false);

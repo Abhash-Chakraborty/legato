@@ -3,7 +3,13 @@ import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { Menu } from "@tauri-apps/api/menu";
 import { Mic, NotebookPen, Square } from "lucide-react";
-import { commands, events, type Meeting, type SessionInfo } from "@/bindings";
+import {
+  commands,
+  events,
+  type Edge,
+  type Meeting,
+  type SessionInfo,
+} from "@/bindings";
 import { formatKeyCombination } from "@/lib/utils/keyboard";
 import "./Bubble.css";
 
@@ -11,15 +17,25 @@ interface Layout {
   expanded: boolean;
   dot_x: number;
   dot_y: number;
-  labels: "left" | "right";
+  edge: Edge;
 }
 
 type Action = "dictate" | "notes" | "scratchpad";
 
 /** How far the pointer moves before a press becomes a drag. */
 const DRAG_PX = 5;
-/** Button centres above and below the dot, which sits on the middle one. */
+/** Button centres either side of the dot, which sits on the middle one. */
 const STEP = 46;
+/** Bars in the level meter. */
+const BARS = 5;
+
+/** Which way the hovered button's label goes: towards the middle. */
+const LABEL_SIDE: Record<Edge, string> = {
+  left: "right",
+  right: "left",
+  top: "below",
+  bottom: "above",
+};
 
 const clock = (ms: number) => {
   const s = Math.floor(ms / 1000);
@@ -60,20 +76,38 @@ const Wave: React.FC = () => (
   </svg>
 );
 
+/** The microphone's level while you talk: bars lying across on a side of
+ *  the screen, standing up at the top or bottom. */
+const Meter: React.FC<{ levels: number[]; upright: boolean }> = ({
+  levels,
+  upright,
+}) => (
+  <span className={`bmeter ${upright ? "v" : "h"}`} aria-hidden="true">
+    {levels.map((l, i) => (
+      <span
+        key={i}
+        style={{ "--l": Math.min(1, Math.pow(l, 0.7)) } as React.CSSProperties}
+      />
+    ))}
+  </span>
+);
+
 /**
- * The desktop bubble: a dot at the edge of the screen. Hovered, it opens
- * three buttons (Dictate, Notes, Scratchpad) with the hovered one's label
- * and shortcut beside it. Dragged, it moves; let go near a side, it snaps
- * there. Right-click hides it.
+ * The desktop bubble: a dot in the middle of a screen edge. Hovered, it
+ * opens three buttons (Dictate, Notes, Scratchpad) with the hovered one's
+ * label and shortcut towards the middle of the screen. While you talk it
+ * becomes a level meter along its edge. Dragged, it moves; let go, it
+ * settles in the middle of the nearest edge. Right-click hides it.
  */
 const Bubble: React.FC = () => {
   const { t } = useTranslation();
   const [layout, setLayout] = useState<Layout>({
     expanded: false,
     dot_x: 20,
-    dot_y: 20,
-    labels: "left",
+    dot_y: 44,
+    edge: "right",
   });
+  const [levels, setLevels] = useState<number[]>(() => Array(BARS).fill(0));
   const [hot, setHot] = useState<Action | null>(null);
   const [keys, setKeys] = useState<Record<Action, string>>({
     dictate: "",
@@ -106,7 +140,21 @@ const Bubble: React.FC = () => {
       listen<string>("show-overlay", (e) =>
         setRecording(e.payload === "recording" || e.payload === "streaming"),
       ),
-      listen("hide-overlay", () => setRecording(false)),
+      listen("hide-overlay", () => {
+        setRecording(false);
+        setLevels(Array(BARS).fill(0));
+      }),
+      // The bar's sixteen bands, low to high, sent here only while the
+      // bubble shows; speech sits in the lower ten.
+      listen<number[]>("mic-level", (e) =>
+        setLevels((prev) =>
+          prev.map((p, i) => {
+            const band = e.payload.slice(i * 2, i * 2 + 2);
+            const v = band.length ? Math.max(...band) : 0;
+            return p * 0.55 + v * 0.45;
+          }),
+        ),
+      ),
       events.notesSessionChanged.listen((e) => setNotes(e.payload.session)),
       events.calendarChanged.listen(() =>
         commands
@@ -246,6 +294,7 @@ const Bubble: React.FC = () => {
             title: meeting.title,
             minutes: Math.max(1, Math.round((meeting.start - now) / 60)),
           });
+  const upright = layout.edge === "left" || layout.edge === "right";
   const buttons: {
     id: Action;
     dy: number;
@@ -293,8 +342,15 @@ const Bubble: React.FC = () => {
           return (
             <div
               key={b.id}
-              className={`bitem labels-${layout.labels}`}
-              style={{ left: layout.dot_x, top: layout.dot_y + b.dy }}
+              className={`bitem labels-${LABEL_SIDE[layout.edge]}`}
+              style={
+                {
+                  left: layout.dot_x + (upright ? 0 : b.dy),
+                  top: layout.dot_y + (upright ? b.dy : 0),
+                  // In a row, every label centres on the middle button.
+                  "--shift": `${upright ? 0 : -b.dy}px`,
+                } as React.CSSProperties
+              }
             >
               <button
                 type="button"
@@ -323,7 +379,7 @@ const Bubble: React.FC = () => {
       ) : (
         <button
           type="button"
-          className={`bdot ${recording ? "rec" : ""} ${notesOn ? "notes" : ""}`}
+          className={`bdot ${recording ? `rec ${upright ? "tall" : "wide"}` : ""} ${notesOn ? "notes" : ""}`}
           style={{ left: layout.dot_x, top: layout.dot_y }}
           aria-label={t("bubble.label")}
           onPointerDown={(e) => onPointerDown(e, null)}
@@ -331,7 +387,7 @@ const Bubble: React.FC = () => {
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         >
-          <Wave />
+          {recording ? <Meter levels={levels} upright={upright} /> : <Wave />}
         </button>
       )}
     </div>

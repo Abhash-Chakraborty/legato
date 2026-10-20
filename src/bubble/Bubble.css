@@ -45,10 +45,48 @@
   width: 14px;
   height: 14px;
 }
-/* A dictation running: the dot stays visible and wears a teal ring. */
+/* A dictation running: the dot stretches along its edge into a level
+   meter with a teal ring, tall on a side and wide at the top or bottom. */
 .bdot.rec {
   opacity: 1;
+  border-radius: 14px;
   box-shadow: 0 0 0 2px var(--teal-500);
+  transition:
+    width 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease-out;
+}
+.bdot.rec.tall {
+  height: 76px;
+}
+.bdot.rec.wide {
+  width: 76px;
+}
+.bmeter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.bmeter.v {
+  flex-direction: column;
+}
+.bmeter span {
+  border-radius: 2px;
+  background: #fff;
+  transition:
+    width 70ms linear,
+    height 70ms linear;
+}
+/* On a side the bars lie across and grow sideways; at the top or bottom
+   they stand up and grow upwards. */
+.bmeter.v span {
+  height: 3px;
+  width: calc(4px + var(--l) * 12px);
+}
+.bmeter.h span {
+  width: 3px;
+  height: calc(4px + var(--l) * 12px);
 }
 /* Notes recording behind everything: a slow green glow. */
 .bdot.notes {
@@ -73,8 +111,8 @@
   }
 }
 
-/* Open: three buttons in a column, springing out from the dot one after
-   another. */
+/* Open: three buttons in a column on a side, or in a row at the top or
+   bottom, springing out from the dot one after another. */
 .bitem {
   position: absolute;
   width: 0;
@@ -173,6 +211,18 @@
 }
 .labels-right .blabel {
   left: 26px;
+}
+.labels-below .blabel,
+.labels-above .blabel {
+  left: var(--shift);
+  transform: translateX(-50%);
+}
+.labels-below .blabel {
+  top: 26px;
+}
+.labels-above .blabel {
+  top: auto;
+  bottom: 26px;
 }
 .btext {
   min-width: 0;

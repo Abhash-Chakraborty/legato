@@ -211,10 +211,6 @@
           "push_to_talk": "Legato listens only while you hold the keys.",
           "toggle": "Tap to start listening, tap again to paste."
         }
-      },
-      "nativeTitleBar": {
-        "label": "Native title bar",
-        "description": "Uses the standard Windows title bar instead of Legato's own."
       }
     },
     "models": {
@@ -610,7 +606,7 @@
     "sections": {
       "general": {
         "title": "General",
-        "subtitle": "Startup and how this window looks."
+        "subtitle": "Startup and how Legato looks."
       },
       "shortcuts": {
         "title": "Shortcuts",
@@ -664,7 +660,6 @@
     "groups": {
       "startup": "Startup",
       "appearance": "Appearance",
-      "window": "Window",
       "dictation": "Dictation",
       "keyboard": "Keyboard",
       "microphone": "Microphone",
@@ -874,7 +869,7 @@
     "bar": {
       "bubble": {
         "title": "Bubble on the desktop",
-        "help": "A small Legato dot stays at the edge of the screen; hover it for Dictate, Notes and the Scratchpad, drag it anywhere, right-click to hide it."
+        "help": "A small Legato dot sits in the middle of a screen edge; hover it for Dictate, Notes and the Scratchpad, drag it to another edge, right-click to hide it."
       },
       "confirmPaste": {
         "title": "Confirm after pasting",

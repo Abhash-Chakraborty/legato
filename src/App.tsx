@@ -475,7 +475,7 @@ function App() {
             <div
               ref={settingsScrollRef}
               data-scroll-root
-              className="h-full overflow-y-auto px-8 pt-8 pb-14 min-[1180px]:px-14 [scrollbar-gutter:stable]"
+              className="h-full overflow-y-auto px-6 pt-6 pb-10 min-[1180px]:px-9 [scrollbar-gutter:stable]"
             >
               <ErrorBoundary key={page} context={page}>
                 <div key={page} className="view-enter">

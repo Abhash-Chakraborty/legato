@@ -160,7 +160,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-[1120px] items-start gap-8 min-[1180px]:gap-10">
+    <div className="mx-auto flex w-full max-w-[1120px] items-start gap-7 min-[1180px]:gap-9">
       <div className="sticky top-0 w-[168px] flex-none min-[1180px]:w-[184px]">
         <div className="relative mb-3">
           <Search

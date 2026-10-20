@@ -1,10 +1,12 @@
-//! The desktop bubble: a small Legato dot that stays on screen. Hovering it
-//! opens Dictate, Notes and the Scratchpad; it can be dragged anywhere and
-//! snaps to a side when dropped near one. It never takes focus, so the app
+//! The desktop bubble: a small Legato dot in the middle of a screen edge.
+//! Hovering it opens Dictate, Notes and the Scratchpad; while you talk it
+//! shows a level meter, upright on a side and lying down at the top or
+//! bottom. It can be dragged anywhere and settles in the middle of the
+//! nearest edge. It never takes focus, so the app
 //! being dictated into keeps it, and it steps aside while a window fills
 //! the screen. Placement math lives in `bubble_rules`.
 
-use crate::bubble_rules::{self, LabelSide, Rect};
+use crate::bubble_rules::{self, Edge, Rect};
 use crate::settings::{get_settings, write_settings, BubbleSpot};
 use log::{debug, warn};
 use serde::Serialize;
@@ -21,6 +23,8 @@ pub const WINDOW: &str = "bubble";
 struct Spot {
     center: (f64, f64),
     area: Rect,
+    /// The edge it settled on; None while it's being dragged.
+    edge: Option<Edge>,
 }
 
 static SPOT: Mutex<Option<Spot>> = Mutex::new(None);
@@ -29,6 +33,13 @@ static EXPANDED: AtomicBool = AtomicBool::new(false);
 static COVERED: AtomicBool = AtomicBool::new(false);
 /// "Hide for an hour": until this many seconds since 1970.
 static SNOOZED_UNTIL: AtomicU64 = AtomicU64::new(0);
+/// The window is on screen, so it wants the microphone's levels.
+static VISIBLE: AtomicBool = AtomicBool::new(false);
+
+/// Whether the bubble shows, and so wants `mic-level` while you talk.
+pub fn wants_levels() -> bool {
+    VISIBLE.load(Ordering::Relaxed)
+}
 
 /// What the bubble's page needs to lay itself out.
 #[derive(Clone, Serialize, Type)]
@@ -37,7 +48,7 @@ pub struct BubbleLayout {
     /// The dot's centre inside the window.
     pub dot_x: f64,
     pub dot_y: f64,
-    pub labels: LabelSide,
+    pub edge: Edge,
 }
 
 fn now_s() -> u64 {
@@ -96,12 +107,16 @@ fn saved_spot(app: &AppHandle) -> Option<Spot> {
         .or_else(|| app.primary_monitor().ok().flatten())
         .or_else(|| monitors.first().cloned())?;
     let area = logical_area(&monitor);
-    let fraction = saved
-        .map(|s| (s.x, s.y))
-        .unwrap_or(bubble_rules::DEFAULT_FRACTION);
+    // Spots saved before edges were a thing pick the nearest edge.
+    let edge = saved.map_or(Edge::default(), |s| {
+        s.edge.unwrap_or_else(|| {
+            bubble_rules::nearest_edge((area.x + s.x * area.w, area.y + s.y * area.h), area)
+        })
+    });
     Some(Spot {
-        center: bubble_rules::from_fraction(fraction, area),
+        center: bubble_rules::edge_center(edge, area),
         area,
+        edge: Some(edge),
     })
 }
 
@@ -116,7 +131,10 @@ fn apply(app: &AppHandle) {
         let Some(spot) = guard.as_ref() else {
             return;
         };
-        bubble_rules::place(spot.center, spot.area, expanded)
+        let edge = spot
+            .edge
+            .unwrap_or_else(|| bubble_rules::nearest_edge(spot.center, spot.area));
+        bubble_rules::place(spot.center, edge, spot.area, expanded)
     };
     let r = placement.window;
     // Size first when growing and position first when shrinking, so the
@@ -136,7 +154,7 @@ fn apply(app: &AppHandle) {
             expanded,
             dot_x: placement.dot.0,
             dot_y: placement.dot.1,
-            labels: placement.labels,
+            edge: placement.edge,
         },
     );
 }
@@ -157,9 +175,11 @@ fn refresh_visibility(app: &AppHandle) {
         if !window.is_visible().unwrap_or(false) {
             apply(app);
             show_topmost(&window);
+            VISIBLE.store(true, Ordering::Relaxed);
         }
     } else if window.is_visible().unwrap_or(false) {
         EXPANDED.store(false, Ordering::SeqCst);
+        VISIBLE.store(false, Ordering::Relaxed);
         let _ = window.hide();
     }
 }
@@ -312,21 +332,25 @@ pub fn move_to(app: &AppHandle, x: f64, y: f64) {
         *guard = Some(Spot {
             center: bubble_rules::clamp_center((x, y), area),
             area,
+            edge: None,
         });
     }
     EXPANDED.store(false, Ordering::SeqCst);
     apply(app);
 }
 
-/// Ends a drag: snaps to a side when near one and remembers the spot.
+/// Ends a drag: settles in the middle of the nearest edge and remembers it.
 pub fn drop_here(app: &AppHandle) {
-    let saved = {
+    let (edge, saved) = {
         let mut guard = SPOT.lock().unwrap_or_else(|e| e.into_inner());
         let Some(spot) = guard.as_mut() else {
             return;
         };
-        spot.center = bubble_rules::snap(spot.center, spot.area);
-        bubble_rules::to_fraction(spot.center, spot.area)
+        let (edge, center) = bubble_rules::snap(spot.center, spot.area);
+        spot.center = center;
+        spot.edge = Some(edge);
+        let a = spot.area;
+        (edge, ((center.0 - a.x) / a.w, (center.1 - a.y) / a.h))
     };
     apply(app);
     let name = monitor_at(app, {
@@ -340,6 +364,7 @@ pub fn drop_here(app: &AppHandle) {
         monitor: name,
         x: saved.0,
         y: saved.1,
+        edge: Some(edge),
     });
     write_settings(app, settings);
 }

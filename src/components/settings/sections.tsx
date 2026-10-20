@@ -23,7 +23,6 @@ import { AutostartToggle } from "./AutostartToggle";
 import { ShowTrayIcon } from "./ShowTrayIcon";
 import { StartHidden } from "./StartHidden";
 import { ThemeSelector } from "./ThemeSelector";
-import { NativeTitleBar } from "./NativeTitleBar";
 import { ShortcutInput } from "./ShortcutInput";
 import { ShortcutActivationSetting } from "./ShortcutActivation";
 import { HoldThreshold } from "./debug/HoldThreshold";
@@ -275,20 +274,6 @@ export const buildSections = (
               "theme.options.dark",
             ],
             render: () => <ThemeSelector grouped />,
-          },
-        ],
-      },
-      {
-        id: "window",
-        titleKey: "settings.groups.window",
-        rows: [
-          {
-            id: "native-title-bar",
-            searchKeys: [
-              "settings.general.nativeTitleBar.label",
-              "settings.general.nativeTitleBar.description",
-            ],
-            render: () => <NativeTitleBar />,
           },
         ],
       },

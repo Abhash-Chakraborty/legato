@@ -737,23 +737,6 @@ pub fn apply_window_theme(app: &AppHandle, theme: Theme) {
     }
 }
 
-/// Switches the main window between the standard Windows title bar and the
-/// one Legato draws itself. The frontend hides its own title bar controls when
-/// the native one is on.
-#[tauri::command]
-#[specta::specta]
-pub fn change_native_title_bar_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.native_title_bar = enabled;
-    settings::write_settings(&app, settings);
-    if let Some(window) = app.get_webview_window("main") {
-        window
-            .set_decorations(enabled)
-            .map_err(|e| format!("Failed to change the title bar: {e}"))?;
-    }
-    Ok(())
-}
-
 #[tauri::command]
 #[specta::specta]
 pub fn change_remember_app_setting(app: AppHandle, enabled: bool) -> Result<(), String> {

@@ -400,14 +400,6 @@ async changeShowTrayIconSetting(enabled: boolean) : Promise<Result<null, string>
     else return { status: "error", error: e  as any };
 }
 },
-async changeNativeTitleBarSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_native_title_bar_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async changeRememberAppSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_remember_app_setting", { enabled }) };
@@ -2758,7 +2750,8 @@ config: string;
  * AI apps found on this PC.
  */
 clients: McpClient[] }
-export type BubbleSpot = { monitor: string; x: number; y: number }
+export type BubbleSpot = { monitor: string; x: number; y: number; edge?: Edge | null }
+export type Edge = "left" | "right" | "top" | "bottom"
 export type CleanupRules = { repeats?: boolean; numbers?: boolean; punctuation?: boolean; corrections?: boolean; lists?: boolean; 
 /**
  * A long dictation is split into paragraphs where the thought changes.
@@ -3056,11 +3049,6 @@ scratchpad_last_note?: number | null;
  * `mute_while_recording` switch, which becomes Mute.
  */
 background_audio?: BackgroundAudio; append_trailing_space?: boolean; theme?: Theme; 
-/**
- * Use the standard Windows title bar instead of Legato's own. Applied when
- * the main window is created and whenever the setting changes.
- */
-native_title_bar?: boolean; 
 /**
  * Record which app each dictation went into (history, Home's app filter).
  */

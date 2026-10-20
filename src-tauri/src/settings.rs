@@ -146,13 +146,15 @@ pub enum OverlayPosition {
     Bottom,
 }
 
-/// Where the desktop bubble sits: the monitor, and the dot's centre as
-/// fractions of that monitor's work area.
+/// Where the desktop bubble sits: the monitor, the edge whose middle it's
+/// in, and its centre as fractions of that monitor's work area.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
 pub struct BubbleSpot {
     pub monitor: String,
     pub x: f64,
     pub y: f64,
+    #[serde(default)]
+    pub edge: Option<crate::bubble_rules::Edge>,
 }
 
 /// A calendar Legato reads meetings from. Its secret address is in
@@ -880,10 +882,6 @@ pub struct AppSettings {
     pub append_trailing_space: bool,
     #[serde(default = "default_theme")]
     pub theme: Theme,
-    /// Use the standard Windows title bar instead of Legato's own. Applied when
-    /// the main window is created and whenever the setting changes.
-    #[serde(default)]
-    pub native_title_bar: bool,
     /// Record which app each dictation went into (history, Home's app filter).
     #[serde(default = "default_remember_app")]
     pub remember_app: bool,
@@ -1489,7 +1487,6 @@ pub fn get_default_settings() -> AppSettings {
         background_audio: BackgroundAudio::default(),
         append_trailing_space: false,
         theme: default_theme(),
-        native_title_bar: false,
         remember_app: default_remember_app(),
         experimental_enabled: false,
         lazy_stream_close: false,

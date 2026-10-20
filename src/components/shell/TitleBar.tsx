@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useSettings } from "../../hooks/useSettings";
 import legatoIcon from "../../assets/legato-icon.svg";
 import ModelSelector from "../model-selector";
 import UpdateChecker from "../update-checker";
@@ -28,17 +27,13 @@ interface TitleBarProps {
 
 /**
  * Legato's own title bar: a drag area, the update and model status, and the
- * window controls. With the native title bar on (Settings › General), Windows
- * draws the controls and this keeps only the status.
+ * window controls.
  */
 export const TitleBar: React.FC<TitleBarProps> = ({ minimal = false }) => {
   const { t } = useTranslation();
-  const { settings } = useSettings();
-  const native = settings?.native_title_bar ?? false;
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    if (native) return;
     const win = getCurrentWindow();
     const sync = () => {
       win
@@ -51,10 +46,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ minimal = false }) => {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [native]);
-
-  // Nothing to show: Windows draws the title bar and onboarding has no status.
-  if (native && minimal) return null;
+  }, []);
 
   const win = getCurrentWindow();
 
@@ -62,13 +54,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({ minimal = false }) => {
     <header
       // A maximized frameless window on Windows reaches a few pixels past the
       // top of the screen, so the bar gets that much padding to stay visible.
-      className={`flex h-12 flex-none select-none items-stretch ${maximized && !native ? "h-[55px] pt-[7px]" : ""}`}
-      data-tauri-drag-region={native ? undefined : true}
+      className={`flex h-12 flex-none select-none items-stretch ${maximized ? "h-[55px] pt-[7px]" : ""}`}
+      data-tauri-drag-region
     >
       {!minimal && (
         <div
           className="flex items-center gap-2.5 ps-[22px] pe-3 text-[17px] font-semibold tracking-[-0.01em] text-text"
-          data-tauri-drag-region={native ? undefined : true}
+          data-tauri-drag-region
         >
           <img
             src={legatoIcon}
@@ -80,49 +72,44 @@ export const TitleBar: React.FC<TitleBarProps> = ({ minimal = false }) => {
           <span className="pointer-events-none">{APP_NAME}</span>
         </div>
       )}
-      <div
-        className="flex-1"
-        data-tauri-drag-region={native ? undefined : true}
-      />
+      <div className="flex-1" data-tauri-drag-region />
       {!minimal && (
         <div className="flex items-center gap-1 pe-2">
           <UpdateChecker />
           <ModelSelector />
         </div>
       )}
-      {!native && (
-        <div className="flex items-stretch">
-          <button
-            type="button"
-            className={`${captionClasses} hover:bg-surface-3 active:bg-surface-4`}
-            aria-label={t("titleBar.minimize")}
-            title={t("titleBar.minimize")}
-            onClick={() => win.minimize()}
-          >
-            {GLYPH.minimize}
-          </button>
-          <button
-            type="button"
-            className={`${captionClasses} hover:bg-surface-3 active:bg-surface-4`}
-            aria-label={
-              maximized ? t("titleBar.restore") : t("titleBar.maximize")
-            }
-            title={maximized ? t("titleBar.restore") : t("titleBar.maximize")}
-            onClick={() => win.toggleMaximize()}
-          >
-            {maximized ? GLYPH.restore : GLYPH.maximize}
-          </button>
-          <button
-            type="button"
-            className={`${captionClasses} hover:bg-[#c42b1c] hover:text-white active:bg-[#c42b1c]/90 active:text-white/75`}
-            aria-label={t("titleBar.close")}
-            title={t("titleBar.close")}
-            onClick={() => win.close()}
-          >
-            {GLYPH.close}
-          </button>
-        </div>
-      )}
+      <div className="flex items-stretch">
+        <button
+          type="button"
+          className={`${captionClasses} hover:bg-surface-3 active:bg-surface-4`}
+          aria-label={t("titleBar.minimize")}
+          title={t("titleBar.minimize")}
+          onClick={() => win.minimize()}
+        >
+          {GLYPH.minimize}
+        </button>
+        <button
+          type="button"
+          className={`${captionClasses} hover:bg-surface-3 active:bg-surface-4`}
+          aria-label={
+            maximized ? t("titleBar.restore") : t("titleBar.maximize")
+          }
+          title={maximized ? t("titleBar.restore") : t("titleBar.maximize")}
+          onClick={() => win.toggleMaximize()}
+        >
+          {maximized ? GLYPH.restore : GLYPH.maximize}
+        </button>
+        <button
+          type="button"
+          className={`${captionClasses} hover:bg-[#c42b1c] hover:text-white active:bg-[#c42b1c]/90 active:text-white/75`}
+          aria-label={t("titleBar.close")}
+          title={t("titleBar.close")}
+          onClick={() => win.close()}
+        >
+          {GLYPH.close}
+        </button>
+      </div>
     </header>
   );
 };

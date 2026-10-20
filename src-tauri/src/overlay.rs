@@ -574,8 +574,10 @@ pub fn update_overlay_enabled_cache(enabled: bool) {
 pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // Skip emission when the overlay is disabled. The recording_overlay
     // window is created at boot regardless of overlay_style, so without this
-    // guard a hidden overlay's webview would still process every event.
-    if !OVERLAY_ENABLED.load(Ordering::Relaxed) {
+    // guard a hidden overlay's webview would still process every event. The
+    // bubble's meter still wants them with the bar off.
+    let overlay = OVERLAY_ENABLED.load(Ordering::Relaxed);
+    if !overlay && !crate::bubble::wants_levels() {
         return;
     }
 
@@ -605,7 +607,12 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     if MAIN_WANTS_MIC_LEVEL.load(Ordering::Relaxed) {
         let _ = app_handle.emit_to("main", "mic-level", levels);
     }
-    let _ = app_handle.emit_to("recording_overlay", "mic-level", levels);
+    if overlay {
+        let _ = app_handle.emit_to("recording_overlay", "mic-level", levels);
+    }
+    if crate::bubble::wants_levels() {
+        let _ = app_handle.emit_to(crate::bubble::WINDOW, "mic-level", levels);
+    }
 }
 
 #[cfg(test)]
