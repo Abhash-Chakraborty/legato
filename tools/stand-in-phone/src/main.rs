@@ -37,6 +37,12 @@ async fn main() -> Result<()> {
     };
     let dir = PathBuf::from(take("--dir").unwrap_or_else(|| "phone".into()));
     let name = take("--name").unwrap_or_else(|| "Stand-in phone".into());
+    // Check the subcommand before opening the phone, so a bare run for the
+    // usage text leaves no folder behind.
+    if !matches!(args.first().map(String::as_str), Some("pair" | "connect")) {
+        eprintln!("usage: stand-in-phone [--dir <folder>] [--name <name>] pair '<link>' | connect");
+        std::process::exit(2);
+    }
     let phone = Arc::new(Phone::open(
         &dir,
         &name,
@@ -44,27 +50,18 @@ async fn main() -> Result<()> {
     )?);
 
     let mut secret = None;
-    match args.first().map(String::as_str) {
-        Some("pair") => {
-            let Some(uri) = args.get(1) else {
-                bail!("pair needs the pairing link");
-            };
-            let link = PairLink::parse(uri)?;
-            phone.save_pc(&PairedPc {
-                device_id: link.device_id,
-                name: link.name,
-                fingerprint: link.fingerprint,
-                addrs: link.addrs,
-            })?;
-            secret = Some(link.secret);
-        }
-        Some("connect") => {}
-        _ => {
-            eprintln!(
-                "usage: stand-in-phone [--dir <folder>] [--name <name>] pair '<link>' | connect"
-            );
-            std::process::exit(2);
-        }
+    if args.first().map(String::as_str) == Some("pair") {
+        let Some(uri) = args.get(1) else {
+            bail!("pair needs the pairing link");
+        };
+        let link = PairLink::parse(uri)?;
+        phone.save_pc(&PairedPc {
+            device_id: link.device_id,
+            name: link.name,
+            fingerprint: link.fingerprint,
+            addrs: link.addrs,
+        })?;
+        secret = Some(link.secret);
     }
     let Some(pc) = phone.paired_pc() else {
         bail!("not paired; run `stand-in-phone pair '<link>'` first");
