@@ -11,6 +11,12 @@ use tauri_plugin_autostart::ManagerExt;
 /// enable()/disable() results.
 pub fn apply_autostart(app: &AppHandle, enabled: bool) {
     let manager = app.autolaunch();
+    // Disabling an entry that was never created fails with "file not found"
+    // on Windows, which is nothing to warn about.
+    let already = manager.is_enabled().unwrap_or(enabled);
+    if already == enabled {
+        return;
+    }
     let result = if enabled {
         manager.enable()
     } else {
