@@ -19,10 +19,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Result};
-use stand_in_phone::sync::identity::uuid;
-use stand_in_phone::sync::link::{self, Command, Host, Sessions};
-use stand_in_phone::sync::protocol::{Clip, ClipKind, PairLink};
-use stand_in_phone::{PairedPc, Phone};
+use legato_phone::sync::identity::uuid;
+use legato_phone::sync::link::{Command, Sessions};
+use legato_phone::sync::protocol::{Clip, ClipKind, PairLink};
+use legato_phone::{LinkEnd, PairedPc, Phone};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::watch;
 
@@ -71,34 +71,11 @@ async fn main() -> Result<()> {
     let sessions = Sessions::default();
     let (stop_tx, stop) = watch::channel(false);
     let link_task = {
-        let (phone, sessions, pc) = (phone.clone(), sessions.clone(), pc.clone());
+        let (phone, sessions) = (phone.clone(), sessions.clone());
         tokio::spawn(async move {
-            let mut secret = secret;
-            loop {
-                let host: Arc<dyn Host> = phone.clone();
-                let result = link::connect(
-                    &pc.addrs,
-                    &pc.fingerprint,
-                    &phone.identity,
-                    secret.take(),
-                    host,
-                    sessions.clone(),
-                    stop.clone(),
-                )
-                .await;
-                if *stop.borrow() || phone.paired_pc().is_none() {
-                    return;
-                }
-                match result {
-                    Err(e) if e.to_string().contains("refused") => {
-                        println!("· {e}");
-                        let _ = phone.forget_pc();
-                        std::process::exit(1);
-                    }
-                    Err(e) => println!("· Can't reach {}: {e:#}. Trying again in 5 s.", pc.name),
-                    Ok(_) => println!("· Connection closed. Reconnecting in 5 s."),
-                }
-                tokio::time::sleep(Duration::from_secs(5)).await;
+            if let LinkEnd::Refused(why) = phone.link_loop(sessions, secret, stop).await {
+                println!("· {why}");
+                std::process::exit(1);
             }
         })
     };

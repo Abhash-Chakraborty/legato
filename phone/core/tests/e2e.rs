@@ -5,16 +5,16 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use legato_phone::managers::history_store::MIGRATIONS;
+use legato_phone::sync::engine::{Accepted, Engine};
+use legato_phone::sync::hub::{Config, Events, Hub};
+use legato_phone::sync::identity::{uuid, Identity};
+use legato_phone::sync::ledger::{self, Peer};
+use legato_phone::sync::link::{self, Command, Host, Sessions};
+use legato_phone::sync::protocol::{Clip, ClipKind, Refusal};
+use legato_phone::{PairedPc, Phone};
 use rusqlite::Connection;
 use rusqlite_migration::Migrations;
-use stand_in_phone::managers::history_store::MIGRATIONS;
-use stand_in_phone::sync::engine::{Accepted, Engine};
-use stand_in_phone::sync::hub::{Config, Events, Hub};
-use stand_in_phone::sync::identity::{uuid, Identity};
-use stand_in_phone::sync::ledger::{self, Peer};
-use stand_in_phone::sync::link::{self, Command, Host, Sessions};
-use stand_in_phone::sync::protocol::{Clip, ClipKind, Refusal};
-use stand_in_phone::{PairedPc, Phone};
 use tokio::sync::watch;
 
 #[derive(Default)]

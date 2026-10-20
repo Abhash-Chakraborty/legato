@@ -1,13 +1,19 @@
 [package]
-name = "stand-in-phone"
+name = "legato-phone"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "A command-line phone that speaks Legato's phone sync protocol, for testing the PC side"
+description = "The phone side of Legato's sync: the library the Android app and the stand-in CLI share"
 
 # Not part of the app's build: it borrows the app's sync modules by path
-# (src/sync/mod.rs) so it runs exactly the code the PC runs.
-[workspace]
+# (src/sync/mod.rs) so the phone runs exactly the code the PC runs.
+[lib]
+name = "legato_phone"
+path = "src/lib.rs"
+
+[[bin]]
+name = "stand-in-phone"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.95"

@@ -1,0 +1,91 @@
+name: android
+
+# Legato for Android: the Rust core for arm64 through cargo-ndk, the Kotlin
+# bindings from UniFFI, then the app with Gradle. Runs on x86-64 Linux because
+# Google ships the Android build tools for that alone.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - "phone/**"
+      - "src-tauri/src/sync/**"
+      - "src-tauri/src/managers/history_store.rs"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - "phone/**"
+      - "src-tauri/src/sync/**"
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust for arm64 Android
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: phone
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK and NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018"
+
+      - name: cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Rust core for arm64
+        working-directory: phone
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.2.12479018
+          CMAKE_BUILD_PARALLEL_LEVEL: "4"
+        run: |
+          cargo ndk --target arm64-v8a --platform 29 \
+            --output-dir ../android/app/src/main/jniLibs \
+            build --release -p legato-android
+
+      - name: Kotlin bindings
+        working-directory: phone
+        run: |
+          cargo run --release -p uniffi-bindgen -- generate \
+            --library target/aarch64-linux-android/release/liblegato_android.so \
+            --language kotlin --no-format \
+            --out-dir ../android/app/build/generated/uniffi
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Build the debug APK
+        working-directory: android
+        run: gradle --no-daemon assembleDebug
+
+      - name: Tests on the host
+        working-directory: phone
+        run: cargo test --release -p legato-phone
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: legato-android-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

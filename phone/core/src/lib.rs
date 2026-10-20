@@ -8,7 +8,9 @@ pub mod sync;
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
@@ -19,8 +21,9 @@ use serde_json::Value;
 use sync::engine::{now_s, Engine, Extra};
 use sync::identity::Identity;
 use sync::ledger::{self, Item, Peer};
-use sync::link::Host;
+use sync::link::{self, Host, Sessions};
 use sync::protocol::{Change, Clip, Hello, Refusal, Welcome, KINDS, PROTOCOL};
+use tokio::sync::watch;
 
 /// The PC this phone is paired with, as the pairing link gave it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -39,7 +42,18 @@ pub struct Phone {
     /// What the PC said it syncs.
     pc_kinds: Mutex<Vec<String>>,
     pub clips: Mutex<Vec<Clip>>,
+    /// Connected to the PC right now.
+    online: AtomicBool,
     say: Box<dyn Fn(String) + Send + Sync>,
+}
+
+/// How a connection attempt ended, for the reconnect loop.
+#[derive(Debug, PartialEq, Eq)]
+pub enum LinkEnd {
+    /// The PC refused us (bad secret, expired link, unknown device); pairing is gone.
+    Refused(String),
+    /// Stopped on purpose, or the PC unpaired us.
+    Stopped,
 }
 
 /// Transforms and Style, which a phone keeps in a table of its own.
@@ -109,8 +123,56 @@ impl Phone {
             dir: dir.to_path_buf(),
             pc_kinds: Mutex::new(Vec::new()),
             clips: Mutex::new(Vec::new()),
+            online: AtomicBool::new(false),
             say,
         })
+    }
+
+    pub fn is_online(&self) -> bool {
+        self.online.load(Ordering::Relaxed)
+    }
+
+    /// Keeps a connection to the paired PC: connects, and when the link drops
+    /// tries again every 5 seconds until `stop` flips or the pairing is gone.
+    /// `secret` is the one-time pairing secret for a first connection.
+    pub async fn link_loop(
+        self: &Arc<Self>,
+        sessions: Sessions,
+        mut secret: Option<String>,
+        stop: watch::Receiver<bool>,
+    ) -> LinkEnd {
+        loop {
+            let Some(pc) = self.paired_pc() else {
+                return LinkEnd::Stopped;
+            };
+            let host: Arc<dyn Host> = self.clone();
+            let result = link::connect(
+                &pc.addrs,
+                &pc.fingerprint,
+                &self.identity,
+                secret.take(),
+                host,
+                sessions.clone(),
+                stop.clone(),
+            )
+            .await;
+            self.online.store(false, Ordering::Relaxed);
+            if *stop.borrow() || self.paired_pc().is_none() {
+                return LinkEnd::Stopped;
+            }
+            match result {
+                Err(e) if e.to_string().contains("refused") => {
+                    let _ = self.forget_pc();
+                    return LinkEnd::Refused(format!("{e:#}"));
+                }
+                Err(e) => self.say(format!(
+                    "Can't reach {}: {e:#}. Trying again in 5 s.",
+                    pc.name
+                )),
+                Ok(_) => self.say("Connection closed. Reconnecting in 5 s."),
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
     }
 
     fn say(&self, line: impl Into<String>) {
@@ -357,6 +419,7 @@ impl Host for Phone {
     }
 
     fn online(&self, _peer: &str, addr: Option<SocketAddr>) {
+        self.online.store(addr.is_some(), Ordering::Relaxed);
         if addr.is_none() {
             self.say("Disconnected");
         }

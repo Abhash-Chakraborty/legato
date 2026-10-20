@@ -1,0 +1,3 @@
+[bindings.kotlin]
+package_name = "tech.abhashchakraborty.legato.core"
+cdylib_name = "legato_android"

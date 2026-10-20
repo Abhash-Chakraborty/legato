@@ -1,0 +1,10 @@
+# The phone side of Legato, kept out of the app's build: the shared library,
+# the stand-in CLI and the Android bindings.
+[workspace]
+resolver = "2"
+members = ["core", "android", "bindgen"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

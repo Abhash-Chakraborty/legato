@@ -65,7 +65,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `sync/` - Phone sync and the shared clipboard (protocol in [docs/phone-sync.md](docs/phone-sync.md)):
   - `protocol.rs` / `identity.rs` - Frames, messages, the pairing link; this PC's certificate and pinned TLS
   - `ledger.rs` / `kinds.rs` - The change ledger, peers, merges and clips in history.db; export and apply per kind
-  - `engine.rs` / `link.rs` / `hub.rs` - Merging, connections and pairing, free of Tauri so `tools/stand-in-phone` reuses them
+  - `engine.rs` / `link.rs` / `hub.rs` - Merging, connections and pairing, free of Tauri so the phone side (`phone/`) reuses them
   - `mod.rs` / `clipboard.rs` / `net.rs` - Windows glue: `SyncManager`, the clipboard watcher, this PC's addresses
 - `actions.rs` - What each shortcut does; the dictation pipeline from recording to paste
 - `*_rules.rs` - Pure logic kept free of Tauri so it can be unit tested on any OS: `cleanup_rules`, `style_rules`, `snippet_rules`, `transform_rules`, `learn_rules`, `notes_rules`, `calls_rules`, `ai_rules`
@@ -155,13 +155,17 @@ The app enforces single instance behavior — launching when already running bri
 
 Settings › Devices pairs Legato for Android by QR code and syncs over Wi-Fi or Netbird with mutual TLS, with no server in between. The wire protocol, merge rules and what syncs are written down in [docs/phone-sync.md](docs/phone-sync.md); keep it current when the protocol changes.
 
-`tools/stand-in-phone` is a small Linux/Windows CLI that plays the phone, built from the same `src-tauri/src/sync` files:
+The phone side lives in `phone/`, a Cargo workspace outside the app's build:
+
+- `phone/core` - `legato-phone`, the library both the Android app and the stand-in share, built from the same `src-tauri/src/sync` files; its `stand-in-phone` binary is a Linux/Windows CLI that plays the phone
+- `phone/android` - `legato-android`, the UniFFI bindings the Android app calls (Kotlin bindings are generated in CI)
+- `android/` - the Android app (Kotlin, Jetpack Compose); it builds in GitHub Actions (`android.yml`), since Google ships the Android build tools for x86-64 only
 
 ```bash
-cd tools/stand-in-phone
-cargo test                                   # unit tests plus an end-to-end PC ↔ phone run
-cargo run -- pair 'legato://pair?...'        # pair with a running Legato (Copy link in the dialog)
-cargo run -- connect                         # reconnect later; type `help` for commands
+cd phone
+cargo test -p legato-phone                   # unit tests plus an end-to-end PC ↔ phone run
+cargo run --bin stand-in-phone -- pair 'legato://pair?...'   # pair with a running Legato (Copy link in the dialog)
+cargo run --bin stand-in-phone -- connect    # reconnect later; type `help` for commands
 ```
 
 ## UI Strings
@@ -177,7 +181,7 @@ The UI is English only. All user-facing strings still go through i18next, and ES
 
 - Frontend tests are assertion scripts (`*.test.ts`) that print `ok`; run them with `bun test <dir>`
 - The `*_rules.rs` and store modules have unit tests that run on any OS; the rest of the backend builds only for Windows, so check it with `cargo xwin clippy --target x86_64-pc-windows-msvc` from Linux
-- The sync code's tests run on any OS through `tools/stand-in-phone` (`cargo test` there), including an end-to-end PC ↔ phone run
+- The sync code's tests run on any OS through `phone/core` (`cargo test -p legato-phone` in `phone/`), including an end-to-end PC ↔ phone run
 - After editing `translation.json` with a script, run Prettier on it; `bun run format:check` covers it
 
 ## Code Style

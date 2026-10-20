@@ -1,0 +1,9 @@
+# Gradle and Android Studio
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+# Built in CI: the Rust core for arm64 and the UniFFI bindings
+app/src/main/jniLibs/

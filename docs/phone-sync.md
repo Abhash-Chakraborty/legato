@@ -5,7 +5,8 @@ in between: the phone connects straight to the PC over home Wi-Fi or Netbird, bo
 check each other's certificate, and each keeps its own full copy.
 
 This page is the contract the Android app implements. The PC side lives in
-`src-tauri/src/sync/`. `tools/stand-in-phone` is a command-line phone that speaks the
+`src-tauri/src/sync/`. `phone/core` (`legato-phone`) is the phone side of it, shared by the Android app and the
+`stand-in-phone` CLI, a command-line phone that speaks the
 protocol, for testing the PC before the Android app exists.
 
 ## Identity

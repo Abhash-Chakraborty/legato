@@ -1,0 +1,25 @@
+[package]
+name = "legato-android"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "What Legato for Android calls: pairing, sync, the clipboard and speech, through UniFFI"
+
+[lib]
+name = "legato_android"
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = ["speech"]
+# Speech on the phone through transcribe-cpp (C++ ggml, built by CMake with the
+# NDK). Off for quick host checks, where building ggml would only cost time.
+speech = ["dep:transcribe-cpp"]
+
+[dependencies]
+anyhow = "1.0.95"
+legato-phone = { path = "../core" }
+rusqlite = { version = "0.37", features = ["bundled"] }
+thiserror = "1"
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "sync", "time", "macros"] }
+transcribe-cpp = { version = "0.4.0", default-features = false, optional = true }
+uniffi = { version = "0.32" }
