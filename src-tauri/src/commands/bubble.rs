@@ -33,9 +33,12 @@ pub fn bubble_drop(app: AppHandle) {
 
 /// One of the bubble's buttons or menu items: `dictate`, `notes`,
 /// `scratchpad`, `open` (Legato's window), `snooze` (an hour) or `off`.
+/// Async because the Scratchpad's window may not exist yet, and building a
+/// webview from a sync command, on the main thread, deadlocks on Windows.
 #[tauri::command]
 #[specta::specta]
-pub fn bubble_action(app: AppHandle, action: String) -> Result<(), String> {
+pub async fn bubble_action(app: AppHandle, action: String) -> Result<(), String> {
+    log::debug!("Bubble: {action}");
     match action.as_str() {
         "dictate" => crate::signal_handle::send_transcription_input(&app, "transcribe", "bubble"),
         "notes" => crate::notes::toggle(&app),

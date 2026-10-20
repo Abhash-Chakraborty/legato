@@ -116,10 +116,12 @@ pub fn move_scratch_tab(notes: Notes<'_>, id: i64, to: u32) -> Result<(), String
     text(notes.move_tab(id, to as usize))
 }
 
-/// Opens the window, on a note or the one Settings picks.
+/// Opens the window, on a note or the one Settings picks. Async, as every
+/// command that may create a window must be: a sync one runs on the main
+/// thread, and building a webview there deadlocks on Windows.
 #[tauri::command]
 #[specta::specta]
-pub fn open_scratchpad(app: AppHandle, note_id: Option<i64>) -> Result<(), String> {
+pub async fn open_scratchpad(app: AppHandle, note_id: Option<i64>) -> Result<(), String> {
     text(scratchpad::show(&app, note_id))
 }
 

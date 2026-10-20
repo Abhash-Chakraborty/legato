@@ -225,6 +225,7 @@ pub(crate) fn fit_window_to_screen(window: &tauri::WebviewWindow, min: (f64, f64
     let width = f64::from(size.width) / scale;
     let height = f64::from(size.height) / scale;
     if width <= area_w && height <= area_h {
+        keep_on_screen(window, area);
         return;
     }
     let fitted = tauri::LogicalSize::new(
@@ -238,6 +239,38 @@ pub(crate) fn fit_window_to_screen(window: &tauri::WebviewWindow, min: (f64, f64
         );
     }
     let _ = window.center();
+}
+
+/// Moves a window that fits its screen but hangs off an edge (a remembered
+/// spot from a taller screen, or a first launch below the top) back inside
+/// the work area. The visible frame counts, not Windows' invisible resize
+/// border around it.
+fn keep_on_screen(window: &tauri::WebviewWindow, area: &tauri::PhysicalRect<i32, u32>) {
+    let (Ok(outer), Ok(inner), Ok(size)) = (
+        window.outer_position(),
+        window.inner_position(),
+        window.inner_size(),
+    ) else {
+        return;
+    };
+    let (w, h) = (size.width as i32, size.height as i32);
+    let (ax, ay) = (area.position.x, area.position.y);
+    let (aw, ah) = (area.size.width as i32, area.size.height as i32);
+    if w > aw || h > ah {
+        return;
+    }
+    let x = inner.x.clamp(ax, ax + aw - w);
+    let y = inner.y.clamp(ay, ay + ah - h);
+    if (x, y) == (inner.x, inner.y) {
+        return;
+    }
+    let moved = tauri::PhysicalPosition::new(outer.x + x - inner.x, outer.y + y - inner.y);
+    if let Err(e) = window.set_position(moved) {
+        log::warn!(
+            "Failed to move the {} window on screen: {e}",
+            window.label()
+        );
+    }
 }
 
 fn should_force_show_permissions_window(app: &AppHandle) -> bool {
