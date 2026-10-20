@@ -48,7 +48,9 @@ fn adapter_addresses() -> Vec<Ipv4Addr> {
         let mut adapter = first as *const IP_ADAPTER_ADDRESSES_LH;
         unsafe {
             while let Some(a) = adapter.as_ref() {
-                if a.OperStatus == IfOperStatusUp {
+                let name = a.FriendlyName.to_string().unwrap_or_default();
+                let description = a.Description.to_string().unwrap_or_default();
+                if a.OperStatus == IfOperStatusUp && !virtual_adapter(&name, &description) {
                     let mut unicast = a.FirstUnicastAddress;
                     while let Some(u) = unicast.as_ref() {
                         let sockaddr = u.Address.lpSockaddr;
@@ -70,4 +72,46 @@ fn adapter_addresses() -> Vec<Ipv4Addr> {
 #[cfg(not(windows))]
 fn adapter_addresses() -> Vec<Ipv4Addr> {
     Vec::new()
+}
+
+/// Adapters for virtual machines and containers on this PC (Hyper-V and
+/// WSL's vEthernet, VMware, VirtualBox, Docker): private addresses no phone
+/// can reach, so they stay out of the pairing link.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn virtual_adapter(name: &str, description: &str) -> bool {
+    const MARKS: [&str; 7] = [
+        "vethernet",
+        "hyper-v",
+        "wsl",
+        "vmware",
+        "virtualbox",
+        "docker",
+        "loopback",
+    ];
+    let both = format!("{name} {description}").to_lowercase();
+    MARKS.iter().any(|m| both.contains(m))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::virtual_adapter;
+
+    #[test]
+    fn virtual_machine_adapters_are_left_out() {
+        assert!(virtual_adapter(
+            "vEthernet (WSL (Hyper-V firewall))",
+            "Hyper-V Virtual Ethernet Adapter"
+        ));
+        assert!(virtual_adapter(
+            "VMware Network Adapter VMnet8",
+            "VMware Virtual Ethernet Adapter for VMnet8"
+        ));
+        assert!(virtual_adapter(
+            "Ethernet 3",
+            "VirtualBox Host-Only Ethernet Adapter"
+        ));
+        assert!(!virtual_adapter("Wi-Fi", "Intel(R) Wi-Fi 6E AX211 160MHz"));
+        assert!(!virtual_adapter("wt0", "WireGuard Tunnel"));
+        assert!(!virtual_adapter("Ethernet", "Realtek PCIe GbE Family Controller"));
+    }
 }

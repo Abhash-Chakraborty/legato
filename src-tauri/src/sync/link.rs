@@ -22,6 +22,34 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long the phone waits for any network address before Bluetooth.
 const NET_TIMEOUT: Duration = Duration::from_secs(4);
 
+/// The PC answered and said no: a pairing secret that's wrong or used up,
+/// or a phone it doesn't know any more. Only this ends a pairing; a PC
+/// that can't be reached (off, asleep, Legato closed, a firewall) is
+/// tried again later.
+#[derive(Debug)]
+pub struct Refused(pub String);
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "the PC refused: {}", self.0)
+    }
+}
+
+impl std::error::Error for Refused {}
+
+/// The phone's hello never left: no address answered, or the TLS handshake
+/// failed. A pairing secret is still unspent, so the next try sends it.
+#[derive(Debug)]
+pub struct Unreachable(pub String);
+
+impl std::fmt::Display for Unreachable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Unreachable {}
+
 /// How a device reached the other.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Via {
@@ -339,9 +367,14 @@ pub async fn connect(
     stop: watch::Receiver<bool>,
 ) -> Result<Welcome> {
     let connector = TlsConnector::from(identity.client_config(pc_fingerprint)?);
-    let (tcp, via) = reach(addrs, dial).await?;
+    let (tcp, via) = reach(addrs, dial)
+        .await
+        .map_err(|e| Unreachable(format!("{e:#}")))?;
     tcp.set_nodelay(true)?;
-    let mut tls = connector.connect(server_name(), tcp).await?;
+    let mut tls = connector
+        .connect(server_name(), tcp)
+        .await
+        .map_err(|e| Unreachable(format!("TLS: {e}")))?;
     let me = host.describe();
     let hello = Hello {
         protocol: PROTOCOL,
@@ -354,7 +387,7 @@ pub async fn connect(
     protocol::write(&mut tls, &Message::Hello(hello)).await?;
     let welcome = match tokio::time::timeout(HANDSHAKE_TIMEOUT, protocol::read(&mut tls)).await {
         Ok(Ok(Message::Welcome(w))) => w,
-        Ok(Ok(Message::Refused { reason })) => bail!("the PC refused: {reason:?}"),
+        Ok(Ok(Message::Refused { reason })) => return Err(Refused(format!("{reason:?}")).into()),
         Ok(Ok(other)) => bail!("expected welcome, got {other:?}"),
         Ok(Err(e)) => return Err(e),
         Err(_) => bail!("no welcome"),
