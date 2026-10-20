@@ -204,12 +204,15 @@ const Bubble: React.FC = () => {
     return () => window.clearInterval(id);
   }, [notes]);
 
+  const asked = useRef(0);
   const enter = () => {
     if (leaveTimer.current) window.clearTimeout(leaveTimer.current);
     leaveTimer.current = null;
-    if (!layout.expanded && !press.current?.dragging) {
-      commands.bubbleExpand(true);
-    }
+    // Once per open: pointer moves would otherwise ask on every frame.
+    if (layout.expanded || press.current?.dragging) return;
+    if (Date.now() - asked.current < 400) return;
+    asked.current = Date.now();
+    commands.bubbleExpand(true);
   };
   const leave = () => {
     if (press.current?.dragging) return;
@@ -330,6 +333,11 @@ const Bubble: React.FC = () => {
     <div
       className={`bstage ${layout.expanded ? "open" : ""}`}
       onPointerEnter={enter}
+      // A dropped bubble moves out from under a still pointer, so the page
+      // may not hear it come back; a move over the closed bubble opens it.
+      onPointerMove={() => {
+        if (!layout.expanded && !press.current) enter();
+      }}
       onPointerLeave={leave}
       onContextMenu={onContextMenu}
     >
