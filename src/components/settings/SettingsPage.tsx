@@ -160,7 +160,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   };
 
   return (
-    <div className="flex items-start gap-8 min-[1180px]:gap-10">
+    <div className="mx-auto flex w-full max-w-[1120px] items-start gap-8 min-[1180px]:gap-10">
       <div className="sticky top-0 w-[168px] flex-none min-[1180px]:w-[184px]">
         <div className="relative mb-3">
           <Search
@@ -233,7 +233,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         </div>
       </div>
 
-      <div ref={contentRef} className="min-w-0 max-w-[840px] flex-1">
+      <div ref={contentRef} className="min-w-0 flex-1">
         {q ? (
           <>
             <div className="mb-5 flex min-h-10 items-center justify-between gap-4">

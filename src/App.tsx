@@ -470,7 +470,8 @@ function App() {
         <TitleBar />
         <div className="grid min-h-0 flex-1 grid-cols-[212px_minmax(0,1fr)]">
           <Sidebar />
-          <main className="mb-3.5 me-3.5 min-h-0 overflow-hidden rounded-[var(--r-xl)] border border-line bg-surface">
+          <main className="relative mb-3.5 me-3.5 min-h-0 overflow-hidden rounded-[var(--r-xl)] border border-line bg-surface">
+            <div key={page} className="page-sweep" aria-hidden="true" />
             <div
               ref={settingsScrollRef}
               data-scroll-root

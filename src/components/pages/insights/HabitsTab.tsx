@@ -41,7 +41,7 @@ const FixedWordsCard: React.FC<TabProps> = ({ data }) => {
         </p>
       ) : (
         <ul className="flex flex-col">
-          {data.fixed_words.map((w) => (
+          {data.fixed_words.map((w, i) => (
             <li key={w.id} className="flex h-9 items-center gap-3 text-sm">
               <span className="flex min-w-0 flex-1 items-center gap-2">
                 <span className="truncate font-medium">{w.text}</span>
@@ -52,7 +52,7 @@ const FixedWordsCard: React.FC<TabProps> = ({ data }) => {
                 )}
               </span>
               <span className="hidden w-24 flex-none min-[520px]:block">
-                <ShareBar share={w.hits / top} />
+                <ShareBar share={w.hits / top} index={i} />
               </span>
               <span className="w-28 flex-none text-end text-[13px] tabular-nums text-text-2">
                 {t("insights.fixedWords.times", {
@@ -151,13 +151,13 @@ const FillersCard: React.FC<TabProps> = ({ data, range }) => {
         </p>
       ) : (
         <ul className="flex flex-col">
-          {shown.map((f) => (
+          {shown.map((f, i) => (
             <li key={f.text} className="flex h-9 items-center gap-3 text-sm">
               <span className="w-24 flex-none truncate">
                 {t("insights.fillers.word", { word: f.text })}
               </span>
               <span className="flex-1">
-                <ShareBar share={f.count / top} />
+                <ShareBar share={f.count / top} index={i} />
               </span>
               <span className="w-12 flex-none text-end tabular-nums text-text-2">
                 {f.count.toLocaleString(i18n.language)}
@@ -229,13 +229,16 @@ const HoursCard: React.FC<TabProps> = ({ data, range }) => {
               hour: hourLabel(h, i18n.language),
               count: n,
             })}
-            className={`min-w-0 flex-1 rounded-t-[2px] ${
+            className={`grow-y min-w-0 flex-1 rounded-t-[2px] ${
               busiest?.hour === h ? "bg-teal-600" : "bg-teal-300"
             }`}
-            style={{
-              height: `${n ? Math.max(4, (n / max) * 100) : 2}%`,
-              opacity: n ? 1 : 0.35,
-            }}
+            style={
+              {
+                height: `${n ? Math.max(4, (n / max) * 100) : 2}%`,
+                opacity: n ? 1 : 0.35,
+                "--i": h,
+              } as React.CSSProperties
+            }
           />
         ))}
       </div>

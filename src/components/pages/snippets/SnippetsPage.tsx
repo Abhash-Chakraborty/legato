@@ -219,7 +219,7 @@ export const SnippetsPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-[1080px]">
+    <div className="mx-auto w-full max-w-[1120px]">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
         <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
           {t("snippets.title")}

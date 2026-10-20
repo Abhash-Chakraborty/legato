@@ -153,7 +153,7 @@ export const TransformsPage: React.FC = () => {
   const options = usable.map((x) => ({ value: x.id, label: x.name }));
 
   return (
-    <div className="max-w-[980px]">
+    <div className="mx-auto w-full max-w-[1120px]">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
         <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
           {t("transforms.title")}

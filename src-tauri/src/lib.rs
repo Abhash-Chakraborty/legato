@@ -765,6 +765,7 @@ pub fn run(cli_args: CliArgs) {
             trigger_update_check,
             show_main_window_command,
             commands::cancel_operation,
+            commands::finish_dictation,
             commands::is_portable,
             commands::has_mica,
             commands::notify_update,

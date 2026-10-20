@@ -91,14 +91,22 @@ export const Figure: React.FC<{
 };
 
 /** A horizontal bar for a share of the whole. */
-export const ShareBar: React.FC<{ share: number }> = ({ share }) => (
+export const ShareBar: React.FC<{ share: number; index?: number }> = ({
+  share,
+  index = 0,
+}) => (
   <span
     aria-hidden="true"
     className="block h-1.5 w-full overflow-hidden rounded-full bg-surface-3"
   >
     <span
-      className="block h-full rounded-full bg-teal-600 transition-[width] duration-[320ms] ease-out"
-      style={{ width: `${Math.max(share * 100, share > 0 ? 2 : 0)}%` }}
+      className="grow-x block h-full rounded-full bg-teal-600 transition-[width] duration-[320ms] ease-out"
+      style={
+        {
+          width: `${Math.max(share * 100, share > 0 ? 2 : 0)}%`,
+          "--i": index,
+        } as React.CSSProperties
+      }
     />
   </span>
 );

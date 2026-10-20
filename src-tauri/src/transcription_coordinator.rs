@@ -170,8 +170,12 @@ enum Effect {
 /// Commands processed sequentially by the coordinator thread.
 enum Command {
     Input(InputEvent),
-    Cancel { recording_was_active: bool },
+    Cancel {
+        recording_was_active: bool,
+    },
     ProcessingFinished,
+    /// The bar's check button: end whatever is recording, as its key would.
+    Finish,
 }
 
 /// Decide whether a key-up should be deferred (so auto-repeat can cancel it)
@@ -582,6 +586,21 @@ impl TranscriptionCoordinator {
                                 run_effect(&app, &mut state, effect);
                             }
                         }
+                        Command::Finish => {
+                            if let Stage::Recording(id) = &state.stage {
+                                let input = InputEvent {
+                                    binding_id: id.clone(),
+                                    hotkey_string: "bar".to_string(),
+                                    is_pressed: true,
+                                    mode: ShortcutActivation::Toggle,
+                                    hold_threshold: Duration::ZERO,
+                                    external: true,
+                                };
+                                if let Some(effect) = state.on_input(input, Instant::now()) {
+                                    run_effect(&app, &mut state, effect);
+                                }
+                            }
+                        }
                     }
                 }
                 debug!("Transcription coordinator exited");
@@ -660,6 +679,14 @@ impl TranscriptionCoordinator {
             })
             .is_err()
         {
+            warn!("Transcription coordinator channel closed");
+        }
+    }
+
+    /// Stop the recording in progress and run it through the pipeline, as
+    /// pressing its shortcut again would. Does nothing when idle or busy.
+    pub fn finish(&self) {
+        if self.tx.send(Command::Finish).is_err() {
             warn!("Transcription coordinator channel closed");
         }
     }

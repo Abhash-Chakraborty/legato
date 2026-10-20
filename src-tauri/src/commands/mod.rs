@@ -26,6 +26,15 @@ pub fn cancel_operation(app: AppHandle) {
     cancel_current_operation(&app);
 }
 
+/// The bar's check button: finish the dictation and paste it.
+#[tauri::command]
+#[specta::specta]
+pub fn finish_dictation(app: AppHandle) {
+    if let Some(c) = app.try_state::<crate::TranscriptionCoordinator>() {
+        c.finish();
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn is_portable() -> bool {

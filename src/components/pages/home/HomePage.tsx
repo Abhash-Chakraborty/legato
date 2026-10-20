@@ -310,7 +310,7 @@ export const HomePage: React.FC = () => {
     : "";
 
   return (
-    <div className="grid grid-cols-1 gap-12 min-[1180px]:grid-cols-[minmax(0,1fr)_256px]">
+    <div className="mx-auto grid w-full max-w-[1320px] grid-cols-1 gap-12 min-[1180px]:grid-cols-[minmax(0,1fr)_256px]">
       <div className="min-w-0">
         {/* Stays put while the list scrolls under it. It sticks at the scroll
             root's content edge, so the ::before strip covers the padding

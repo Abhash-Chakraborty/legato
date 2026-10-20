@@ -328,7 +328,7 @@
       "overlay": {
         "style": {
           "title": "Style",
-          "description": "Minimal shows a small pill. Live shows the words as you speak, with streaming models only. None hides the bar.",
+          "description": "Minimal is a small dark pill with cancel and finish. Live is a wider bar that shows the words as you speak with streaming models. None hides the bar.",
           "options": {
             "none": "None",
             "minimal": "Minimal",
@@ -1209,6 +1209,8 @@
     }
   },
   "overlay": {
+    "cancel": "Cancel",
+    "finish": "Finish and paste",
     "transcribing": "Transcribing...",
     "processing": "Processing...",
     "loadingModel": "Loading model...",

@@ -484,6 +484,12 @@ async showMainWindowCommand() : Promise<Result<null, string>> {
 async cancelOperation() : Promise<void> {
     await TAURI_INVOKE("cancel_operation");
 },
+/**
+ * The bar's check button: finish the dictation and paste it.
+ */
+async finishDictation() : Promise<void> {
+    await TAURI_INVOKE("finish_dictation");
+},
 async isPortable() : Promise<boolean> {
     return await TAURI_INVOKE("is_portable");
 },

@@ -82,7 +82,7 @@ const WordsCard: React.FC<TabProps> = ({ data, range }) => {
         aria-hidden="true"
         className="mt-auto flex h-12 items-end gap-[3px] pt-4"
       >
-        {bars.map((b) => (
+        {bars.map((b, i) => (
           <span
             key={b.start}
             title={t(
@@ -91,11 +91,14 @@ const WordsCard: React.FC<TabProps> = ({ data, range }) => {
                 : "insights.words.dayBar",
               { day: barLabel(b.start), count: b.words, words: fmt(b.words) },
             )}
-            className="min-w-0 flex-1 rounded-t-[2px] bg-teal-300"
-            style={{
-              height: `${b.words ? Math.max(6, (b.words / max) * 100) : 3}%`,
-              opacity: b.words ? 1 : 0.35,
-            }}
+            className="grow-y min-w-0 flex-1 rounded-t-[2px] bg-teal-300"
+            style={
+              {
+                height: `${b.words ? Math.max(6, (b.words / max) * 100) : 3}%`,
+                opacity: b.words ? 1 : 0.35,
+                "--i": i,
+              } as React.CSSProperties
+            }
           />
         ))}
       </div>
@@ -502,7 +505,8 @@ const ActivityCard: React.FC<TabProps> = ({ data }) => {
         ) : null
       }
     >
-      <div className="overflow-x-auto">
+      {/* Room around the grid so the chosen day's outline isn't clipped. */}
+      <div className="-m-1 overflow-x-auto p-1">
         <div className="grid min-w-[300px] max-w-[520px] grid-cols-[auto_1fr] gap-x-2">
           <span />
           <div
@@ -543,7 +547,7 @@ const ActivityCard: React.FC<TabProps> = ({ data }) => {
               gridTemplateColumns: `repeat(${weeks.length}, minmax(12px, 1fr))`,
             }}
           >
-            {cells.map((c) =>
+            {cells.map((c, ci) =>
               c.future ? (
                 <span
                   key={c.day}
@@ -561,7 +565,8 @@ const ActivityCard: React.FC<TabProps> = ({ data }) => {
                   title={cellLabel(c)}
                   onClick={() => setSelected(c.day)}
                   onDoubleClick={() => goTo("home", `day:${c.day}`)}
-                  className={`aspect-square w-full rounded-[3px] ${LEVEL_CLASS[heatLevel(c.words)]} ${
+                  style={{ "--i": Math.floor(ci / 7) } as React.CSSProperties}
+                  className={`cell-in aspect-square w-full rounded-[3px] ${LEVEL_CLASS[heatLevel(c.words)]} ${
                     c.day === chosen.day
                       ? "outline outline-2 outline-offset-1 outline-text-2"
                       : ""

@@ -281,7 +281,7 @@ export const DictionaryPage: React.FC = () => {
   const examples = entries.filter((e) => e.heard.length > 0).slice(0, 3);
 
   return (
-    <div className="max-w-[980px]">
+    <div className="mx-auto w-full max-w-[1120px]">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
         <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
           {t("dictionary.title")}

@@ -267,6 +267,9 @@ const RecordingOverlay: React.FC = () => {
   // Overlay placement (top vs bottom of the screen). The Live panel grows downward
   // from a top overlay (oldest line under the pill) and upward from a bottom one.
   const [position, setPosition] = useState<"top" | "bottom">("bottom");
+  // Minimal is the small dark pill (cancel, waveform, finish); Live is the
+  // roomier bar that opens to show words with streaming models.
+  const [mini, setMini] = useState(false);
   // True once live text overflows the cap. A top overlay fades its top edge only
   // while overflowing, so the resting first line stays crisp flush under the pill.
   const [overflowing, setOverflowing] = useState(false);
@@ -300,6 +303,7 @@ const RecordingOverlay: React.FC = () => {
             setPosition(
               settings.data.overlay_position === "top" ? "top" : "bottom",
             );
+            setMini(settings.data.overlay_style === "minimal");
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
@@ -497,7 +501,7 @@ const RecordingOverlay: React.FC = () => {
   const cancelBtn = (
     <button
       className="sx"
-      aria-label="cancel"
+      aria-label={t("overlay.cancel")}
       onClick={() => commands.cancelOperation()}
     >
       <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -874,7 +878,10 @@ const RecordingOverlay: React.FC = () => {
       <div
         className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
       >
-        <div className="scard notes" role="status">
+        <div
+          className={`scard notes ${paused ? "" : "glow"} ${mini ? "dark" : ""}`}
+          role="status"
+        >
           <span className={`snotes-dot ${paused ? "paused" : ""}`} />
           <span className="snotes-label">{t("overlay.notes.label")}</span>
           <span className="snotes-clock">
@@ -1059,6 +1066,64 @@ const RecordingOverlay: React.FC = () => {
         ? t("overlay.working", { name: workingLabel })
         : t("overlay.processing")
       : transcribingLabel;
+
+  if (mini) {
+    return (
+      <div
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div className={`scard mini ${working ? "mworking" : ""}`}>
+          <button
+            type="button"
+            className="mbtn mx"
+            aria-label={t("overlay.cancel")}
+            title={t("overlay.cancel")}
+            onClick={() => commands.cancelOperation()}
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M5 5 L11 11 M11 5 L5 11"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+          {working ? (
+            <span className="mdots" role="status" aria-label={workLabel}>
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
+          ) : (
+            waveform
+          )}
+          {!working && (
+            <button
+              type="button"
+              className="mbtn mok"
+              aria-label={t("overlay.finish")}
+              title={t("overlay.finish")}
+              onClick={() => commands.finishDictation()}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M4 8.5 L7 11.2 L12 5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}>

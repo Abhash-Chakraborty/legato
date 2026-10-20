@@ -334,6 +334,74 @@ textarea.input {
 .view-enter {
   animation: view-in var(--dur-3) var(--ease-out) both;
 }
+
+/* Changing page: a 2 px teal line sweeps across the top of the content card,
+   left to right, then fades, so the switch reads as the app moving. */
+.page-sweep {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 30;
+  height: 2px;
+  pointer-events: none;
+  background: var(--teal-600);
+  transform-origin: left center;
+  animation: page-sweep 620ms var(--ease-out) both;
+}
+@keyframes page-sweep {
+  0% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+  70% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+/* Charts fill in once when they first show: bars grow from their base, one
+   after another (--i is the bar's index), heat map cells fade in by week. */
+.grow-x {
+  transform-origin: left center;
+  animation: grow-x 700ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+.grow-y {
+  transform-origin: bottom center;
+  animation: grow-y 560ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 16ms);
+}
+@keyframes grow-y {
+  from {
+    transform: scaleY(0);
+  }
+}
+.cell-in {
+  animation: cell-in 360ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 14ms);
+}
+@keyframes cell-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-sweep,
+  .grow-x,
+  .grow-y,
+  .cell-in {
+    animation: none;
+  }
+}
 @keyframes view-in {
   from {
     opacity: 0;

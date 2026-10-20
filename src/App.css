@@ -71,6 +71,27 @@ body {
   background-color: var(--bg);
 }
 
+/* A desktop window, not a page: the document itself never scrolls (only the
+   panes inside it do), the touchpad's rubber-band and swipe-to-go-back don't
+   move the whole window, title bar included, and nothing drags like a web
+   page. Text stays selectable where it's content (inputs, editors and the
+   places marked select-text). */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+[data-scroll-root] {
+  overscroll-behavior: none;
+}
+img,
+svg,
+a {
+  -webkit-user-drag: none;
+}
+
 /* Mica (Windows 11, set by App.tsx): the window and the shell go clear so
    the desktop's tint shows behind the sidebar and title bar; the content
    card, onboarding and menus stay solid. */
@@ -119,15 +140,35 @@ body {
   scrollbar-gutter: stable both-edges;
 }
 
-/* Windows 11 overlay-style scrollbars: a thin line that shows while the
-   pointer is over the scroll area, nothing at rest. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
+/* Windows 11 overlay-style scrollbars: a 4 px rounded line, faint, that shows
+   while the pointer is over the scroll area and darkens under the pointer;
+   nothing at rest. WebView2 ignores these ::-webkit rules on an element with
+   scrollbar-width or scrollbar-color set, so neither is used here. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background: transparent;
 }
-*:hover,
-*:focus-within {
-  scrollbar-color: var(--border-strong) transparent;
+::-webkit-scrollbar-button,
+::-webkit-scrollbar-corner {
+  display: none;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
+  background-color: transparent;
+  min-height: 32px;
+}
+*:hover::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--text) 18%, transparent);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--text) 32%, transparent);
 }
 
 @layer utilities {

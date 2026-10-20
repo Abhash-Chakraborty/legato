@@ -96,7 +96,7 @@ export const InsightsPage: React.FC = () => {
   );
 
   return (
-    <div className="max-w-[1180px]">
+    <div className="mx-auto w-full max-w-[1240px]">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
         <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
           {t("insights.title")}
