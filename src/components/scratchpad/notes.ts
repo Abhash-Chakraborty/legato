@@ -87,3 +87,71 @@ export const toggleTask = (text: string, offset: number): string => {
   const next = match[1] === " " ? "[x]" : "[ ]";
   return text.slice(0, at) + next + text.slice(at + 3);
 };
+
+/** A formatting change: the new text and the selection to keep. */
+export interface Edit {
+  text: string;
+  from: number;
+  to: number;
+}
+
+/** Wraps the selection in a mark (** for bold, _ for italic, ` for code),
+ *  or takes the mark off when it's already there. With nothing selected the
+ *  marks go in around the cursor. */
+export const wrapSelection = (
+  text: string,
+  from: number,
+  to: number,
+  mark: string,
+): Edit => {
+  const n = mark.length;
+  const before = text.slice(from - n, from);
+  const after = text.slice(to, to + n);
+  if (before === mark && after === mark) {
+    return {
+      text: text.slice(0, from - n) + text.slice(from, to) + text.slice(to + n),
+      from: from - n,
+      to: to - n,
+    };
+  }
+  return {
+    text:
+      text.slice(0, from) + mark + text.slice(from, to) + mark + text.slice(to),
+    from: from + n,
+    to: to + n,
+  };
+};
+
+/** Puts a line prefix ("- ", "1. ", "- [ ] ", "## ") on every line the
+ *  selection touches, or takes it off when they all have it. Numbered
+ *  lists count up. */
+export const prefixLines = (
+  text: string,
+  from: number,
+  to: number,
+  prefix: string,
+): Edit => {
+  const start = text.lastIndexOf("\n", from - 1) + 1;
+  const endAt = text.indexOf("\n", to);
+  const end = endAt < 0 ? text.length : endAt;
+  const lines = text.slice(start, end).split("\n");
+  const numbered = prefix === "1. ";
+  const pattern = numbered
+    ? /^\d+\.\s/
+    : new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
+  const all = lines.every((l) => pattern.test(l));
+  const next = lines
+    .map((l, i) =>
+      all
+        ? l.replace(pattern, "")
+        : (numbered ? `${i + 1}. ` : prefix) +
+          // A line keeps one list mark: switching kinds replaces it.
+          l.replace(/^(?:#{1,6}\s|[-*+]\s(?:\[[ xX]\]\s)?|\d+\.\s)/, ""),
+    )
+    .join("\n");
+  return {
+    text: text.slice(0, start) + next + text.slice(end),
+    from: start,
+    to: start + next.length,
+  };
+};

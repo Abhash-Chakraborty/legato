@@ -8,6 +8,8 @@ import {
   plainText,
   previewOf,
   wordCount,
+  wrapSelection,
+  prefixLines,
 } from "./notes";
 
 const note = (title: string, text: string): ScratchNote => ({
@@ -85,5 +87,33 @@ const list = "Shopping\n\n- [ ] milk\n- [x] eggs\n";
 assert.equal(toggleTask(list, 10), "Shopping\n\n- [x] milk\n- [x] eggs\n");
 assert.equal(toggleTask(list, 20), "Shopping\n\n- [ ] milk\n- [ ] eggs\n");
 assert.equal(toggleTask("no boxes", 0), "no boxes");
+
+// Formatting wraps and unwraps the selection, and marks lines.
+assert.deepEqual(wrapSelection("call Karol now", 5, 10, "**"), {
+  text: "call **Karol** now",
+  from: 7,
+  to: 12,
+});
+assert.deepEqual(wrapSelection("call **Karol** now", 7, 12, "**"), {
+  text: "call Karol now",
+  from: 5,
+  to: 10,
+});
+assert.equal(
+  prefixLines("oat milk\neggs\nspinach", 0, 20, "- ").text,
+  "- oat milk\n- eggs\n- spinach",
+);
+assert.equal(
+  prefixLines("- oat milk\n- eggs", 0, 15, "- ").text,
+  "oat milk\neggs",
+);
+assert.equal(
+  prefixLines("- oat milk\n- eggs", 0, 15, "1. ").text,
+  "1. oat milk\n2. eggs",
+);
+assert.equal(
+  prefixLines("intro\nsend the doc\nend", 8, 8, "- [ ] ").text,
+  "intro\n- [ ] send the doc\nend",
+);
 
 console.log("notes tests passed");

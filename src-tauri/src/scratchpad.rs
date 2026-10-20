@@ -320,7 +320,7 @@ fn build_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     .min_inner_size(WINDOW_MIN.0, WINDOW_MIN.1)
     .decorations(false)
     .resizable(true)
-    .maximizable(false)
+    .maximizable(true)
     .always_on_top(get_settings(app).scratchpad_keep_on_top)
     .visible(false);
     if let Some(data_dir) = crate::portable::data_dir() {

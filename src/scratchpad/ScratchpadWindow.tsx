@@ -7,21 +7,36 @@ import React, {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
+  Bold,
   ChevronDown,
+  Code,
   Copy,
-  EllipsisVertical,
+  Eye,
+  Heading2,
   History,
+  Italic,
+  List,
+  ListChecks,
+  ListOrdered,
+  Maximize2,
   Mic,
+  Minimize2,
+  MoreHorizontal,
+  PanelLeft,
   PencilLine,
   PictureInPicture2,
   Pin,
   PinOff,
   Plus,
   Replace,
+  Search,
   Send,
   Square,
+  SquarePen,
   Trash2,
+  Type,
   X,
 } from "lucide-react";
 import {
@@ -33,14 +48,22 @@ import {
 } from "@/bindings";
 import { AppToaster } from "@/components/shell/AppToaster";
 import { ActionMenu } from "@/components/ui/ActionMenu";
-import { Segmented } from "@/components/ui/Segmented";
 import { AppIcon } from "@/components/pages/home/AppIcon";
 import { copyToClipboard } from "@/components/pages/home/clipboard";
 import { FailedPasteBanner } from "@/components/scratchpad/FailedPasteBanner";
 import { NotePreview } from "@/components/scratchpad/NotePreview";
 import { NoteStatus } from "@/components/scratchpad/NoteStatus";
 import { VersionHistory } from "@/components/scratchpad/VersionHistory";
-import { insertAt } from "@/components/scratchpad/notes";
+import {
+  byUpdated,
+  insertAt,
+  matchesQuery,
+  prefixLines,
+  wrapSelection,
+  type Edit,
+} from "@/components/scratchpad/notes";
+import { relativeTime } from "@/components/pages/dictionary/list";
+import legatoIcon from "@/assets/legato-icon.svg";
 import { useNoteDraft } from "@/components/scratchpad/useNoteDraft";
 import { useScratchStore, watchScratch } from "@/stores/scratchStore";
 import { useAiStore, watchAi } from "@/stores/aiStore";
@@ -50,7 +73,24 @@ import { useProblemText } from "@/components/pages/transforms/TryIt";
 type Mode = "write" | "preview";
 
 const tbButton =
-  "grid h-[26px] w-[30px] flex-none place-items-center self-center rounded-[5px] text-text-2 transition-[background-color,color,transform] duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0 active:scale-[0.94] active:bg-surface-4 active:duration-0";
+  "grid h-7 w-8 flex-none place-items-center self-center rounded-[6px] text-text-2 transition-[background-color,color,transform] duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0 active:scale-[0.94] active:bg-surface-4 active:duration-0";
+
+/** A row in the left rail: an icon, and its label while the notes panel
+ *  is open. */
+const railItem =
+  "flex h-9 w-full flex-none items-center gap-3 rounded-[8px] px-[11px] text-[13px] text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0 active:scale-[0.98]";
+
+const fmtButton =
+  "grid h-7 w-7 flex-none place-items-center rounded-[6px] text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0 active:scale-[0.94]";
+
+const PANEL_KEY = "legato.scratchpad.panel";
+const readPanel = () => {
+  try {
+    return localStorage.getItem(PANEL_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
 
 /** The floating Scratchpad: up to five notes as tabs, written or dictated
  *  into, and sent to the app that was in front when it opened. */
@@ -78,6 +118,47 @@ export const ScratchpadWindow: React.FC = () => {
   const ai = useAiStore((s) => s.status);
   const problemText = useProblemText();
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [panel, setPanelState] = useState(readPanel);
+  const [query, setQuery] = useState("");
+  const [formatting, setFormatting] = useState(false);
+  const [maximized, setMaximized] = useState(false);
+  const [rowMenu, setRowMenu] = useState<number | null>(null);
+  const now = Date.now() / 1000;
+  const { i18n } = useTranslation();
+
+  const setPanel = (open: boolean) => {
+    setPanelState(open);
+    try {
+      localStorage.setItem(PANEL_KEY, open ? "1" : "0");
+    } catch {
+      // Remembering the panel is a convenience.
+    }
+  };
+
+  useEffect(() => {
+    const win = getCurrentWindow();
+    const sync = () =>
+      win
+        .isMaximized()
+        .then(setMaximized)
+        .catch(() => {});
+    sync();
+    const off = win.onResized(sync);
+    return () => {
+      off.then((fn) => fn());
+    };
+  }, []);
+
+  /** Every note, pinned first, then the ones edited last, narrowed by the
+   *  search. */
+  const listed = useMemo(
+    () =>
+      [...(notes ?? [])]
+        .filter((n) => matchesQuery(n, query))
+        .sort((a, b) => Number(b.pinned) - Number(a.pinned) || byUpdated(a, b)),
+    [notes, query],
+  );
 
   const tabs = useMemo(
     () =>
@@ -453,7 +534,13 @@ export const ScratchpadWindow: React.FC = () => {
     }
     if (!e.ctrlKey || e.altKey || e.metaKey) return;
     const key = e.key.toLowerCase();
-    if (key === " ") {
+    if (key === "f") {
+      e.preventDefault();
+      openSearch();
+    } else if ((key === "b" || key === "i") && mode === "write") {
+      e.preventDefault();
+      wrap(key === "b" ? "**" : "_");
+    } else if (key === " ") {
       e.preventDefault();
       dictate();
     } else if (key === "enter") {
@@ -522,16 +609,88 @@ export const ScratchpadWindow: React.FC = () => {
 
   const title = (note: ScratchNote) => note.title || t("scratchpad.untitled");
 
+  const openSearch = () => {
+    setPanel(true);
+    requestAnimationFrame(() => searchRef.current?.focus());
+  };
+
+  /** Applies a formatting change to the editor and keeps the selection. */
+  const applyEdit = (
+    edit: (text: string, from: number, to: number) => Edit,
+  ) => {
+    const editor = editorRef.current;
+    if (!editor || !active) return;
+    const next = edit(draft.text, editor.selectionStart, editor.selectionEnd);
+    draft.setText(next.text);
+    requestAnimationFrame(() => {
+      editor.focus();
+      editor.setSelectionRange(next.from, next.to);
+    });
+  };
+  const wrap = (mark: string) =>
+    applyEdit((text, from, to) => wrapSelection(text, from, to, mark));
+  const prefix = (mark: string) =>
+    applyEdit((text, from, to) => prefixLines(text, from, to, mark));
+
+  const noteMenu = (note: ScratchNote) => [
+    {
+      id: "pin",
+      label: note.pinned
+        ? t("scratchpad.actions.unpin")
+        : t("scratchpad.actions.pin"),
+      icon: note.pinned ? PinOff : Pin,
+      onSelect: () => togglePin(note),
+    },
+    {
+      id: "rename",
+      label: t("scratchpad.actions.rename"),
+      icon: PencilLine,
+      shortcut: "F2",
+      onSelect: () => {
+        if (note.id !== active?.id) activate(note.id);
+        setRenaming(note.id);
+      },
+    },
+    {
+      id: "versions",
+      label: t("scratchpad.actions.versions", { count: note.versions }),
+      icon: History,
+      disabled: note.versions < 2,
+      onSelect: async () => {
+        await draft.flush();
+        setVersionsOf(
+          useScratchStore.getState().notes?.find((n) => n.id === note.id) ??
+            note,
+        );
+      },
+    },
+    "separator" as const,
+    {
+      id: "delete",
+      label: t("scratchpad.actions.delete"),
+      icon: Trash2,
+      danger: true,
+      onSelect: () => remove(note),
+    },
+  ];
+
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-surface text-text">
+    <div className="flex h-screen flex-col overflow-hidden bg-surface-2 text-text">
       <header
-        className="flex h-9 flex-none select-none items-end gap-0.5 border-b border-line bg-surface-2 pe-1 ps-1.5"
+        className="flex h-11 flex-none select-none items-center gap-1 pe-1.5 ps-3"
         data-tauri-drag-region
       >
+        <img
+          src={legatoIcon}
+          alt=""
+          width={20}
+          height={20}
+          className="pointer-events-none me-2 h-5 w-5 flex-none rounded-[5px]"
+        />
         <div
           role="tablist"
           aria-label={t("scratchpad.window.tabs")}
-          className="flex h-full min-w-0 flex-[0_1_auto] items-end gap-0.5"
+          className="flex h-full min-w-0 flex-[0_1_auto] items-center gap-1"
           data-tauri-drag-region
         >
           {tabs.map((note, i) => {
@@ -542,15 +701,9 @@ export const ScratchpadWindow: React.FC = () => {
                 data-tab-wrap
                 style={tabShift(i, note.id)}
                 onAuxClick={(e) => e.button === 1 && closeTab(note.id)}
-                className={`group relative -mb-px flex h-[30px] min-w-[70px] max-w-[176px] flex-[0_1_176px] items-center rounded-t-[7px] border border-b-0 pe-[5px] transition-[background-color,color,transform] duration-[var(--dur-2)] hover:duration-0 motion-reduce:transition-none ${
-                  drag?.id === note.id
-                    ? "cursor-grabbing shadow-[var(--shadow-1)]"
-                    : ""
-                } ${
-                  on
-                    ? "border-line bg-surface text-text"
-                    : "border-transparent text-text-2 hover:bg-surface-3 hover:text-text"
-                }`}
+                className={`group relative flex h-8 min-w-[64px] max-w-[160px] flex-[0_1_160px] items-center pe-1 transition-[color,transform] duration-[var(--dur-2)] hover:duration-0 motion-reduce:transition-none ${
+                  drag?.id === note.id ? "cursor-grabbing" : ""
+                } ${on ? "text-text" : "text-text-2 hover:text-text"}`}
               >
                 {renaming === note.id ? (
                   <input
@@ -590,7 +743,7 @@ export const ScratchpadWindow: React.FC = () => {
                     onDoubleClick={() => setRenaming(note.id)}
                     onKeyDown={(e) => onTabKey(e, note)}
                     title={title(note)}
-                    className={`h-full min-w-0 flex-1 truncate rounded-t-[7px] pe-1.5 ps-[11px] text-start text-[13px] focus-visible:outline-offset-[-3px] ${on ? "font-medium" : ""}`}
+                    className={`h-full min-w-0 flex-1 truncate px-2 text-start text-[13px] focus-visible:outline-offset-[-3px] ${on ? "font-medium" : ""}`}
                   >
                     {note.pinned && (
                       <Pin
@@ -617,6 +770,11 @@ export const ScratchpadWindow: React.FC = () => {
                 >
                   <X className="h-[13px] w-[13px]" aria-hidden="true" />
                 </button>
+                {/* The open tab is underlined, as in a browser's reading view. */}
+                <span
+                  aria-hidden="true"
+                  className={`absolute inset-x-1.5 bottom-0 h-[2px] rounded-full bg-text transition-opacity duration-[var(--dur-2)] ${on ? "opacity-100" : "opacity-0"}`}
+                />
               </div>
             );
           })}
@@ -628,7 +786,7 @@ export const ScratchpadWindow: React.FC = () => {
           title={t("scratchpad.window.newTabTip")}
           className={tbButton}
         >
-          <Plus className="h-[15px] w-[15px]" aria-hidden="true" />
+          <Plus className="h-4 w-4" aria-hidden="true" />
         </button>
         <span className="h-full flex-1" data-tauri-drag-region />
         <button
@@ -637,75 +795,31 @@ export const ScratchpadWindow: React.FC = () => {
           aria-label={t("scratchpad.keepOnTop.short")}
           aria-pressed={keepOnTop}
           title={t("scratchpad.keepOnTop.title")}
-          className={`${tbButton} ${keepOnTop ? "bg-teal-50 text-teal-700 hover:bg-teal-50 hover:text-teal-700" : ""}`}
+          className={`${tbButton} ${keepOnTop ? "text-teal-700 hover:text-teal-700" : ""}`}
         >
-          <PictureInPicture2 className="h-[15px] w-[15px]" aria-hidden="true" />
+          <PictureInPicture2 className="h-4 w-4" aria-hidden="true" />
         </button>
-        <div className="relative self-center">
-          <button
-            type="button"
-            onClick={() => setMenu(!menu)}
-            disabled={!active}
-            aria-label={t("scratchpad.window.more")}
-            aria-haspopup="menu"
-            aria-expanded={menu}
-            title={t("scratchpad.window.more")}
-            className={tbButton}
-          >
-            <EllipsisVertical
-              className="h-[15px] w-[15px]"
-              aria-hidden="true"
-            />
-          </button>
-          {menu && active && (
-            <ActionMenu
-              label={t("scratchpad.window.more")}
-              onClose={() => setMenu(false)}
-              className="end-0 top-full mt-1 w-56"
-              items={[
-                {
-                  id: "pin",
-                  label: active.pinned
-                    ? t("scratchpad.actions.unpin")
-                    : t("scratchpad.actions.pin"),
-                  icon: active.pinned ? PinOff : Pin,
-                  onSelect: () => togglePin(active),
-                },
-                {
-                  id: "rename",
-                  label: t("scratchpad.actions.rename"),
-                  icon: PencilLine,
-                  shortcut: "F2",
-                  onSelect: () => setRenaming(active.id),
-                },
-                {
-                  id: "versions",
-                  label: t("scratchpad.actions.versions", {
-                    count: active.versions,
-                  }),
-                  icon: History,
-                  disabled: active.versions < 2,
-                  onSelect: async () => {
-                    await draft.flush();
-                    setVersionsOf(
-                      useScratchStore
-                        .getState()
-                        .notes?.find((n) => n.id === active.id) ?? active,
-                    );
-                  },
-                },
-                "separator",
-                {
-                  id: "delete",
-                  label: t("scratchpad.actions.delete"),
-                  icon: Trash2,
-                  danger: true,
-                  onSelect: () => remove(active),
-                },
-              ]}
-            />
+        <button
+          type="button"
+          onClick={() => getCurrentWindow().toggleMaximize()}
+          aria-label={
+            maximized
+              ? t("scratchpad.window.restore")
+              : t("scratchpad.window.expand")
+          }
+          title={
+            maximized
+              ? t("scratchpad.window.restore")
+              : t("scratchpad.window.expand")
+          }
+          className={tbButton}
+        >
+          {maximized ? (
+            <Minimize2 className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <Maximize2 className="h-4 w-4" aria-hidden="true" />
           )}
-        </div>
+        </button>
         <button
           type="button"
           onClick={() => commands.hideScratchpad()}
@@ -713,240 +827,495 @@ export const ScratchpadWindow: React.FC = () => {
           title={t("scratchpad.window.closeTip")}
           className={`${tbButton} hover:bg-danger hover:text-white`}
         >
-          <X className="h-[15px] w-[15px]" aria-hidden="true" />
+          <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </header>
 
-      {active ? (
-        <>
-          <FailedPasteBanner note={active} text={draft.text} />
-          <div className="flex h-[42px] flex-none items-center justify-between gap-2.5 pe-3.5 ps-3">
-            <Segmented
-              label={t("scratchpad.editor.mode")}
-              value={mode}
-              onChange={setMode}
-              options={[
-                { value: "write", label: t("scratchpad.editor.write") },
-                { value: "preview", label: t("scratchpad.editor.preview") },
-              ]}
+      <div className="flex min-h-0 flex-1 gap-1.5 pb-2 pe-2 ps-1.5">
+        <aside
+          aria-label={t("scratchpad.window.rail")}
+          className={`flex flex-none flex-col gap-0.5 overflow-hidden transition-[width] duration-[var(--dur-3)] ease-[var(--ease-out)] motion-reduce:transition-none ${panel ? "w-[208px]" : "w-11"}`}
+        >
+          <button
+            type="button"
+            onClick={() => setPanel(!panel)}
+            aria-expanded={panel}
+            aria-label={
+              panel
+                ? t("scratchpad.window.collapseNotes")
+                : t("scratchpad.window.showNotes")
+            }
+            title={
+              panel
+                ? t("scratchpad.window.collapseNotes")
+                : t("scratchpad.window.showNotes")
+            }
+            className={railItem}
+          >
+            <PanelLeft
+              className="h-[17px] w-[17px] flex-none"
+              aria-hidden="true"
             />
-            <NoteStatus
-              note={active}
-              text={draft.text}
-              state={draft.state}
-              onRetry={draft.flush}
-            />
-          </div>
-          <div className="relative min-h-0 flex-1">
-            {mode === "write" ? (
-              <textarea
-                ref={editorRef}
-                autoFocus
-                value={draft.text}
-                onChange={(e) => draft.setText(e.target.value)}
-                aria-label={t("scratchpad.editor.label")}
-                placeholder={t("scratchpad.editor.placeholder")}
-                spellCheck
-                className="absolute inset-0 h-full w-full resize-none border-0 bg-transparent px-5 pb-[18px] pt-0.5 text-[15px] leading-[1.6] text-text caret-teal-700 placeholder:text-text-4 note-editor"
-              />
-            ) : (
-              <NotePreview
-                text={draft.text}
-                onChange={draft.setText}
-                className="absolute inset-0 px-5 pb-[18px] pt-0.5"
-              />
+            {panel && (
+              <span className="truncate">
+                {t("scratchpad.window.collapseNotes")}
+              </span>
             )}
-          </div>
-          <footer className="flex h-[54px] flex-none items-center gap-1.5 border-t border-line px-2.5">
+          </button>
+          <button
+            type="button"
+            onClick={newTab}
+            aria-label={t("scratchpad.newNote")}
+            title={t("scratchpad.window.newTabTip")}
+            className={railItem}
+          >
+            <SquarePen
+              className="h-[17px] w-[17px] flex-none"
+              aria-hidden="true"
+            />
+            {panel && (
+              <span className="truncate">{t("scratchpad.newNote")}</span>
+            )}
+          </button>
+          {panel ? (
+            <div className="relative my-1 flex-none px-1">
+              <Search
+                className="pointer-events-none absolute start-[13px] top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-text-3"
+                aria-hidden="true"
+              />
+              <input
+                ref={searchRef}
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    if (query) setQuery("");
+                    else editorRef.current?.focus();
+                  } else if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    document
+                      .querySelector<HTMLElement>("[data-note-row]")
+                      ?.focus();
+                  }
+                }}
+                placeholder={t("scratchpad.window.searchNotes")}
+                aria-label={t("scratchpad.window.searchNotes")}
+                className="input compact w-full ps-[30px] [&::-webkit-search-cancel-button]:hidden"
+              />
+            </div>
+          ) : (
             <button
               type="button"
-              onClick={dictate}
-              aria-pressed={dictating}
-              className={`inline-flex h-8 flex-none items-center gap-[7px] whitespace-nowrap rounded-[var(--r-md)] border pe-2 ps-2.5 text-[13px] font-medium transition-colors duration-[var(--dur-1)] hover:duration-0 active:scale-[0.97] ${
-                dictating
-                  ? "border-teal-500 bg-teal-50 text-teal-700"
-                  : "border-line-strong bg-surface text-text shadow-[var(--shadow-1)] hover:bg-surface-2"
-              }`}
+              onClick={openSearch}
+              aria-label={t("scratchpad.window.searchNotes")}
+              title={t("scratchpad.window.searchTip")}
+              className={railItem}
             >
-              {dictating ? (
-                <Square
-                  className="h-3.5 w-3.5 fill-current"
-                  aria-hidden="true"
-                />
-              ) : (
-                <Mic className="h-4 w-4" aria-hidden="true" />
-              )}
-              {dictating
-                ? t("scratchpad.window.listening")
-                : t("scratchpad.window.dictate")}
-              {!dictating && (
-                <span className="ms-2 hidden gap-[3px] min-[600px]:inline-flex">
-                  <kbd className="kbd">{t("scratchpad.keys.ctrl")}</kbd>
-                  <kbd className="kbd">{t("scratchpad.keys.space")}</kbd>
-                </span>
-              )}
+              <Search
+                className="h-[17px] w-[17px] flex-none"
+                aria-hidden="true"
+              />
             </button>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() =>
-                  transforming
-                    ? cancelTransform()
-                    : tfMenu
-                      ? setTfMenu(false)
-                      : openTransforms()
-                }
-                disabled={!transforming && !draft.text.trim()}
-                aria-haspopup={transforming ? undefined : "menu"}
-                aria-expanded={transforming ? undefined : tfMenu}
-                title={
-                  transforming
-                    ? t("scratchpad.transform.cancelTip")
-                    : t("scratchpad.transform.tip")
-                }
-                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--r-md)] px-2.5 text-[13px] font-medium text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                <Replace
-                  className={`h-4 w-4 ${transforming ? "animate-pulse text-teal-700" : ""}`}
-                  aria-hidden="true"
-                />
-                <span className="max-w-[140px] truncate">
+          )}
+
+          {panel && (
+            <ul
+              aria-label={t("scratchpad.listLabel")}
+              className="-mx-0.5 mt-1 min-h-0 flex-1 overflow-y-auto border-t border-line px-0.5 pt-1.5"
+              onKeyDown={(e) => {
+                if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+                e.preventDefault();
+                const rows = [
+                  ...document.querySelectorAll<HTMLElement>("[data-note-row]"),
+                ];
+                const i = rows.indexOf(document.activeElement as HTMLElement);
+                const next = e.key === "ArrowDown" ? i + 1 : i - 1;
+                if (next < 0) searchRef.current?.focus();
+                else rows[Math.min(next, rows.length - 1)]?.focus();
+              }}
+            >
+              {listed.length === 0 ? (
+                <li className="px-2.5 py-3 text-[13px] text-text-3">
+                  {query
+                    ? t("scratchpad.window.noMatches", { query })
+                    : t("scratchpad.empty.title")}
+                </li>
+              ) : (
+                listed.map((note) => {
+                  const on = note.id === active?.id;
+                  return (
+                    <li key={note.id} className="group relative">
+                      <button
+                        type="button"
+                        data-note-row
+                        onClick={() => activate(note.id)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setRowMenu(note.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Delete") {
+                            e.preventDefault();
+                            remove(note);
+                          } else if (e.key === "F10" && e.shiftKey) {
+                            e.preventDefault();
+                            setRowMenu(note.id);
+                          }
+                        }}
+                        className={`ring-inside flex w-full flex-col rounded-[8px] py-2 pe-8 ps-2.5 text-start transition-colors duration-[var(--dur-1)] hover:duration-0 ${on ? "bg-surface-3" : "hover:bg-surface-3"}`}
+                      >
+                        <span className="flex min-w-0 items-center gap-1 text-[13px] font-medium">
+                          {note.pinned && (
+                            <Pin
+                              className="h-3 w-3 flex-none text-teal-700"
+                              aria-label={t("scratchpad.pinned")}
+                            />
+                          )}
+                          <span className="truncate">{title(note)}</span>
+                        </span>
+                        <span className="text-[12px] text-text-3">
+                          {relativeTime(note.updated_at, now, i18n.language)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRowMenu(rowMenu === note.id ? null : note.id)
+                        }
+                        aria-label={t("scratchpad.window.more")}
+                        aria-haspopup="menu"
+                        aria-expanded={rowMenu === note.id}
+                        title={t("scratchpad.window.more")}
+                        className="absolute end-1 top-2 grid h-6 w-6 place-items-center rounded-[6px] text-text-3 opacity-0 transition-opacity duration-[var(--dur-1)] hover:bg-surface-4 hover:text-text focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+                      >
+                        <MoreHorizontal
+                          className="h-4 w-4"
+                          aria-hidden="true"
+                        />
+                      </button>
+                      {rowMenu === note.id && (
+                        <ActionMenu
+                          label={t("scratchpad.window.more")}
+                          onClose={() => setRowMenu(null)}
+                          className="end-0 top-9 w-48"
+                          items={noteMenu(note)}
+                        />
+                      )}
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          )}
+          {!panel && <span className="flex-1" />}
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() =>
+                transforming
+                  ? cancelTransform()
+                  : tfMenu
+                    ? setTfMenu(false)
+                    : openTransforms()
+              }
+              disabled={!transforming && !draft.text.trim()}
+              aria-haspopup={transforming ? undefined : "menu"}
+              aria-expanded={transforming ? undefined : tfMenu}
+              aria-label={
+                transforming
+                  ? t("scratchpad.transform.running", { name: transforming })
+                  : t("scratchpad.transform.label")
+              }
+              title={
+                transforming
+                  ? t("scratchpad.transform.cancelTip")
+                  : t("scratchpad.transform.tip")
+              }
+              className={`${railItem} disabled:cursor-not-allowed disabled:opacity-45`}
+            >
+              <Replace
+                className={`h-[17px] w-[17px] flex-none ${transforming ? "animate-pulse text-teal-700" : ""}`}
+                aria-hidden="true"
+              />
+              {panel && (
+                <span className="truncate">
                   {transforming
                     ? t("scratchpad.transform.running", { name: transforming })
-                    : t("scratchpad.transform.label")}
+                    : t("scratchpad.window.transforms")}
                 </span>
-                {!transforming && (
-                  <ChevronDown
-                    className="h-3.5 w-3.5 text-text-3"
-                    aria-hidden="true"
-                  />
-                )}
-              </button>
-              {tfMenu && !transforming && (
-                <ActionMenu
-                  label={t("scratchpad.transform.label")}
-                  onClose={() => setTfMenu(false)}
-                  className="bottom-full start-0 mb-1 w-60"
-                  items={
-                    transforms === null
-                      ? []
-                      : transforms.length === 0
-                        ? [
-                            {
-                              id: "none",
-                              label: t("scratchpad.transform.none"),
-                              disabled: true,
-                              onSelect: () => {},
-                            },
-                          ]
-                        : transforms.map((tf) => ({
-                            id: tf.id,
-                            label: tf.name,
-                            onSelect: () => transform(tf),
-                          }))
-                  }
-                />
               )}
-            </div>
-            <span className="flex-1" />
-            <button
-              type="button"
-              onClick={copyAll}
-              disabled={!draft.text.trim()}
-              aria-label={t("scratchpad.copyAll")}
-              title={t("scratchpad.copyAll")}
-              className="grid h-8 w-8 place-items-center rounded-[var(--r-sm)] text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0 disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              <Copy className="h-4 w-4" aria-hidden="true" />
             </button>
-            <div className="relative flex">
-              <button
-                type="button"
-                onClick={send}
-                disabled={!target || !draft.text.trim() || sending}
-                title={
-                  target
-                    ? t("scratchpad.window.sendTip", { app: target.name })
-                    : t("scratchpad.window.noTarget")
-                }
-                className="inline-flex h-8 max-w-[220px] items-center gap-[7px] rounded-s-[var(--r-md)] border border-transparent bg-teal-fill pe-3 ps-[11px] text-[13px] font-medium text-white transition-colors duration-[var(--dur-1)] hover:bg-teal-fill-hover hover:duration-0 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-teal-fill"
-              >
-                {target ? (
-                  <AppIcon path={target.path} className="h-4 w-4" />
-                ) : (
-                  <Send className="h-4 w-4" aria-hidden="true" />
-                )}
-                <span className="truncate">
-                  {target
-                    ? t("scratchpad.window.sendTo", { app: target.name })
-                    : t("scratchpad.window.send")}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => (targets ? setTargets(null) : openTargets())}
-                aria-label={t("scratchpad.window.pickTarget")}
-                aria-haspopup="menu"
-                aria-expanded={!!targets}
-                title={t("scratchpad.window.pickTarget")}
-                className="grid h-8 w-7 place-items-center rounded-e-[var(--r-md)] border-s border-white/25 bg-teal-fill text-white transition-colors duration-[var(--dur-1)] hover:bg-teal-fill-hover hover:duration-0 active:scale-[0.97]"
-              >
-                <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-              {targets && (
-                <ActionMenu
-                  label={t("scratchpad.window.pickTarget")}
-                  onClose={() => setTargets(null)}
-                  className="bottom-full end-0 mb-1 w-72"
-                  items={
-                    targets.length === 0
+            {tfMenu && !transforming && (
+              <ActionMenu
+                label={t("scratchpad.transform.label")}
+                onClose={() => setTfMenu(false)}
+                className="bottom-full start-0 mb-1 w-60"
+                items={
+                  transforms === null
+                    ? []
+                    : transforms.length === 0
                       ? [
                           {
                             id: "none",
-                            label: t("scratchpad.window.noWindows"),
+                            label: t("scratchpad.transform.none"),
                             disabled: true,
                             onSelect: () => {},
                           },
                         ]
-                      : targets.map((x) => ({
-                          id: String(x.handle),
-                          label: x.title
-                            .toLowerCase()
-                            .includes(x.name.toLowerCase())
-                            ? x.title
-                            : t("scratchpad.window.targetLabel", {
-                                app: x.name,
-                                title: x.title,
-                              }),
-                          checked: x.current,
-                          onSelect: () => pickTarget(x),
+                      : transforms.map((tf) => ({
+                          id: tf.id,
+                          label: tf.name,
+                          onSelect: () => transform(tf),
                         }))
-                  }
-                />
-              )}
-            </div>
-          </footer>
-        </>
-      ) : notes ? (
-        <div className="grid flex-1 place-items-center px-8 text-center">
-          <div className="grid justify-items-center gap-1.5">
-            <h2 className="text-[15px] font-medium">
-              {t("scratchpad.window.emptyTitle")}
-            </h2>
-            <p className="max-w-[320px] text-[13px] text-text-3">
-              {t("scratchpad.window.emptyBody")}
-            </p>
-            <button
-              type="button"
-              onClick={newTab}
-              className="mt-3 inline-flex h-8 items-center gap-2 rounded-[var(--r-md)] bg-teal-fill px-3 text-[13px] font-medium text-white hover:bg-teal-fill-hover active:scale-[0.97]"
-            >
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              {t("scratchpad.newNote")}
-            </button>
+                }
+              />
+            )}
           </div>
-        </div>
-      ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setFormatting(!formatting);
+              if (formatting) setMode("write");
+            }}
+            aria-pressed={formatting}
+            aria-label={t("scratchpad.window.formatting")}
+            title={t("scratchpad.window.formattingTip")}
+            className={`${railItem} ${formatting ? "bg-surface-3 text-text" : ""}`}
+          >
+            <Type className="h-[17px] w-[17px] flex-none" aria-hidden="true" />
+            {panel && (
+              <span className="truncate">
+                {t("scratchpad.window.formatting")}
+              </span>
+            )}
+          </button>
+        </aside>
+
+        <main className="@container relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-line bg-surface">
+          {active ? (
+            <>
+              <FailedPasteBanner note={active} text={draft.text} />
+              {formatting && (
+                <div
+                  role="toolbar"
+                  aria-label={t("scratchpad.window.formatting")}
+                  className="flex h-10 flex-none items-center gap-0.5 border-b border-line px-2"
+                >
+                  {(
+                    [
+                      ["bold", Bold, () => wrap("**"), "Ctrl+B"],
+                      ["italic", Italic, () => wrap("_"), "Ctrl+I"],
+                      ["heading", Heading2, () => prefix("## "), ""],
+                      ["bullets", List, () => prefix("- "), ""],
+                      ["numbered", ListOrdered, () => prefix("1. "), ""],
+                      ["tasks", ListChecks, () => prefix("- [ ] "), ""],
+                      ["code", Code, () => wrap("`"), ""],
+                    ] as const
+                  ).map(([id, Icon, run, keys]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={run}
+                      disabled={mode !== "write"}
+                      aria-label={t(`scratchpad.format.${id}`)}
+                      title={
+                        keys
+                          ? `${t(`scratchpad.format.${id}`)} (${keys})`
+                          : t(`scratchpad.format.${id}`)
+                      }
+                      className={`${fmtButton} disabled:opacity-40`}
+                    >
+                      <Icon className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  ))}
+                  <span className="mx-1.5 h-4 w-px bg-line" />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMode(mode === "write" ? "preview" : "write")
+                    }
+                    aria-pressed={mode === "preview"}
+                    className={`inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2 text-[13px] transition-colors duration-[var(--dur-1)] hover:duration-0 ${mode === "preview" ? "bg-surface-3 text-text" : "text-text-2 hover:bg-surface-3 hover:text-text"}`}
+                  >
+                    <Eye className="h-4 w-4" aria-hidden="true" />
+                    {t("scratchpad.editor.preview")}
+                  </button>
+                </div>
+              )}
+              <div className="relative min-h-0 flex-1">
+                {mode === "write" ? (
+                  <>
+                    <textarea
+                      ref={editorRef}
+                      autoFocus
+                      value={draft.text}
+                      onChange={(e) => draft.setText(e.target.value)}
+                      aria-label={t("scratchpad.editor.label")}
+                      spellCheck
+                      className="note-editor absolute inset-0 h-full w-full resize-none border-0 bg-transparent px-5 pb-16 pt-4 text-[15px] leading-[1.6] text-text caret-teal-700"
+                    />
+                    {!draft.text && (
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute start-5 top-4 flex items-center gap-1.5 text-[15px] text-text-4"
+                      >
+                        <kbd className="kbd">{t("scratchpad.keys.ctrl")}</kbd>
+                        <kbd className="kbd">{t("scratchpad.keys.space")}</kbd>
+                        <span>{t("scratchpad.window.toDictate")}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <NotePreview
+                    text={draft.text}
+                    onChange={draft.setText}
+                    className="absolute inset-0 px-5 pb-16 pt-4"
+                  />
+                )}
+              </div>
+              <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-end gap-2">
+                {/* Too narrow for the status next to the buttons: it waits for room. */}
+                <div className="pointer-events-auto hidden min-w-0 flex-1 truncate ps-2 text-[12px] text-text-3 @[440px]:block">
+                  <NoteStatus
+                    note={active}
+                    text={draft.text}
+                    state={draft.state}
+                    onRetry={draft.flush}
+                  />
+                </div>
+                <span className="flex-1 @[440px]:hidden" />
+                <button
+                  type="button"
+                  onClick={dictate}
+                  aria-pressed={dictating}
+                  aria-label={
+                    dictating
+                      ? t("scratchpad.window.listening")
+                      : t("scratchpad.window.dictate")
+                  }
+                  title={
+                    dictating
+                      ? t("scratchpad.window.listening")
+                      : t("scratchpad.window.dictateTip")
+                  }
+                  className={`pointer-events-auto grid h-9 w-9 flex-none place-items-center rounded-full border transition-colors duration-[var(--dur-1)] hover:duration-0 active:scale-[0.95] ${
+                    dictating
+                      ? "border-teal-500 bg-teal-50 text-teal-700"
+                      : "border-line-strong bg-surface text-text-2 hover:bg-surface-2 hover:text-text"
+                  }`}
+                >
+                  {dictating ? (
+                    <Square
+                      className="h-3.5 w-3.5 fill-current"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Mic className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={copyAll}
+                  disabled={!draft.text.trim()}
+                  className="pointer-events-auto inline-flex h-9 flex-none items-center gap-2 rounded-full bg-text px-4 text-[13px] font-medium text-surface transition-[opacity,transform] duration-[var(--dur-1)] hover:opacity-90 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Copy className="h-4 w-4" aria-hidden="true" />
+                  {t("scratchpad.copy")}
+                </button>
+                <div className="pointer-events-auto relative flex flex-none">
+                  <button
+                    type="button"
+                    onClick={send}
+                    disabled={!target || !draft.text.trim() || sending}
+                    title={
+                      target
+                        ? t("scratchpad.window.sendTip", { app: target.name })
+                        : t("scratchpad.window.noTarget")
+                    }
+                    className="inline-flex h-9 max-w-[200px] items-center gap-[7px] rounded-s-full bg-teal-fill pe-3 ps-3.5 text-[13px] font-medium text-white transition-colors duration-[var(--dur-1)] hover:bg-teal-fill-hover hover:duration-0 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-teal-fill"
+                  >
+                    {target ? (
+                      <AppIcon path={target.path} className="h-4 w-4" />
+                    ) : (
+                      <Send className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    <span className="truncate">
+                      {target
+                        ? t("scratchpad.window.sendTo", { app: target.name })
+                        : t("scratchpad.window.send")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => (targets ? setTargets(null) : openTargets())}
+                    aria-label={t("scratchpad.window.pickTarget")}
+                    aria-haspopup="menu"
+                    aria-expanded={!!targets}
+                    title={t("scratchpad.window.pickTarget")}
+                    className="grid h-9 w-8 place-items-center rounded-e-full border-s border-white/25 bg-teal-fill text-white transition-colors duration-[var(--dur-1)] hover:bg-teal-fill-hover hover:duration-0 active:scale-[0.97]"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                  {targets && (
+                    <ActionMenu
+                      label={t("scratchpad.window.pickTarget")}
+                      onClose={() => setTargets(null)}
+                      className="bottom-full end-0 mb-1 w-72"
+                      items={
+                        targets.length === 0
+                          ? [
+                              {
+                                id: "none",
+                                label: t("scratchpad.window.noWindows"),
+                                disabled: true,
+                                onSelect: () => {},
+                              },
+                            ]
+                          : targets.map((x) => ({
+                              id: String(x.handle),
+                              label: x.title
+                                .toLowerCase()
+                                .includes(x.name.toLowerCase())
+                                ? x.title
+                                : t("scratchpad.window.targetLabel", {
+                                    app: x.name,
+                                    title: x.title,
+                                  }),
+                              checked: x.current,
+                              onSelect: () => pickTarget(x),
+                            }))
+                      }
+                    />
+                  )}
+                </div>
+              </div>
+            </>
+          ) : notes ? (
+            <div className="grid flex-1 place-items-center px-8 text-center">
+              <div className="grid justify-items-center gap-1.5">
+                <h2 className="text-[15px] font-medium">
+                  {t("scratchpad.window.emptyTitle")}
+                </h2>
+                <p className="max-w-[320px] text-[13px] text-text-3">
+                  {t("scratchpad.window.emptyBody")}
+                </p>
+                <button
+                  type="button"
+                  onClick={newTab}
+                  className="mt-3 inline-flex h-8 items-center gap-2 rounded-[var(--r-md)] bg-teal-fill px-3 text-[13px] font-medium text-white hover:bg-teal-fill-hover active:scale-[0.97]"
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  {t("scratchpad.newNote")}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </main>
+      </div>
 
       {versionsOf && (
         <VersionHistory note={versionsOf} onClose={() => setVersionsOf(null)} />

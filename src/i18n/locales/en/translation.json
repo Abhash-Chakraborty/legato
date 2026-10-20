@@ -2288,6 +2288,15 @@
     }
   },
   "scratchpad": {
+    "format": {
+      "bold": "Bold",
+      "italic": "Italic",
+      "heading": "Heading",
+      "bullets": "Bulleted list",
+      "numbered": "Numbered list",
+      "tasks": "Checklist",
+      "code": "Code"
+    },
     "title": "Scratchpad",
     "newNote": "New note",
     "untitled": "Untitled",
@@ -2426,7 +2435,20 @@
       "pickTarget": "Choose the app to send to",
       "noWindows": "No other windows are open",
       "targetLabel": "{{app}} · {{title}}",
-      "targetGone": "{{app}} has closed"
+      "targetGone": "{{app}} has closed",
+      "rail": "Notes and tools",
+      "showNotes": "Show notes",
+      "collapseNotes": "Collapse notes",
+      "searchNotes": "Search notes",
+      "searchTip": "Search notes (Ctrl+F)",
+      "noMatches": "No notes match “{{query}}”",
+      "transforms": "Transforms",
+      "formatting": "Formatting",
+      "formattingTip": "Show the formatting bar",
+      "expand": "Expand",
+      "restore": "Restore size",
+      "toDictate": "to dictate, or start typing",
+      "dictateTip": "Dictate here (Ctrl+Space)"
     },
     "settings": {
       "title": "Window",
