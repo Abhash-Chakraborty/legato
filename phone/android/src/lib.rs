@@ -354,3 +354,283 @@ impl Core {
 pub fn core_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
+
+// ---- the app's screens (step A3): structured rows and edits ---------------
+
+/// A Dictionary word with the forms the model mishears it as.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct WordRow {
+    pub id: i64,
+    pub text: String,
+    pub heard: Vec<String>,
+    pub pinned: bool,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SnippetRow {
+    pub id: i64,
+    pub trigger: String,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ScratchNote {
+    pub id: i64,
+    pub title: String,
+    pub text: String,
+    /// Seconds since 1970.
+    pub updated_at: i64,
+}
+
+/// A Notes recording, as the list shows it.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct NoteRow {
+    pub id: i64,
+    pub title: String,
+    pub started_at: i64,
+    pub duration_ms: i64,
+    pub summary: String,
+    pub open_actions: u32,
+    /// The device name when it came from the PC.
+    pub device: Option<String>,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ActionItem {
+    pub id: i64,
+    pub text: String,
+    pub done: bool,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct NoteDetail {
+    pub note: NoteRow,
+    pub actions: Vec<ActionItem>,
+    /// The transcript, one line per entry, as "who: text".
+    pub transcript: Vec<String>,
+}
+
+#[uniffi::export]
+impl Core {
+    pub fn word_rows(&self) -> Result<Vec<WordRow>, CoreError> {
+        let conn = self.phone.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT e.id, e.text, e.pinned,
+                    (SELECT group_concat(h.heard, char(31)) FROM dictionary_heard h WHERE h.entry_id = e.id)
+             FROM dictionary_entry e ORDER BY e.pinned DESC, e.text COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            let heard: Option<String> = r.get(3)?;
+            Ok(WordRow {
+                id: r.get(0)?,
+                text: r.get(1)?,
+                pinned: r.get::<_, i64>(2)? != 0,
+                heard: heard
+                    .map(|h| h.split('\u{1f}').map(str::to_string).collect())
+                    .unwrap_or_default(),
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Adds a word, with the form the model writes instead when there is one.
+    pub fn add_word_heard(&self, text: String, heard: String) -> Result<(), CoreError> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(());
+        }
+        let conn = self.phone.conn()?;
+        conn.execute(
+            "INSERT OR IGNORE INTO dictionary_entry (text, added_at) VALUES (?1, ?2)",
+            rusqlite::params![text, legato_phone::sync::engine::now_s()],
+        )?;
+        let heard = heard.trim().to_lowercase();
+        if !heard.is_empty() {
+            conn.execute(
+                "INSERT OR IGNORE INTO dictionary_heard (entry_id, heard)
+                 SELECT id, ?2 FROM dictionary_entry WHERE text = ?1 COLLATE NOCASE",
+                rusqlite::params![text, heard],
+            )?;
+        }
+        self.changed()
+    }
+
+    pub fn snippet_rows(&self) -> Result<Vec<SnippetRow>, CoreError> {
+        let conn = self.phone.conn()?;
+        let mut stmt = conn.prepare("SELECT id, trigger, text FROM snippet ORDER BY trigger")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(SnippetRow {
+                id: r.get(0)?,
+                trigger: r.get(1)?,
+                text: r.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn save_snippet(
+        &self,
+        id: Option<i64>,
+        trigger: String,
+        text: String,
+    ) -> Result<(), CoreError> {
+        let trigger = trigger.trim().to_lowercase();
+        let text = text.trim().to_string();
+        if trigger.is_empty() || text.is_empty() {
+            return Ok(());
+        }
+        let conn = self.phone.conn()?;
+        match id {
+            Some(id) => conn.execute(
+                "UPDATE snippet SET trigger = ?2, text = ?3 WHERE id = ?1",
+                rusqlite::params![id, trigger, text],
+            )?,
+            None => conn.execute(
+                "INSERT INTO snippet (trigger, text, added_at) VALUES (?1, ?2, ?3)",
+                rusqlite::params![trigger, text, legato_phone::sync::engine::now_s()],
+            )?,
+        };
+        self.changed()
+    }
+
+    pub fn remove_snippet(&self, id: i64) -> Result<(), CoreError> {
+        self.phone
+            .conn()?
+            .execute("DELETE FROM snippet WHERE id = ?1", [id])?;
+        self.changed()
+    }
+
+    pub fn scratch_notes(&self) -> Result<Vec<ScratchNote>, CoreError> {
+        let conn = self.phone.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, title, text, updated_at FROM scratch_note ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(ScratchNote {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                text: r.get(2)?,
+                updated_at: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Saves a Scratchpad note; None makes a new one. Returns its id.
+    pub fn save_scratch(
+        &self,
+        id: Option<i64>,
+        title: String,
+        text: String,
+    ) -> Result<i64, CoreError> {
+        let conn = self.phone.conn()?;
+        let now = legato_phone::sync::engine::now_s();
+        let id = match id {
+            Some(id) => {
+                conn.execute(
+                    "UPDATE scratch_note SET title = ?2, auto_title = 0, text = ?3, updated_at = ?4 WHERE id = ?1",
+                    rusqlite::params![id, title.trim(), text, now],
+                )?;
+                id
+            }
+            None => {
+                conn.execute(
+                    "INSERT INTO scratch_note (title, auto_title, text, created_at, updated_at)
+                     VALUES (?1, 0, ?2, ?3, ?3)",
+                    rusqlite::params![title.trim(), text, now],
+                )?;
+                conn.last_insert_rowid()
+            }
+        };
+        self.changed()?;
+        Ok(id)
+    }
+
+    pub fn delete_scratch(&self, id: i64) -> Result<(), CoreError> {
+        let conn = self.phone.conn()?;
+        conn.execute("DELETE FROM scratch_version WHERE note_id = ?1", [id])?;
+        conn.execute("DELETE FROM scratch_note WHERE id = ?1", [id])?;
+        self.changed()
+    }
+
+    pub fn notes(&self) -> Result<Vec<NoteRow>, CoreError> {
+        let conn = self.phone.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT n.id, n.title, n.started_at, n.duration_ms, n.summary,
+                    (SELECT COUNT(*) FROM note_action a WHERE a.note_id = n.id AND a.done = 0),
+                    (SELECT device FROM sync_local WHERE kind = 'notes' AND local_id = n.id)
+             FROM note n WHERE n.status = 'ready' ORDER BY n.started_at DESC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(NoteRow {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                started_at: r.get(2)?,
+                duration_ms: r.get(3)?,
+                summary: r.get(4)?,
+                open_actions: r.get::<_, i64>(5)? as u32,
+                device: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn note(&self, id: i64) -> Result<NoteDetail, CoreError> {
+        let note = self
+            .notes()?
+            .into_iter()
+            .find(|n| n.id == id)
+            .ok_or_else(|| CoreError::Failed("That note is gone".into()))?;
+        let conn = self.phone.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, text, done FROM note_action WHERE note_id = ?1 ORDER BY position, id",
+        )?;
+        let actions = stmt
+            .query_map([id], |r| {
+                Ok(ActionItem {
+                    id: r.get(0)?,
+                    text: r.get(1)?,
+                    done: r.get::<_, i64>(2)? != 0,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut stmt =
+            conn.prepare("SELECT who, text FROM note_line WHERE note_id = ?1 ORDER BY at_ms, id")?;
+        let transcript = stmt
+            .query_map([id], |r| {
+                Ok(format!(
+                    "{}: {}",
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(NoteDetail {
+            note,
+            actions,
+            transcript,
+        })
+    }
+
+    /// Ticks or unticks an action item; the PC sees it on the next sync.
+    pub fn set_action_done(&self, id: i64, done: bool) -> Result<(), CoreError> {
+        self.phone.conn()?.execute(
+            "UPDATE note_action SET done = ?2 WHERE id = ?1",
+            rusqlite::params![id, done as i64],
+        )?;
+        self.changed()
+    }
+
+    /// Deletes a dictation here and, through a tombstone, on the PC.
+    pub fn delete_history(&self, id: i64) -> Result<(), CoreError> {
+        let conn = self.phone.conn()?;
+        legato_phone::sync::ledger::forget(
+            &conn,
+            "history",
+            id,
+            legato_phone::sync::engine::now_s(),
+        )?;
+        conn.execute("DELETE FROM transcription_history WHERE id = ?1", [id])?;
+        self.changed()
+    }
+}
