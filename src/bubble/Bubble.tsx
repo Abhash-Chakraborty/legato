@@ -360,7 +360,12 @@ const Bubble: React.FC = () => {
                 onPointerEnter={() => setHot(b.id)}
                 onPointerLeave={() => setHot((h) => (h === b.id ? null : h))}
                 onPointerDown={(e) => onPointerDown(e, b.id)}
-                onPointerMove={onPointerMove}
+                onPointerMove={(e) => {
+                  // The bubble opens under a still pointer, so the middle
+                  // button may not hear it enter.
+                  if (!press.current && hot !== b.id) setHot(b.id);
+                  onPointerMove(e);
+                }}
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
               >
