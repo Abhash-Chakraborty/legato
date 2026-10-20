@@ -514,6 +514,19 @@ async bubbleAction(action: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Opens the Notes side panel on the recording in progress (the bar's
+ * Notes pill). Async for the same reason as `bubble_action`.
+ */
+async showNotesPanel() : Promise<void> {
+    await TAURI_INVOKE("show_notes_panel");
+},
+/**
+ * Closes the Notes side panel; the recording carries on.
+ */
+async hideNotesPanel() : Promise<void> {
+    await TAURI_INVOKE("hide_notes_panel");
+},
 async calendarList() : Promise<CalendarStatus[]> {
     return await TAURI_INVOKE("calendar_list");
 },

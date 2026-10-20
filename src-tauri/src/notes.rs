@@ -474,15 +474,20 @@ pub fn session() -> Option<SessionInfo> {
     lock(&FINISHING).as_ref().map(|f| fresh(&f.info, &f.shared))
 }
 
+/// The bar's Notes pill shows while a recording runs and its side panel
+/// is closed.
+pub fn refresh_pill(app: &AppHandle) {
+    let recording = session().is_some_and(|s| s.phase == SessionPhase::Recording);
+    crate::overlay::set_notes_pill(app, recording && !crate::notes_panel::is_open());
+}
+
 fn announce(app: &AppHandle) {
     let session = session();
-    crate::overlay::set_notes_pill(
-        app,
-        session
-            .as_ref()
-            .filter(|s| s.phase == SessionPhase::Recording)
-            .is_some(),
-    );
+    refresh_pill(app);
+    // The panel goes with the recording.
+    if session.is_none() && crate::notes_panel::is_open() {
+        crate::notes_panel::hide(app);
+    }
     let _ = NotesSessionChanged { session }.emit(app);
 }
 
@@ -1273,13 +1278,17 @@ pub fn receive_dictation(app: &AppHandle, note_id: i64, text: String) {
     if text.trim().is_empty() {
         return;
     }
-    let page_open = app
-        .get_webview_window("main")
-        .and_then(|w| w.is_visible().ok())
-        .unwrap_or(false);
-    if page_open {
-        let _ = NoteInsert { note_id, text }.emit_to(app, "main");
-        return;
+    // The side panel first: it's the one in front while you take notes.
+    let open = |label: &str| {
+        app.get_webview_window(label)
+            .and_then(|w| w.is_visible().ok())
+            .unwrap_or(false)
+    };
+    for label in [crate::notes_panel::WINDOW, "main"] {
+        if open(label) {
+            let _ = NoteInsert { note_id, text }.emit_to(app, label);
+            return;
+        }
     }
     let m = manager(app);
     let result = m.get(note_id).and_then(|note| {

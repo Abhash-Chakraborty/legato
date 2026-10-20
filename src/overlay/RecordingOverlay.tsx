@@ -883,10 +883,17 @@ const RecordingOverlay: React.FC = () => {
           role="status"
         >
           <span className={`snotes-dot ${paused ? "paused" : ""}`} />
-          <span className="snotes-label">{t("overlay.notes.label")}</span>
-          <span className="snotes-clock">
-            {clock(notesTick?.elapsed_ms ?? 0)}
-          </span>
+          <button
+            type="button"
+            className="snotes-open"
+            title={t("overlay.notes.open")}
+            onClick={() => commands.showNotesPanel()}
+          >
+            <span className="snotes-label">{t("overlay.notes.label")}</span>
+            <span className="snotes-clock">
+              {clock(notesTick?.elapsed_ms ?? 0)}
+            </span>
+          </button>
           <span className="snotes-meters" aria-hidden="true">
             <NotesMeter level={paused ? 0 : (notesTick?.you ?? 0)} />
             {notesTick?.them != null && (

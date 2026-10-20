@@ -717,6 +717,22 @@
 .snotes-dot.paused {
   background: var(--color-warning);
 }
+/* The label and clock open the Notes side panel. */
+.snotes-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.snotes-open:hover .snotes-label {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .snotes-label {
   font-weight: 600;
 }

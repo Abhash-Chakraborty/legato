@@ -75,6 +75,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `edit_reader.rs` - Learn from my edits (UI Automation read after a paste)
 - `scratchpad.rs` - The Scratchpad window, failed pastes, Send to
 - `notes.rs` / `loopback.rs` - Notes: voice memos and meetings (per-app loopback capture)
+- `notes_panel.rs` - The Notes side panel docked at the right of the screen (live transcript, My notes, Pause, Stop)
 - `calls.rs` - Noticing calls and offering notes
 - `calendar.rs` - Calendars from secret iCal addresses (Settings › Connections): meetings for the bubble, note titles and MCP, cached in `calendar.json`
 - `mcp.rs` - `legato --mcp`: a Model Context Protocol server over stdio that lets AI apps read dictations, notes, the Dictionary, the Scratchpad and meetings
@@ -86,7 +87,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `shortcut/` - Global keyboard shortcut handling (handy-keys or Tauri), including the picker's temporary keys
 - `settings.rs` - Application settings management
 - `overlay.rs` - The Legato bar (recording overlay window and its states)
-- `bubble.rs` - The desktop bubble: a dot that stays on screen with Dictate, Notes and the Scratchpad on hover; dragged anywhere, snaps to a side, steps aside for fullscreen windows
+- `bubble.rs` - The desktop bubble: a dot that stays on screen with Dictate, Notes and the Scratchpad on hover; dragged, it settles in the middle of the nearest edge; steps aside for fullscreen windows
 - `tray.rs` - System tray icon and menu
 - `signal_handle.rs` - `send_transcription_input()` reusable function
 - `handy_migration.rs` - First-run move of Handy's data into Legato's folders
@@ -106,6 +107,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
   - `shared/`, `ui/`, `icons/`, `shell/`, `whats-new/` - Shared components
 - `overlay/` - The Legato bar window entry point
 - `bubble/` - The desktop bubble window
+- `notespanel/` - The Notes side panel window
 - `scratchpad/` - The Scratchpad window: tabs, the notes rail and panel, formatting bar, Copy and Send to
 - `stores/` - Zustand stores (settings, models, dictionary, snippets, transforms, notes, calls, scratchpad, sync, navigation)
 - `hooks/useSettings.ts` - Settings state management hook

@@ -41,7 +41,16 @@ pub async fn bubble_action(app: AppHandle, action: String) -> Result<(), String>
     log::debug!("Bubble: {action}");
     match action.as_str() {
         "dictate" => crate::signal_handle::send_transcription_input(&app, "transcribe", "bubble"),
-        "notes" => crate::notes::toggle(&app),
+        // Starts notes and opens the panel; while they run, the panel,
+        // which has Stop.
+        "notes" => {
+            if !crate::notes::is_recording() {
+                crate::notes::toggle(&app);
+            }
+            if crate::notes::is_recording() {
+                crate::notes_panel::show(&app);
+            }
+        }
         "scratchpad" => crate::scratchpad::toggle_from_bubble(&app),
         "open" => crate::show_main_window(&app),
         "snooze" => bubble::snooze(&app),
@@ -49,4 +58,21 @@ pub async fn bubble_action(app: AppHandle, action: String) -> Result<(), String>
         other => return Err(format!("Unknown bubble action: {other}")),
     }
     Ok(())
+}
+
+/// Opens the Notes side panel on the recording in progress (the bar's
+/// Notes pill). Async for the same reason as `bubble_action`.
+#[tauri::command]
+#[specta::specta]
+pub async fn show_notes_panel(app: AppHandle) {
+    if crate::notes::is_recording() {
+        crate::notes_panel::show(&app);
+    }
+}
+
+/// Closes the Notes side panel; the recording carries on.
+#[tauri::command]
+#[specta::specta]
+pub async fn hide_notes_panel(app: AppHandle) {
+    crate::notes_panel::hide(&app);
 }

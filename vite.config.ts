@@ -25,6 +25,7 @@ export default defineConfig(async () => ({
         overlay: resolve(__dirname, "src/overlay/index.html"),
         scratchpad: resolve(__dirname, "src/scratchpad/index.html"),
         bubble: resolve(__dirname, "src/bubble/index.html"),
+        notespanel: resolve(__dirname, "src/notespanel/index.html"),
       },
     },
   },

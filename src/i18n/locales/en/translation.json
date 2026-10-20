@@ -1267,13 +1267,13 @@
     "notes": "Take notes",
     "notesFor": "Take notes for {{title}}",
     "notesSoon": "Take notes · {{title}} in {{minutes}} min",
-    "stopNotes": "Stop notes · {{time}}",
     "scratchpad": "Scratchpad",
     "menu": {
       "snooze": "Hide for an hour",
       "off": "Turn off the bubble",
       "open": "Open Legato"
-    }
+    },
+    "showNotes": "Notes · {{time}}"
   },
   "overlay": {
     "cancel": "Cancel",
@@ -1364,7 +1364,8 @@
       "label": "Notes",
       "pause": "Pause notes",
       "resume": "Resume notes",
-      "stop": "Stop notes"
+      "stop": "Stop notes",
+      "open": "Show the notes panel"
     },
     "call": {
       "started": "Call started in {{app}}",
@@ -3237,5 +3238,13 @@
     "pasteFailedBody": "It's saved in the Scratchpad. Click to open it.",
     "updateTitle": "Legato {{version}} is ready",
     "updateBody": "Open Legato to install it."
+  },
+  "notesPanel": {
+    "title": "Notes",
+    "idle": "Not recording",
+    "none": "Start notes from the bubble to see the transcript here.",
+    "close": "Close the panel; notes keep recording",
+    "closeHint": "Close this and notes keep recording.",
+    "minePlaceholder": "Type while you listen"
   }
 }

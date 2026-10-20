@@ -70,7 +70,7 @@ fn logical_area(monitor: &tauri::Monitor) -> Rect {
 }
 
 /// The monitor a logical point is on, or the primary one.
-fn monitor_at(app: &AppHandle, point: Option<(f64, f64)>) -> Option<tauri::Monitor> {
+pub(crate) fn monitor_at(app: &AppHandle, point: Option<(f64, f64)>) -> Option<tauri::Monitor> {
     if let Some((x, y)) = point {
         if let Ok(monitors) = app.available_monitors() {
             for m in monitors {

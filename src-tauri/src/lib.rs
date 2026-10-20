@@ -30,6 +30,7 @@ mod managers;
 pub mod mcp;
 mod mcp_rules;
 mod notes;
+mod notes_panel;
 mod notes_rules;
 mod overlay;
 mod paste_tx;
@@ -484,6 +485,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // The desktop bubble, when it's on (it creates its window either way so
     // turning it on later needs no restart).
     bubble::init(app_handle);
+    notes_panel::init(app_handle);
 }
 
 #[tauri::command]
@@ -815,6 +817,8 @@ pub fn run(cli_args: CliArgs) {
             commands::bubble::bubble_move_to,
             commands::bubble::bubble_drop,
             commands::bubble::bubble_action,
+            commands::bubble::show_notes_panel,
+            commands::bubble::hide_notes_panel,
             commands::connections::calendar_list,
             commands::connections::calendar_add,
             commands::connections::calendar_remove,

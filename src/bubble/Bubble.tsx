@@ -118,6 +118,7 @@ const Bubble: React.FC = () => {
   const [notes, setNotes] = useState<SessionInfo | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [panelOpen, setPanelOpen] = useState(false);
   const leaveTimer = useRef<number | null>(null);
   const press = useRef<{
     x: number;
@@ -156,6 +157,7 @@ const Bubble: React.FC = () => {
         ),
       ),
       events.notesSessionChanged.listen((e) => setNotes(e.payload.session)),
+      listen<boolean>("notes-panel", (e) => setPanelOpen(e.payload)),
       events.calendarChanged.listen(() =>
         commands
           .calendarMeetings()
@@ -285,7 +287,7 @@ const Bubble: React.FC = () => {
   const now = Date.now() / 1000;
   const meeting = layout.expanded ? meetingNow(meetings, now) : undefined;
   const notesLabel = notesOn
-    ? t("bubble.stopNotes", { time: clock(elapsed) })
+    ? t("bubble.showNotes", { time: clock(elapsed) })
     : !meeting
       ? t("bubble.notes")
       : meeting.start <= now
@@ -379,7 +381,7 @@ const Bubble: React.FC = () => {
       ) : (
         <button
           type="button"
-          className={`bdot ${recording ? `rec ${upright ? "tall" : "wide"}` : ""} ${notesOn ? "notes" : ""}`}
+          className={`bdot ${recording ? `rec ${upright ? "tall" : "wide"}` : ""} ${notesOn && !panelOpen ? "notes" : ""}`}
           style={{ left: layout.dot_x, top: layout.dot_y }}
           aria-label={t("bubble.label")}
           onPointerDown={(e) => onPointerDown(e, null)}
