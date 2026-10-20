@@ -112,6 +112,9 @@ mod tests {
         ));
         assert!(!virtual_adapter("Wi-Fi", "Intel(R) Wi-Fi 6E AX211 160MHz"));
         assert!(!virtual_adapter("wt0", "WireGuard Tunnel"));
-        assert!(!virtual_adapter("Ethernet", "Realtek PCIe GbE Family Controller"));
+        assert!(!virtual_adapter(
+            "Ethernet",
+            "Realtek PCIe GbE Family Controller"
+        ));
     }
 }
