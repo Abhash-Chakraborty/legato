@@ -128,7 +128,6 @@ const Bubble: React.FC = () => {
     action: Action | null;
     dragging: boolean;
   } | null>(null);
-  const frame = useRef(0);
 
   useEffect(() => {
     const subs = [
@@ -158,6 +157,9 @@ const Bubble: React.FC = () => {
       ),
       events.notesSessionChanged.listen((e) => setNotes(e.payload.session)),
       listen<boolean>("notes-panel", (e) => setPanelOpen(e.payload)),
+      listen("bubble-dropped", () => {
+        press.current = null;
+      }),
       events.calendarChanged.listen(() =>
         commands
           .calendarMeetings()
@@ -234,28 +236,21 @@ const Bubble: React.FC = () => {
 
   const onPointerMove = (e: React.PointerEvent) => {
     const p = press.current;
-    if (!p) return;
-    if (!p.dragging && Math.hypot(e.screenX - p.x, e.screenY - p.y) < DRAG_PX) {
-      return;
-    }
+    if (!p || p.dragging) return;
+    if (Math.hypot(e.screenX - p.x, e.screenY - p.y) < DRAG_PX) return;
+    // The backend follows the cursor from here until the button comes up,
+    // so a quick flick can't leave the small window behind.
     p.dragging = true;
     setHot(null);
-    const x = e.screenX - p.grabX;
-    const y = e.screenY - p.grabY;
-    cancelAnimationFrame(frame.current);
-    frame.current = requestAnimationFrame(() => commands.bubbleMoveTo(x, y));
+    commands.bubbleDrag(-p.grabX, -p.grabY);
   };
 
   const onPointerUp = () => {
     const p = press.current;
     press.current = null;
-    if (!p) return;
-    if (p.dragging) {
-      cancelAnimationFrame(frame.current);
-      commands.bubbleDrop();
-      return;
+    if (p && !p.dragging && p.action) {
+      commands.bubbleAction(p.action).catch(() => {});
     }
-    if (p.action) commands.bubbleAction(p.action).catch(() => {});
   };
 
   const onContextMenu = async (e: React.MouseEvent) => {

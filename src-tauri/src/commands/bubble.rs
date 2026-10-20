@@ -17,18 +17,13 @@ pub fn bubble_expand(app: AppHandle, expanded: bool) {
     bubble::expand(&app, expanded);
 }
 
-/// A drag in progress: the dot's centre in logical screen pixels.
+/// A press on the bubble became a drag; it follows the cursor until the
+/// button comes up. `dx`, `dy`: the dot's centre less the pointer, in
+/// logical pixels.
 #[tauri::command]
 #[specta::specta]
-pub fn bubble_move_to(app: AppHandle, x: f64, y: f64) {
-    bubble::move_to(&app, x, y);
-}
-
-/// The drag ended.
-#[tauri::command]
-#[specta::specta]
-pub fn bubble_drop(app: AppHandle) {
-    bubble::drop_here(&app);
+pub fn bubble_drag(app: AppHandle, dx: f64, dy: f64) {
+    bubble::drag(&app, (dx, dy));
 }
 
 /// One of the bubble's buttons or menu items: `dictate`, `notes`,

@@ -315,13 +315,16 @@ pub fn set_enabled(app: &AppHandle, enabled: bool) {
 
 /// Opens or closes the bubble's buttons as the pointer comes and goes.
 pub fn expand(app: &AppHandle, expanded: bool) {
+    if DRAGGING.load(Ordering::SeqCst) {
+        return;
+    }
     if EXPANDED.swap(expanded, Ordering::SeqCst) != expanded {
         apply(app);
     }
 }
 
 /// Follows a drag: the dot's centre in logical screen pixels.
-pub fn move_to(app: &AppHandle, x: f64, y: f64) {
+fn move_to(app: &AppHandle, x: f64, y: f64) {
     let monitor = monitor_at(app, Some((x, y)));
     {
         let mut guard = SPOT.lock().unwrap_or_else(|e| e.into_inner());
@@ -339,8 +342,68 @@ pub fn move_to(app: &AppHandle, x: f64, y: f64) {
     apply(app);
 }
 
+/// A drag in progress, followed from the system cursor.
+static DRAGGING: AtomicBool = AtomicBool::new(false);
+
+/// The cursor in logical pixels of the monitor it's on.
+fn cursor_logical(app: &AppHandle) -> Option<(f64, f64)> {
+    let p = app.cursor_position().ok()?;
+    let monitors = app.available_monitors().ok()?;
+    let m = monitors.iter().find(|m| {
+        let (pos, size) = (m.position(), m.size());
+        p.x >= f64::from(pos.x)
+            && p.x < f64::from(pos.x) + f64::from(size.width)
+            && p.y >= f64::from(pos.y)
+            && p.y < f64::from(pos.y) + f64::from(size.height)
+    })?;
+    let scale = m.scale_factor();
+    Some((p.x / scale, p.y / scale))
+}
+
+/// Whether the left mouse button is down now.
+fn button_down() -> bool {
+    #[cfg(windows)]
+    {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+        (unsafe { GetAsyncKeyState(i32::from(VK_LBUTTON.0)) } as u16) & 0x8000 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+/// Starts a drag. The dot follows the system cursor until the button comes
+/// up, then settles on the nearest edge. Following the cursor here rather
+/// than the page's pointer events keeps up with a quick flick, which leaves
+/// the small window behind and loses the webview's pointer capture.
+/// `grab` is the dot's centre less the cursor, in logical pixels.
+pub fn drag(app: &AppHandle, grab: (f64, f64)) {
+    if DRAGGING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut last = None;
+        while button_down() {
+            if let Some((x, y)) = cursor_logical(&app) {
+                let center = (x + grab.0, y + grab.1);
+                if last != Some(center) {
+                    move_to(&app, center.0, center.1);
+                    last = Some(center);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(8));
+        }
+        drop_here(&app);
+        DRAGGING.store(false, Ordering::SeqCst);
+        // The page may never hear the button come up; tell it the drag ended.
+        let _ = app.emit_to(WINDOW, "bubble-dropped", ());
+    });
+}
+
 /// Ends a drag: settles in the middle of the nearest edge and remembers it.
-pub fn drop_here(app: &AppHandle) {
+fn drop_here(app: &AppHandle) {
     let (edge, saved) = {
         let mut guard = SPOT.lock().unwrap_or_else(|e| e.into_inner());
         let Some(spot) = guard.as_mut() else {

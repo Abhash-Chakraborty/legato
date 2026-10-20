@@ -491,16 +491,12 @@ async bubbleExpand(expanded: boolean) : Promise<void> {
     await TAURI_INVOKE("bubble_expand", { expanded });
 },
 /**
- * A drag in progress: the dot's centre in logical screen pixels.
+ * A press on the bubble became a drag; it follows the cursor until the
+ * button comes up. `dx`, `dy`: the dot's centre less the pointer, in
+ * logical pixels.
  */
-async bubbleMoveTo(x: number, y: number) : Promise<void> {
-    await TAURI_INVOKE("bubble_move_to", { x, y });
-},
-/**
- * The drag ended.
- */
-async bubbleDrop() : Promise<void> {
-    await TAURI_INVOKE("bubble_drop");
+async bubbleDrag(dx: number, dy: number) : Promise<void> {
+    await TAURI_INVOKE("bubble_drag", { dx, dy });
 },
 /**
  * One of the bubble's buttons or menu items: `dictate`, `notes`,
