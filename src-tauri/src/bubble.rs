@@ -420,32 +420,51 @@ fn button_down() -> bool {
     }
 }
 
-/// Starts a drag. The dot follows the system cursor until the button comes
-/// up, then settles on the nearest edge. Following the cursor here rather
-/// than the page's pointer events keeps up with a quick flick, which leaves
-/// the small window behind and loses the webview's pointer capture.
-/// `grab` is the dot's centre less the cursor, in logical pixels.
-pub fn drag(app: &AppHandle, grab: (f64, f64)) {
-    if DRAGGING.swap(true, Ordering::SeqCst) {
+/// A press on the bubble being watched, until the button comes up.
+static PRESSED: AtomicBool = AtomicBool::new(false);
+/// How far, in logical pixels, the cursor moves before a press is a drag.
+const DRAG_PX: f64 = 5.0;
+
+/// Watches a press on the bubble. Once the cursor moves a few pixels with
+/// the button held, the dot follows the system cursor until the button
+/// comes up, then settles on the nearest edge. Watching the cursor here
+/// rather than the page's pointer events keeps up with a quick flick, which
+/// leaves the small window behind, and with a press that lands just as the
+/// bubble opens and swaps the dot for its buttons; either loses the page's
+/// pointer capture. `grab` is the dot's centre less the cursor, in logical
+/// pixels.
+pub fn press(app: &AppHandle, grab: (f64, f64)) {
+    if PRESSED.swap(true, Ordering::SeqCst) {
         return;
     }
     let app = app.clone();
     std::thread::spawn(move || {
+        let start = cursor_logical(&app);
         let mut last = None;
         while button_down() {
             if let Some((x, y)) = cursor_logical(&app) {
-                let center = (x + grab.0, y + grab.1);
-                if last != Some(center) {
-                    move_to(&app, center.0, center.1);
-                    last = Some(center);
+                let moved = start.is_some_and(|(sx, sy)| (x - sx).hypot(y - sy) >= DRAG_PX);
+                if moved && !DRAGGING.swap(true, Ordering::SeqCst) {
+                    EXPANDED.store(false, Ordering::SeqCst);
+                }
+                if DRAGGING.load(Ordering::SeqCst) {
+                    let center = (x + grab.0, y + grab.1);
+                    if last != Some(center) {
+                        move_to(&app, center.0, center.1);
+                        last = Some(center);
+                    }
                 }
             }
             std::thread::sleep(Duration::from_millis(8));
         }
-        drop_here(&app);
-        DRAGGING.store(false, Ordering::SeqCst);
-        // The page may never hear the button come up; tell it the drag ended.
-        let _ = app.emit_to(WINDOW, "bubble-dropped", ());
+        if DRAGGING.load(Ordering::SeqCst) {
+            drop_here(&app);
+            DRAGGING.store(false, Ordering::SeqCst);
+            // The page may never hear the button come up; tell it the drag
+            // ended.
+            let _ = app.emit_to(WINDOW, "bubble-dropped", ());
+        }
+        PRESSED.store(false, Ordering::SeqCst);
     });
 }
 

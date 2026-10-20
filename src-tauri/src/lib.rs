@@ -814,7 +814,7 @@ pub fn run(cli_args: CliArgs) {
             commands::finish_dictation,
             commands::bubble::change_bubble_enabled_setting,
             commands::bubble::bubble_expand,
-            commands::bubble::bubble_drag,
+            commands::bubble::bubble_press,
             commands::bubble::bubble_action,
             commands::bubble::show_notes_panel,
             commands::bubble::hide_notes_panel,

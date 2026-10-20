@@ -123,8 +123,6 @@ const Bubble: React.FC = () => {
   const press = useRef<{
     x: number;
     y: number;
-    grabX: number;
-    grabY: number;
     action: Action | null;
     dragging: boolean;
   } | null>(null);
@@ -229,23 +227,21 @@ const Bubble: React.FC = () => {
     press.current = {
       x: e.screenX,
       y: e.screenY,
-      // Where in the dot the pointer took hold, so the dot doesn't jump.
-      grabX: e.clientX - layout.dot_x,
-      grabY: e.clientY - layout.dot_y,
       action,
       dragging: false,
     };
+    // Legato watches the press too, and moves the bubble once it drags,
+    // keeping the dot where the pointer took hold of it.
+    commands.bubblePress(layout.dot_x - e.clientX, layout.dot_y - e.clientY);
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
     const p = press.current;
     if (!p || p.dragging) return;
     if (Math.hypot(e.screenX - p.x, e.screenY - p.y) < DRAG_PX) return;
-    // The backend follows the cursor from here until the button comes up,
-    // so a quick flick can't leave the small window behind.
+    // A drag, which Legato is following: not a click.
     p.dragging = true;
     setHot(null);
-    commands.bubbleDrag(-p.grabX, -p.grabY);
   };
 
   const onPointerUp = () => {
