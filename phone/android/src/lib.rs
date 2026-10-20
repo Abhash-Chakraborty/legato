@@ -86,6 +86,9 @@ pub trait CoreListener: Send + Sync {
     /// network address answers, and returns a port on 127.0.0.1 that carries
     /// the link, or 0 when it can't. It may block while it connects.
     fn open_bluetooth(&self, address: String) -> u16;
+    /// A text the PC copied, as it arrives; images stay in `clips`.
+    /// `age_ms` is how long ago it was copied on the PC.
+    fn on_clip(&self, text: String, from_app: Option<String>, age_ms: u64);
 }
 
 /// The phone's core. One per app process.
@@ -119,6 +122,14 @@ impl Core {
             let listener = listener.clone();
             Arc::new(move |address: &str| {
                 Some(listener.open_bluetooth(address.to_string())).filter(|port| *port != 0)
+            })
+        });
+        *phone.on_clip.lock().unwrap() = Some({
+            let listener = listener.clone();
+            Box::new(move |clip: &Clip| {
+                if let Some(text) = clip.text.clone().filter(|t| !t.trim().is_empty()) {
+                    listener.on_clip(text, clip.from_app.clone(), clip.age_ms);
+                }
             })
         });
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -279,6 +290,27 @@ impl Core {
         self.changed()
     }
 
+    /// Saves a voice memo recorded on the phone as a note, so Notes and the
+    /// PC see it. `started_at` is in seconds since 1970. Returns its id.
+    pub fn add_memo(
+        &self,
+        title: String,
+        started_at: i64,
+        duration_ms: i64,
+        lines: Vec<MemoLine>,
+    ) -> Result<i64, CoreError> {
+        let lines: Vec<(i64, i64, String)> = lines
+            .into_iter()
+            .map(|l| (l.at_ms, l.end_ms, l.text.trim().to_string()))
+            .filter(|l| !l.2.is_empty())
+            .collect();
+        let id = self
+            .phone
+            .add_memo(title.trim(), started_at, duration_ms, &lines)?;
+        self.changed()?;
+        Ok(id)
+    }
+
     /// Sends what's on the phone's clipboard to the PC. False when not connected.
     pub fn send_clip(&self, text: String) -> Result<bool, CoreError> {
         let Some(pc) = self.phone.paired_pc() else {
@@ -417,6 +449,14 @@ pub struct NoteRow {
     pub open_actions: u32,
     /// The device name when it came from the PC.
     pub device: Option<String>,
+}
+
+/// One stretch of a voice memo recorded on the phone.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct MemoLine {
+    pub at_ms: i64,
+    pub end_ms: i64,
+    pub text: String,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]

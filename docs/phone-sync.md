@@ -41,7 +41,9 @@ The phone tries the network addresses all at once and takes the first that answe
 none does within 4 seconds, it tries Bluetooth. Either way it checks that the PC's
 certificate matches `fp`. Then it sends `hello` with the secret. If the secret is right, the PC stores the
 phone's device ID and fingerprint and answers `welcome`. From then on, both sides only accept
-each other's stored fingerprint.
+each other's stored fingerprint. Until the PC has heard the `hello`, the phone keeps the
+secret and sends it on every retry, so pairing while the PC is briefly out of reach finishes
+once it answers.
 
 The PC also offers the link as text ("Copy link") so the stand-in phone can use it.
 
@@ -106,7 +108,9 @@ The phone speaks first:
 ```
 
 Reasons: `unknown_device` (not paired, and no secret), `bad_secret`, `expired` (no pairing
-open), `protocol` (a version the PC doesn't speak). The PC closes after `refused`.
+open), `protocol` (a version the PC doesn't speak). The PC closes after `refused`. Only
+`refused` makes the phone forget the PC; a closed port, a timeout or a failed handshake
+means it's out of reach, and the phone tries again.
 
 `addrs`, when present, lists where the PC can be reached now, in the pairing link's format.
 The phone saves them in place of the ones from pairing, so a new Wi-Fi address, or
@@ -214,7 +218,9 @@ Rules per kind:
 - **History** only spreads deletes the person made. When the PC trims old dictations to its
   history limit, the phone keeps them. Dictations from the phone show on Home with its name and
   don't count in Insights, which measures this PC.
-- **Notes** sync once they're ready (not while recording or transcribing).
+- **Notes** sync once they're ready (not while recording or transcribing). The phone records
+  voice memos too: `kind` is `memo`, each stretch of about 30 seconds is a line with `who` set to
+  `you`, and the recording itself stays on the phone only until it's written up.
 - **Transforms** leave out the AI provider and model, since API keys stay on each device.
 - **Style** syncs the tone only. Paste method, the key after paste and the trailing space
   belong to the PC.
@@ -241,3 +247,12 @@ Legato bar settings and API keys.
   to start with).
 - Clips Legato writes itself, including ones that just arrived, are never sent back.
 - Both sides keep the last 20 clips.
+
+On the phone, Settings › Clipboard › Shared clipboard is Automatic or Manual:
+
+- **Automatic** (the default) puts each text from the PC on the phone's clipboard as it arrives
+  (subject to the 2-minute rule above). Android lets an app read the clipboard only while it's in
+  front, so what you copy on the phone goes to the PC when Legato's window gets focus, unless it's
+  the clip that just came from there.
+- **Manual** moves nothing on its own. Clips from the PC wait in Recent clips; the phone sends
+  with Send the clipboard now, or Send to PC in any app's share menu and on selected text.

@@ -441,6 +441,14 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
         .set_addrs(vec!["10.0.0.9:47613".into(), "bt:AA:BB:CC:DD:EE:FF".into()]);
     let pixel = phone("Pixel 8");
     pixel.add_word("Bluetooth").unwrap();
+    pixel
+        .add_memo(
+            "Voice memo",
+            1_790_000_000,
+            4_000,
+            &[(0, 4_000, "Call the landlord about the boiler".into())],
+        )
+        .unwrap();
     pixel.refresh().unwrap();
     let addrs = vec![
         "127.0.0.1:1".to_string(),
@@ -482,6 +490,23 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
     })
     .await;
     assert_eq!(*dialled.lock().unwrap(), ["AA:BB:CC:DD:EE:FF"]);
+    // The memo recorded on the phone is a note on the PC, transcript and all.
+    let memo: (String, String, String) = Connection::open(&pc.db)
+        .unwrap()
+        .query_row(
+            "SELECT n.title, n.kind, l.text FROM note n JOIN note_line l ON l.note_id = n.id",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        memo,
+        (
+            "Voice memo".into(),
+            "memo".into(),
+            "Call the landlord about the boiler".into()
+        )
+    );
     assert!(pc
         .heard
         .0
@@ -507,4 +532,81 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
         .unwrap()
     };
     assert_eq!(text, "heard 16000 samples");
+}
+
+/// A PC that's off, asleep or behind a firewall answers with "connection
+/// refused" or nothing at all. The phone keeps trying and stays paired;
+/// only the PC's own refusal ends a pairing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_phone_stays_paired_while_the_pc_cannot_be_reached() {
+    let pixel = phone("Pixel 8");
+    pixel
+        .save_pc(&PairedPc {
+            device_id: "pc-that-is-off".into(),
+            name: "Desk PC".into(),
+            fingerprint: "00".repeat(32),
+            addrs: vec!["127.0.0.1:1".into()],
+        })
+        .unwrap();
+    let (stop_tx, stop) = watch::channel(false);
+    let looping = {
+        let pixel = pixel.clone();
+        tokio::spawn(async move { pixel.link_loop(Sessions::default(), None, stop).await })
+    };
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(
+        pixel.paired_pc().is_some(),
+        "a closed port must not unpair the phone"
+    );
+    stop_tx.send(true).unwrap();
+    looping.abort();
+}
+
+/// Pairing while the PC can't be reached yet (Bluetooth still connecting, a
+/// firewall) finishes once it can: the secret waits until the PC hears it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_pairing_finishes_once_the_pc_can_be_reached() {
+    let (pc, _stop_pc) = start_pc().await;
+    let port: u16 = pc.addr.rsplit(':').next().unwrap().parse().unwrap();
+    let tries = Arc::new(Mutex::new(0));
+    let dial: Dialer = {
+        let tries = tries.clone();
+        Arc::new(move |_mac: &str| {
+            let mut n = tries.lock().unwrap();
+            *n += 1;
+            (*n > 1).then_some(port)
+        })
+    };
+    let secret = pc.hub.open_pairing();
+    let pixel = phone("Pixel 8");
+    *pixel.bluetooth.lock().unwrap() = Some(dial);
+    pixel
+        .save_pc(&PairedPc {
+            device_id: pc.identity.device_id.clone(),
+            name: "Desk PC".into(),
+            fingerprint: pc.identity.fingerprint(),
+            addrs: vec!["127.0.0.1:1".into(), "bt:AA:BB:CC:DD:EE:FF".into()],
+        })
+        .unwrap();
+    let (stop_tx, stop) = watch::channel(false);
+    let looping = {
+        let pixel = pixel.clone();
+        tokio::spawn(async move {
+            pixel
+                .link_loop(Sessions::default(), Some(secret), stop)
+                .await
+        })
+    };
+    until("the second try to pair", || {
+        pc.heard
+            .0
+            .lock()
+            .unwrap()
+            .contains(&"paired Pixel 8".to_string())
+    })
+    .await;
+    assert!(*tries.lock().unwrap() >= 2);
+    assert!(pixel.paired_pc().is_some());
+    stop_tx.send(true).unwrap();
+    looping.abort();
 }

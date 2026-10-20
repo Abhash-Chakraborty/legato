@@ -42,6 +42,8 @@ pub struct Phone {
     /// What the PC said it syncs.
     pc_kinds: Mutex<Vec<String>>,
     pub clips: Mutex<Vec<Clip>>,
+    /// Hears each clip the PC sends, as it arrives.
+    pub on_clip: Mutex<Option<Box<dyn Fn(&Clip) + Send + Sync>>>,
     /// Connected to the PC right now.
     online: AtomicBool,
     /// How: "lan", "netbird" or "bluetooth".
@@ -131,6 +133,7 @@ impl Phone {
             dir: dir.to_path_buf(),
             pc_kinds: Mutex::new(Vec::new()),
             clips: Mutex::new(Vec::new()),
+            on_clip: Mutex::new(None),
             online: AtomicBool::new(false),
             via: Mutex::new(None),
             bluetooth: Mutex::new(None),
@@ -201,7 +204,7 @@ impl Phone {
                 &pc.addrs,
                 &pc.fingerprint,
                 &self.identity,
-                secret.take(),
+                secret.clone(),
                 dial,
                 host,
                 sessions.clone(),
@@ -209,11 +212,16 @@ impl Phone {
             )
             .await;
             self.online.store(false, Ordering::Relaxed);
+            // The secret is spent once the PC has heard it, not when the PC was out of reach.
+            if !matches!(&result, Err(e) if e.is::<link::Unreachable>()) {
+                secret = None;
+            }
             if *stop.borrow() || self.paired_pc().is_none() {
                 return LinkEnd::Stopped;
             }
             match result {
-                Err(e) if e.to_string().contains("refused") => {
+                // Not "connection refused" from a closed port: only the PC's own no.
+                Err(e) if e.chain().any(|c| c.is::<link::Refused>()) => {
                     let _ = self.forget_pc();
                     return LinkEnd::Refused(format!("{e:#}"));
                 }
@@ -299,6 +307,34 @@ impl Phone {
             params![now_s(), text, words],
         )?;
         Ok(())
+    }
+
+    /// A voice memo recorded on the phone: one line per stretch of speech,
+    /// as (start ms, end ms, text). Returns the note's id.
+    pub fn add_memo(
+        &self,
+        title: &str,
+        started_at: i64,
+        duration_ms: i64,
+        lines: &[(i64, i64, String)],
+    ) -> Result<i64> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO note (title, kind, status, started_at, duration_ms)
+             VALUES (?1, 'memo', 'ready', ?2, ?3)",
+            params![title, started_at, duration_ms],
+        )?;
+        let id = tx.last_insert_rowid();
+        for (at_ms, end_ms, text) in lines {
+            tx.execute(
+                "INSERT INTO note_line (note_id, at_ms, end_ms, who, text)
+                 VALUES (?1, ?2, ?3, 'you', ?4)",
+                params![id, at_ms, end_ms, text],
+            )?;
+        }
+        tx.commit()?;
+        Ok(id)
     }
 
     /// Writes a Scratchpad note, or replaces the text of the one titled so.
@@ -479,7 +515,14 @@ impl Host for Phone {
                 .map(|a| format!(" from {a}"))
                 .unwrap_or_default()
         ));
-        self.clips.lock().unwrap().push(clip);
+        if let Some(hear) = self.on_clip.lock().unwrap().as_ref() {
+            hear(&clip);
+        }
+        let mut clips = self.clips.lock().unwrap();
+        clips.push(clip);
+        // The recent ones are enough; an evening of copying shouldn't grow without end.
+        let over = clips.len().saturating_sub(20);
+        clips.drain(..over);
     }
 
     fn online(&self, _peer: &str, via: Option<Via>) {

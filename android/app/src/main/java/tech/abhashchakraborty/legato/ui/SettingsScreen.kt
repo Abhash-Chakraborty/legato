@@ -15,28 +15,36 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.outlined.LinkOff
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,22 +58,26 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import tech.abhashchakraborty.legato.BluetoothLink
 import tech.abhashchakraborty.legato.Legato
-import tech.abhashchakraborty.legato.connectedText
 import tech.abhashchakraborty.legato.ModelStatus
 import tech.abhashchakraborty.legato.bubble.BubbleAccessibilityService
 import tech.abhashchakraborty.legato.core.coreVersion
 
-/** Your PC, the speech model, the bubble's Android switches, and the rest. */
+/** Your PC, dictation, the bubble's Android switches, the clipboard, the connection. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
@@ -73,9 +85,14 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
     val context = LocalContext.current
     val state by legato.state.collectAsStateWithLifecycle()
     var confirmUnpair by remember { mutableStateOf(false) }
+    var pcMenu by remember { mutableStateOf(false) }
+    var clipMode by remember { mutableStateOf(false) }
+    var clipsOpen by remember { mutableStateOf(false) }
+    var auto by remember { mutableStateOf(legato.autoClipboard) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    val pc = state.pcName ?: "your PC"
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -84,88 +101,220 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
     ) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Group("Your PC") {
-                if (state.paired) {
-                    ListItem(
-                        headlineContent = { Text(state.pcName ?: "PC") },
-                        supportingContent = {
-                            Text(
-                                if (state.online) state.connectedText + (state.lastSync?.let { " · synced ${ago(it)}" } ?: "")
-                                else "Not reachable · changes wait on this ${legato.device}" + (state.lastSync?.let { " · last synced ${ago(it)}" } ?: ""),
-                            )
-                        },
-                        leadingContent = {
-                            Box(Modifier.size(10.dp).background(if (state.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape))
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    )
-                    Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalButton(onClick = {
-                            legato.run { if (!syncNow()) legato.notice("Not connected to ${state.pcName ?: "the PC"} right now.") }
-                        }) { Text("Sync now") }
-                        if (!state.online) OutlinedButton(onClick = { legato.run { connect() } }) { Text("Reconnect") }
-                        TextButton(onClick = { confirmUnpair = true }) { Text("Unpair") }
-                    }
-                    BluetoothRow(onAllowed = { legato.run { connect() } })
-                } else {
-                    ListItem(
-                        headlineContent = { Text("Pair with your PC") },
-                        supportingContent = { Text("Sync your Dictionary, snippets, notes and history with Legato on Windows.") },
-                        leadingContent = { Icon(Icons.Default.Computer, contentDescription = null) },
-                        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        modifier = Modifier.clickable(onClick = onPair),
+            DayHeader("Your PC")
+            if (state.paired) {
+                PcCard(
+                    legato = legato,
+                    onSync = { legato.run { if (!syncNow()) legato.notice("Not connected to $pc right now.") } },
+                    onMore = { pcMenu = true },
+                )
+            } else {
+                Group {
+                    SettingRow(
+                        "Pair with your PC",
+                        "Scan the code in Legato on Windows › Settings › Devices.",
+                        onClick = onPair,
+                        trailing = { Chevron() },
                     )
                 }
             }
-            Group("Speech model") {
-                PcModelRow(legato, state.paired, state.pcName)
+
+            Group("Dictation") {
                 ModelRow(legato)
+                Hairline()
+                PcModelRow(legato, state.paired, state.pcName)
             }
+
             Group("Bubble over Gboard") { BubbleRows() }
+
             Group("Clipboard") {
-                ListItem(
-                    headlineContent = { Text("Send the clipboard to your PC") },
-                    supportingContent = { Text(if (state.paired) "What you copied here lands on the PC's clipboard." else "Pair with your PC first.") },
-                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier.clickable(enabled = state.paired) {
+                SettingRow(
+                    "Shared clipboard",
+                    when {
+                        !state.paired -> "Pair with your PC first."
+                        auto -> "Automatic: copies on $pc land here at once."
+                        else -> "Manual: nothing moves until you send it or pick a clip."
+                    },
+                    enabled = state.paired,
+                    onClick = { clipMode = true },
+                    trailing = { Text(if (auto) "Automatic" else "Manual", style = MaterialTheme.typography.bodyMedium, color = LocalStatus.current.faint) },
+                )
+                Hairline()
+                SettingRow(
+                    "Send the clipboard now",
+                    if (state.paired) "Also in any app's share menu and on selected text: Send to PC." else "Pair with your PC first.",
+                    enabled = state.paired,
+                    onClick = {
                         val cm = context.getSystemService(ClipboardManager::class.java)
                         val text = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
                         if (text.isBlank()) scope.launch { snackbar.showSnackbar("Nothing on the clipboard") }
-                        else legato.run {
-                            legato.notice(if (sendClip(text)) "Sent to ${state.pcName ?: "your PC"}" else "Not connected; the clip wasn't sent.")
+                        else scope.launch {
+                            val sent = withContext(Dispatchers.Default) { runCatching { legato.core.sendClip(text.trim()) }.getOrDefault(false) }
+                            snackbar.showSnackbar(if (sent) "Sent to $pc" else "Not connected; the clip wasn't sent.")
                         }
                     },
                 )
+                Hairline()
+                SettingRow(
+                    "Recent clips",
+                    if (state.paired) "What $pc copied since Legato opened. Tap one to copy it." else "Pair with your PC first.",
+                    enabled = state.paired,
+                    onClick = { clipsOpen = true },
+                    trailing = { Chevron() },
+                )
             }
+
+            Group("Connection") {
+                BluetoothRow(onAllowed = { legato.run { connect() } })
+            }
+
             Group("About") {
-                ListItem(
-                    headlineContent = { Text("Legato for Android") },
-                    supportingContent = { Text("Core ${coreVersion()}") },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                )
-                ListItem(
-                    headlineContent = { Text("Advanced") },
-                    supportingContent = { Text("The connection log and test tools.") },
-                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier.clickable(onClick = onDebug),
-                )
+                SettingRow("Legato for Android", "Core ${coreVersion()}")
+                Hairline()
+                SettingRow("Advanced", "Connection details and the log.", onClick = onDebug, trailing = { Chevron() })
             }
         }
+    }
+
+    if (pcMenu) {
+        MenuSheet(
+            title = pc,
+            subtitle = pcStatus(state, legato.device, long = true).text,
+            actions = listOfNotNull(
+                MenuAction("Reconnect", Icons.Default.Refresh) { legato.run { connect() } },
+                MenuAction("Connection details", Icons.Outlined.Tune) { onDebug() },
+                MenuAction("Unpair", Icons.Outlined.LinkOff, danger = true) { confirmUnpair = true },
+            ),
+            onDismiss = { pcMenu = false },
+        )
+    }
+
+    if (clipMode) {
+        ClipModeSheet(
+            pc = pc,
+            auto = auto,
+            onPick = { auto = it; legato.autoClipboard = it },
+            onDismiss = { clipMode = false },
+        )
+    }
+
+    if (clipsOpen) {
+        RecentClipsSheet(legato, pc, onCopied = { scope.launch { snackbar.showSnackbar("Copied") } }, onDismiss = { clipsOpen = false })
     }
 
     if (confirmUnpair) {
         AlertDialog(
             onDismissRequest = { confirmUnpair = false },
-            title = { Text("Unpair from ${state.pcName ?: "your PC"}?") },
+            title = { Text("Unpair from $pc?") },
             text = { Text("What already synced stays on this ${legato.device}; nothing new syncs until you pair again.") },
-            confirmButton = { TextButton(onClick = { confirmUnpair = false; legato.run { unpair() } }) { Text("Unpair") } },
+            confirmButton = { TextButton(onClick = { confirmUnpair = false; legato.run { unpair() } }) { Text("Unpair", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { confirmUnpair = false }) { Text("Cancel") } },
         )
+    }
+}
+
+@Composable
+private fun Chevron() {
+    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = LocalStatus.current.faint)
+}
+
+/** The paired PC: its mark, name and status, with Sync now and More. */
+@Composable
+private fun PcCard(legato: Legato, onSync: () -> Unit, onMore: () -> Unit) {
+    val state by legato.state.collectAsStateWithLifecycle()
+    val status = pcStatus(state, legato.device, long = true)
+    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(Modifier.size(48.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Computer, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(22.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(state.pcName ?: "PC", style = MaterialTheme.typography.titleMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 2.dp)) {
+                        StatusDot(status.color)
+                        Text(status.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onSync,
+                    enabled = state.online,
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                ) {
+                    Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text("Sync now")
+                }
+                TextButton(onClick = onMore, modifier = Modifier.weight(1f).heightIn(min = 44.dp)) {
+                    Icon(Icons.Default.MoreHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text("More")
+                }
+            }
+        }
+    }
+}
+
+/** Automatic or Manual, each with what it means on Android. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClipModeSheet(pc: String, auto: Boolean, onPick: (Boolean) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 28.dp)) {
+            Text("Shared clipboard", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 4.dp))
+            Spacer(Modifier.height(8.dp))
+            listOf(
+                true to ("Automatic" to "Copies on $pc land on this clipboard at once. What you copy here goes to $pc when you open Legato, since Android lets apps read the clipboard only while they're open."),
+                false to ("Manual" to "Nothing moves on its own. Send from here, the share menu or selected text, and pick $pc's copies from Recent clips."),
+            ).forEach { (value, words) ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        .selectable(selected = auto == value, role = Role.RadioButton) { onPick(value); onDismiss() }
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    RadioButton(selected = auto == value, onClick = null)
+                    Column(Modifier.weight(1f)) {
+                        Text(words.first, style = MaterialTheme.typography.bodyLarge)
+                        Text(words.second, style = MaterialTheme.typography.bodyMedium, color = LocalStatus.current.faint, modifier = Modifier.padding(top = 2.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The clips the PC sent since the app started, newest first; tap to copy. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecentClipsSheet(legato: Legato, pc: String, onCopied: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val clips = remember { runCatching { legato.core.clips() }.getOrDefault(emptyList()).filter { !it.text.isNullOrBlank() }.reversed() }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 28.dp)) {
+            Text("Recent clips", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 4.dp))
+            if (clips.isEmpty()) {
+                Text("Nothing from $pc yet. Copy something there and it shows up here.", style = MaterialTheme.typography.bodyMedium, color = LocalStatus.current.faint, modifier = Modifier.padding(4.dp, 8.dp))
+            }
+            clips.forEach { c ->
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                        .clickable { copy(context, c.text ?: ""); onDismiss(); onCopied() }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                ) {
+                    Text(c.text ?: "", style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(c.fromApp?.let { "From $it on $pc" } ?: "From $pc", style = MaterialTheme.typography.bodyMedium, color = LocalStatus.current.faint)
+                }
+            }
+        }
     }
 }
 
@@ -173,18 +322,12 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
 @Composable
 private fun PcModelRow(legato: Legato, paired: Boolean, pcName: String?) {
     var on by remember { mutableStateOf(legato.usePcModel) }
-    ListItem(
-        headlineContent = { Text("Use your PC's speech model") },
-        supportingContent = {
-            Text(
-                if (paired) "While connected to ${pcName ?: "your PC"}, it writes up what you say, with your Dictionary and style."
-                else "Pair with your PC to have its model write up what you say.",
-            )
-        },
-        trailingContent = {
-            Switch(checked = on, enabled = paired, onCheckedChange = { on = it; legato.usePcModel = it })
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    SettingRow(
+        "Use your PC's speech model",
+        if (paired) "While connected to ${pcName ?: "your PC"}, it writes up what you say, with your Dictionary."
+        else "Pair with your PC to have its model write up what you say.",
+        enabled = paired,
+        trailing = { Switch(checked = on && paired, enabled = paired, onCheckedChange = { on = it; legato.usePcModel = it }) },
     )
 }
 
@@ -202,21 +345,16 @@ private fun BluetoothRow(onAllowed: () -> Unit) {
         allowed = it
         if (it) onAllowed()
     }
-    ListItem(
-        headlineContent = { Text("Bluetooth") },
-        supportingContent = {
-            Text(
-                when {
-                    !allowed -> "Allow it to sync with your PC when you're not on the same Wi-Fi."
-                    !on -> "Turn on Bluetooth to sync with your PC when you're not on the same Wi-Fi."
-                    else -> "Syncs over Bluetooth when your PC is nearby and not on the same Wi-Fi."
-                },
-            )
+    SettingRow(
+        "Bluetooth",
+        when {
+            !allowed -> "Allow it to sync with your PC when you're not on the same Wi-Fi."
+            !on -> "Turn on Bluetooth to sync with your PC when you're not on the same Wi-Fi."
+            else -> "Syncs over Bluetooth when your PC is nearby and not on the same Wi-Fi."
         },
-        trailingContent = {
-            if (!allowed) FilledTonalButton(onClick = { ask.launch(Manifest.permission.BLUETOOTH_CONNECT) }) { Text("Allow") }
+        trailing = {
+            if (!allowed) OutlinedButton(onClick = { ask.launch(Manifest.permission.BLUETOOTH_CONNECT) }) { Text("Allow") }
         },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
     )
 }
 
@@ -224,29 +362,35 @@ private fun BluetoothRow(onAllowed: () -> Unit) {
 @Composable
 fun ModelRow(legato: Legato) {
     val model by legato.model.collectAsStateWithLifecycle()
+    val state by legato.state.collectAsStateWithLifecycle()
+    val pcWrites = state.online && state.pcTranscribes && legato.usePcModel
     Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text("Moonshine Base", style = MaterialTheme.typography.bodyLarge)
-        Text(
-            when (val m = model) {
-                ModelStatus.Missing -> "About 60 MB. It runs on this ${legato.device}, so nothing you say leaves it."
-                is ModelStatus.Downloading -> if (m.percent >= 0) "Downloading · ${m.percent}%" else "Downloading…"
-                ModelStatus.Downloaded -> "Downloaded · loading"
-                is ModelStatus.Loaded -> "Ready on this ${legato.device}"
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        when (val m = model) {
-            ModelStatus.Missing -> {
-                Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Speech model on this ${legato.device}", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    when (val m = model) {
+                        ModelStatus.Missing ->
+                            if (pcWrites) "Optional while ${state.pcName ?: "your PC"} writes up what you say. Moonshine Base, about 60 MB, for when it's away."
+                            else "Moonshine Base, about 60 MB. Nothing you say leaves the ${legato.device}."
+                        is ModelStatus.Downloading -> if (m.percent >= 0) "Moonshine Base · downloading · ${m.percent}%" else "Moonshine Base · downloading"
+                        ModelStatus.Downloaded -> "Moonshine Base · loading"
+                        is ModelStatus.Loaded -> "Moonshine Base · ready"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LocalStatus.current.faint,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            if (model == ModelStatus.Missing) {
+                Spacer(Modifier.size(12.dp))
                 Button(onClick = { legato.fetchModel() }) { Text("Download") }
             }
-            is ModelStatus.Downloading -> {
-                Spacer(Modifier.height(10.dp))
-                if (m.percent >= 0) LinearProgressIndicator(progress = { m.percent / 100f }, modifier = Modifier.fillMaxWidth())
-                else LinearProgressIndicator(Modifier.fillMaxWidth())
-            }
-            else -> Unit
+        }
+        (model as? ModelStatus.Downloading)?.let { m ->
+            Spacer(Modifier.height(10.dp))
+            if (m.percent >= 0) LinearProgressIndicator(progress = { m.percent / 100f }, modifier = Modifier.fillMaxWidth())
+            else LinearProgressIndicator(Modifier.fillMaxWidth())
         }
     }
 }

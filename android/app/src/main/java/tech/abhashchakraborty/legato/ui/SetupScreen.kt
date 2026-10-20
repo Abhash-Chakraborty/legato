@@ -75,7 +75,7 @@ fun SetupScreen(onDone: () -> Unit, onPair: () -> Unit) {
                 ListItem(
                     headlineContent = { Text(if (state.paired) "Paired with ${state.pcName ?: "your PC"}" else "Pair with your PC") },
                     supportingContent = {
-                        Text(if (state.paired) "Your Dictionary, snippets and history sync over Wi-Fi." else "Scan the code in Legato › Settings › Devices.")
+                        Text(if (state.paired) "Your words, notes and history sync, and its speech model can write up what you say." else "Scan the code in Legato › Settings › Devices.")
                     },
                     leadingContent = { Icon(Icons.Default.Computer, contentDescription = null) },
                     trailingContent = { if (!state.paired) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },

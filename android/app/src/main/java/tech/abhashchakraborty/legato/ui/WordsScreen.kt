@@ -19,6 +19,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
@@ -74,6 +78,9 @@ fun WordsScreen() {
     var tab by rememberSaveable { mutableStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var editing by remember { mutableStateOf<SnippetRow?>(null) }
+    var wordMenu by remember { mutableStateOf<WordRow?>(null) }
+    var snippetMenu by remember { mutableStateOf<SnippetRow?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     var newSnippet by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -131,18 +138,9 @@ fun WordsScreen() {
                         ) { Text(label) }
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = query, onValueChange = { query = it }, singleLine = true,
-                    placeholder = { Text(if (tab == 0) "Search words" else "Search snippets") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, contentDescription = "Clear search") }
-                    },
-                    shape = RoundedCornerShape(25.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(14.dp))
+                SearchField(query, { query = it }, if (tab == 0) "Search words" else "Search snippets")
+                Spacer(Modifier.height(14.dp))
             }
             if (tab == 0) {
                 if (shownWords.isEmpty()) item {
@@ -153,19 +151,20 @@ fun WordsScreen() {
                 }
                 itemsIndexed(shownWords, key = { _, w -> "w${w.id}" }) { i, w ->
                     Column(Modifier.animateItem()) {
-                        Card(first = i == 0, last = i == shownWords.lastIndex) {
+                        Card(first = i == 0, last = i == shownWords.lastIndex, inset = false) {
                             ListItem(
                                 headlineContent = { Text(w.text) },
-                                supportingContent = if (w.heard.isEmpty()) null else {
-                                    { Text("Heard as ${w.heard.joinToString(", ")}", maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                                supportingContent = {
+                                    Text(
+                                        if (w.heard.isEmpty()) "Spelled as written" else "Heard as ${w.heard.joinToString(", ") { "“$it”" }}",
+                                        maxLines = 2, overflow = TextOverflow.Ellipsis, color = LocalStatus.current.faint,
+                                    )
                                 },
-                                leadingContent = if (w.pinned) {
-                                    { Icon(Icons.Default.PushPin, contentDescription = "Pinned", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp)) }
+                                trailingContent = if (w.pinned) {
+                                    { Icon(Icons.Default.PushPin, contentDescription = "Pinned", tint = LocalStatus.current.faint, modifier = Modifier.size(16.dp)) }
                                 } else null,
-                                trailingContent = {
-                                    IconButton(onClick = { removeWord(w) }) { Icon(Icons.Default.Close, contentDescription = "Remove ${w.text}") }
-                                },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                modifier = Modifier.combinedClickable(onClick = { wordMenu = w }, onLongClick = { wordMenu = w }),
                             )
                         }
                     }
@@ -179,21 +178,43 @@ fun WordsScreen() {
                 }
                 itemsIndexed(shownSnippets, key = { _, s -> "s${s.id}" }) { i, s ->
                     Column(Modifier.animateItem()) {
-                        Card(first = i == 0, last = i == shownSnippets.lastIndex) {
+                        Card(first = i == 0, last = i == shownSnippets.lastIndex, inset = false) {
                             ListItem(
                                 headlineContent = { Text("“${s.trigger}”") },
-                                supportingContent = { Text(s.text, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                                trailingContent = {
-                                    IconButton(onClick = { removeSnippet(s) }) { Icon(Icons.Default.Close, contentDescription = "Remove ${s.trigger}") }
-                                },
+                                supportingContent = { Text(s.text, maxLines = 2, overflow = TextOverflow.Ellipsis, color = LocalStatus.current.faint) },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                modifier = Modifier.clickable { editing = s },
+                                modifier = Modifier.combinedClickable(onClick = { snippetMenu = s }, onLongClick = { snippetMenu = s }),
                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    wordMenu?.let { w ->
+        MenuSheet(
+            title = w.text,
+            subtitle = if (w.heard.isEmpty()) "Spelled as written" else "Heard as ${w.heard.joinToString(", ") { "“$it”" }}",
+            actions = listOf(
+                MenuAction("Add what it's heard as", Icons.Default.Add) { AddWordSheet.open("", word = w.text) },
+                MenuAction("Copy", Icons.Default.ContentCopy) { copy(context, w.text); scope.launch { snackbar.showSnackbar("Copied") } },
+                MenuAction("Remove from Dictionary", Icons.Outlined.Delete, danger = true) { removeWord(w) },
+            ),
+            onDismiss = { wordMenu = null },
+        )
+    }
+    snippetMenu?.let { sn ->
+        MenuSheet(
+            title = "“${sn.trigger}”",
+            subtitle = sn.text,
+            actions = listOf(
+                MenuAction("Edit", Icons.Default.Edit) { editing = sn },
+                MenuAction("Copy the text", Icons.Default.ContentCopy) { copy(context, sn.text); scope.launch { snackbar.showSnackbar("Copied") } },
+                MenuAction("Remove snippet", Icons.Outlined.Delete, danger = true) { removeSnippet(sn) },
+            ),
+            onDismiss = { snippetMenu = null },
+        )
     }
 
     if (newSnippet || editing != null) {
@@ -241,8 +262,11 @@ private fun SnippetSheet(snippet: SnippetRow?, onDismiss: () -> Unit) {
  */
 object AddWordSheet {
     private var source by mutableStateOf<String?>(null)
+    private var preset by mutableStateOf("")
 
-    fun open(text: String) {
+    /** Opens the sheet with [text]'s words as chips, and [word] already filled in. */
+    fun open(text: String, word: String = "") {
+        preset = word
         source = text
     }
 
@@ -251,7 +275,7 @@ object AddWordSheet {
     fun Host() {
         val from = source ?: return
         val legato = rememberLegato()
-        var word by remember(from) { mutableStateOf("") }
+        var word by remember(from, preset) { mutableStateOf(preset) }
         var heard by remember(from) { mutableStateOf("") }
         val tokens = remember(from) {
             from.split(Regex("\\s+")).map { it.trim { c -> !c.isLetterOrDigit() } }.filter { it.length > 1 }.distinct().take(16)
@@ -259,7 +283,7 @@ object AddWordSheet {
         val picked = heard.split(' ').filter { it.isNotBlank() }
         ModalBottomSheet(onDismissRequest = { source = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Add to Dictionary", style = MaterialTheme.typography.titleLarge)
+                Text(if (preset.isEmpty()) "Add to Dictionary" else "How Legato hears $preset", style = MaterialTheme.typography.titleLarge)
                 if (tokens.isNotEmpty()) {
                     Text("Tap the words Legato got wrong.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -276,7 +300,7 @@ object AddWordSheet {
                         }
                     }
                 }
-                AnimatedContent(targetState = tokens.isEmpty() || heard.isNotBlank(), label = "fields") { show ->
+                AnimatedContent(targetState = tokens.isEmpty() || heard.isNotBlank() || preset.isNotEmpty(), label = "fields") { show ->
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedTextField(
                             word, { word = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),

@@ -25,6 +25,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -68,7 +75,8 @@ import java.util.Date
 fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
     val legato = rememberLegato()
     val state by legato.state.collectAsStateWithLifecycle()
-    val history by coreList { history(200u) }
+    // A dictation that came out empty on the PC has nothing to show or copy.
+    val history by coreList { history(200u).filter { it.text.isNotBlank() } }
     var query by remember { mutableStateOf("") }
     var menuFor by remember { mutableStateOf<HistoryEntry?>(null) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
@@ -89,29 +97,21 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
             item {
                 if (state.paired) {
-                    SyncChip(
-                        online = state.online,
-                        text = if (state.online) "${state.pcName} · synced ${state.lastSync?.let { ago(it) } ?: "just now"}" else "${state.pcName} not reachable · changes wait here",
-                        onClick = onSettings,
-                    )
+                    val status = pcStatus(state, legato.device)
+                    SyncChip(status, onClick = onSettings)
                 } else {
                     Surface(onClick = onPair, shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
                         ListItem(
                             headlineContent = { Text("Pair with your PC") },
-                            supportingContent = { Text("Get your Dictionary, snippets and history from Legato on Windows.") },
-                            leadingContent = { Icon(Icons.Default.Computer, contentDescription = null) },
+                            supportingContent = { Text("Get your Dictionary, snippets and history from Legato on Windows.", color = LocalStatus.current.faint) },
+                            leadingContent = { AppDot(true) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = LocalStatus.current.faint) },
                             colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                         )
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = query, onValueChange = { query = it }, singleLine = true,
-                    placeholder = { Text("Search your dictations") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    shape = RoundedCornerShape(25.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Spacer(Modifier.height(14.dp))
+                SearchField(query, { query = it }, "Search your dictations")
             }
             if (shown.isEmpty()) {
                 item {
@@ -128,7 +128,10 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
                         ListItem(
                             headlineContent = { Text(e.text, maxLines = 3, overflow = TextOverflow.Ellipsis) },
                             supportingContent = {
-                                Text(listOfNotNull(e.app.ifBlank { null }, timeOf(e.at), e.device?.let { "On $it" }).joinToString(" · "))
+                                Text(listOfNotNull(e.app.ifBlank { null }, timeOf(e.at), e.device?.let { "On $it" }).joinToString(" · "), color = LocalStatus.current.faint)
+                            },
+                            trailingContent = {
+                                IconButton(onClick = { menuFor = e }) { Icon(Icons.Default.MoreVert, contentDescription = "More for this dictation", tint = LocalStatus.current.faint) }
                             },
                             leadingContent = { AppDot(e.device != null) },
                             colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
@@ -145,56 +148,62 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
     }
 
     menuFor?.let { e ->
-        ModalBottomSheet(onDismissRequest = { menuFor = null }) {
-            SheetItem("Copy") { copy(context, e.text); menuFor = null }
-            SheetItem("Share") { share(context, e.text); menuFor = null }
-            SheetItem("Add a word from this") { menuFor = null; AddWordSheet.open(e.text) }
-            SheetItem("Delete", danger = true) {
-                menuFor = null
-                legato.run { deleteHistory(e.id) }
-                scope.launch {
-                    val r = snackbar.showSnackbar("Dictation deleted", actionLabel = "Undo", duration = SnackbarDuration.Short)
-                    if (r == SnackbarResult.ActionPerformed) legato.run { dictate(e.text) }
-                }
-            }
-            Spacer(Modifier.height(24.dp))
-        }
+        MenuSheet(
+            title = e.text,
+            subtitle = listOfNotNull(e.app.ifBlank { null }, timeOf(e.at), e.device?.let { "On $it" }).joinToString(" · "),
+            actions = listOf(
+                MenuAction("Copy", Icons.Default.ContentCopy) { copy(context, e.text); scope.launch { snackbar.showSnackbar("Copied") } },
+                MenuAction("Share", Icons.Default.Share) { share(context, e.text) },
+                MenuAction("Add a word from this", Icons.AutoMirrored.Outlined.MenuBook) { AddWordSheet.open(e.text) },
+                MenuAction("Delete", Icons.Outlined.Delete, danger = true) {
+                    legato.run { deleteHistory(e.id) }
+                    scope.launch {
+                        val r = snackbar.showSnackbar("Dictation deleted", actionLabel = "Undo", duration = SnackbarDuration.Short)
+                        if (r == SnackbarResult.ActionPerformed) legato.run { dictate(e.text) }
+                    }
+                },
+            ),
+            onDismiss = { menuFor = null },
+        )
     }
     AddWordSheet.Host()
 }
 
+/** The PC's name and how it stands, as a pill that opens Settings. */
 @Composable
-fun SyncChip(online: Boolean, text: String, onClick: () -> Unit) {
-    AssistChip(
-        onClick = onClick,
-        label = { Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        leadingIcon = { Box(Modifier.size(8.dp).background(if (online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape)) },
-    )
+fun SyncChip(status: PcStatus, onClick: () -> Unit) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(17.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+        Row(Modifier.height(34.dp).padding(start = 12.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatusDot(status.color)
+            Text(status.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = LocalStatus.current.faint, modifier = Modifier.size(16.dp))
+        }
+    }
 }
 
 @Composable
 fun AppDot(fromPc: Boolean) {
     Box(
-        Modifier.size(36.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+        Modifier.size(36.dp).background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(if (fromPc) Icons.Default.Computer else Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(18.dp))
+        Icon(if (fromPc) Icons.Default.Computer else Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(18.dp))
     }
 }
 
 @Composable
 fun DayHeader(text: String) {
-    Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp, top = 18.dp, bottom = 8.dp))
+    Text(text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp, top = 18.dp, bottom = 8.dp))
 }
 
 /** Rows grouped into one rounded card: the first and last get the corners. */
 @Composable
-fun Card(first: Boolean, last: Boolean, content: @Composable () -> Unit) {
+fun Card(first: Boolean, last: Boolean, inset: Boolean = true, content: @Composable () -> Unit) {
     val r = 20.dp
     val shape = RoundedCornerShape(topStart = if (first) r else 0.dp, topEnd = if (first) r else 0.dp, bottomStart = if (last) r else 0.dp, bottomEnd = if (last) r else 0.dp)
     Surface(shape = shape, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column {
-            if (!first) androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 68.dp, end = 16.dp))
+            if (!first) androidx.compose.material3.HorizontalDivider(Modifier.padding(start = if (inset) 68.dp else 16.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
             content()
         }
     }
@@ -203,9 +212,9 @@ fun Card(first: Boolean, last: Boolean, content: @Composable () -> Unit) {
 @Composable
 fun Empty(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
     Column(Modifier.fillMaxWidth().padding(vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(28.dp))
+        Icon(icon, contentDescription = null, tint = LocalStatus.current.faint, modifier = Modifier.size(28.dp))
         Spacer(Modifier.height(8.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = LocalStatus.current.faint, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 24.dp))
     }
 }
 

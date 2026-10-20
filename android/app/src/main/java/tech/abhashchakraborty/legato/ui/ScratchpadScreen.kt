@@ -152,12 +152,12 @@ fun ScratchpadScreen(onOpen: (Long) -> Unit) {
                             ) { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer) }
                         },
                     ) {
-                        Card(first = i == 0, last = i == notes.lastIndex) {
+                        Card(first = i == 0, last = i == notes.lastIndex, inset = false) {
                             ListItem(
                                 headlineContent = { Text(n.heading(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 supportingContent = {
                                     val body = n.text.trim().replace(Regex("\\s+"), " ")
-                                    Text(listOf(ago(n.updatedAt), body).filter { it.isNotBlank() }.joinToString(" · "), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text(listOf(ago(n.updatedAt), body).filter { it.isNotBlank() }.joinToString(" · "), maxLines = 2, overflow = TextOverflow.Ellipsis, color = LocalStatus.current.faint)
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                 modifier = Modifier.combinedClickable(onClick = { onOpen(n.id) }, onLongClick = { menuFor = n }),
@@ -170,13 +170,17 @@ fun ScratchpadScreen(onOpen: (Long) -> Unit) {
     }
 
     menuFor?.let { n ->
-        ModalBottomSheet(onDismissRequest = { menuFor = null }) {
-            SheetItem("Open") { menuFor = null; onOpen(n.id) }
-            SheetItem("Copy") { copy(context, n.text); menuFor = null; scope.launch { snackbar.showSnackbar("Copied") } }
-            SheetItem("Share") { share(context, n.text); menuFor = null }
-            SheetItem("Delete", danger = true) { menuFor = null; delete(n) }
-            Spacer(Modifier.height(24.dp))
-        }
+        MenuSheet(
+            title = n.heading(),
+            subtitle = ago(n.updatedAt),
+            actions = listOf(
+                MenuAction("Open", Icons.Default.Edit) { onOpen(n.id) },
+                MenuAction("Copy", Icons.Default.ContentCopy) { copy(context, n.text); scope.launch { snackbar.showSnackbar("Copied") } },
+                MenuAction("Share", Icons.Default.Share) { share(context, n.text) },
+                MenuAction("Delete", Icons.Default.Delete, danger = true) { delete(n) },
+            ),
+            onDismiss = { menuFor = null },
+        )
     }
 }
 

@@ -50,7 +50,8 @@ object BluetoothLink {
         }
         val remote = connect(device) ?: return 0
         val server = try {
-            ServerSocket(0, 1, InetAddress.getLoopbackAddress()).apply { soTimeout = 10_000 }
+            // 127.0.0.1, where the core dials: Android's getLoopbackAddress() is ::1.
+            ServerSocket(0, 1, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))).apply { soTimeout = 10_000 }
         } catch (e: IOException) {
             runCatching { remote.close() }
             return 0

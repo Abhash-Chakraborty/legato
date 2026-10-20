@@ -2,5 +2,7 @@
     <style name="Theme.Legato" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
+        <!-- Legato's background before Compose draws, so opening it doesn't flash white or grey. -->
+        <item name="android:windowBackground">@color/legato_bg</item>
     </style>
 </resources>

@@ -24,6 +24,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -35,6 +36,26 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="legato" android:host="pair" />
+            </intent-filter>
+        </activity>
+
+        <!-- "Send to PC" in the share menu and on selected text. -->
+        <activity
+            android:name=".SendToPcActivity"
+            android:exported="true"
+            android:label="@string/send_to_pc"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
 
@@ -55,6 +76,12 @@
         <!-- Holds the microphone while you talk; Android wants a foreground service for that. -->
         <service
             android:name=".bubble.DictationService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- Records a voice memo from the Notes tab, screen off or not. -->
+        <service
+            android:name=".MemoService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
     </application>

@@ -59,6 +59,11 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -90,6 +95,7 @@ fun PairScreen(link: String?, onDone: () -> Unit) {
     var pasted by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var paired by remember { mutableStateOf<String?>(null) }
     var cameraOn by remember {
         mutableStateOf(context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
@@ -103,7 +109,7 @@ fun PairScreen(link: String?, onDone: () -> Unit) {
             legato.refresh()
             legato.bump()
             busy = false
-            r.onSuccess { onDone() }.onFailure { error = it.message ?: "That link didn't work; copy it again." }
+            r.onSuccess { paired = legato.state.value.pcName ?: "your PC" }.onFailure { error = it.message ?: "That link didn't work; copy it again." }
         }
     }
 
@@ -126,6 +132,11 @@ fun PairScreen(link: String?, onDone: () -> Unit) {
 
     LaunchedEffect(link) { if (!link.isNullOrBlank()) pairWith(link) }
 
+    paired?.let { pc ->
+        PairedView(pc, legato.device, onDone)
+        return
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -143,12 +154,12 @@ fun PairScreen(link: String?, onDone: () -> Unit) {
                 style = MaterialTheme.typography.bodyLarge,
             )
             Text(
-                "Your phone syncs over Wi-Fi when it's on the PC's network and over Bluetooth when it's nearby.",
+                "This ${legato.device} syncs over Wi-Fi when it's on the PC's network and over Bluetooth when it's nearby.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Box(
-                Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                Modifier.align(Alignment.CenterHorizontally).widthIn(max = 420.dp).fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 contentAlignment = Alignment.Center,
             ) {
                 if (cameraOn && !busy) {
@@ -178,6 +189,29 @@ fun PairScreen(link: String?, onDone: () -> Unit) {
                 enabled = pasted.trim().startsWith(LINK_PREFIX) && !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Pair") }
+        }
+    }
+}
+
+/** Paired: a check, what happens next, and Done. */
+@Composable
+private fun PairedView(pc: String, device: String, onDone: () -> Unit) {
+    Scaffold { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp, vertical = 24.dp)) {
+            Spacer(Modifier.height(40.dp))
+            Box(Modifier.size(64.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(28.dp))
+            }
+            Spacer(Modifier.height(20.dp))
+            Text("Paired with $pc", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Your Dictionary, snippets, history, notes and Scratchpad are coming over now. From here on, changes go both ways whenever the two can reach each other.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.weight(1f))
+            Button(onClick = onDone, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Done") }
         }
     }
 }

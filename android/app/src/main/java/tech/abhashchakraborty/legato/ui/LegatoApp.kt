@@ -22,6 +22,19 @@ import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.dp
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -41,7 +54,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
-import tech.abhashchakraborty.legato.DebugScreen
 import tech.abhashchakraborty.legato.ModelStatus
 import tech.abhashchakraborty.legato.Recorder
 
@@ -76,6 +88,15 @@ fun LegatoApp(recorder: Recorder, pairingLink: String?) {
 
     val entry by nav.currentBackStackEntryAsState()
     val onTab = Tab.all.any { tab -> entry?.destination?.hierarchy?.any { it.route == tab.route } == true }
+    // A tablet on its side: the tabs move to a rail and the pages stop at a
+    // width that still reads well, instead of stretching across the screen.
+    val wide = LocalConfiguration.current.screenWidthDp >= 840
+    fun selected(tab: Tab) = entry?.destination?.hierarchy?.any { it.route == tab.route } == true
+    fun go(tab: Tab) = nav.navigate(tab.route) {
+        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -83,20 +104,14 @@ fun LegatoApp(recorder: Recorder, pairingLink: String?) {
         // only makes room for the tabs.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            if (onTab) {
-                NavigationBar {
+            if (onTab && !wide) {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     Tab.all.forEach { tab ->
-                        val selected = entry?.destination?.hierarchy?.any { it.route == tab.route } == true
+                        val on = selected(tab)
                         NavigationBarItem(
-                            selected = selected,
-                            onClick = {
-                                nav.navigate(tab.route) {
-                                    popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(if (selected) tab.iconOn else tab.icon, contentDescription = null) },
+                            selected = on,
+                            onClick = { go(tab) },
+                            icon = { Icon(if (on) tab.iconOn else tab.icon, contentDescription = null) },
                             label = { Text(tab.label) },
                         )
                     }
@@ -104,32 +119,52 @@ fun LegatoApp(recorder: Recorder, pairingLink: String?) {
             }
         },
     ) { padding ->
-        NavHost(
-            navController = nav,
-            startDestination = if (setupDone) Tab.Home.route else "setup",
-            modifier = Modifier.padding(padding).consumeWindowInsets(padding),
-            enterTransition = { fadeIn(tween(220)) + slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Up, tween(220)) { it / 12 } },
-            exitTransition = { fadeOut(tween(160)) },
-            popEnterTransition = { fadeIn(tween(220)) },
-            popExitTransition = { fadeOut(tween(160)) },
-        ) {
-            composable("setup") { SetupScreen(onDone = { nav.navigate(Tab.Home.route) { popUpTo("setup") { inclusive = true } } }, onPair = { nav.navigate("pair") }) }
-            composable(Tab.Home.route) { HomeScreen(onSettings = { nav.navigate(Tab.Settings.route) }, onPair = { nav.navigate("pair") }) }
-            composable(Tab.Words.route) { WordsScreen() }
-            composable(Tab.Scratchpad.route) { ScratchpadScreen(onOpen = { id -> nav.navigate("scratch/$id") }) }
-            composable("scratch/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) {
-                ScratchEditScreen(id = it.arguments?.getLong("id") ?: -1L, recorder = recorder, onBack = { nav.popBackStack() })
+        Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+            if (onTab && wide) {
+                NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                    Spacer(Modifier.weight(1f))
+                    Tab.all.forEach { tab ->
+                        val on = selected(tab)
+                        NavigationRailItem(
+                            selected = on,
+                            onClick = { go(tab) },
+                            icon = { Icon(if (on) tab.iconOn else tab.icon, contentDescription = null) },
+                            label = { Text(tab.label) },
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                }
             }
-            composable(Tab.Notes.route) { NotesScreen(onOpen = { id -> nav.navigate("note/$id") }) }
-            composable("note/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) {
-                NoteScreen(id = it.arguments?.getLong("id") ?: -1L, onBack = { nav.popBackStack() })
+            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
+                NavHost(
+                    navController = nav,
+                    startDestination = if (setupDone) Tab.Home.route else "setup",
+                    modifier = Modifier.widthIn(max = 760.dp).fillMaxSize(),
+                    enterTransition = { fadeIn(tween(220)) + slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Up, tween(220)) { it / 12 } },
+                    exitTransition = { fadeOut(tween(160)) },
+                    popEnterTransition = { fadeIn(tween(220)) },
+                    popExitTransition = { fadeOut(tween(160)) },
+                ) {
+                    composable("setup") { SetupScreen(onDone = { nav.navigate(Tab.Home.route) { popUpTo("setup") { inclusive = true } } }, onPair = { nav.navigate("pair") }) }
+                    composable(Tab.Home.route) { HomeScreen(onSettings = { nav.navigate(Tab.Settings.route) }, onPair = { nav.navigate("pair") }) }
+                    composable(Tab.Words.route) { WordsScreen() }
+                    composable(Tab.Scratchpad.route) { ScratchpadScreen(onOpen = { id -> nav.navigate("scratch/$id") }) }
+                    composable("scratch/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) {
+                        ScratchEditScreen(id = it.arguments?.getLong("id") ?: -1L, recorder = recorder, onBack = { nav.popBackStack() })
+                    }
+                    composable(Tab.Notes.route) { NotesScreen(onOpen = { id -> nav.navigate("note/$id") }) }
+                    composable("note/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) {
+                        NoteScreen(id = it.arguments?.getLong("id") ?: -1L, onBack = { nav.popBackStack() })
+                    }
+                    composable(Tab.Settings.route) { SettingsScreen(onPair = { nav.navigate("pair") }, onDebug = { nav.navigate("debug") }) }
+                    composable(
+                        "pair?link={link}",
+                        arguments = listOf(navArgument("link") { type = NavType.StringType; nullable = true; defaultValue = null }),
+                    ) { PairScreen(link = it.arguments?.getString("link"), onDone = { nav.popBackStack() }) }
+                    composable("debug") { AdvancedScreen(onBack = { nav.popBackStack() }) }
+                }
             }
-            composable(Tab.Settings.route) { SettingsScreen(onPair = { nav.navigate("pair") }, onDebug = { nav.navigate("debug") }) }
-            composable(
-                "pair?link={link}",
-                arguments = listOf(navArgument("link") { type = NavType.StringType; nullable = true; defaultValue = null }),
-            ) { PairScreen(link = it.arguments?.getString("link"), onDone = { nav.popBackStack() }) }
-            composable("debug") { DebugScreen(recorder, null) }
         }
     }
 }

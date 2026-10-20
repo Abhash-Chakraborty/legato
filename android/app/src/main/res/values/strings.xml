@@ -8,5 +8,9 @@
     <string name="bubble_cancel">Cancel</string>
     <string name="bubble_finish">Insert the text</string>
     <string name="no_model">Download the speech model in Legato first</string>
+    <string name="memo_channel">Voice memos</string>
+    <string name="memo_recording">Recording a memo</string>
+    <string name="memo_stop">Stop and save</string>
+    <string name="send_to_pc">Send to PC</string>
     <string name="not_typed">Legato couldn\'t type into this field</string>
 </resources>

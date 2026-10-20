@@ -17,7 +17,25 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
+    // CI hands over one key for all test builds (see android.yml), so each
+    // APK updates the last instead of needing an uninstall.
+    val keystore = System.getenv("LEGATO_KEYSTORE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (keystore != null) {
+            create("legato") {
+                storeFile = keystore
+                storeType = "pkcs12"
+                storePassword = System.getenv("LEGATO_KEYSTORE_PASSWORD")
+                keyAlias = "legato"
+                keyPassword = System.getenv("LEGATO_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (keystore != null) signingConfig = signingConfigs.getByName("legato")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

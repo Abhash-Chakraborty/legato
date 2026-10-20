@@ -74,6 +74,55 @@ class Legato(private val context: Context) : CoreListener {
         notices.tryEmit(text)
     }
 
+    // ---- the shared clipboard -------------------------------------------
+
+    /**
+     * Automatic: a copy on the PC lands on this clipboard at once, and what
+     * you copied here goes to the PC when you open Legato (Android lets an
+     * app read the clipboard only while it's in front). Manual: nothing moves
+     * until you send it or pick a clip.
+     */
+    var autoClipboard: Boolean
+        get() = prefs.getBoolean(PREF_AUTO_CLIP, true)
+        set(value) { prefs.edit().putBoolean(PREF_AUTO_CLIP, value).apply() }
+
+    /** The last text that went either way, so a clip never bounces back. */
+    @Volatile private var lastClip: String? = null
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+
+    override fun onClip(text: String, fromApp: String?, ageMs: ULong) {
+        lastClip = text
+        bump()
+        // An old clip (the phone was away) waits in Recent clips rather
+        // than replacing what you copied since.
+        if (!autoClipboard || ageMs > 120_000uL) return
+        main.post {
+            runCatching {
+                context.getSystemService(android.content.ClipboardManager::class.java)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("Legato", text))
+            }
+        }
+    }
+
+    /** Sends [text] to the PC unless it just came from there. True when it went. */
+    fun sendClip(text: String): Boolean {
+        val t = text.trim()
+        if (t.isEmpty() || t == lastClip?.trim()) return false
+        val sent = runCatching { core.sendClip(t) }.getOrDefault(false)
+        if (sent) lastClip = t
+        return sent
+    }
+
+    /** Called when Legato comes to the front: in Automatic, sends what's new on the clipboard. */
+    fun clipboardOnFocus() {
+        if (!autoClipboard || !state.value.online) return
+        val text = runCatching {
+            context.getSystemService(android.content.ClipboardManager::class.java)
+                .primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
+        }.getOrNull() ?: return
+        scope.launch { if (sendClip(text)) onLine("Sent your clipboard to ${state.value.pcName ?: "the PC"}") }
+    }
+
     override fun openBluetooth(address: String): UShort =
         BluetoothLink.open(context, address).toUShort()
 
@@ -203,6 +252,7 @@ class Legato(private val context: Context) : CoreListener {
         /** Moonshine Base: small and quick on a phone, English. Swapped for a chooser later. */
         const val MODEL_FILE = "moonshine-base.gguf"
         const val PREF_PC_MODEL = "pc_model"
+        const val PREF_AUTO_CLIP = "auto_clipboard"
         const val MODEL_URL = "https://huggingface.co/handy-computer/moonshine-base-gguf/resolve/main/moonshine-base-Q8_0.gguf"
     }
 }

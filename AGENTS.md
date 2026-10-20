@@ -169,6 +169,8 @@ The phone side lives in `phone/`, a Cargo workspace outside the app's build:
 - `phone/core` - `legato-phone`, the library both the Android app and the stand-in share, built from the same `src-tauri/src/sync` files; its `stand-in-phone` binary is a Linux/Windows CLI that plays the phone
 - `phone/android` - `legato-android`, the UniFFI bindings the Android app calls (Kotlin bindings are generated in CI)
 - `android/` - the Android app (Kotlin, Jetpack Compose); it builds in GitHub Actions (`android.yml`), since Google ships the Android build tools for x86-64 only
+  - It follows the phone mockup, not stock Material: Legato's tokens in `ui/Theme.kt` (no dynamic colour), Figtree in `res/font` (OFL, licence in `android/third_party`), shared rows, menus and status colours in `ui/Parts.kt`
+  - To build an APK without touching `main`, push to another branch and run `gh workflow run android --ref <branch>`
 
 ```bash
 cd phone
