@@ -36,7 +36,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.StickyNote2
+import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -133,7 +133,7 @@ fun ScratchpadScreen(onOpen: (Long) -> Unit) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
         ) {
             if (notes.isEmpty()) item {
-                Empty(Icons.Outlined.StickyNote2, "Notes you dictate or type here sync with the Scratchpad on your PC.")
+                Empty(Icons.AutoMirrored.Outlined.StickyNote2, "Notes you dictate or type here sync with the Scratchpad on your PC.")
             }
             itemsIndexed(notes, key = { _, n -> n.id }) { i, n ->
                 val dismiss = rememberSwipeToDismissBoxState(

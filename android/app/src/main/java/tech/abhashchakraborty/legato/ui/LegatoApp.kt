@@ -10,14 +10,14 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.StickyNote2
+import androidx.compose.material.icons.automirrored.filled.StickyNote2
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.StickyNote2
+import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -48,8 +48,8 @@ import tech.abhashchakraborty.legato.Recorder
 /** The five tabs and the screens behind them. */
 sealed class Tab(val route: String, val label: String, val icon: ImageVector, val iconOn: ImageVector) {
     data object Home : Tab("home", "Home", Icons.Outlined.Home, Icons.Filled.Home)
-    data object Words : Tab("words", "Words", Icons.Outlined.MenuBook, Icons.Filled.MenuBook)
-    data object Scratchpad : Tab("scratchpad", "Scratchpad", Icons.Outlined.StickyNote2, Icons.Filled.StickyNote2)
+    data object Words : Tab("words", "Words", Icons.AutoMirrored.Outlined.MenuBook, Icons.AutoMirrored.Filled.MenuBook)
+    data object Scratchpad : Tab("scratchpad", "Scratchpad", Icons.AutoMirrored.Outlined.StickyNote2, Icons.AutoMirrored.Filled.StickyNote2)
     data object Notes : Tab("notes", "Notes", Icons.Outlined.GraphicEq, Icons.Filled.GraphicEq)
     data object Settings : Tab("settings", "Settings", Icons.Outlined.Settings, Icons.Filled.Settings)
 

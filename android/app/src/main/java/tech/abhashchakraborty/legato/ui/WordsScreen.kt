@@ -22,7 +22,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -147,7 +147,7 @@ fun WordsScreen() {
             if (tab == 0) {
                 if (shownWords.isEmpty()) item {
                     Empty(
-                        if (words.isEmpty()) Icons.Outlined.MenuBook else Icons.Default.Search,
+                        if (words.isEmpty()) Icons.AutoMirrored.Outlined.MenuBook else Icons.Default.Search,
                         if (words.isEmpty()) "Names and terms you add here are spelled right in every dictation." else "No word matches “$q”.",
                     )
                 }
