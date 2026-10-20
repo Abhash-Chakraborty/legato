@@ -57,6 +57,9 @@ class Legato(private val context: Context) : CoreListener {
     init {
         refresh()
         if (modelFile().exists()) model.value = ModelStatus.Downloaded
+        // Whatever woke this process (the bubble, a memo, a share) may need the
+        // PC, and Android restarts it in the background without the app open.
+        if (state.value.paired) run { connect() }
     }
 
     override fun onLine(line: String) {
@@ -164,8 +167,21 @@ class Legato(private val context: Context) : CoreListener {
     /** The PC will write up what you say right now. */
     fun pcWillTranscribe(): Boolean = usePcModel && core.state().pcTranscribes
 
+    /** Paired and set to use the PC's model, so it can write up what you say once it's reached. */
+    fun pcMayTranscribe(): Boolean = usePcModel && state.value.paired
+
     /** Something can turn speech into text: the PC, or the model on this device. */
     fun canTranscribe(): Boolean = pcWillTranscribe() || model.value is ModelStatus.Loaded
+
+    /**
+     * Waits a moment for a PC that's still reconnecting (Android had stopped
+     * Legato), then says whether anything can write up speech. Blocks.
+     */
+    fun readyToTranscribe(): Boolean {
+        val until = System.currentTimeMillis() + 8_000
+        while (!canTranscribe() && pcMayTranscribe() && System.currentTimeMillis() < until) Thread.sleep(250)
+        return canTranscribe()
+    }
 
     /**
      * Your words as text: by the PC's model while connected to a PC that
@@ -173,6 +189,7 @@ class Legato(private val context: Context) : CoreListener {
      * this device's own. Blocks; call it off the main thread.
      */
     fun transcribe(samples: FloatArray): String {
+        if (!readyToTranscribe() && pcMayTranscribe()) error("Couldn't reach ${state.value.pcName ?: "your PC"} to write this up")
         if (pcWillTranscribe()) {
             try {
                 return core.transcribeOnPc(samples.toList())

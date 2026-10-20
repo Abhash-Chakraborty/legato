@@ -164,7 +164,7 @@ A `welcome` with `"transcribe": true` means the PC will turn the phone's recordi
 with its own speech model, which is bigger and quicker than the phone's. The phone sends:
 
 ```json
-{"type":"transcribe","id":"…","pcm":"<base64>"}
+{ "type": "transcribe", "id": "…", "pcm": "<base64>" }
 ```
 
 `pcm` is the recording as 16 kHz mono, 16-bit little-endian samples, in base64. The PC runs it

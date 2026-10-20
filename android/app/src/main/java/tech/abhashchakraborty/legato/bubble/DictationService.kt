@@ -91,10 +91,15 @@ class DictationService : Service() {
         }
         val legato = applicationContext.legato
         if (!legato.canTranscribe()) {
-            if (legato.modelFile().exists()) legato.loadModel() else {
-                Toast.makeText(this, getString(R.string.no_model), Toast.LENGTH_LONG).show()
-                stopSelf()
-                return
+            when {
+                legato.modelFile().exists() -> legato.loadModel()
+                // The PC is being reached while you talk; transcribe() waits for it.
+                legato.pcMayTranscribe() -> legato.run { connect() }
+                else -> {
+                    Toast.makeText(this, getString(R.string.no_model), Toast.LENGTH_LONG).show()
+                    stopSelf()
+                    return
+                }
             }
         }
         recorder.start()
@@ -111,7 +116,12 @@ class DictationService : Service() {
         scope.launch {
             val text = runCatching {
                 withContext(Dispatchers.Default) { legato.transcribe(samples) }
-            }.getOrElse { e -> legato.onLine(e.message ?: "Transcription failed"); "" }
+            }.getOrElse { e ->
+                val why = e.message ?: "Transcription failed"
+                legato.onLine(why)
+                withContext(Dispatchers.Main) { Toast.makeText(this@DictationService, why, Toast.LENGTH_LONG).show() }
+                ""
+            }
             withContext(Dispatchers.Main) {
                 if (text.isNotBlank()) {
                     val typed = BubbleAccessibilityService.instance?.insert(text) ?: false

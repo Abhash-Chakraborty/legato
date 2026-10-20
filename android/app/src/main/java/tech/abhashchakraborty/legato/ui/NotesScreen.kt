@@ -115,7 +115,7 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
         when {
             memo.recording -> Memo.finish(context)
             memo.writing != null -> Unit
-            !legato.canTranscribe() -> scope.launch {
+            !legato.canTranscribe() && !legato.pcMayTranscribe() -> scope.launch {
                 snackbar.showSnackbar(
                     when (model) {
                         is ModelStatus.Downloading -> "The speech model is still downloading."

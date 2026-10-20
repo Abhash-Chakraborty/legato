@@ -294,7 +294,7 @@ fun ScratchEditScreen(id: Long, recorder: Recorder, onBack: () -> Unit) {
         when {
             recording -> finish()
             busy -> Unit
-            !legato.canTranscribe() -> scope.launch {
+            !legato.canTranscribe() && !legato.pcMayTranscribe() -> scope.launch {
                 snackbar.showSnackbar(
                     when (model) {
                         is ModelStatus.Downloading -> "The speech model is still downloading."

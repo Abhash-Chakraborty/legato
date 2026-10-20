@@ -92,6 +92,10 @@ class MemoService : Service() {
         val legato = applicationContext.legato
         legato.scope.launch {
             try {
+                if (!legato.readyToTranscribe()) {
+                    legato.notice("Couldn't reach ${legato.state.value.pcName ?: "your PC"}, so the memo wasn't written up.")
+                    return@launch
+                }
                 val pieces = cut(samples)
                 val lines = ArrayList<MemoLine>()
                 for ((n, piece) in pieces.withIndex()) {
