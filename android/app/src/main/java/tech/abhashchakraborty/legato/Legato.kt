@@ -39,7 +39,7 @@ val Context.legato: Legato get() = (applicationContext as LegatoApplication).leg
  */
 class Legato(private val context: Context) : CoreListener {
     val lines = MutableStateFlow<List<String>>(emptyList())
-    val state = MutableStateFlow(PhoneState(paired = false, pcName = null, online = false, via = null, lastSync = null))
+    val state = MutableStateFlow(PhoneState(paired = false, pcName = null, online = false, via = null, pcTranscribes = false, lastSync = null))
     val model = MutableStateFlow<ModelStatus>(ModelStatus.Missing)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     /** Bumped after every change, local or synced, so lists read again. */
@@ -102,6 +102,38 @@ class Legato(private val context: Context) : CoreListener {
     }
 
     // ---- the speech model ----------------------------------------------
+
+    /** What this device is, for the words on screen. */
+    val device: String
+        get() = if (context.resources.configuration.smallestScreenWidthDp >= 600) "tablet" else "phone"
+
+    /** Whether to send recordings to the PC's model while connected. */
+    var usePcModel: Boolean
+        get() = prefs.getBoolean(PREF_PC_MODEL, true)
+        set(value) { prefs.edit().putBoolean(PREF_PC_MODEL, value).apply() }
+
+    /** The PC will write up what you say right now. */
+    fun pcWillTranscribe(): Boolean = usePcModel && core.state().pcTranscribes
+
+    /** Something can turn speech into text: the PC, or the model on this device. */
+    fun canTranscribe(): Boolean = pcWillTranscribe() || model.value is ModelStatus.Loaded
+
+    /**
+     * Your words as text: by the PC's model while connected to a PC that
+     * offers it (bigger and quicker than the one on this device), else by
+     * this device's own. Blocks; call it off the main thread.
+     */
+    fun transcribe(samples: FloatArray): String {
+        if (pcWillTranscribe()) {
+            try {
+                return core.transcribeOnPc(samples.toList())
+            } catch (e: Exception) {
+                if (model.value !is ModelStatus.Loaded) throw e
+                onLine("The PC couldn't transcribe (${e.message}); used this device's model")
+            }
+        }
+        return core.transcribe(samples.toList())
+    }
 
     fun modelFile(): File = File(File(context.filesDir, "models").apply { mkdirs() }, MODEL_FILE)
 
@@ -170,6 +202,7 @@ class Legato(private val context: Context) : CoreListener {
     companion object {
         /** Moonshine Base: small and quick on a phone, English. Swapped for a chooser later. */
         const val MODEL_FILE = "moonshine-base.gguf"
+        const val PREF_PC_MODEL = "pc_model"
         const val MODEL_URL = "https://huggingface.co/handy-computer/moonshine-base-gguf/resolve/main/moonshine-base-Q8_0.gguf"
     }
 }

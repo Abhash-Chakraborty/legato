@@ -35,6 +35,9 @@ pub enum Via {
 /// carries the link, or None. It blocks while it connects.
 pub type Dialer = Arc<dyn Fn(&str) -> Option<u16> + Send + Sync>;
 
+/// Transcribing a recording, which takes a while: run off the session.
+pub type TranscribeJob = Box<dyn FnOnce() -> std::result::Result<String, String> + Send>;
+
 /// What a device does with what arrives. Methods are quick database work and
 /// run on the session's task.
 pub trait Host: Send + Sync + 'static {
@@ -64,6 +67,13 @@ pub trait Host: Send + Sync + 'static {
     fn online(&self, _peer: &str, _via: Option<Via>) {}
     /// `peer` unpaired us.
     fn forgotten(&self, _peer: &str) {}
+    /// The PC's side: how to transcribe `peer`'s recording, if this device
+    /// can; the session runs it and sends the answer.
+    fn transcribe(&self, _peer: &str, _samples: Vec<f32>) -> Option<TranscribeJob> {
+        None
+    }
+    /// The phone's side: the answer to a `transcribe` it sent.
+    fn transcript(&self, _peer: &str, _id: &str, _result: std::result::Result<String, String>) {}
 }
 
 /// Something to send down a live session.
@@ -78,6 +88,8 @@ pub enum Command {
     Welcome(Welcome),
     /// Say goodbye with this reason and close.
     Bye(String),
+    /// Send this message as it is.
+    Send(Message),
 }
 
 /// Live sessions by device ID, each with a number so a session that ends
@@ -440,6 +452,31 @@ where
                             host.forgotten(peer);
                             return Ok(());
                         }
+                        Message::Transcribe { id, pcm } => {
+                            let job = protocol::pcm_decode(&pcm)
+                                .ok()
+                                .and_then(|samples| host.transcribe(peer, samples));
+                            match job {
+                                Some(job) => {
+                                    let (sessions, peer) = (sessions.clone(), peer.to_string());
+                                    tokio::task::spawn_blocking(move || {
+                                        let (text, error) = match job() {
+                                            Ok(text) => (Some(text), None),
+                                            Err(e) => (None, Some(e)),
+                                        };
+                                        sessions.send(&peer, Command::Send(Message::Transcript { id, text, error }));
+                                    });
+                                }
+                                None => {
+                                    let error = Some("This device doesn't transcribe".to_string());
+                                    protocol::write(&mut wr, &Message::Transcript { id, text: None, error }).await?;
+                                }
+                            }
+                        }
+                        Message::Transcript { id, text, error } => {
+                            let result = text.ok_or_else(|| error.unwrap_or_else(|| "No text".into()));
+                            host.transcript(peer, &id, result);
+                        }
                         Message::Pong | Message::Hello(_) | Message::Refused { .. } | Message::Unknown => {}
                     }
                 }
@@ -461,6 +498,7 @@ where
                             protocol::write(&mut wr, &Message::Bye { reason }).await?;
                             return Ok(());
                         }
+                        Command::Send(message) => protocol::write(&mut wr, &message).await?,
                     }
                 }
                 _ = ping.tick() => {

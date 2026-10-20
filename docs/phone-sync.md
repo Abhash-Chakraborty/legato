@@ -154,6 +154,28 @@ Each item in `changes`:
 `body` is `null` when the item was deleted (a tombstone). Tombstones are kept, so a device
 that was away for a month still learns about deletes.
 
+### Transcribing on the PC
+
+A `welcome` with `"transcribe": true` means the PC will turn the phone's recordings into text
+with its own speech model, which is bigger and quicker than the phone's. The phone sends:
+
+```json
+{"type":"transcribe","id":"…","pcm":"<base64>"}
+```
+
+`pcm` is the recording as 16 kHz mono, 16-bit little-endian samples, in base64. The PC runs it
+through its model and the same Dictionary, snippets, cleanup and Style as a dictation on the
+PC, and answers with the same `id`:
+
+```json
+{"type":"transcript","id":"…","text":"See you at noon."}
+{"type":"transcript","id":"…","error":"The speech model didn't load"}
+```
+
+Either side keeps syncing while a recording is being written up. A phone that gets an error, or
+no answer, uses its own model if it has one. The recording isn't kept on the PC, and the
+phone records the dictation in its history, which syncs as usual.
+
 ### Keeping the connection
 
 - `{"type":"ping"}` every 30 seconds, answered with `{"type":"pong"}`. Close after 90

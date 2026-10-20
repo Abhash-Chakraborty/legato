@@ -6,6 +6,7 @@
 pub mod managers;
 pub mod sync;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -47,6 +48,10 @@ pub struct Phone {
     via: Mutex<Option<&'static str>>,
     /// The app's way to open Bluetooth to the PC, when it has one.
     pub bluetooth: Mutex<Option<Dialer>>,
+    /// The PC said it transcribes recordings for the phone.
+    pc_transcribes: AtomicBool,
+    /// Recordings sent to the PC, waiting for their text, by request id.
+    waiting: Mutex<HashMap<String, std::sync::mpsc::Sender<Result<String, String>>>>,
     say: Box<dyn Fn(String) + Send + Sync>,
 }
 
@@ -129,12 +134,47 @@ impl Phone {
             online: AtomicBool::new(false),
             via: Mutex::new(None),
             bluetooth: Mutex::new(None),
+            pc_transcribes: AtomicBool::new(false),
+            waiting: Mutex::new(HashMap::new()),
             say,
         })
     }
 
     pub fn is_online(&self) -> bool {
         self.online.load(Ordering::Relaxed)
+    }
+
+    /// Whether the PC transcribes recordings for this phone (while connected).
+    pub fn pc_transcribes(&self) -> bool {
+        self.is_online() && self.pc_transcribes.load(Ordering::Relaxed)
+    }
+
+    /// Sends a recording (16 kHz mono) to the PC and waits for its text.
+    /// Blocks; Err when not connected, on the PC's error, or after `wait`.
+    pub fn transcribe_on_pc(
+        &self,
+        sessions: &Sessions,
+        samples: &[f32],
+        wait: Duration,
+    ) -> Result<String> {
+        let pc = self.paired_pc().context("not paired with a PC")?;
+        let id = sync::identity::uuid();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.waiting.lock().unwrap().insert(id.clone(), tx);
+        let message = sync::protocol::Message::Transcribe {
+            id: id.clone(),
+            pcm: sync::protocol::pcm_encode(samples),
+        };
+        let sent = sessions.send(&pc.device_id, link::Command::Send(message));
+        let result = if sent {
+            rx.recv_timeout(wait)
+                .map_err(|_| anyhow::anyhow!("{} didn't answer in time", pc.name))
+                .and_then(|r| r.map_err(|e| anyhow::anyhow!(e)))
+        } else {
+            Err(anyhow::anyhow!("not connected to {}", pc.name))
+        };
+        self.waiting.lock().unwrap().remove(&id);
+        result
     }
 
     /// How the phone is connected: "lan", "netbird" or "bluetooth".
@@ -327,6 +367,7 @@ impl Host for Phone {
             kinds: KINDS.iter().map(|k| k.to_string()).collect(),
             clipboard: true,
             addrs: Vec::new(),
+            transcribe: false,
         }
     }
 
@@ -336,6 +377,8 @@ impl Host for Phone {
 
     fn welcomed(&self, welcome: &Welcome, fingerprint: &str) {
         *self.pc_kinds.lock().unwrap() = welcome.kinds.clone();
+        self.pc_transcribes
+            .store(welcome.transcribe, Ordering::Relaxed);
         // Keep where the PC is now (a new Wi-Fi address, Bluetooth turned on
         // since pairing) for the next connection.
         if let Some(mut pc) = self.paired_pc() {
@@ -455,6 +498,12 @@ impl Host for Phone {
             Some("netbird") => self.say("Connected through Netbird"),
             Some(_) => self.say("Connected on Wi-Fi"),
             None => {}
+        }
+    }
+
+    fn transcript(&self, _peer: &str, id: &str, result: std::result::Result<String, String>) {
+        if let Some(tx) = self.waiting.lock().unwrap().remove(id) {
+            let _ = tx.send(result);
         }
     }
 

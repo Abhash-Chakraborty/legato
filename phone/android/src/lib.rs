@@ -49,6 +49,8 @@ pub struct PhoneState {
     pub online: bool,
     /// How it's connected: "lan", "netbird" or "bluetooth".
     pub via: Option<String>,
+    /// Connected to a PC that transcribes recordings with its own model.
+    pub pc_transcribes: bool,
     /// Seconds since 1970 of the last sync, if any.
     pub last_sync: Option<i64>,
 }
@@ -149,6 +151,7 @@ impl Core {
             pc_name: pc.map(|p| p.name),
             online: self.phone.is_online(),
             via: self.phone.via().map(str::to_string),
+            pc_transcribes: self.phone.pc_transcribes(),
             last_sync,
         }
     }
@@ -305,6 +308,14 @@ impl Core {
                 age_ms: c.age_ms,
             })
             .collect()
+    }
+
+    /// Turns 16 kHz mono samples into text with the PC's speech model, over
+    /// the sync link. Blocks until the PC answers.
+    pub fn transcribe_on_pc(&self, samples: Vec<f32>) -> Result<String, CoreError> {
+        Ok(self
+            .phone
+            .transcribe_on_pc(&self.sessions, &samples, Duration::from_secs(120))?)
     }
 
     /// Loads a speech model (a GGUF file) for `transcribe`.

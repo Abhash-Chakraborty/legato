@@ -37,6 +37,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -92,7 +93,7 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
                         supportingContent = {
                             Text(
                                 if (state.online) state.connectedText + (state.lastSync?.let { " · synced ${ago(it)}" } ?: "")
-                                else "Not reachable · changes wait on this phone" + (state.lastSync?.let { " · last synced ${ago(it)}" } ?: ""),
+                                else "Not reachable · changes wait on this ${legato.device}" + (state.lastSync?.let { " · last synced ${ago(it)}" } ?: ""),
                             )
                         },
                         leadingContent = {
@@ -119,7 +120,10 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
                     )
                 }
             }
-            Group("Speech model") { ModelRow(legato) }
+            Group("Speech model") {
+                PcModelRow(legato, state.paired, state.pcName)
+                ModelRow(legato)
+            }
             Group("Bubble over Gboard") { BubbleRows() }
             Group("Clipboard") {
                 ListItem(
@@ -158,11 +162,30 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirmUnpair = false },
             title = { Text("Unpair from ${state.pcName ?: "your PC"}?") },
-            text = { Text("What already synced stays on this phone; nothing new syncs until you pair again.") },
+            text = { Text("What already synced stays on this ${legato.device}; nothing new syncs until you pair again.") },
             confirmButton = { TextButton(onClick = { confirmUnpair = false; legato.run { unpair() } }) { Text("Unpair") } },
             dismissButton = { TextButton(onClick = { confirmUnpair = false }) { Text("Cancel") } },
         )
     }
+}
+
+/** Whether what you say goes to the PC's speech model while connected. */
+@Composable
+private fun PcModelRow(legato: Legato, paired: Boolean, pcName: String?) {
+    var on by remember { mutableStateOf(legato.usePcModel) }
+    ListItem(
+        headlineContent = { Text("Use your PC's speech model") },
+        supportingContent = {
+            Text(
+                if (paired) "While connected to ${pcName ?: "your PC"}, it writes up what you say, with your Dictionary and style."
+                else "Pair with your PC to have its model write up what you say.",
+            )
+        },
+        trailingContent = {
+            Switch(checked = on, enabled = paired, onCheckedChange = { on = it; legato.usePcModel = it })
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
 }
 
 /** Whether the phone may use Bluetooth, for when it isn't on the PC's network. */
@@ -205,10 +228,10 @@ fun ModelRow(legato: Legato) {
         Text("Moonshine Base", style = MaterialTheme.typography.bodyLarge)
         Text(
             when (val m = model) {
-                ModelStatus.Missing -> "About 60 MB. It runs on this phone, so nothing you say leaves it."
+                ModelStatus.Missing -> "About 60 MB. It runs on this ${legato.device}, so nothing you say leaves it."
                 is ModelStatus.Downloading -> if (m.percent >= 0) "Downloading · ${m.percent}%" else "Downloading…"
                 ModelStatus.Downloaded -> "Downloaded · loading"
-                is ModelStatus.Loaded -> "Ready on this phone"
+                is ModelStatus.Loaded -> "Ready on this ${legato.device}"
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -91,6 +91,10 @@ pub struct Welcome {
     /// keeps them for next time. Absent from older PCs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub addrs: Vec<String>,
+    /// The PC transcribes recordings the phone sends (`transcribe`) with
+    /// its own speech model.
+    #[serde(default)]
+    pub transcribe: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,6 +132,20 @@ pub enum Message {
     Bye {
         reason: String,
     },
+    /// A recording for the PC's speech model: 16 kHz mono, as 16-bit
+    /// little-endian samples in base64 (`pcm_encode`).
+    Transcribe {
+        id: String,
+        pcm: String,
+    },
+    /// The PC's answer to `transcribe`: the text, or why there is none.
+    Transcript {
+        id: String,
+        #[serde(default)]
+        text: Option<String>,
+        #[serde(default)]
+        error: Option<String>,
+    },
     /// A type this version doesn't know; ignored after the handshake.
     #[serde(other)]
     Unknown,
@@ -154,6 +172,28 @@ pub async fn read<R: AsyncRead + Unpin>(r: &mut R) -> Result<Message> {
     let mut bytes = vec![0u8; len];
     r.read_exact(&mut bytes).await?;
     Ok(serde_json::from_slice(&bytes)?)
+}
+
+/// Samples (-1..1, 16 kHz mono) as `transcribe` carries them.
+#[allow(dead_code)] // The phone sends; the PC only reads.
+pub fn pcm_encode(samples: &[f32]) -> String {
+    use base64::Engine as _;
+    let bytes: Vec<u8> = samples
+        .iter()
+        .flat_map(|s| ((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes())
+        .collect();
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+pub fn pcm_decode(pcm: &str) -> Result<Vec<f32>> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(pcm)?;
+    Ok(bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|b| f32::from(i16::from_le_bytes(*b)) / 32767.0)
+        .collect())
 }
 
 /// What the PC's QR code holds.
@@ -283,6 +323,16 @@ mod tests {
         );
         let later: Message = serde_json::from_str(r#"{"type":"presence","x":1}"#).unwrap();
         assert_eq!(later, Message::Unknown);
+    }
+
+    #[test]
+    fn recordings_survive_the_trip() {
+        let samples = [0.0, 0.5, -0.5, 1.0, -1.0, 2.0];
+        let back = pcm_decode(&pcm_encode(&samples)).unwrap();
+        assert_eq!(back.len(), samples.len());
+        for (a, b) in samples.iter().zip(&back) {
+            assert!((a.clamp(-1.0, 1.0) - b).abs() < 0.001);
+        }
     }
 
     #[tokio::test]

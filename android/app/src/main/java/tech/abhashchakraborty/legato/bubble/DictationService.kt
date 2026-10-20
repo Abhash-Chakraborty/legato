@@ -90,7 +90,7 @@ class DictationService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
         val legato = applicationContext.legato
-        if (legato.model.value !is ModelStatus.Loaded) {
+        if (!legato.canTranscribe()) {
             if (legato.modelFile().exists()) legato.loadModel() else {
                 Toast.makeText(this, getString(R.string.no_model), Toast.LENGTH_LONG).show()
                 stopSelf()
@@ -110,7 +110,7 @@ class DictationService : Service() {
         val legato = applicationContext.legato
         scope.launch {
             val text = runCatching {
-                withContext(Dispatchers.Default) { legato.core.transcribe(samples.toList()) }
+                withContext(Dispatchers.Default) { legato.transcribe(samples) }
             }.getOrElse { e -> legato.onLine(e.message ?: "Transcription failed"); "" }
             withContext(Dispatchers.Main) {
                 if (text.isNotBlank()) {

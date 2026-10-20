@@ -887,6 +887,39 @@ impl hub::Events for AppEvents {
         crate::tray::update_tray_menu(&self.0);
     }
 
+    fn transcribe(&self, device_id: &str, samples: Vec<f32>) -> Option<link::TranscribeJob> {
+        let app = self.0.clone();
+        let device = device_id.to_string();
+        Some(Box::new(move || {
+            use crate::managers::transcription::TranscriptionManager;
+            let tm = app
+                .try_state::<Arc<TranscriptionManager>>()
+                .map(|s| s.inner().clone())
+                .ok_or("Legato on the PC isn't ready yet")?;
+            let seconds = samples.len() as f32 / 16_000.0;
+            let started = std::time::Instant::now();
+            crate::notes::ensure_model(&tm).map_err(|e| e.to_string())?;
+            let heard = tm.transcribe(samples).map_err(|e| e.to_string())?;
+            if heard.text.trim().is_empty() {
+                return Ok(String::new());
+            }
+            // The same Dictionary, snippets, cleanup and Style as a
+            // dictation on the PC, as for an app of no particular kind.
+            let processed =
+                tauri::async_runtime::block_on(crate::actions::process_transcription_output(
+                    &app,
+                    &heard.text,
+                    crate::actions::DictationMode::Plain,
+                    None,
+                ));
+            log::info!(
+                "Transcribed {seconds:.1} s from {device} in {:.1} s",
+                started.elapsed().as_secs_f32()
+            );
+            Ok(processed.final_text)
+        }))
+    }
+
     fn pairing_failed(&self, reason: Refusal, closed: bool) {
         log::warn!(
             "A phone failed to pair ({reason:?}){}",

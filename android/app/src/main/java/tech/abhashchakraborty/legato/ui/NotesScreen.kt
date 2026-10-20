@@ -146,7 +146,7 @@ fun NoteScreen(id: Long, onBack: () -> Unit) {
         val d = detail
         if (d == null) {
             Column(Modifier.fillMaxSize().padding(padding)) {
-                if (missing) Empty(Icons.Outlined.GraphicEq, "This note isn't on this phone any more.")
+                if (missing) Empty(Icons.Outlined.GraphicEq, "This note isn't on this ${legato.device} any more.")
                 else LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp))
             }
             return@Scaffold

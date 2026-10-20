@@ -143,7 +143,7 @@ fun DebugScreen(recorder: Recorder, linkFromIntent: String?) {
             scope.launch {
                 val samples = recorder.stop()
                 val text = runCatching {
-                    withContext(Dispatchers.Default) { legato.core.transcribe(samples.toList()) }
+                    withContext(Dispatchers.Default) { legato.transcribe(samples) }
                 }.getOrElse { e -> legato.onLine(e.message ?: "Transcription failed"); "" }
                 heard = text
                 if (text.isNotBlank()) legato.run { dictate(text) }
@@ -234,7 +234,7 @@ fun DebugScreen(recorder: Recorder, linkFromIntent: String?) {
                 Section("Speech model") {
                     when (val m = model) {
                         ModelStatus.Missing -> {
-                            Text("Moonshine Base, about 60 MB, runs on this phone.", style = MaterialTheme.typography.bodyMedium)
+                            Text("Moonshine Base, about 60 MB, runs on this ${legato.device}.", style = MaterialTheme.typography.bodyMedium)
                             Spacer(Modifier.height(8.dp))
                             Button(onClick = { legato.fetchModel() }) { Text("Download") }
                         }

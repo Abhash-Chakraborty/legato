@@ -913,7 +913,7 @@ fn spawn_track(
 }
 
 /// Waits for the speech model, loading it if needed.
-fn ensure_model(tm: &TranscriptionManager) -> Result<()> {
+pub(crate) fn ensure_model(tm: &TranscriptionManager) -> Result<()> {
     if tm.is_model_loaded() {
         return Ok(());
     }

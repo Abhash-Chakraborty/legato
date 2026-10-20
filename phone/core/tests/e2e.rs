@@ -55,6 +55,11 @@ impl Events for Recorder {
                 .push("online over Bluetooth".into());
         }
     }
+    fn transcribe(&self, _device_id: &str, samples: Vec<f32>) -> Option<link::TranscribeJob> {
+        Some(Box::new(move || {
+            Ok(format!("heard {} samples", samples.len()))
+        }))
+    }
     fn pairing_failed(&self, reason: Refusal, closed: bool) {
         self.0
              .0
@@ -450,8 +455,13 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
         })
         .unwrap();
     let (_stop_phone, stop) = watch::channel(false);
+    let phone_sessions = Sessions::default();
     {
-        let (pixel, fp) = (pixel.clone(), pc.identity.fingerprint());
+        let (pixel, fp, sessions) = (
+            pixel.clone(),
+            pc.identity.fingerprint(),
+            phone_sessions.clone(),
+        );
         tokio::spawn(async move {
             let host: Arc<dyn Host> = pixel.clone();
             link::connect(
@@ -461,7 +471,7 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
                 Some(secret),
                 Some(dial),
                 host,
-                Sessions::default(),
+                sessions,
                 stop,
             )
             .await
@@ -484,4 +494,17 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
         pixel.paired_pc().unwrap().addrs,
         ["10.0.0.9:47613", "bt:AA:BB:CC:DD:EE:FF"]
     );
+
+    // The phone has the PC transcribe a recording over the same link.
+    assert!(pixel.pc_transcribes());
+    let text = {
+        let (pixel, sessions) = (pixel.clone(), phone_sessions.clone());
+        tokio::task::spawn_blocking(move || {
+            pixel.transcribe_on_pc(&sessions, &vec![0.1; 16_000], Duration::from_secs(5))
+        })
+        .await
+        .unwrap()
+        .unwrap()
+    };
+    assert_eq!(text, "heard 16000 samples");
 }

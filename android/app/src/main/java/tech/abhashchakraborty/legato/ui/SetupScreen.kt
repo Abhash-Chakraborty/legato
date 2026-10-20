@@ -56,7 +56,7 @@ fun SetupScreen(onDone: () -> Unit, onPair: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 TextButton(onClick = { finish() }, modifier = Modifier.weight(1f)) { Text("Later") }
-                Button(onClick = { finish() }, modifier = Modifier.weight(1f), enabled = model !is ModelStatus.Missing) { Text("Done") }
+                Button(onClick = { finish() }, modifier = Modifier.weight(1f), enabled = model !is ModelStatus.Missing || state.paired) { Text("Done") }
             }
         },
     ) { padding ->
@@ -65,7 +65,7 @@ fun SetupScreen(onDone: () -> Unit, onPair: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                "Legato turns your voice into text on this phone, and keeps your words in step with Legato on your PC.",
+                "Legato turns your voice into text on this ${legato.device}, and keeps your words in step with Legato on your PC.",
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.padding(horizontal = 8.dp),
             )

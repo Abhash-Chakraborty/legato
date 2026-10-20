@@ -273,7 +273,7 @@ fun ScratchEditScreen(id: Long, recorder: Recorder, onBack: () -> Unit) {
         scope.launch {
             val samples = withContext(Dispatchers.Default) { recorder.stop() }
             val text = withContext(Dispatchers.Default) {
-                runCatching { legato.core.transcribe(samples.toList()) }.getOrElse { e ->
+                runCatching { legato.transcribe(samples) }.getOrElse { e ->
                     legato.notice(e.message ?: "Transcription failed"); ""
                 }
             }
@@ -290,12 +290,12 @@ fun ScratchEditScreen(id: Long, recorder: Recorder, onBack: () -> Unit) {
         when {
             recording -> finish()
             busy -> Unit
-            model !is ModelStatus.Loaded -> scope.launch {
+            !legato.canTranscribe() -> scope.launch {
                 snackbar.showSnackbar(
                     when (model) {
                         is ModelStatus.Downloading -> "The speech model is still downloading."
                         ModelStatus.Downloaded -> "The speech model is loading; try again in a moment."
-                        else -> "Download the speech model in Settings first."
+                        else -> "Download the speech model in Settings, or connect to your PC."
                     },
                 )
             }

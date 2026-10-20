@@ -11,7 +11,7 @@ use anyhow::Result;
 use super::engine::{now_s, Accepted, Engine};
 use super::identity::{same_secret, secret};
 use super::ledger::{self, Peer};
-use super::link::{Host, Via};
+use super::link::{Host, TranscribeJob, Via};
 use super::protocol::{Change, Clip, Hello, Refusal, Welcome, PROTOCOL};
 
 /// How long a pairing code works, and how many wrong tries cancel it.
@@ -49,6 +49,10 @@ pub trait Events: Send + Sync {
     fn forgotten(&self, _device_id: &str) {}
     /// A pairing attempt failed or the code ran out of tries.
     fn pairing_failed(&self, _reason: Refusal, _closed: bool) {}
+    /// How to transcribe a phone's recording with this PC's model.
+    fn transcribe(&self, _device_id: &str, _samples: Vec<f32>) -> Option<TranscribeJob> {
+        None
+    }
 }
 
 struct Pairing {
@@ -161,6 +165,7 @@ impl Host for Hub {
             kinds: config.kinds,
             clipboard: config.clipboard,
             addrs: self.addrs.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            transcribe: true,
         }
     }
 
@@ -246,6 +251,12 @@ impl Host for Hub {
 
     fn online(&self, peer: &str, via: Option<Via>) {
         self.events.online(peer, via);
+    }
+
+    fn transcribe(&self, peer: &str, samples: Vec<f32>) -> Option<TranscribeJob> {
+        // Only for a paired phone.
+        self.peer(peer).ok().flatten()?;
+        self.events.transcribe(peer, samples)
     }
 
     fn forgotten(&self, peer: &str) {
