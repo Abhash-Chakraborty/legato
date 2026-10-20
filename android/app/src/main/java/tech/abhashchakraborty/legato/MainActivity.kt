@@ -5,6 +5,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import tech.abhashchakraborty.legato.bubble.BubbleAccessibilityService
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -205,6 +208,44 @@ fun DebugScreen(recorder: Recorder, linkFromIntent: String?) {
                 }
             }
             item {
+                val serviceOn by BubbleAccessibilityService.running.collectAsStateWithLifecycle()
+                var overlayOn by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+                val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+                Section("Bubble over Gboard") {
+                    Text(
+                        "The bubble shows when your keyboard opens and types what you dictate. Two Android switches make it work.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    SetupRow(
+                        title = "Legato under Accessibility",
+                        done = serviceOn,
+                        detail = "Lets Legato see the keyboard open and type into the field.",
+                    ) { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    SetupRow(
+                        title = "Display over other apps",
+                        done = overlayOn,
+                        detail = "So the bubble can sit over other apps and keep the microphone while you talk.",
+                    ) {
+                        context.startActivity(
+                            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                    LaunchedEffect(lines.size, serviceOn) { overlayOn = Settings.canDrawOverlays(context) }
+                    if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        SetupRow(
+                            title = "Notifications",
+                            done = false,
+                            detail = "Android shows a small notice while Legato holds the microphone.",
+                        ) { notifications.launch(Manifest.permission.POST_NOTIFICATIONS) }
+                    }
+                    if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                        SetupRow(title = "Microphone", done = false, detail = "Needed to hear you.") { micPermission.launch(Manifest.permission.RECORD_AUDIO) }
+                    }
+                }
+            }
+            item {
                 Section("Speech model") {
                     when (val m = model) {
                         ModelStatus.Missing -> {
@@ -302,6 +343,19 @@ fun DebugScreen(recorder: Recorder, linkFromIntent: String?) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SetupRow(title: String, done: Boolean, detail: String, onOpen: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Dot(done)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(detail, style = MaterialTheme.typography.bodySmall)
+        }
+        if (!done) TextButton(onClick = onOpen) { Text("Open") } else Text("On", style = MaterialTheme.typography.labelLarge)
     }
 }
 

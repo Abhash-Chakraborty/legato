@@ -1,3 +1,12 @@
 <resources>
     <string name="app_name">Legato</string>
+    <string name="accessibility_label">Legato bubble</string>
+    <string name="accessibility_description">Shows the Legato bubble whenever your keyboard opens and types what you dictate into the field. Legato only looks for the field you are typing in and keeps nothing else from the screen.</string>
+    <string name="notification_channel">Dictation</string>
+    <string name="listening">Legato is listening</string>
+    <string name="bubble_tap">Dictate with Legato</string>
+    <string name="bubble_cancel">Cancel</string>
+    <string name="bubble_finish">Insert the text</string>
+    <string name="no_model">Download the speech model in Legato first</string>
+    <string name="not_typed">Legato couldn\'t type into this field</string>
 </resources>
