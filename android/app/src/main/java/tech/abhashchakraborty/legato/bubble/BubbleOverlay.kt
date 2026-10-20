@@ -77,6 +77,10 @@ class BubbleOverlay(private val context: Context) {
             x = Position.x(context, dpi(40f))
             y = Position.y(context)
         }
+        // The bubble, bar and wave are kept between shows; free them from the last window.
+        (bubble.parent as? ViewGroup)?.removeView(bubble)
+        (bar.parent as? ViewGroup)?.removeView(bar)
+        bar.removeAllViews()
         val frame = FrameLayout(context)
         buildBubble(frame)
         buildBar(frame)
