@@ -484,6 +484,44 @@ async showMainWindowCommand() : Promise<Result<null, string>> {
 async cancelOperation() : Promise<void> {
     await TAURI_INVOKE("cancel_operation");
 },
+async changeBubbleEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_bubble_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The pointer came onto the bubble (true) or left it (false).
+ */
+async bubbleExpand(expanded: boolean) : Promise<void> {
+    await TAURI_INVOKE("bubble_expand", { expanded });
+},
+/**
+ * A drag in progress: the dot's centre in logical screen pixels.
+ */
+async bubbleMoveTo(x: number, y: number) : Promise<void> {
+    await TAURI_INVOKE("bubble_move_to", { x, y });
+},
+/**
+ * The drag ended.
+ */
+async bubbleDrop() : Promise<void> {
+    await TAURI_INVOKE("bubble_drop");
+},
+/**
+ * One of the bubble's buttons or menu items: `dictate`, `notes`,
+ * `scratchpad`, `open` (Legato's window), `snooze` (an hour) or `off`.
+ */
+async bubbleAction(action: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("bubble_action", { action }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * The bar's check button: finish the dictation and paste it.
  */
@@ -2618,6 +2656,11 @@ export type PracticeStatus = { phase: PracticePhase }
 export type CallTest = { action: CallAction; app: CallApp; snooze_minutes: number }
 export type CallsChanged = { state: CallState }
 export type CleanupLevel = "none" | "light" | "medium"
+/**
+ * Where the desktop bubble sits: the monitor, and the dot's centre as
+ * fractions of that monitor's work area.
+ */
+export type BubbleSpot = { monitor: string; x: number; y: number }
 export type CleanupRules = { repeats?: boolean; numbers?: boolean; punctuation?: boolean; corrections?: boolean; lists?: boolean; 
 /**
  * A long dictation is split into paragraphs where the thought changes.
@@ -2884,6 +2927,14 @@ notes_live_transcript?: boolean;
  */
 notes_reminder?: boolean; calls?: CallSettings; sync?: SyncSettings; scratchpad_open?: ScratchpadOpen; 
 /**
+ * The desktop bubble: a small Legato dot that stays on screen, with
+ * Dictate, Notes and the Scratchpad on hover.
+ */
+bubble_enabled?: boolean; 
+/**
+ * Where the bubble was left; None puts it against the right side.
+ */
+bubble_spot?: BubbleSpot | null; /**
  * The Scratchpad window floats above other apps.
  */
 scratchpad_keep_on_top?: boolean; 

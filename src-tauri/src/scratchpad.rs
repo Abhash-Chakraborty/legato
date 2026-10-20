@@ -432,6 +432,19 @@ fn toggle(app: &AppHandle) {
     }
 }
 
+/// The bubble's Scratchpad button: the bubble never has focus, so this
+/// goes by whether the window shows at all.
+pub fn toggle_from_bubble(app: &AppHandle) {
+    let visible = app
+        .get_webview_window(WINDOW)
+        .is_some_and(|w| w.is_visible().unwrap_or(false));
+    if visible {
+        hide(app);
+    } else if let Err(e) = show(app, None) {
+        error!("Couldn't open the Scratchpad: {}", e);
+    }
+}
+
 pub fn set_keep_on_top(app: &AppHandle, on: bool) {
     let mut settings = get_settings(app);
     settings.scratchpad_keep_on_top = on;

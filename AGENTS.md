@@ -68,7 +68,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
   - `engine.rs` / `link.rs` / `hub.rs` - Merging, connections and pairing, free of Tauri so the phone side (`phone/`) reuses them
   - `mod.rs` / `clipboard.rs` / `net.rs` - Windows glue: `SyncManager`, the clipboard watcher, this PC's addresses
 - `actions.rs` - What each shortcut does; the dictation pipeline from recording to paste
-- `*_rules.rs` - Pure logic kept free of Tauri so it can be unit tested on any OS: `cleanup_rules`, `style_rules`, `snippet_rules`, `transform_rules`, `learn_rules`, `notes_rules`, `calls_rules`, `ai_rules`
+- `*_rules.rs` - Pure logic kept free of Tauri so it can be unit tested on any OS: `cleanup_rules`, `style_rules`, `snippet_rules`, `transform_rules`, `learn_rules`, `notes_rules`, `calls_rules`, `ai_rules`, `bubble_rules`
 - `transforms.rs` - Transforms on the selection or last dictation, the keyboard picker, Ask, the bar's Keep/Undo
 - `clipboard.rs` / `paste_tx/` - Pasting, per-category paste overrides, remembering the last paste
 - `selection.rs` - Copying the selection from another app; Add selection to Dictionary
@@ -84,6 +84,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `shortcut/` - Global keyboard shortcut handling (handy-keys or Tauri), including the picker's temporary keys
 - `settings.rs` - Application settings management
 - `overlay.rs` - The Legato bar (recording overlay window and its states)
+- `bubble.rs` - The desktop bubble: a dot that stays on screen with Dictate, Notes and the Scratchpad on hover; dragged anywhere, snaps to a side, steps aside for fullscreen windows
 - `tray.rs` - System tray icon and menu
 - `signal_handle.rs` - `send_transcription_input()` reusable function
 - `handy_migration.rs` - First-run move of Handy's data into Legato's folders
@@ -102,6 +103,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
   - `update-checker/` - App update notifications
   - `shared/`, `ui/`, `icons/`, `shell/`, `whats-new/` - Shared components
 - `overlay/` - The Legato bar window entry point
+- `bubble/` - The desktop bubble window
 - `scratchpad/` - The Scratchpad window: tabs, the notes rail and panel, formatting bar, Copy and Send to
 - `stores/` - Zustand stores (settings, models, dictionary, snippets, transforms, notes, calls, scratchpad, sync, navigation)
 - `hooks/useSettings.ts` - Settings state management hook

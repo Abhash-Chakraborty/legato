@@ -1,0 +1,192 @@
+@import "../styles/theme.css";
+
+/* The bubble is dark whatever the theme, like the Minimal bar: it sits on
+   top of any app and has to read on light and dark ones alike. */
+.bstage {
+  position: fixed;
+  inset: 0;
+  font-family: var(--sans);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.bdot,
+.bbtn {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 50%;
+  background: #141414;
+  color: #fff;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  -webkit-app-region: no-drag;
+}
+
+/* At rest: a small dot, mostly see-through, that comes up under the pointer. */
+.bdot {
+  width: 26px;
+  height: 26px;
+  opacity: 0.62;
+  transition:
+    opacity 160ms ease-out,
+    transform 160ms ease-out;
+  animation: bdot-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.bdot:hover {
+  opacity: 1;
+}
+.bdot:active {
+  transform: translate(-50%, -50%) scale(0.94);
+}
+.bwave {
+  width: 14px;
+  height: 14px;
+}
+/* A dictation running: the dot stays visible and wears a teal ring. */
+.bdot.rec {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--teal-500);
+}
+/* Notes recording behind everything: a slow green glow. */
+.bdot.notes {
+  opacity: 1;
+  animation: bglow 2.4s ease-in-out infinite;
+}
+@keyframes bdot-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+}
+@keyframes bglow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px var(--ok),
+      0 0 10px 2px color-mix(in srgb, var(--ok) 45%, transparent);
+  }
+}
+
+/* Open: three buttons in a column, springing out from the dot one after
+   another. */
+.bitem {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.bbtn {
+  left: 0;
+  top: 0;
+  width: 38px;
+  height: 38px;
+  animation: bbtn-in 260ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  transition:
+    background-color 100ms ease-out,
+    transform 100ms ease-out;
+}
+.bitem:nth-child(1) .bbtn {
+  animation-delay: 30ms;
+}
+.bitem:nth-child(3) .bbtn {
+  animation-delay: 60ms;
+}
+.bbtn svg {
+  width: 17px;
+  height: 17px;
+}
+.bbtn svg.bstop {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+.bbtn:hover {
+  background: #262626;
+}
+.bbtn:active {
+  transform: translate(-50%, -50%) scale(0.94);
+}
+.bbtn.on.dictate {
+  background: var(--teal-600);
+  border-color: transparent;
+}
+.bbtn.on.notes {
+  animation:
+    bbtn-in 260ms cubic-bezier(0.34, 1.4, 0.64, 1) both,
+    bglow 2.4s ease-in-out infinite;
+}
+@keyframes bbtn-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+}
+
+/* The Notes mark: a record dot in a ring, green while it records. */
+.bnotes-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.6px solid currentColor;
+  display: grid;
+  place-items: center;
+}
+.bnotes-mark::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.bnotes-mark.on {
+  color: var(--ok);
+}
+
+/* The hovered button's label and shortcut, towards the middle of the
+   screen. */
+.blabel {
+  position: absolute;
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  background: #141414;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  color: rgb(255 255 255 / 0.92);
+  font-size: 13px;
+  white-space: nowrap;
+  transform: translateY(-50%);
+  animation: blabel-in 140ms ease-out both;
+  pointer-events: none;
+}
+.labels-left .blabel {
+  right: 26px;
+}
+.labels-right .blabel {
+  left: 26px;
+}
+.bkeys {
+  font-weight: 600;
+  color: #fff;
+}
+@keyframes blabel-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bdot,
+  .bbtn,
+  .blabel {
+    animation: none !important;
+  }
+}

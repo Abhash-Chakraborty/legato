@@ -34,3 +34,20 @@ export const ShowChanges: React.FC<{ grouped?: boolean }> = ({ grouped }) => {
     />
   );
 };
+
+/** The desktop bubble: a dot that stays on screen, with Dictate, Notes and
+ *  the Scratchpad on hover. */
+export const ShowBubble: React.FC<{ grouped?: boolean }> = ({ grouped }) => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
+  return (
+    <ToggleSwitch
+      checked={getSetting("bubble_enabled") ?? true}
+      onChange={(on) => updateSetting("bubble_enabled", on)}
+      isUpdating={isUpdating("bubble_enabled")}
+      label={t("settings.bar.bubble.title")}
+      description={t("settings.bar.bubble.help")}
+      grouped={grouped}
+    />
+  );
+};

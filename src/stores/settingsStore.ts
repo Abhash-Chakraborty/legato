@@ -228,6 +228,8 @@ const settingUpdaters: {
     commands.changeNotesLiveTranscriptSetting(value as boolean),
   scratchpad_open: (value) =>
     commands.changeScratchpadOpenSetting(value as ScratchpadOpen),
+  bubble_enabled: (value) =>
+    commands.changeBubbleEnabledSetting(value as boolean),
   scratchpad_keep_on_top: (value) =>
     commands.changeScratchpadKeepOnTopSetting(value as boolean),
   scratchpad_failed_pastes: (value) =>

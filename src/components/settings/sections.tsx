@@ -92,7 +92,7 @@ import {
   SyncStatusRow,
 } from "./devices/DeviceSettings";
 import { ShowOverlay } from "./ShowOverlay";
-import { ConfirmPaste, ShowChanges } from "./BarMessages";
+import { ConfirmPaste, ShowBubble, ShowChanges } from "./BarMessages";
 import { RememberApp } from "./RememberApp";
 import { HistoryLimit } from "./HistoryLimit";
 import { RecordingRetentionPeriodSelector } from "./RecordingRetentionPeriod";
@@ -1006,6 +1006,14 @@ export const buildSections = (
               "settings.advanced.overlay.position.description",
             ],
             render: () => <ShowOverlay grouped />,
+          },
+          {
+            id: "bubble",
+            searchKeys: [
+              "settings.bar.bubble.title",
+              "settings.bar.bubble.help",
+            ],
+            render: () => <ShowBubble grouped />,
           },
         ],
       },

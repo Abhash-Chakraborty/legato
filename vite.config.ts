@@ -24,6 +24,7 @@ export default defineConfig(async () => ({
         main: resolve(__dirname, "index.html"),
         overlay: resolve(__dirname, "src/overlay/index.html"),
         scratchpad: resolve(__dirname, "src/scratchpad/index.html"),
+        bubble: resolve(__dirname, "src/bubble/index.html"),
       },
     },
   },

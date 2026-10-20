@@ -5,6 +5,8 @@ mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
 mod background_audio;
+mod bubble;
+mod bubble_rules;
 mod calls;
 mod calls_rules;
 mod catalog;
@@ -127,7 +129,7 @@ fn open_scratchpad_from_cli(app: &AppHandle, new_note: bool) {
     }
 }
 
-fn show_main_window(app: &AppHandle) {
+pub(crate) fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
         if let Err(e) = main_window.unminimize() {
             log::error!("Failed to unminimize webview window: {}", e);
@@ -439,6 +441,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+
+    // The desktop bubble, when it's on (it creates its window either way so
+    // turning it on later needs no restart).
+    bubble::init(app_handle);
 }
 
 #[tauri::command]
@@ -766,6 +772,11 @@ pub fn run(cli_args: CliArgs) {
             show_main_window_command,
             commands::cancel_operation,
             commands::finish_dictation,
+            commands::bubble::change_bubble_enabled_setting,
+            commands::bubble::bubble_expand,
+            commands::bubble::bubble_move_to,
+            commands::bubble::bubble_drop,
+            commands::bubble::bubble_action,
             commands::is_portable,
             commands::has_mica,
             commands::notify_update,
@@ -1292,6 +1303,7 @@ pub fn run(cli_args: CliArgs) {
                     if let Some(w) = window.app_handle().get_webview_window("main") {
                         fit_window_to_screen(&w, MAIN_WINDOW_MIN_SIZE);
                     }
+                    bubble::screens_changed(window.app_handle());
                 }
                 label if label == scratchpad::WINDOW => {
                     if let Some(w) = window.app_handle().get_webview_window(label) {

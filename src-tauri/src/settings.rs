@@ -146,6 +146,15 @@ pub enum OverlayPosition {
     Bottom,
 }
 
+/// Where the desktop bubble sits: the monitor, and the dot's centre as
+/// fractions of that monitor's work area.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+pub struct BubbleSpot {
+    pub monitor: String,
+    pub x: f64,
+    pub y: f64,
+}
+
 /// Which recording overlay to display. `Minimal` and `Live` share one base
 /// (the pill); `Live` grows into the panel that shows live transcription text.
 /// `None` hides the overlay entirely. Decoupled from whether the model runs in
@@ -833,6 +842,13 @@ pub struct AppSettings {
     pub sync: SyncSettings,
     #[serde(default)]
     pub scratchpad_open: ScratchpadOpen,
+    /// The desktop bubble: a small Legato dot that stays on screen, with
+    /// Dictate, Notes and the Scratchpad on hover.
+    #[serde(default = "default_true")]
+    pub bubble_enabled: bool,
+    /// Where the bubble was left; None puts it against the right side.
+    #[serde(default)]
+    pub bubble_spot: Option<BubbleSpot>,
     /// The Scratchpad window floats above other apps.
     #[serde(default = "default_true")]
     pub scratchpad_keep_on_top: bool,
@@ -1449,6 +1465,8 @@ pub fn get_default_settings() -> AppSettings {
         calls: CallSettings::default(),
         sync: SyncSettings::default(),
         scratchpad_open: ScratchpadOpen::default(),
+        bubble_enabled: true,
+        bubble_spot: None,
         scratchpad_keep_on_top: true,
         scratchpad_failed_pastes: true,
         scratchpad_last_note: None,

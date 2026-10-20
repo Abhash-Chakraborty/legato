@@ -865,6 +865,10 @@
       }
     },
     "bar": {
+      "bubble": {
+        "title": "Bubble on the desktop",
+        "help": "A small Legato dot stays at the edge of the screen; hover it for Dictate, Notes and the Scratchpad, drag it anywhere, right-click to hide it."
+      },
       "confirmPaste": {
         "title": "Confirm after pasting",
         "help": "The bar says how many words went where, with Undo."
@@ -1206,6 +1210,19 @@
       "system": "System",
       "light": "Light",
       "dark": "Dark"
+    }
+  },
+  "bubble": {
+    "label": "Legato",
+    "dictate": "Dictate",
+    "stopDictating": "Stop dictating",
+    "notes": "Take notes",
+    "stopNotes": "Stop notes · {{time}}",
+    "scratchpad": "Scratchpad",
+    "menu": {
+      "snooze": "Hide for an hour",
+      "off": "Turn off the bubble",
+      "open": "Open Legato"
     }
   },
   "overlay": {

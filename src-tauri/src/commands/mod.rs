@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod audio;
+pub mod bubble;
 pub mod calls;
 pub mod dictionary;
 pub mod history;
