@@ -185,7 +185,7 @@ pub async fn finish(
     let (uncorrected, corrected) = if settings.cleanup_level == CleanupLevel::None {
         (text.clone(), text.clone())
     } else {
-        let rules = settings.cleanup_rules;
+        let rules = style_rules::cleanup_rules_for(category, settings.cleanup_rules);
         let lists = style_rules::list_style(category, tone.unwrap_or(Tone::Raw), rules.lists);
         let without = cleanup_rules::CleanupRules {
             corrections: false,

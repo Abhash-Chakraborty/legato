@@ -240,7 +240,8 @@ pub(crate) async fn process_transcription_output(
         };
         if settings.cleanup_level != CleanupLevel::None {
             let lists = style_rules::list_style(category, tone, settings.cleanup_rules.lists);
-            styled = cleanup_rules::light(&styled, &settings.cleanup_rules, lists);
+            let rules = style_rules::cleanup_rules_for(category, settings.cleanup_rules);
+            styled = cleanup_rules::light(&styled, &rules, lists);
         }
         if medium {
             match ai::medium_pass(app, &settings, &styled, marked.hits.len()).await {

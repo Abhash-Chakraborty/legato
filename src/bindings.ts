@@ -2618,7 +2618,11 @@ export type PracticeStatus = { phase: PracticePhase }
 export type CallTest = { action: CallAction; app: CallApp; snooze_minutes: number }
 export type CallsChanged = { state: CallState }
 export type CleanupLevel = "none" | "light" | "medium"
-export type CleanupRules = { repeats?: boolean; numbers?: boolean; punctuation?: boolean; corrections?: boolean; lists?: boolean }
+export type CleanupRules = { repeats?: boolean; numbers?: boolean; punctuation?: boolean; corrections?: boolean; lists?: boolean; 
+/**
+ * A long dictation is split into paragraphs where the thought changes.
+ */
+paragraphs?: boolean }
 export type Snippet = { id: number; trigger: string; text: string; 
 /**
  * Only when the trigger is the whole dictation.

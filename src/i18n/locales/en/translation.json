@@ -2109,7 +2109,8 @@
         "numbers": "numbers",
         "punctuation": "spoken punctuation",
         "corrections": "self-corrections",
-        "lists": "lists"
+        "lists": "lists",
+        "paragraphs": "paragraphs"
       },
       "fillers": {
         "title": "Remove filler words",
@@ -2139,6 +2140,10 @@
       "lists": {
         "title": "Lists",
         "help": "“first … second … third” becomes a list where the kind of app lays one out."
+      },
+      "paragraphs": {
+        "title": "Paragraphs",
+        "help": "A long dictation breaks into paragraphs where the thought changes, as at “Also” or “Let me know”; never in code."
       }
     },
     "apps": {

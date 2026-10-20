@@ -1,6 +1,7 @@
 //! Cleanup at Light: rules that tidy a dictation without rewording it.
-//! Spoken punctuation, self-corrections, numbers as digits, repeated words and
-//! lists. Filler words are removed earlier, in the transcription manager.
+//! Spoken punctuation, self-corrections, numbers as digits, repeated words,
+//! lists and paragraphs. Filler words are removed earlier, in the
+//! transcription manager.
 //! Pure functions, so every rule is tested without the app.
 
 use serde::{Deserialize, Serialize};
@@ -37,6 +38,9 @@ pub struct CleanupRules {
     pub corrections: bool,
     #[serde(default = "yes")]
     pub lists: bool,
+    /// A long dictation is split into paragraphs where the thought changes.
+    #[serde(default = "yes")]
+    pub paragraphs: bool,
 }
 
 impl Default for CleanupRules {
@@ -47,6 +51,7 @@ impl Default for CleanupRules {
             punctuation: true,
             corrections: true,
             lists: true,
+            paragraphs: true,
         }
     }
 }
@@ -175,7 +180,138 @@ pub fn light(text: &str, rules: &CleanupRules, list_style: ListStyle) -> String 
     if list_style != ListStyle::Inline {
         toks = comma_lists(toks, list_style);
     }
-    render(&toks)
+    let text = render(&toks);
+    if rules.paragraphs {
+        paragraphs(&text)
+    } else {
+        text
+    }
+}
+
+// ---- Paragraphs -------------------------------------------------------------
+
+/// Openings that start a new thought; a long dictation breaks before them.
+const NEW_THOUGHT: &[&str] = &[
+    "also",
+    "anyway",
+    "anyways",
+    "besides",
+    "separately",
+    "secondly",
+    "thirdly",
+    "finally",
+    "lastly",
+    "additionally",
+    "meanwhile",
+    "on another note",
+    "on a different note",
+    "on a separate note",
+    "one more thing",
+    "another thing",
+    "moving on",
+    "in addition",
+    "as for",
+    "regarding",
+    "by the way",
+    "other than that",
+    "apart from that",
+    "p.s",
+    "let me know",
+    "looking forward",
+    "thanks",
+    "thank you",
+];
+
+/// Shorter dictations stay one paragraph.
+const PARAGRAPH_MIN_WORDS: usize = 40;
+/// A paragraph never breaks before it has this many words.
+const PARAGRAPH_MIN_RUN: usize = 12;
+/// A paragraph this long breaks at the next sentence even without a cue.
+const PARAGRAPH_SOFT_MAX: usize = 70;
+
+/// The sentences of a paragraph, each with its closing mark.
+fn sentences(par: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let bytes = par.as_bytes();
+    for (i, c) in par.char_indices() {
+        let after = i + c.len_utf8();
+        if matches!(c, '.' | '?' | '!') && bytes.get(after).is_some_and(|b| b.is_ascii_whitespace())
+        {
+            let s = par[start..after].trim();
+            if !s.is_empty() {
+                out.push(s);
+            }
+            start = after;
+        }
+    }
+    let tail = par[start..].trim();
+    if !tail.is_empty() {
+        out.push(tail);
+    }
+    out
+}
+
+fn starts_new_thought(sentence: &str) -> bool {
+    let lower = sentence.to_lowercase();
+    let s = lower.trim_start_matches(|c: char| !c.is_alphanumeric());
+    NEW_THOUGHT.iter().any(|cue| {
+        s.starts_with(cue)
+            && !s[cue.len()..]
+                .chars()
+                .next()
+                .is_some_and(char::is_alphanumeric)
+    })
+}
+
+/// Splits long paragraphs where the thought changes ("Also, …", "Anyway, …",
+/// "Let me know …") or, failing a cue, once a paragraph runs long. Lines you
+/// broke yourself, lists and short dictations stay as they are.
+pub fn paragraphs(text: &str) -> String {
+    text.split("\n\n")
+        .map(|par| {
+            if par.contains('\n') || par.split_whitespace().count() < PARAGRAPH_MIN_WORDS {
+                return par.to_string();
+            }
+            let sents = sentences(par);
+            if sents.len() < 3 {
+                return par.to_string();
+            }
+            // Each paragraph, and whether a cue (not length) started it.
+            let mut out: Vec<(Vec<&str>, bool)> = vec![(Vec::new(), false)];
+            let mut run = 0;
+            for s in sents {
+                let cue = starts_new_thought(s);
+                let current = &out[out.len() - 1].0;
+                let long = run >= PARAGRAPH_SOFT_MAX && current.len() >= 2;
+                if !current.is_empty() && ((cue && run >= PARAGRAPH_MIN_RUN) || long) {
+                    out.push((Vec::new(), cue));
+                    run = 0;
+                }
+                if let Some(last) = out.last_mut() {
+                    last.0.push(s);
+                }
+                run += s.split_whitespace().count();
+            }
+            // A short tail left by a length break goes back where it was.
+            if out.len() > 1 {
+                let (tail, cued) = &out[out.len() - 1];
+                let words: usize = tail.iter().map(|s| s.split_whitespace().count()).sum();
+                if !cued && words < PARAGRAPH_MIN_RUN {
+                    if let Some((tail, _)) = out.pop() {
+                        if let Some(last) = out.last_mut() {
+                            last.0.extend(tail);
+                        }
+                    }
+                }
+            }
+            out.iter()
+                .map(|(p, _)| p.join(" "))
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 // ---- Spoken punctuation ---------------------------------------------------
@@ -868,6 +1004,47 @@ fn comma_lists(toks: Vec<Tok>, style: ListStyle) -> Vec<Tok> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn long_dictation_breaks_where_the_thought_changes() {
+        let text = "Hey Karol, I looked at the Datev export this morning and the VAT numbers still don't match the invoices from September. I think the rounding happens twice, once in the export and once in the import. Also, can you send me the workflow doc before Thursday so I can review it with Samir? Let me know if the call at three still works for you.";
+        let out = paragraphs(text);
+        let parts: Vec<&str> = out.split("\n\n").collect();
+        assert_eq!(parts.len(), 3, "{out}");
+        assert!(parts[1].starts_with("Also,"));
+        assert!(parts[2].starts_with("Let me know"));
+    }
+
+    #[test]
+    fn short_dictations_and_lists_stay_put() {
+        let short = "Hey are you free for lunch tomorrow? Let's do 12. Also bring the charger.";
+        assert_eq!(paragraphs(short), short);
+        let list = "Groceries:\n- oat milk\n- eggs\n- spinach also bread";
+        assert_eq!(paragraphs(list), list);
+        let one_line = "Also ".repeat(50);
+        assert_eq!(paragraphs(one_line.trim()), one_line.trim());
+    }
+
+    #[test]
+    fn a_run_on_breaks_once_it_runs_long() {
+        let sentence = "We moved the staging app from Coolify to Dokploy and kept the Netbird route for the ARM box.";
+        let text = [sentence; 8].join(" ");
+        let out = paragraphs(&text);
+        assert!(out.contains("\n\n"), "{out}");
+        for part in out.split("\n\n") {
+            assert!(part.split_whitespace().count() >= PARAGRAPH_MIN_RUN);
+        }
+    }
+
+    #[test]
+    fn paragraphs_follow_their_switch() {
+        let text = "I looked at the Datev export this morning and the VAT numbers still don't match. I think the rounding happens twice, once in the export and once in the import. Also, can you send me the workflow doc before Thursday so I can review it?";
+        let mut rules = CleanupRules::default();
+        assert!(light(text, &rules, ListStyle::Inline).contains("\n\nAlso,"));
+        rules.paragraphs = false;
+        assert!(!light(text, &rules, ListStyle::Inline).contains('\n'));
+    }
+
     use super::*;
 
     fn all(text: &str) -> String {
@@ -982,6 +1159,7 @@ mod tests {
             punctuation: false,
             corrections: false,
             lists: false,
+            paragraphs: false,
         };
         let text = "the the twenty five comma scratch that";
         assert_eq!(light(text, &off, ListStyle::Inline), text);

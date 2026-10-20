@@ -2,7 +2,7 @@
 //! Each kind of app offers three tones; the pipeline runs the chosen one after
 //! cleanup. Pure functions, tested without the app.
 
-use crate::cleanup_rules::ListStyle;
+use crate::cleanup_rules::{CleanupRules, ListStyle};
 use crate::snippet_rules::{ends_with_placeholder, is_placeholder_char};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -60,6 +60,16 @@ pub fn list_style(category: &str, tone: Tone, lists_rule: bool) -> ListStyle {
         Tone::Structured => ListStyle::Numbered,
         _ if category == "documents" && lists_rule => ListStyle::Bullets,
         _ => ListStyle::Inline,
+    }
+}
+
+/// The cleanup rules as they apply in this kind of app: code and terminals
+/// never get paragraphs, since a blank line there is a command or a commit
+/// body, not a pause for breath.
+pub fn cleanup_rules_for(category: &str, rules: CleanupRules) -> CleanupRules {
+    CleanupRules {
+        paragraphs: rules.paragraphs && category != "code",
+        ..rules
     }
 }
 
@@ -178,7 +188,12 @@ fn greeting(text: &str) -> Option<(String, &str)> {
             continue;
         }
         let starts_upper = w.chars().next().is_some_and(char::is_uppercase);
-        if !starts_upper || name_words == 2 {
+        // "Hi Karol I looked…": the pronoun starts the sentence, it's no name.
+        let pronoun = matches!(
+            w.trim_end_matches([',', '.', '!']),
+            "I" | "I'm" | "I've" | "I'll" | "I'd" | "I’m" | "I’ve" | "I’ll" | "I’d"
+        );
+        if !starts_upper || pronoun || name_words == 2 {
             break;
         }
         end += part.len();
@@ -302,6 +317,9 @@ fn excite(text: &str) -> String {
 }
 
 fn email(text: &str, tone: Tone) -> String {
+    if tone == Tone::Formal {
+        return formal_email(text);
+    }
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let (greet, body) = match greeting(&flat) {
         Some((g, rest)) => (Some(g), rest.to_string()),
@@ -311,41 +329,81 @@ fn email(text: &str, tone: Tone) -> String {
         Some((b, phrase, name)) => (b.to_string(), Some((phrase, name))),
         None => (body, None),
     };
-    match tone {
-        Tone::Formal => {
-            let mut out = String::new();
-            if let Some(g) = greet {
-                out.push_str(&capitalize_first(&g));
-                out.push_str(",\n\n");
+    let mut body = final_period(&capitalize_sentences(&body));
+    if tone == Tone::Excited {
+        body = excite(&body);
+    }
+    let mut out = match greet {
+        Some(g) => format!("{}, {}", capitalize_first(&g), lowercase_first(&body)),
+        None => body,
+    };
+    if let Some((_, name)) = closing.filter(|(_, n)| !n.is_empty()) {
+        out.push(' ');
+        out.push_str(&name);
+    }
+    out
+}
+
+/// Greeting and sign-off on their own lines; the paragraphs cleanup made
+/// (or you said) stay between them.
+fn formal_email(text: &str) -> String {
+    let mut paras: Vec<String> = text
+        .split("\n\n")
+        .map(|p| {
+            p.split('\n')
+                .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .filter(|p| !p.is_empty())
+        .collect();
+    let mut greet = None;
+    if let Some(first) = paras.first() {
+        if let Some((g, rest)) = greeting(first) {
+            let rest = rest.trim().to_string();
+            greet = Some(g);
+            if rest.is_empty() {
+                paras.remove(0);
+            } else {
+                paras[0] = rest;
             }
-            out.push_str(&final_period(&capitalize_sentences(&body)));
-            if let Some((phrase, name)) = closing {
-                out.push_str("\n\n");
-                out.push_str(&phrase);
-                out.push(',');
-                if !name.is_empty() {
-                    out.push('\n');
-                    out.push_str(&name);
-                }
-            }
-            out
-        }
-        _ => {
-            let mut body = final_period(&capitalize_sentences(&body));
-            if tone == Tone::Excited {
-                body = excite(&body);
-            }
-            let mut out = match greet {
-                Some(g) => format!("{}, {}", capitalize_first(&g), lowercase_first(&body)),
-                None => body,
-            };
-            if let Some((_, name)) = closing.filter(|(_, n)| !n.is_empty()) {
-                out.push(' ');
-                out.push_str(&name);
-            }
-            out
         }
     }
+    let mut closing = None;
+    if let Some(last) = paras.last() {
+        if let Some((body, phrase, name)) = sign_off(last) {
+            let body = body.trim().to_string();
+            closing = Some((phrase.to_string(), name));
+            if body.is_empty() {
+                paras.pop();
+            } else if let Some(last) = paras.last_mut() {
+                *last = body;
+            }
+        }
+    }
+    let mut out = String::new();
+    if let Some(g) = greet {
+        out.push_str(&capitalize_first(&g));
+        out.push_str(",\n\n");
+    }
+    out.push_str(
+        &paras
+            .iter()
+            .map(|p| final_period(&capitalize_sentences(p)))
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+    );
+    if let Some((phrase, name)) = closing {
+        out.push_str("\n\n");
+        out.push_str(&phrase);
+        out.push(',');
+        if !name.is_empty() {
+            out.push('\n');
+            out.push_str(&name);
+        }
+    }
+    out
 }
 
 /// Every paragraph a bullet, without final periods: the Notes tone.
@@ -418,6 +476,24 @@ mod tests {
             apply(KAROL, "personal", Tone::Lower),
             "hey karol can we move the datev review to thursday? i'll bring the open questions"
         );
+    }
+
+    #[test]
+    fn formal_email_keeps_paragraphs() {
+        let text = "hi Karol I looked at the Datev export and the numbers don't match.\n\nAlso, can you send the workflow doc before Thursday? Best regards Abhash";
+        assert_eq!(
+            apply(text, "email", Tone::Formal),
+            "Hi Karol,\n\nI looked at the Datev export and the numbers don't match.\n\nAlso, can you send the workflow doc before Thursday?\n\nBest regards,\nAbhash"
+        );
+        // Casual mail is still one paragraph.
+        assert!(!apply(text, "email", Tone::Casual).contains("\n\n"));
+    }
+
+    #[test]
+    fn code_never_gets_paragraphs() {
+        let rules = CleanupRules::default();
+        assert!(!cleanup_rules_for("code", rules).paragraphs);
+        assert!(cleanup_rules_for("email", rules).paragraphs);
     }
 
     #[test]

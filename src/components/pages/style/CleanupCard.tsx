@@ -25,6 +25,7 @@ const RULES: (keyof CleanupRules)[] = [
   "punctuation",
   "corrections",
   "lists",
+  "paragraphs",
 ];
 
 /** What a rule is set to; every rule starts on. */
