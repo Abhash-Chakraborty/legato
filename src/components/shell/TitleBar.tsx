@@ -2,8 +2,12 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettings } from "../../hooks/useSettings";
+import legatoIcon from "../../assets/legato-icon.svg";
 import ModelSelector from "../model-selector";
 import UpdateChecker from "../update-checker";
+
+// A brand name, so it stays out of the translation files.
+const APP_NAME = "Legato";
 
 // Caption button glyphs from Segoe Fluent Icons (Windows 11), which keeps the
 // Segoe MDL2 Assets code points that Windows 10 has.
@@ -56,9 +60,26 @@ export const TitleBar: React.FC<TitleBarProps> = ({ minimal = false }) => {
 
   return (
     <header
-      className="flex h-12 flex-none select-none items-stretch"
+      // A maximized frameless window on Windows reaches a few pixels past the
+      // top of the screen, so the bar gets that much padding to stay visible.
+      className={`flex h-12 flex-none select-none items-stretch ${maximized && !native ? "h-[55px] pt-[7px]" : ""}`}
       data-tauri-drag-region={native ? undefined : true}
     >
+      {!minimal && (
+        <div
+          className="flex items-center gap-2.5 ps-[22px] pe-3 text-[17px] font-semibold tracking-[-0.01em] text-text"
+          data-tauri-drag-region={native ? undefined : true}
+        >
+          <img
+            src={legatoIcon}
+            alt=""
+            width={22}
+            height={22}
+            className="pointer-events-none h-[22px] w-[22px] rounded-[6px]"
+          />
+          <span className="pointer-events-none">{APP_NAME}</span>
+        </div>
+      )}
       <div
         className="flex-1"
         data-tauri-drag-region={native ? undefined : true}

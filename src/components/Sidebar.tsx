@@ -13,11 +13,7 @@ import {
   Type,
   type LucideIcon,
 } from "lucide-react";
-import legatoIcon from "../assets/legato-icon.svg";
 import { useNavStore, type Page } from "../stores/navStore";
-
-// A brand name, so it stays out of the translation files.
-const APP_NAME = "Legato";
 
 interface NavItem {
   id: Page;
@@ -98,17 +94,6 @@ export const Sidebar: React.FC = () => {
       aria-label={t("sidebar.label")}
       className="flex min-h-0 flex-col gap-0.5 overflow-hidden px-3 pt-1 pb-4"
     >
-      <div className="mb-3.5 flex h-11 items-center gap-2.5 px-2 text-xl font-semibold tracking-[-0.01em] whitespace-nowrap">
-        <img
-          src={legatoIcon}
-          width={24}
-          height={24}
-          alt=""
-          draggable={false}
-          className="flex-none rounded-[7px]"
-        />
-        <span>{APP_NAME}</span>
-      </div>
       {TOP.map((item) => (
         <NavButton key={item.id} item={item} />
       ))}
