@@ -476,9 +476,14 @@ pub fn session() -> Option<SessionInfo> {
 
 /// The bar's Notes pill shows while a recording runs and its side panel
 /// is closed.
+/// The bar's Notes pill shows while notes record with the panel closed,
+/// unless the bubble is on: then the bubble shows them instead.
 pub fn refresh_pill(app: &AppHandle) {
     let recording = session().is_some_and(|s| s.phase == SessionPhase::Recording);
-    crate::overlay::set_notes_pill(app, recording && !crate::notes_panel::is_open());
+    crate::overlay::set_notes_pill(
+        app,
+        recording && !crate::notes_panel::is_open() && !crate::bubble::takes_dictation(app),
+    );
 }
 
 fn announce(app: &AppHandle) {

@@ -20,7 +20,7 @@ interface Layout {
   edge: Edge;
 }
 
-type Action = "dictate" | "notes" | "scratchpad";
+type Action = "dictate" | "notes" | "scratchpad" | "stop-notes";
 
 /** How far the pointer moves before a press becomes a drag. */
 const DRAG_PX = 5;
@@ -119,7 +119,14 @@ const Bubble: React.FC = () => {
     dictate: "",
     notes: "",
     scratchpad: "",
+    "stop-notes": "",
   });
+  // Notes' recent loudness (you or them, whichever is louder), newest
+  // last, so the meter moves along while notes record.
+  const [notesLevels, setNotesLevels] = useState<number[]>(() =>
+    Array(BARS).fill(0),
+  );
+  const [notesPaused, setNotesPaused] = useState(false);
   // A dictation: listening, or writing up what it heard. The bar leaves
   // both to the bubble while the bubble shows.
   const [phase, setPhase] = useState<"rec" | "work" | null>(null);
@@ -169,6 +176,12 @@ const Bubble: React.FC = () => {
         ),
       ),
       events.notesSessionChanged.listen((e) => setNotes(e.payload.session)),
+      events.notesTick.listen((e) => {
+        const { you, them, paused } = e.payload;
+        setNotesPaused(paused);
+        const level = paused ? 0 : Math.max(you, them ?? 0);
+        setNotesLevels((prev) => [...prev.slice(1), level]);
+      }),
       listen<boolean>("notes-panel", (e) => setPanelOpen(e.payload)),
       listen("bubble-dropped", () => {
         press.current = null;
@@ -197,6 +210,7 @@ const Bubble: React.FC = () => {
           dictate: b.transcribe?.current_binding ?? "",
           notes: b.toggle_notes?.current_binding ?? "",
           scratchpad: b.open_scratchpad?.current_binding ?? "",
+          "stop-notes": b.toggle_notes?.current_binding ?? "",
         });
       })
       .catch(() => {});
@@ -331,14 +345,28 @@ const Bubble: React.FC = () => {
       on: notesOn,
       icon: <span className={`bnotes-mark ${notesOn ? "on" : ""}`} />,
     },
-    {
-      id: "scratchpad",
-      dy: STEP,
-      label: t("bubble.scratchpad"),
-      on: false,
-      icon: <NotebookPen aria-hidden="true" />,
-    },
+    // While notes record, Stop takes the Scratchpad's place; the Notes
+    // button opens the panel, which also has Pause.
+    notesOn
+      ? {
+          id: "stop-notes",
+          dy: STEP,
+          label: t("bubble.stopNotes"),
+          on: false,
+          icon: <Square aria-hidden="true" className="bstop" />,
+        }
+      : {
+          id: "scratchpad",
+          dy: STEP,
+          label: t("bubble.scratchpad"),
+          on: false,
+          icon: <NotebookPen aria-hidden="true" />,
+        },
   ];
+  // At rest: a dictation's meter, else notes recording behind everything
+  // (the bar's Notes pill lives here while the bubble is on), else the dot.
+  const rest: "rec" | "work" | "notes" | null =
+    phase ?? (notesOn && !panelOpen ? "notes" : null);
 
   return (
     <div
@@ -400,15 +428,26 @@ const Bubble: React.FC = () => {
       ) : (
         <button
           type="button"
-          className={`bdot ${phase ? `${phase} ${upright ? "tall" : "wide"}` : ""} ${notesOn && !panelOpen ? "notes" : ""}`}
+          className={`bdot ${rest ? `${rest} ${upright ? "tall" : "wide"}` : ""} ${rest === "notes" && notesPaused ? "paused" : ""}`}
           style={{ left: layout.dot_x, top: layout.dot_y }}
-          aria-label={t("bubble.label")}
+          aria-label={
+            rest === "notes"
+              ? t("bubble.showNotes", { time: clock(elapsed) })
+              : t("bubble.label")
+          }
           onPointerDown={(e) => onPointerDown(e, null)}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         >
-          {phase ? <Meter levels={levels} upright={upright} /> : <Wave />}
+          {rest ? (
+            <Meter
+              levels={rest === "notes" ? notesLevels : levels}
+              upright={upright}
+            />
+          ) : (
+            <Wave />
+          )}
         </button>
       )}
     </div>

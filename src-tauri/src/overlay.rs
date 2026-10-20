@@ -275,10 +275,11 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
 /// of the bar while it's on screen.
 const BUBBLE_STATES: [&str; 4] = ["recording", "streaming", "transcribing", "processing"];
 
-/// Shows a dictation's state: on the bubble while it's on screen, so there
+/// Shows a dictation's state: on the bubble while it's turned on, so there
 /// aren't two of them, else on the bar.
 fn show_dictation_state(app_handle: &AppHandle, state: &str) {
-    if crate::bubble::wants_levels() && BUBBLE_STATES.contains(&state) {
+    if BUBBLE_STATES.contains(&state) && crate::bubble::takes_dictation(app_handle) {
+        crate::bubble::set_dictating(app_handle, true);
         let _ = app_handle.emit_to(crate::bubble::WINDOW, "show-overlay", state);
         return;
     }
@@ -548,6 +549,7 @@ fn exclude_from_capture(overlay_window: &tauri::webview::WebviewWindow, exclude:
 /// card is up it comes back, and during a Notes recording the bar goes back
 /// to its pill.
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
+    crate::bubble::set_dictating(app_handle, false);
     if let Some(card) = call_card() {
         show_bar(app_handle, "call", "bar-call", &card, None);
         return;

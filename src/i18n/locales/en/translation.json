@@ -1271,6 +1271,7 @@
     "notesFor": "Take notes for {{title}}",
     "notesSoon": "Take notes · {{title}} in {{minutes}} min",
     "scratchpad": "Scratchpad",
+    "stopNotes": "Stop notes",
     "menu": {
       "snooze": "Hide for an hour",
       "off": "Turn off the bubble",

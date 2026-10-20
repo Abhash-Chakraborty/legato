@@ -46,6 +46,11 @@ pub async fn bubble_action(app: AppHandle, action: String) -> Result<(), String>
                 crate::notes_panel::show(&app);
             }
         }
+        "stop-notes" => {
+            if crate::notes::is_recording() {
+                crate::notes::stop(&app).map_err(|e| e.to_string())?;
+            }
+        }
         "scratchpad" => crate::scratchpad::toggle_from_bubble(&app),
         "open" => crate::show_main_window(&app),
         "snooze" => bubble::snooze(&app),

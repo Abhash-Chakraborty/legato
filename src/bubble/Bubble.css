@@ -119,10 +119,20 @@
   }
 }
 
-/* Notes recording behind everything: a slow green glow. */
+/* Notes recording behind everything: the meter, with a slow green glow
+   in place of the teal ring; paused, the glow stops and the bars rest. */
 .bdot.notes {
   opacity: 1;
+  border-radius: 14px;
+  transition:
+    width 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease-out;
   animation: bglow 2.4s ease-in-out infinite;
+}
+.bdot.notes.paused {
+  animation: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 45%, transparent);
 }
 @keyframes bdot-in {
   from {

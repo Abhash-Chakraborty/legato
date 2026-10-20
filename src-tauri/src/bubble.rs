@@ -35,6 +35,9 @@ static COVERED: AtomicBool = AtomicBool::new(false);
 static SNOOZED_UNTIL: AtomicU64 = AtomicU64::new(0);
 /// The window is on screen, so it wants the microphone's levels.
 static VISIBLE: AtomicBool = AtomicBool::new(false);
+/// A dictation is running; the bubble shows it even over a fullscreen
+/// window, since the bar leaves it to the bubble.
+static DICTATING: AtomicBool = AtomicBool::new(false);
 
 /// Whether the bubble shows, and so wants `mic-level` while you talk.
 pub fn wants_levels() -> bool {
@@ -160,9 +163,23 @@ fn apply(app: &AppHandle) {
 }
 
 fn should_show(app: &AppHandle) -> bool {
-    get_settings(app).bubble_enabled
-        && !COVERED.load(Ordering::SeqCst)
-        && now_s() >= SNOOZED_UNTIL.load(Ordering::SeqCst)
+    takes_dictation(app) && (!COVERED.load(Ordering::SeqCst) || DICTATING.load(Ordering::SeqCst))
+}
+
+/// Whether the bubble is on (and not hidden for an hour), so a dictation
+/// shows on it rather than on the bar.
+pub fn takes_dictation(app: &AppHandle) -> bool {
+    get_settings(app).bubble_enabled && now_s() >= SNOOZED_UNTIL.load(Ordering::SeqCst)
+}
+
+/// A dictation started or ended: over a fullscreen window the bubble comes
+/// out for it and steps aside again after.
+pub fn set_dictating(app: &AppHandle, on: bool) {
+    if DICTATING.swap(on, Ordering::SeqCst) == on || !COVERED.load(Ordering::SeqCst) {
+        return;
+    }
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || refresh_visibility(&handle));
 }
 
 /// Shows or hides the window to match the setting, the snooze and what's
@@ -249,6 +266,7 @@ pub fn init(app: &AppHandle) {
         if was != covered || (snooze != 0 && now_s() >= snooze) {
             if snooze != 0 && now_s() >= snooze {
                 SNOOZED_UNTIL.store(0, Ordering::SeqCst);
+                crate::notes::refresh_pill(&app);
             }
             let app2 = app.clone();
             let _ = app.run_on_main_thread(move || refresh_visibility(&app2));
@@ -264,7 +282,8 @@ fn foreground_fills_screen() -> bool {
         GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetClassNameW, GetForegroundWindow, GetWindowRect,
+        GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsZoomed, GWL_STYLE,
+        WS_CAPTION,
     };
     // SAFETY: plain queries on the foreground window handle, which may be
     // null; every call tolerates that and reports failure.
@@ -280,6 +299,12 @@ fn foreground_fills_screen() -> bool {
             class.as_str(),
             "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd"
         ) {
+            return false;
+        }
+        // A maximized window with a title bar fills the screen too when the
+        // taskbar hides itself, but it isn't a video or a game.
+        let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+        if IsZoomed(hwnd).as_bool() || style & WS_CAPTION.0 == WS_CAPTION.0 {
             return false;
         }
         let mut rect = RECT::default();
@@ -311,6 +336,8 @@ pub fn set_enabled(app: &AppHandle, enabled: bool) {
         SNOOZED_UNTIL.store(0, Ordering::SeqCst);
     }
     refresh_visibility(app);
+    // Notes in progress move between the bubble and the bar's pill.
+    crate::notes::refresh_pill(app);
 }
 
 /// Opens or closes the bubble's buttons as the pointer comes and goes.
@@ -502,6 +529,7 @@ fn drop_here(app: &AppHandle) {
 pub fn snooze(app: &AppHandle) {
     SNOOZED_UNTIL.store(now_s() + 3600, Ordering::SeqCst);
     refresh_visibility(app);
+    crate::notes::refresh_pill(app);
     debug!("Bubble hidden for an hour");
 }
 
