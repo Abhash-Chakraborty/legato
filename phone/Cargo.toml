@@ -7,4 +7,5 @@ members = ["core", "android", "bindgen"]
 [profile.release]
 opt-level = 3
 lto = "thin"
-strip = true
+# No strip here: uniffi-bindgen reads its metadata from the symbols of the
+# built library; cargo-ndk strips the copy that goes into the APK.
