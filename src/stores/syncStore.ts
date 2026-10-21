@@ -25,10 +25,11 @@ export const useSyncStore = create<SyncStore>()((set) => ({
 
 let listening = false;
 
-/** Loads the sync state once and keeps it current. */
+/** Loads the sync state and keeps it current. It loads again on every
+ *  showing: words, snippets and notes change without a sync event, and
+ *  their counts on Devices went stale. */
 export const watchSync = () => {
-  const { state, load } = useSyncStore.getState();
-  if (!state) load();
+  useSyncStore.getState().load();
   if (listening) return;
   listening = true;
   events.syncChanged
