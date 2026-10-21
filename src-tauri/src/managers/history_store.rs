@@ -391,6 +391,9 @@ pub static MIGRATIONS: &[M] = &[
             used_at INTEGER NOT NULL
          );",
     ),
+    // Insights: each app's executable, for its icon, kept with the totals
+    // because the history rows it came from are trimmed or deleted.
+    M::up("ALTER TABLE daily_app_stats ADD COLUMN app_path TEXT;"),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.
@@ -653,15 +656,25 @@ fn add_to_stats(conn: &Connection, entry: &HistoryEntry, sign: i64) -> Result<()
     if let Some(app) = entry.app_name.as_deref().filter(|a| !a.is_empty()) {
         conn.execute(
             &format!(
-                "INSERT INTO daily_app_stats (day, app, category, dictations, words, speech_ms)
-                 VALUES ({DAY_OF}, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO daily_app_stats
+                    (day, app, category, dictations, words, speech_ms, app_path)
+                 VALUES ({DAY_OF}, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(day, app) DO UPDATE SET
                     category = excluded.category,
                     dictations = dictations + excluded.dictations,
                     words = words + excluded.words,
-                    speech_ms = speech_ms + excluded.speech_ms"
+                    speech_ms = speech_ms + excluded.speech_ms,
+                    app_path = COALESCE(excluded.app_path, app_path)"
             ),
-            params![entry.timestamp, app, entry.category, sign, words, speech],
+            params![
+                entry.timestamp,
+                app,
+                entry.category,
+                sign,
+                words,
+                speech,
+                entry.app_path.as_deref().filter(|p| !p.is_empty())
+            ],
         )?;
     }
     if let Some(model) = entry.model_id.as_deref().filter(|m| !m.is_empty()) {
@@ -1502,9 +1515,13 @@ pub fn insights(conn: &Connection, range: InsightsRange) -> Result<Insights> {
     let apps = conn
         .prepare(&format!(
             "SELECT a.app,
-                    (SELECT h.app_path FROM transcription_history h
-                     WHERE h.app_name = a.app AND h.app_path IS NOT NULL
-                     ORDER BY h.id DESC LIMIT 1),
+                    COALESCE(
+                        (SELECT p.app_path FROM daily_app_stats p
+                         WHERE p.app = a.app AND p.app_path IS NOT NULL
+                         ORDER BY p.day DESC LIMIT 1),
+                        (SELECT h.app_path FROM transcription_history h
+                         WHERE h.app_name = a.app AND h.app_path IS NOT NULL
+                         ORDER BY h.id DESC LIMIT 1)),
                     (SELECT c.category FROM daily_app_stats c
                      WHERE c.app = a.app AND c.category IS NOT NULL
                      ORDER BY c.day DESC LIMIT 1),
@@ -1907,6 +1924,16 @@ mod tests {
         assert_eq!(count(&conn, "beta"), 0);
         // Deleting keeps the day's totals.
         assert_eq!(summary(&conn).unwrap().today.dictations, 1);
+    }
+
+    #[test]
+    fn insights_keep_an_apps_icon_after_its_dictations_go() {
+        let mut conn = db();
+        insert(&mut conn, &entry("ship it today", Some("Slack"))).unwrap();
+        conn.execute("DELETE FROM transcription_history", [])
+            .unwrap();
+        let got = insights(&conn, InsightsRange::Week).unwrap();
+        assert_eq!(got.apps[0].path.as_deref(), Some("C:\\Slack\\slack.exe"));
     }
 
     #[test]
