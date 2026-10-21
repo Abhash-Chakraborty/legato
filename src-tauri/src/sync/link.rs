@@ -96,8 +96,14 @@ pub trait Host: Send + Sync + 'static {
     /// `peer` unpaired us.
     fn forgotten(&self, _peer: &str) {}
     /// The PC's side: how to transcribe `peer`'s recording, if this device
-    /// can; the session runs it and sends the answer.
-    fn transcribe(&self, _peer: &str, _samples: Vec<f32>) -> Option<TranscribeJob> {
+    /// can, for an app of the kind `app`; the session runs it and sends the
+    /// answer.
+    fn transcribe(
+        &self,
+        _peer: &str,
+        _samples: Vec<f32>,
+        _app: Option<String>,
+    ) -> Option<TranscribeJob> {
         None
     }
     /// The phone's side: the answer to a `transcribe` it sent.
@@ -502,10 +508,10 @@ where
                             host.forgotten(peer);
                             return Ok(());
                         }
-                        Message::Transcribe { id, pcm } => {
+                        Message::Transcribe { id, pcm, app } => {
                             let job = protocol::pcm_decode(&pcm)
                                 .ok()
-                                .and_then(|samples| host.transcribe(peer, samples));
+                                .and_then(|samples| host.transcribe(peer, samples, app));
                             match job {
                                 Some(job) => {
                                     let (sessions, peer) = (sessions.clone(), peer.to_string());

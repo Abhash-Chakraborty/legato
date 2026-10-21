@@ -137,6 +137,10 @@ pub enum Message {
     Transcribe {
         id: String,
         pcm: String,
+        /// The kind of app the text is for ("personal", "email"…), so the PC
+        /// styles it as it would there; "other" when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app: Option<String>,
     },
     /// The PC's answer to `transcribe`: the text, or why there is none.
     Transcript {

@@ -71,6 +71,9 @@ class BubbleAccessibilityService : AccessibilityService() {
         }
     }
 
+    /** The app of the focused field, for Style's kind of app. */
+    fun focusedApp(): String? = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.packageName?.toString()
+
     /**
      * Puts `text` at the cursor of the focused field (replacing a selection),
      * with a space before it when the text before the cursor needs one.

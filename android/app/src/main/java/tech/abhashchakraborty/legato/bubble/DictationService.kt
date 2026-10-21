@@ -124,10 +124,11 @@ class DictationService : Service() {
         Dictation.set(Dictation.State.Transcribing)
         val legato = applicationContext.legato
         val mine = session
+        val app = BubbleAccessibilityService.instance?.focusedApp() ?: ""
         pending++
         scope.launch {
             val text = runCatching {
-                withContext(Dispatchers.Default) { legato.transcribe(samples) }
+                withContext(Dispatchers.Default) { legato.transcribe(samples, app) }
             }.getOrElse { e ->
                 val why = e.message ?: "Transcription failed"
                 legato.onLine(why)

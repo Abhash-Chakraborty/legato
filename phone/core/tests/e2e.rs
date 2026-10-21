@@ -55,14 +55,23 @@ impl Events for Recorder {
                 .push("online over Bluetooth".into());
         }
     }
-    fn transcribe(&self, _device_id: &str, samples: Vec<f32>) -> Option<link::TranscribeJob> {
+    fn transcribe(
+        &self,
+        _device_id: &str,
+        samples: Vec<f32>,
+        app: Option<String>,
+    ) -> Option<link::TranscribeJob> {
         self.0
              .0
             .lock()
             .unwrap()
             .push(format!("transcribe {}", samples.len()));
         Some(Box::new(move || {
-            Ok(format!("heard {} samples", samples.len()))
+            Ok(format!(
+                "heard {} samples for {}",
+                samples.len(),
+                app.as_deref().unwrap_or("other")
+            ))
         }))
     }
     fn pairing_failed(&self, reason: Refusal, closed: bool) {
@@ -530,13 +539,18 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
     let text = {
         let (pixel, sessions) = (pixel.clone(), phone_sessions.clone());
         tokio::task::spawn_blocking(move || {
-            pixel.transcribe_on_pc(&sessions, &vec![0.1; 16_000], Duration::from_secs(5))
+            pixel.transcribe_on_pc(
+                &sessions,
+                &vec![0.1; 16_000],
+                Duration::from_secs(5),
+                Some("email"),
+            )
         })
         .await
         .unwrap()
         .unwrap()
     };
-    assert_eq!(text, "heard 16000 samples");
+    assert_eq!(text, "heard 16000 samples for email");
 
     // Starting to listen asks the PC to load its model, with an empty recording.
     assert!(pixel.warm_pc(&phone_sessions));

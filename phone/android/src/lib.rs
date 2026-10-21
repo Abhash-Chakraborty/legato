@@ -343,11 +343,23 @@ impl Core {
     }
 
     /// Turns 16 kHz mono samples into text with the PC's speech model, over
-    /// the sync link. Blocks until the PC answers.
-    pub fn transcribe_on_pc(&self, samples: Vec<f32>) -> Result<String, CoreError> {
+    /// the sync link, styled for the app `package` (empty when none). Blocks
+    /// until the PC answers.
+    pub fn transcribe_on_pc(
+        &self,
+        samples: Vec<f32>,
+        package: String,
+    ) -> Result<String, CoreError> {
+        let app = (!package.is_empty()).then(|| legato_phone::finish::category_of(&package));
         Ok(self
             .phone
-            .transcribe_on_pc(&self.sessions, &samples, Duration::from_secs(120))?)
+            .transcribe_on_pc(&self.sessions, &samples, Duration::from_secs(120), app)?)
+    }
+
+    /// Text from this device's model, finished as the PC finishes a dictation
+    /// for the app `package`: the Dictionary, snippets, cleanup and Style.
+    pub fn finish_dictation(&self, raw: String, package: String) -> Result<String, CoreError> {
+        Ok(self.phone.finish_dictation(&raw, &package)?)
     }
 
     /// Asks the PC to load its speech model now, as the user starts talking.

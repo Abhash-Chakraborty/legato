@@ -201,19 +201,27 @@ class Legato(private val context: Context) : CoreListener {
     /**
      * Your words as text: by the PC's model while connected to a PC that
      * offers it (bigger and quicker than the one on this device), else by
-     * this device's own. Blocks; call it off the main thread.
+     * this device's own. With `app`, the package typed into, this device's
+     * text gets the Dictionary, snippets, cleanup and Style for that kind of
+     * app, as the PC's does. Blocks; call it off the main thread.
      */
-    fun transcribe(samples: FloatArray): String {
+    fun transcribe(samples: FloatArray, app: String? = null): String {
         if (!readyToTranscribe() && pcMayTranscribe()) error("Couldn't reach ${state.value.pcName ?: "your PC"} to write this up")
         if (pcWillTranscribe()) {
             try {
-                return core.transcribeOnPc(samples.toList())
+                return core.transcribeOnPc(samples.toList(), app ?: "")
             } catch (e: Exception) {
                 if (model.value !is ModelStatus.Loaded) throw e
                 onLine("The PC couldn't transcribe (${e.message}); used this device's model")
             }
         }
-        return core.transcribe(samples.toList())
+        val heard = core.transcribe(samples.toList())
+        // The PC's text comes finished; this device's is finished here, for the app.
+        if (app == null || heard.isBlank()) return heard
+        return runCatching { core.finishDictation(heard, app) }.getOrElse { e ->
+            onLine("Couldn't apply the Dictionary and Style: ${e.message}")
+            heard
+        }
     }
 
     fun modelFile(): File = File(File(context.filesDir, "models").apply { mkdirs() }, MODEL_FILE)

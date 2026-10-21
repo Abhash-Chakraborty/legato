@@ -49,8 +49,14 @@ pub trait Events: Send + Sync {
     fn forgotten(&self, _device_id: &str) {}
     /// A pairing attempt failed or the code ran out of tries.
     fn pairing_failed(&self, _reason: Refusal, _closed: bool) {}
-    /// How to transcribe a phone's recording with this PC's model.
-    fn transcribe(&self, _device_id: &str, _samples: Vec<f32>) -> Option<TranscribeJob> {
+    /// How to transcribe a phone's recording with this PC's model, for an
+    /// app of the kind `app`.
+    fn transcribe(
+        &self,
+        _device_id: &str,
+        _samples: Vec<f32>,
+        _app: Option<String>,
+    ) -> Option<TranscribeJob> {
         None
     }
 }
@@ -253,10 +259,15 @@ impl Host for Hub {
         self.events.online(peer, via);
     }
 
-    fn transcribe(&self, peer: &str, samples: Vec<f32>) -> Option<TranscribeJob> {
+    fn transcribe(
+        &self,
+        peer: &str,
+        samples: Vec<f32>,
+        app: Option<String>,
+    ) -> Option<TranscribeJob> {
         // Only for a paired phone.
         self.peer(peer).ok().flatten()?;
-        self.events.transcribe(peer, samples)
+        self.events.transcribe(peer, samples, app)
     }
 
     fn forgotten(&self, peer: &str) {

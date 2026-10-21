@@ -166,7 +166,7 @@ Settings › Devices pairs Legato for Android by QR code and syncs over Wi-Fi (o
 
 The phone side lives in `phone/`, a Cargo workspace outside the app's build:
 
-- `phone/core` - `legato-phone`, the library both the Android app and the stand-in share, built from the same `src-tauri/src/sync` files; its `stand-in-phone` binary is a Linux/Windows CLI that plays the phone
+- `phone/core` - `legato-phone`, the library both the Android app and the stand-in share, built from the same `src-tauri/src/sync` files, plus the Dictionary and snippet stores and the text rules (`audio_toolkit/text.rs`, `cleanup_rules`, `snippet_rules`, `style_rules`, `learn_rules`) so text from the phone's own model is finished as the PC finishes a dictation; its `stand-in-phone` binary is a Linux/Windows CLI that plays the phone
 - `phone/android` - `legato-android`, the UniFFI bindings the Android app calls (Kotlin bindings are generated in CI)
 - `android/` - the Android app (Kotlin, Jetpack Compose); it builds in GitHub Actions (`android.yml`), since Google ships the Android build tools for x86-64 only
   - It follows the phone mockup, not stock Material: Legato's tokens in `ui/Theme.kt` (no dynamic colour), Figtree in `res/font` (OFL, licence in `android/third_party`), shared rows, menus and status colours in `ui/Parts.kt`

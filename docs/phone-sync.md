@@ -166,12 +166,14 @@ A `welcome` with `"transcribe": true` means the PC will turn the phone's recordi
 with its own speech model, which is bigger and quicker than the phone's. The phone sends:
 
 ```json
-{ "type": "transcribe", "id": "…", "pcm": "<base64>" }
+{ "type": "transcribe", "id": "…", "pcm": "<base64>", "app": "personal" }
 ```
 
-`pcm` is the recording as 16 kHz mono, 16-bit little-endian samples, in base64. The PC runs it
-through its model and the same Dictionary, snippets, cleanup and Style as a dictation on the
-PC, and answers with the same `id`:
+`pcm` is the recording as 16 kHz mono, 16-bit little-endian samples, in base64. `app` is the
+kind of app the text is for, as Style names it (`personal`, `work`, `email`, `documents`, `ai`,
+`code`, `other`); the phone sorts the app in front by its package, and leaves `app` out when it
+doesn't know. The PC runs the recording through its model and the same Dictionary, snippets,
+cleanup and Style as a dictation on the PC in that kind of app, and answers with the same `id`:
 
 ```json
 {"type":"transcript","id":"…","text":"See you at noon."}

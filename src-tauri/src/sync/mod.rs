@@ -887,12 +887,17 @@ impl hub::Events for AppEvents {
         crate::tray::update_tray_menu(&self.0);
     }
 
-    fn transcribe(&self, device_id: &str, samples: Vec<f32>) -> Option<link::TranscribeJob> {
-        let app = self.0.clone();
+    fn transcribe(
+        &self,
+        device_id: &str,
+        samples: Vec<f32>,
+        app: Option<String>,
+    ) -> Option<link::TranscribeJob> {
+        let handle = self.0.clone();
         let device = device_id.to_string();
         Some(Box::new(move || {
             use crate::managers::transcription::TranscriptionManager;
-            let tm = app
+            let tm = handle
                 .try_state::<Arc<TranscriptionManager>>()
                 .map(|s| s.inner().clone())
                 .ok_or("Legato on the PC isn't ready yet")?;
@@ -909,13 +914,14 @@ impl hub::Events for AppEvents {
                 return Ok(String::new());
             }
             // The same Dictionary, snippets, cleanup and Style as a
-            // dictation on the PC, as for an app of no particular kind.
+            // dictation on the PC, in the kind of app the phone typed into.
+            let target = phone_app(app.as_deref());
             let processed =
                 tauri::async_runtime::block_on(crate::actions::process_transcription_output(
-                    &app,
+                    &handle,
                     &heard.text,
                     crate::actions::DictationMode::Plain,
-                    None,
+                    target.as_ref(),
                 ));
             log::info!(
                 "Transcribed {seconds:.1} s from {device} in {:.1} s",
@@ -937,6 +943,20 @@ impl hub::Events for AppEvents {
         }
         let _ = SyncChanged.emit(&self.0);
     }
+}
+
+/// The app a phone typed into, as the pipeline styles for it: only its kind
+/// is known. None for no kind or one this version doesn't know ("other").
+fn phone_app(kind: Option<&str>) -> Option<crate::context::AppInfo> {
+    let category = serde_json::from_value(json!(kind?)).ok()?;
+    Some(crate::context::AppInfo {
+        exe_path: String::new(),
+        exe: String::new(),
+        name: "Phone".into(),
+        title: String::new(),
+        site: None,
+        category,
+    })
 }
 
 /// Transforms and Style, which live in the settings.

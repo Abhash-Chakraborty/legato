@@ -3,8 +3,20 @@
 //! modules, so pairing, syncing and the shared clipboard can be tried
 //! against a real Legato over Wi-Fi or Netbird.
 
+pub mod audio_toolkit;
+pub mod finish;
 pub mod managers;
 pub mod sync;
+
+// The app's pure text rules, compiled here as they are in the app.
+#[path = "../../../src-tauri/src/cleanup_rules.rs"]
+pub mod cleanup_rules;
+#[path = "../../../src-tauri/src/learn_rules.rs"]
+pub mod learn_rules;
+#[path = "../../../src-tauri/src/snippet_rules.rs"]
+pub mod snippet_rules;
+#[path = "../../../src-tauri/src/style_rules.rs"]
+pub mod style_rules;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -155,13 +167,15 @@ impl Phone {
         self.is_online() && self.pc_transcribes.load(Ordering::Relaxed)
     }
 
-    /// Sends a recording (16 kHz mono) to the PC and waits for its text.
+    /// Sends a recording (16 kHz mono) to the PC and waits for its text,
+    /// styled for `app`, a kind of app as Style names it ("personal", "email").
     /// Blocks; Err when not connected, on the PC's error, or after `wait`.
     pub fn transcribe_on_pc(
         &self,
         sessions: &Sessions,
         samples: &[f32],
         wait: Duration,
+        app: Option<&str>,
     ) -> Result<String> {
         let pc = self.paired_pc().context("not paired with a PC")?;
         let id = sync::identity::uuid();
@@ -170,6 +184,7 @@ impl Phone {
         let message = sync::protocol::Message::Transcribe {
             id: id.clone(),
             pcm: sync::protocol::pcm_encode(samples),
+            app: app.map(str::to_string),
         };
         let sent = sessions.send(&pc.device_id, link::Command::Send(message));
         let result = if sent {
@@ -192,8 +207,16 @@ impl Phone {
         let message = sync::protocol::Message::Transcribe {
             id: sync::identity::uuid(),
             pcm: String::new(),
+            app: None,
         };
         sessions.send(&pc.device_id, link::Command::Send(message))
+    }
+
+    /// Text from the phone's own model, finished as the PC finishes a
+    /// dictation for the app `package` (Dictionary, snippets, cleanup, Style).
+    pub fn finish_dictation(&self, raw: &str, package: &str) -> Result<String> {
+        let category = finish::category_of(package);
+        finish::finish(&self.conn()?, raw, category, chrono::Local::now())
     }
 
     /// How the phone is connected: "lan", "netbird" or "bluetooth".
