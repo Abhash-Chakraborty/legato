@@ -285,9 +285,23 @@ static BUBBLE_STATE_GENERATION: AtomicU64 = AtomicU64::new(0);
 /// comes up to name the step; quick ones never show the bar.
 const WORK_ON_BAR_AFTER_MS: u64 = 1200;
 
+/// When the bubble's dictation stopped and the work began, in Unix ms; 0
+/// while none is working. The bar, shown later, counts its seconds from
+/// here: it never sees the bubble's recording state, so its own start time
+/// would carry over from the dictation before.
+static BUBBLE_WORK_SINCE: AtomicU64 = AtomicU64::new(0);
+
+fn unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
 fn show_dictation_state(app_handle: &AppHandle, state: &str) {
     if state == "recording" || state == "streaming" {
         set_stage(app_handle, None);
+        BUBBLE_WORK_SINCE.store(0, Ordering::SeqCst);
     }
     if BUBBLE_STATES.contains(&state) && crate::bubble::takes_dictation(app_handle) {
         BUBBLE_DICTATION.store(true, Ordering::SeqCst);
@@ -297,6 +311,12 @@ fn show_dictation_state(app_handle: &AppHandle, state: &str) {
         // The bubble is too small to say what it's doing; a step that takes
         // a while is named on the bar, with Cancel.
         if state == "transcribing" || state == "processing" {
+            let _ = BUBBLE_WORK_SINCE.compare_exchange(
+                0,
+                unix_ms(),
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            );
             let handle = app_handle.clone();
             let state = state.to_string();
             std::thread::spawn(move || {
@@ -304,6 +324,8 @@ fn show_dictation_state(app_handle: &AppHandle, state: &str) {
                 if BUBBLE_DICTATION.load(Ordering::SeqCst)
                     && BUBBLE_STATE_GENERATION.load(Ordering::SeqCst) == generation
                 {
+                    let since = BUBBLE_WORK_SINCE.load(Ordering::SeqCst);
+                    let _ = handle.emit_to("recording_overlay", "overlay-work-since", since);
                     show_overlay_state(&handle, &state);
                 }
             });
@@ -406,6 +428,7 @@ static BUBBLE_DICTATION: AtomicBool = AtomicBool::new(false);
 /// rest and the bar hides.
 pub fn end_dictation(app_handle: &AppHandle) {
     set_stage(app_handle, None);
+    BUBBLE_WORK_SINCE.store(0, Ordering::SeqCst);
     if BUBBLE_DICTATION.swap(false, Ordering::SeqCst) {
         BUBBLE_STATE_GENERATION.fetch_add(1, Ordering::SeqCst);
         let _ = app_handle.emit_to(crate::bubble::WINDOW, "bubble-dictation", None::<&str>);

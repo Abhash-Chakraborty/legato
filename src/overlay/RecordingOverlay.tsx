@@ -414,9 +414,18 @@ const RecordingOverlay: React.FC = () => {
           ),
       );
 
+      // The bubble's dictations never show the bar their recording state,
+      // so the bar's count starts from when the backend says the work began.
+      const unlistenWorkSince = await listen<number>(
+        "overlay-work-since",
+        (event) => setWorkSince(event.payload),
+      );
+
       const unlistenHide = await listen("hide-overlay", () => {
         setIsVisible(false);
         setCaptureReady(false);
+        setStage(null);
+        setWorkSince(0);
       });
 
       const unlistenReady = await listen("recording-ready", () => {
@@ -486,6 +495,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenCall();
         unlistenLabel();
         unlistenStage();
+        unlistenWorkSince();
         unlistenHide();
         unlistenReady();
         unlistenLevel();
