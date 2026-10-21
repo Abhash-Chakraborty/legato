@@ -2,7 +2,7 @@
 
 Legato is a dictation app for Windows, and its speech recognition runs locally on your computer. Hold a shortcut, speak, and the text appears where you're typing.
 
-Status: in development. This is my personal fork.
+Status: in development. Legato is a public fork of Handy with my changes.
 
 To build it on Windows, see [BUILD.md](BUILD.md).
 
