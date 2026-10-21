@@ -209,50 +209,70 @@ pub fn set_dictating(app: &AppHandle, on: bool) {
     if DICTATING.swap(on, Ordering::SeqCst) == on || !COVERED.load(Ordering::SeqCst) {
         return;
     }
+    refresh(app);
+}
+
+/// Runs `refresh_visibility` on the main thread, where the window's Win32
+/// calls belong.
+fn refresh(app: &AppHandle) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || refresh_visibility(&handle));
 }
 
 /// Shows or hides the window to match the setting, the snooze and what's
-/// on screen, without taking focus.
+/// on screen, without taking focus. Main thread only.
 fn refresh_visibility(app: &AppHandle) {
     let Some(window) = app.get_webview_window(WINDOW) else {
         return;
     };
-    if should_show(app) {
-        if !window.is_visible().unwrap_or(false) {
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    let show = should_show(app);
+    if show != is_shown(hwnd) {
+        if show {
             apply(app);
-            show_topmost(&window);
-            VISIBLE.store(true, Ordering::Relaxed);
+        } else {
+            EXPANDED.store(false, Ordering::SeqCst);
         }
-    } else if window.is_visible().unwrap_or(false) {
-        EXPANDED.store(false, Ordering::SeqCst);
-        VISIBLE.store(false, Ordering::Relaxed);
-        let _ = window.hide();
+        set_shown(hwnd, show);
     }
+    // Read back from the window rather than assumed, so the meter's levels
+    // follow what's really on screen.
+    VISIBLE.store(is_shown(hwnd), Ordering::Relaxed);
 }
 
-fn show_topmost(window: &tauri::WebviewWindow) {
+fn is_shown(hwnd: windows::Win32::Foundation::HWND) -> bool {
+    // SAFETY: a query on our own window.
+    unsafe { windows::Win32::UI::WindowsAndMessaging::IsWindowVisible(hwnd).as_bool() }
+}
+
+/// Shows the window topmost without activating it, or hides it. Both go
+/// straight to Win32: Tauri's `hide()` skips windows it believes hidden,
+/// and a window shown this way never told it otherwise, so the bubble used
+/// to stay up over fullscreen windows while `VISIBLE` said it had gone,
+/// and its meter got no levels again until Legato restarted.
+fn set_shown(hwnd: windows::Win32::Foundation::HWND, show: bool) {
     use windows::Win32::UI::WindowsAndMessaging::{
-        SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+        SetWindowPos, ShowWindow, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SWP_SHOWWINDOW, SW_HIDE,
     };
-    let w = window.clone();
-    let _ = window.run_on_main_thread(move || {
-        if let Ok(hwnd) = w.hwnd() {
-            // SAFETY: the window is ours and alive; no size, move or focus.
-            unsafe {
-                let _ = SetWindowPos(
-                    hwnd,
-                    Some(HWND_TOPMOST),
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
-                );
-            }
+    // SAFETY: the window is ours and alive; no size, move or focus.
+    unsafe {
+        if show {
+            let _ = SetWindowPos(
+                hwnd,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
+        } else {
+            let _ = ShowWindow(hwnd, SW_HIDE);
         }
-    });
+    }
 }
 
 /// Creates the bubble's window at startup and starts watching for windows
@@ -294,13 +314,18 @@ pub fn init(app: &AppHandle) {
         let covered = foreground_fills_screen();
         let was = COVERED.swap(covered, Ordering::SeqCst);
         let snooze = SNOOZED_UNTIL.load(Ordering::SeqCst);
+        if was != covered {
+            debug!(
+                "A window {} the screen",
+                if covered { "fills" } else { "no longer fills" }
+            );
+        }
         if was != covered || (snooze != 0 && now_s() >= snooze) {
             if snooze != 0 && now_s() >= snooze {
                 SNOOZED_UNTIL.store(0, Ordering::SeqCst);
                 crate::notes::refresh_pill(&app);
             }
-            let app2 = app.clone();
-            let _ = app.run_on_main_thread(move || refresh_visibility(&app2));
+            refresh(&app);
         }
     });
 }
@@ -366,7 +391,7 @@ pub fn set_enabled(app: &AppHandle, enabled: bool) {
     if enabled {
         SNOOZED_UNTIL.store(0, Ordering::SeqCst);
     }
-    refresh_visibility(app);
+    refresh(app);
     // Notes in progress move between the bubble and the bar's pill.
     crate::notes::refresh_pill(app);
 }
@@ -559,7 +584,7 @@ fn drop_here(app: &AppHandle) {
 /// Hides the bubble for an hour.
 pub fn snooze(app: &AppHandle) {
     SNOOZED_UNTIL.store(now_s() + 3600, Ordering::SeqCst);
-    refresh_visibility(app);
+    refresh(app);
     crate::notes::refresh_pill(app);
     debug!("Bubble hidden for an hour");
 }

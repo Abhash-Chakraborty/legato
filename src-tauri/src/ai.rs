@@ -354,9 +354,6 @@ pub async fn run(
     }
 }
 
-/// A Notes summary or Ask answer may take this long: local models read a
-/// long transcript slowly.
-
 /// `run`, with an answer format the provider is asked to follow.
 async fn run_json(
     app: &AppHandle,
