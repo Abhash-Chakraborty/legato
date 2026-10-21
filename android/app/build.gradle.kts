@@ -76,7 +76,6 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // Springy motion for the bubble (Material 3 Expressive feel without Compose in the overlay).
-    implementation("androidx.dynamicanimation:dynamicanimation:1.0.0")
     // UniFFI's Kotlin bindings call the Rust library through JNA.
     implementation("net.java.dev.jna:jna:5.15.0@aar")
     debugImplementation("androidx.compose.ui:ui-tooling")

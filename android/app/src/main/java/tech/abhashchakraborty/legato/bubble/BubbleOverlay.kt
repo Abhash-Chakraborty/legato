@@ -21,8 +21,7 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
-import androidx.dynamicanimation.animation.SpringAnimation
-import androidx.dynamicanimation.animation.SpringForce
+import android.view.animation.DecelerateInterpolator
 import tech.abhashchakraborty.legato.R
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -47,6 +46,8 @@ class BubbleOverlay(private val context: Context) {
     private val bar = LinearLayout(context)
     private val wave = WaveView(context)
     private var snoozedUntil = 0L
+    /** Where the bubble rests on its edge; the bar opens from here and the dot returns here. */
+    private var dockX = 0
     private var dotted = false
     private var listening = false
     private val toDot = Runnable { if (!listening && !dragging) setDot(true) }
@@ -76,7 +77,9 @@ class BubbleOverlay(private val context: Context) {
             gravity = Gravity.TOP or Gravity.START
             x = Position.x(context, dpi(40f))
             y = Position.y(context)
+            noMoveAnimation()
         }
+        dockX = lp.x
         // The bubble, bar and wave are kept between shows; free them from the last window.
         (bubble.parent as? ViewGroup)?.removeView(bubble)
         (bar.parent as? ViewGroup)?.removeView(bar)
@@ -90,9 +93,7 @@ class BubbleOverlay(private val context: Context) {
         wm.addView(frame, lp)
         root = frame
         params = lp
-        spring(frame, SpringAnimation.SCALE_X, 1f)
-        spring(frame, SpringAnimation.SCALE_Y, 1f)
-        frame.animate().alpha(1f).setDuration(160).start()
+        frame.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(easeOut).start()
         Dictation.listeners.add(onState)
         render(Dictation.state.value)
         armDot()
@@ -102,7 +103,8 @@ class BubbleOverlay(private val context: Context) {
         val frame = root ?: return
         Dictation.listeners.remove(onState)
         main.removeCallbacks(toDot)
-        if (listening) Dictation.cancel(context)
+        // Listening stops with the keyboard; words already being written up still arrive.
+        if (Dictation.state.value is Dictation.State.Listening) Dictation.cancel(context)
         runCatching { wm.removeView(frame) }
         root = null
         params = null
@@ -184,20 +186,33 @@ class BubbleOverlay(private val context: Context) {
             if (listening) {
                 main.removeCallbacks(toDot)
                 dotted = false
+                // Place the bar before it shows, in one layout: it opens from the
+                // bubble towards the middle of the screen and never off the edge.
+                bar.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+                val barW = bar.measuredWidth
+                val dotW = frame.getChildAt(0).width.takeIf { it > 0 } ?: dpi(48f)
+                val screen = context.resources.displayMetrics.widthPixels
+                val onLeft = dockX + dotW / 2 < screen / 2
+                params?.let { lp ->
+                    lp.x = (if (onLeft) dockX else dockX + dotW - barW).coerceIn(dpi(8f), screen - barW - dpi(8f))
+                    runCatching { wm.updateViewLayout(frame, lp) }
+                }
                 frame.getChildAt(0).visibility = View.GONE
                 bar.visibility = View.VISIBLE
+                bar.pivotX = if (onLeft) 0f else barW.toFloat()
                 bar.scaleX = 0.3f
-                bar.pivotX = bar.width.toFloat().takeIf { it > 0 } ?: dp(160f)
-                spring(bar, SpringAnimation.SCALE_X, 1f)
-                // The bar grows to the left of where the bubble sat, on the right edge.
-                keepOnScreen()
-                frame.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                bar.animate().scaleX(1f).setDuration(220).setInterpolator(easeOut).start()
             } else {
                 bar.visibility = View.GONE
                 frame.getChildAt(0).visibility = View.VISIBLE
                 bubble.alpha = 0.72f
                 bubble.layoutParams = bubble.layoutParams.apply { width = dpi(40f); height = dpi(40f) }
                 bubble.setImageResource(R.drawable.ic_bubble)
+                // Back to the edge it came from.
+                params?.let { lp ->
+                    lp.x = dockX
+                    runCatching { wm.updateViewLayout(frame, lp) }
+                }
                 armDot()
             }
         }
@@ -205,24 +220,17 @@ class BubbleOverlay(private val context: Context) {
         if (state is Dictation.State.Transcribing) wave.busy = true else wave.busy = false
     }
 
-    private fun keepOnScreen() {
-        val lp = params ?: return
-        val frame = root ?: return
-        frame.post {
-            val width = context.resources.displayMetrics.widthPixels
-            val w = frame.width.takeIf { it > 0 } ?: dpi(160f)
-            if (lp.x + w > width - dpi(8f)) {
-                lp.x = width - w - dpi(8f)
-                runCatching { wm.updateViewLayout(frame, lp) }
-            }
-        }
-    }
+    private val easeOut = DecelerateInterpolator(2f)
 
-    private fun spring(view: View, property: androidx.dynamicanimation.animation.FloatPropertyCompat<View>, to: Float) {
-        SpringAnimation(view, property, to).apply {
-            spring.dampingRatio = SpringForce.DAMPING_RATIO_MEDIUM_BOUNCY
-            spring.stiffness = SpringForce.STIFFNESS_MEDIUM
-            start()
+    /**
+     * Android slides an overlay to each new position over about 300 ms, so the
+     * bar opened late and the dot crawled back to its edge. The bubble does its
+     * own motion, so turn that off (PRIVATE_FLAG_NO_MOVE_ANIMATION, not public).
+     */
+    private fun WindowManager.LayoutParams.noMoveAnimation() {
+        runCatching {
+            val field = WindowManager.LayoutParams::class.java.getField("privateFlags")
+            field.setInt(this, field.getInt(this) or 0x40)
         }
     }
 
@@ -249,12 +257,14 @@ class BubbleOverlay(private val context: Context) {
                     moved = false; dragging = false; downAt = System.currentTimeMillis()
                     main.removeCallbacks(toDot)
                     main.postDelayed(longPress, 550)
-                    if (dotted) setDot(false)
                     bubble.animate().scaleX(0.94f).scaleY(0.94f).setDuration(100).start()
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - downX; val dy = e.rawY - downY
-                    if (!moved && hypot(dx, dy) > dp(8f)) { moved = true; dragging = true; main.removeCallbacks(longPress) }
+                    if (!moved && hypot(dx, dy) > dp(8f)) {
+                        moved = true; dragging = true; main.removeCallbacks(longPress)
+                        if (dotted) setDot(false)
+                    }
                     if (moved) {
                         lp.x = (startX + dx).toInt(); lp.y = (startY + dy).toInt()
                         root?.let { runCatching { wm.updateViewLayout(it, lp) } }
@@ -269,11 +279,12 @@ class BubbleOverlay(private val context: Context) {
                         if (e.rawY > metrics.heightPixels - dp(96f) && abs(e.rawX - metrics.widthPixels / 2f) < dp(96f)) {
                             snooze()
                         } else {
-                            // Settle on the nearer edge, with the spring.
+                            // Settle on the nearer edge.
                             val toLeft = e.rawX < metrics.widthPixels / 2f
                             val target = if (toLeft) dpi(8f) else metrics.widthPixels - view.width - dpi(8f)
                             lp.y = lp.y.coerceIn(dpi(80f), metrics.heightPixels - dpi(160f))
                             Position.save(context, toLeft, lp.y)
+                            dockX = target
                             animateX(lp, target)
                         }
                     } else if (e.actionMasked == MotionEvent.ACTION_UP && System.currentTimeMillis() - downAt < 550) {
@@ -289,7 +300,7 @@ class BubbleOverlay(private val context: Context) {
         private fun animateX(lp: WindowManager.LayoutParams, target: Int) {
             ValueAnimator.ofInt(lp.x, target).apply {
                 duration = 320
-                interpolator = android.view.animation.OvershootInterpolator(1.1f)
+                interpolator = easeOut
                 addUpdateListener { lp.x = it.animatedValue as Int; root?.let { r -> runCatching { wm.updateViewLayout(r, lp) } } }
                 start()
             }
