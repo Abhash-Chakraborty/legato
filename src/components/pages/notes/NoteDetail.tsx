@@ -272,164 +272,167 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
   const tabs: Tab[] = recording ? ["mine"] : ["summary", "transcript", "mine"];
 
   return (
-    <div className="min-w-0 px-7 pb-7 pt-6">
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <Title note={note} editing={renaming} setEditing={setRenaming} />
-        </div>
-        <div className="relative flex-none">
-          <button
-            ref={menuButton}
-            type="button"
-            onClick={() => setMenu(!menu)}
-            aria-haspopup="menu"
-            aria-expanded={menu}
-            aria-label={t("notes.detail.more")}
-            title={t("notes.detail.more")}
-            className={iconButton}
-          >
-            <MoreVertical className="h-4 w-4" aria-hidden="true" />
-          </button>
-          {menu && (
-            <ActionMenu
-              label={t("notes.detail.more")}
-              className="end-0 top-full z-10 mt-1 w-56"
-              onClose={(restore) => {
-                setMenu(false);
-                if (restore) menuButton.current?.focus();
-              }}
-              items={[
-                {
-                  id: "rename",
-                  label: t("notes.detail.rename"),
-                  icon: Pencil,
-                  onSelect: () => setRenaming(true),
-                },
-                {
-                  id: "tag",
-                  label: t("notes.detail.addTag"),
-                  icon: Tag,
-                  onSelect: () => setTagging(true),
-                },
-                "separator",
-                {
-                  id: "copy-summary",
-                  label: t("notes.detail.copySummary"),
-                  icon: Copy,
-                  disabled: !note.summary.trim(),
-                  onSelect: copySummary,
-                },
-                {
-                  id: "copy-transcript",
-                  label: t("notes.detail.copyTranscript"),
-                  icon: Copy,
-                  disabled: !note.lines,
-                  onSelect: copyTranscript,
-                },
-                {
-                  id: "export",
-                  label: t("notes.detail.export"),
-                  icon: FileDown,
-                  disabled: recording,
-                  onSelect: exportMarkdown,
-                },
-                "separator",
-                {
-                  id: "delete",
-                  label: t("notes.detail.delete"),
-                  icon: Trash2,
-                  danger: true,
-                  disabled: recording,
-                  onSelect: onDelete,
-                },
-              ]}
-            />
-          )}
-        </div>
-      </div>
-      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-text-3">
-        {recording && (
-          <>
-            <span
-              className={`font-medium ${finishing ? "text-teal-700" : "text-danger"}`}
+    <div className="flex min-w-0 flex-col min-[1000px]:h-full">
+      {/* The title, details and tabs stay put; the tab's content scrolls. */}
+      <div className="flex-none px-7 pt-6">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <Title note={note} editing={renaming} setEditing={setRenaming} />
+          </div>
+          <div className="relative flex-none">
+            <button
+              ref={menuButton}
+              type="button"
+              onClick={() => setMenu(!menu)}
+              aria-haspopup="menu"
+              aria-expanded={menu}
+              aria-label={t("notes.detail.more")}
+              title={t("notes.detail.more")}
+              className={iconButton}
             >
-              {finishing
-                ? t("notes.status.transcribing")
-                : t("notes.status.recording")}
-            </span>
-            <span aria-hidden="true">·</span>
-          </>
-        )}
-        {meta.map((part, i) => (
-          <React.Fragment key={i}>
-            {i > 0 && <span aria-hidden="true">·</span>}
-            <span className="tabular-nums">{part}</span>
-          </React.Fragment>
-        ))}
-        {note.app && (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className="inline-flex items-center gap-1.5 text-text-2">
-              <AppIcon path={note.app_path} className="h-4 w-4" />
-              {note.app}
-            </span>
-          </>
-        )}
-        <span aria-hidden="true">·</span>
-        <span>
-          {note.kind === "meeting"
-            ? t("notes.detail.youAndOthers")
-            : t("notes.detail.justYou")}
-        </span>
-      </div>
-      <Tags note={note} adding={tagging} setAdding={setTagging} />
-
-      <div
-        role="tablist"
-        aria-label={t("notes.detail.tabs")}
-        className="mt-5 flex gap-1 border-b border-line"
-      >
-        {tabs.map((id) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            id={`note-tab-${id}`}
-            aria-selected={shown === id}
-            aria-controls={`note-panel-${id}`}
-            onClick={() => setTab(id)}
-            onKeyDown={(e) => {
-              const step =
-                e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
-              if (!step) return;
-              e.preventDefault();
-              const next =
-                tabs[(tabs.indexOf(id) + step + tabs.length) % tabs.length];
-              setTab(next);
-              document.getElementById(`note-tab-${next}`)?.focus();
-            }}
-            tabIndex={shown === id ? 0 : -1}
-            className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-2.5 pb-2.5 pt-1 text-sm transition-colors duration-[var(--dur-1)] hover:duration-0 ${
-              shown === id
-                ? "border-teal-600 font-medium text-text"
-                : "border-transparent text-text-2 hover:text-text"
-            }`}
-          >
-            {t(`notes.detail.tab.${id}`)}
-            {id === "transcript" && note.lines > 0 && (
-              <span className="text-xs tabular-nums text-text-3">
-                {note.lines.toLocaleString(i18n.language)}
-              </span>
+              <MoreVertical className="h-4 w-4" aria-hidden="true" />
+            </button>
+            {menu && (
+              <ActionMenu
+                label={t("notes.detail.more")}
+                className="end-0 top-full z-10 mt-1 w-56"
+                onClose={(restore) => {
+                  setMenu(false);
+                  if (restore) menuButton.current?.focus();
+                }}
+                items={[
+                  {
+                    id: "rename",
+                    label: t("notes.detail.rename"),
+                    icon: Pencil,
+                    onSelect: () => setRenaming(true),
+                  },
+                  {
+                    id: "tag",
+                    label: t("notes.detail.addTag"),
+                    icon: Tag,
+                    onSelect: () => setTagging(true),
+                  },
+                  "separator",
+                  {
+                    id: "copy-summary",
+                    label: t("notes.detail.copySummary"),
+                    icon: Copy,
+                    disabled: !note.summary.trim(),
+                    onSelect: copySummary,
+                  },
+                  {
+                    id: "copy-transcript",
+                    label: t("notes.detail.copyTranscript"),
+                    icon: Copy,
+                    disabled: !note.lines,
+                    onSelect: copyTranscript,
+                  },
+                  {
+                    id: "export",
+                    label: t("notes.detail.export"),
+                    icon: FileDown,
+                    disabled: recording,
+                    onSelect: exportMarkdown,
+                  },
+                  "separator",
+                  {
+                    id: "delete",
+                    label: t("notes.detail.delete"),
+                    icon: Trash2,
+                    danger: true,
+                    disabled: recording,
+                    onSelect: onDelete,
+                  },
+                ]}
+              />
             )}
-          </button>
-        ))}
+          </div>
+        </div>
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-text-3">
+          {recording && (
+            <>
+              <span
+                className={`font-medium ${finishing ? "text-teal-700" : "text-danger"}`}
+              >
+                {finishing
+                  ? t("notes.status.transcribing")
+                  : t("notes.status.recording")}
+              </span>
+              <span aria-hidden="true">·</span>
+            </>
+          )}
+          {meta.map((part, i) => (
+            <React.Fragment key={i}>
+              {i > 0 && <span aria-hidden="true">·</span>}
+              <span className="tabular-nums">{part}</span>
+            </React.Fragment>
+          ))}
+          {note.app && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="inline-flex items-center gap-1.5 text-text-2">
+                <AppIcon path={note.app_path} className="h-4 w-4" />
+                {note.app}
+              </span>
+            </>
+          )}
+          <span aria-hidden="true">·</span>
+          <span>
+            {note.kind === "meeting"
+              ? t("notes.detail.youAndOthers")
+              : t("notes.detail.justYou")}
+          </span>
+        </div>
+        <Tags note={note} adding={tagging} setAdding={setTagging} />
+
+        <div
+          role="tablist"
+          aria-label={t("notes.detail.tabs")}
+          className="mt-5 flex gap-1 border-b border-line"
+        >
+          {tabs.map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`note-tab-${id}`}
+              aria-selected={shown === id}
+              aria-controls={`note-panel-${id}`}
+              onClick={() => setTab(id)}
+              onKeyDown={(e) => {
+                const step =
+                  e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+                if (!step) return;
+                e.preventDefault();
+                const next =
+                  tabs[(tabs.indexOf(id) + step + tabs.length) % tabs.length];
+                setTab(next);
+                document.getElementById(`note-tab-${next}`)?.focus();
+              }}
+              tabIndex={shown === id ? 0 : -1}
+              className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-2.5 pb-2.5 pt-1 text-sm transition-colors duration-[var(--dur-1)] hover:duration-0 ${
+                shown === id
+                  ? "border-teal-600 font-medium text-text"
+                  : "border-transparent text-text-2 hover:text-text"
+              }`}
+            >
+              {t(`notes.detail.tab.${id}`)}
+              {id === "transcript" && note.lines > 0 && (
+                <span className="text-xs tabular-nums text-text-3">
+                  {note.lines.toLocaleString(i18n.language)}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div
         role="tabpanel"
         id={`note-panel-${shown}`}
         aria-labelledby={`note-tab-${shown}`}
-        className="pt-5"
+        className="px-7 pb-7 pt-5 min-[1000px]:min-h-0 min-[1000px]:flex-1 min-[1000px]:overflow-y-auto"
       >
         {shown === "summary" ? (
           <SummaryTab

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { commands, type NoteLine } from "@/bindings";
 import { useNotesStore } from "../../stores/notesStore";
-import { speakerLabel, type SpeakerNames } from "./notes";
+import { renamable, speakerLabel, THEM_SIDE, type SpeakerNames } from "./notes";
 
 /** What transcripts call each side and each voice, in the UI's words. */
 export const useSpeakerNames = (): SpeakerNames => {
@@ -15,8 +15,9 @@ export const useSpeakerNames = (): SpeakerNames => {
   };
 };
 
-/** Who said a line. A voice the speaker model found is renamed in place,
- *  during the recording or after it, and the name goes to all its lines. */
+/** Who said a line. A voice the speaker model found, or the other side
+ *  before it does, is renamed in place, during the recording or after it,
+ *  and the name goes to all its lines. */
 export const SpeakerTag: React.FC<{
   line: NoteLine;
   className?: string;
@@ -32,7 +33,7 @@ export const SpeakerTag: React.FC<{
   const open = useRef(false);
   const label = speakerLabel(line, speakers, names);
   const tone = line.who === "you" ? "text-teal-700" : "text-text-2";
-  const voice = line.speaker;
+  const voice = renamable(line);
 
   if (voice == null || line.id < 0)
     return (
@@ -64,7 +65,7 @@ export const SpeakerTag: React.FC<{
         autoFocus
         value={draft}
         maxLength={60}
-        placeholder={names.voice(voice)}
+        placeholder={voice === THEM_SIDE ? names.them : names.voice(voice)}
         aria-label={t("notes.speakers.renameLabel", { name: label })}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={save}

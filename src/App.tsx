@@ -474,10 +474,19 @@ function App() {
             <div
               ref={settingsScrollRef}
               data-scroll-root
-              className="h-full overflow-y-auto px-6 pt-6 pb-10 min-[1180px]:px-9 [scrollbar-gutter:stable]"
+              className={`h-full overflow-y-auto px-6 pt-6 min-[1180px]:px-9 [scrollbar-gutter:stable] ${
+                // Notes is a split view that fits the window: its list and
+                // its note scroll on their own, not the page.
+                page === "notes"
+                  ? "flex flex-col pb-6 min-[1000px]:overflow-hidden"
+                  : "pb-10"
+              }`}
             >
               <ErrorBoundary key={page} context={page}>
-                <div key={page} className="view-enter">
+                <div
+                  key={page}
+                  className={`view-enter ${page === "notes" ? "flex min-h-0 flex-1 flex-col" : ""}`}
+                >
                   {renderPage(page, setOnboardingPreview)}
                 </div>
               </ErrorBoundary>

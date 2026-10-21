@@ -326,7 +326,7 @@ export const NotesPage: React.FC = () => {
   );
 
   return (
-    <div className="mx-auto w-full max-w-[1240px]">
+    <div className="mx-auto flex w-full max-w-[1240px] flex-col min-[1000px]:min-h-0 min-[1000px]:flex-1">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
         <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
           {t("notes.title")}
@@ -374,8 +374,8 @@ export const NotesPage: React.FC = () => {
           {empty}
         </div>
       ) : (
-        <div className="grid overflow-hidden rounded-[var(--r-lg)] border border-line bg-surface min-[1000px]:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
-          <div className="flex min-w-0 flex-col border-line max-[999px]:border-b min-[1000px]:border-e">
+        <div className="grid overflow-hidden rounded-[var(--r-lg)] border border-line bg-surface min-[1000px]:min-h-[320px] min-[1000px]:flex-1 min-[1000px]:grid-cols-[minmax(0,340px)_minmax(0,1fr)] min-[1000px]:grid-rows-[minmax(0,1fr)]">
+          <div className="flex min-h-0 min-w-0 flex-col border-line max-[999px]:border-b min-[1000px]:border-e">
             <div className="grid gap-2.5 border-b border-line p-3">
               <div className="relative">
                 <Search
@@ -511,7 +511,7 @@ export const NotesPage: React.FC = () => {
                 ref={listRef}
                 aria-label={t("notes.listLabel")}
                 onKeyDown={onListKeyDown}
-                className="max-h-[calc(100vh-300px)] min-h-[200px] flex-1 overflow-y-auto"
+                className="max-h-[50vh] min-h-[200px] flex-1 overflow-y-auto min-[1000px]:max-h-none min-[1000px]:min-h-0"
               >
                 {shown.map((note) => (
                   <NoteRow
@@ -543,7 +543,7 @@ export const NotesPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="min-w-0">
+          <div className="min-w-0 min-[1000px]:min-h-0">
             {selected ? (
               <NoteDetail
                 key={selected.id}

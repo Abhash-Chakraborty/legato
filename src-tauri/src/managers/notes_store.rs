@@ -477,9 +477,9 @@ pub fn set_speakers(
         )?;
     }
     tx.execute(
-        "DELETE FROM note_speaker WHERE note_id = ?1 AND speaker NOT IN
+        "DELETE FROM note_speaker WHERE note_id = ?1 AND speaker <> ?2 AND speaker NOT IN
          (SELECT speaker FROM note_line WHERE note_id = ?1 AND speaker IS NOT NULL)",
-        params![note_id],
+        params![note_id, THEM_SIDE],
     )?;
     tx.commit()?;
     Ok(())
@@ -945,8 +945,12 @@ pub fn recover_unfinished(conn: &Connection) -> Result<Vec<i64>> {
     Ok(ids)
 }
 
+/// The speaker number a name for the whole other side goes under: the
+/// people on a call before (or without) the speaker model tells them apart.
+pub const THEM_SIDE: i64 = -1;
+
 /// What a line's speaker is called: their name, "Speaker 2" (`numbered`
-/// with `{n}`), or You or Them.
+/// with `{n}`), the other side's name, or You or Them.
 pub fn speaker_label(
     note: &Note,
     line: &NoteLine,
@@ -962,7 +966,12 @@ pub fn speaker_label(
             .map(|s| s.name.clone())
             .unwrap_or_else(|| numbered.replace("{n}", &n.to_string())),
         (Speaker::You, None) => you.to_string(),
-        (Speaker::Them, None) => them.to_string(),
+        (Speaker::Them, None) => note
+            .speakers
+            .iter()
+            .find(|s| s.speaker == THEM_SIDE)
+            .map(|s| s.name.clone())
+            .unwrap_or_else(|| them.to_string()),
     }
 }
 
@@ -1257,6 +1266,33 @@ mod tests {
         name_speaker(&conn, note.id, 1, "Sam").unwrap();
         name_speaker(&conn, note.id, 1, "").unwrap();
         assert!(get(&conn, note.id).unwrap().unwrap().speakers.is_empty());
+    }
+
+    #[test]
+    fn the_other_side_can_be_named_before_its_voices_are_told_apart() {
+        let mut conn = db();
+        let note = meeting(&conn);
+        let a = add_line(&conn, note.id, 0, 2_000, Speaker::Them, "hi there").unwrap();
+        add_line(&conn, note.id, 2_000, 4_000, Speaker::You, "hello").unwrap();
+        name_speaker(&conn, note.id, THEM_SIDE, "Alex").unwrap();
+        let label = |conn: &Connection, note: &Note| {
+            lines(conn, note.id)
+                .unwrap()
+                .iter()
+                .map(|l| speaker_label(note, l, "You", "Them", "Speaker {n}"))
+                .collect::<Vec<_>>()
+        };
+        let named = get(&conn, note.id).unwrap().unwrap();
+        assert_eq!(label(&conn, &named), ["Alex", "You"]);
+        // A speaker pass keeps the side's name; a voice it finds is numbered.
+        set_speakers(&mut conn, note.id, &[(a.id, Some(1))]).unwrap();
+        let passed = get(&conn, note.id).unwrap().unwrap();
+        assert!(passed.speakers.iter().any(|s| s.speaker == THEM_SIDE));
+        assert_eq!(label(&conn, &passed), ["Speaker 1", "You"]);
+        name_speaker(&conn, note.id, THEM_SIDE, "").unwrap();
+        set_speakers(&mut conn, note.id, &[(a.id, None)]).unwrap();
+        let cleared = get(&conn, note.id).unwrap().unwrap();
+        assert_eq!(label(&conn, &cleared), ["Them", "You"]);
     }
 
     #[test]

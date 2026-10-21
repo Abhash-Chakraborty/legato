@@ -444,7 +444,8 @@ impl NotesManager {
     pub fn name_speaker(&self, note_id: i64, speaker: i64, name: &str) -> Result<()> {
         store::name_speaker(&self.conn()?, note_id, speaker, name)?;
         self.changed();
-        if !name.trim().is_empty() {
+        // A name for the whole other side has no one voice to keep.
+        if speaker != store::THEM_SIDE && !name.trim().is_empty() {
             if let Some(audio) = self.voice_audio(note_id)? {
                 let (app, name) = (self.app.clone(), name.to_string());
                 std::thread::spawn(move || {
@@ -1655,6 +1656,17 @@ fn find_speakers_in(
         store::set_speakers(&mut m.conn()?, note_id, &assigned)?;
         let _ = NoteLinesChanged { note_id }.emit(app);
         m.changed();
+    }
+    // The other side was named before its voices were told apart: with
+    // just one voice there, that's who it is.
+    if let ([voice], Some(note)) = (voices.as_slice(), m.get(note_id)?) {
+        let side_name = note.speakers.iter().find(|s| s.speaker == store::THEM_SIDE);
+        if let Some(side_name) = side_name {
+            if !note.speakers.iter().any(|s| s.speaker == *voice) {
+                store::name_speaker(&m.conn()?, note_id, *voice, &side_name.name)?;
+                m.changed();
+            }
+        }
     }
     if let Err(e) = crate::speakers::recognise(app, note_id, audio) {
         warn!("Couldn't compare the voices with saved ones: {e}");

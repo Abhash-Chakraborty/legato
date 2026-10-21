@@ -79,15 +79,27 @@ export interface SpeakerNames {
 
 /** Who said a line: the name given to its voice, "Speaker 2", or You or
  *  Them before voices were told apart. */
+/** The speaker number a name for the whole other side goes under, before
+ *  (or without) the speaker model telling its voices apart (as in Rust). */
+export const THEM_SIDE = -1;
+
 export const speakerLabel = (
   line: NoteLine,
   speakers: NoteSpeaker[] | undefined,
   names: SpeakerNames,
 ): string => {
   const n = line.speaker;
-  if (n == null) return line.who === "you" ? names.you : names.them;
+  if (n == null)
+    return line.who === "you"
+      ? names.you
+      : speakers?.find((s) => s.speaker === THEM_SIDE)?.name || names.them;
   return speakers?.find((s) => s.speaker === n)?.name || names.voice(n);
 };
+
+/** The speaker a line's name belongs to, so renaming it renames all their
+ *  lines: its voice, else the other side as a whole. You aren't renamed. */
+export const renamable = (line: NoteLine): number | null =>
+  line.speaker ?? (line.who === "them" ? THEM_SIDE : null);
 
 /** The voices found in a transcript, in order. */
 export const voicesIn = (lines: NoteLine[]): number[] =>

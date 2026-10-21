@@ -9,7 +9,9 @@ import {
   lineAt,
   lineMatches,
   longClock,
+  renamable,
   speakerLabel,
+  THEM_SIDE,
   summaryText,
   voiceChoices,
   voicesIn,
@@ -114,6 +116,14 @@ assert.equal(
   "Speaker 2",
 );
 assert.deepEqual(voicesIn([...voiced, lines[0]]), [1, 2]);
+// The other side can be named before its voices are told apart.
+const side = [{ speaker: THEM_SIDE, name: "Alex" }];
+assert.equal(speakerLabel(lines[1], side, names), "Alex");
+assert.equal(speakerLabel(lines[0], side, names), "You");
+assert.equal(speakerLabel(voiced[1], side, names), "Speaker 2");
+assert.equal(renamable(lines[1]), THEM_SIDE);
+assert.equal(renamable(lines[0]), null);
+assert.equal(renamable(voiced[1]), 2);
 // A meeting's voices are on Them, so You stays a choice of its own.
 assert.deepEqual(
   voiceChoices([lines[0], voiced[1], { ...voiced[2], speaker: 3 }]),
