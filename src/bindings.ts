@@ -2611,7 +2611,23 @@ export type BackgroundAudio =
  * The whole PC is muted, Legato's sounds included.
  */
 "mute"
-export type CallAction = "start" | "not_now" | "never" | "stop_now" | "keep" | "undo_never"
+/**
+ * What the bubble's page needs to lay itself out.
+ */
+export type BubbleLayout = { expanded: boolean; 
+/**
+ * The dot's centre inside the window.
+ */
+dot_x: number; dot_y: number; edge: Edge }
+export type CallAction = "start" | "not_now" | "never" | "stop_now" | "keep" | "undo_never" | 
+/**
+ * On a meeting's card: opens its link.
+ */
+"join" | 
+/**
+ * On a meeting's card: opens its link and starts notes.
+ */
+"join_notes"
 /**
  * An app Legato watches for calls.
  */
@@ -2625,7 +2641,8 @@ export type CallSettings = {
  */
 detect?: boolean; 
 /**
- * Reads browser window titles, for Google Meet.
+ * Reads browser window titles, for Google Meet, Teams and Zoom in a
+ * browser.
  */
 browser_titles?: boolean; watched?: CallApp[]; 
 /**
@@ -2653,6 +2670,11 @@ max_minutes?: number;
  * Opens Notes on the note once its summary is ready.
  */
 open_note?: boolean; 
+/**
+ * A minute before a meeting on a connected calendar, the bar offers to
+ * join it, with or without notes.
+ */
+meeting_cards?: boolean; 
 /**
  * The last call Legato noticed.
  */

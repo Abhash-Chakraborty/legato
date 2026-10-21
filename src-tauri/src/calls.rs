@@ -1,8 +1,11 @@
 //! Noticing calls. Windows records which apps use the microphone; when a
 //! watched app holds it, the Legato bar offers notes, and notes started for
 //! a call stop soon after the app lets go of the microphone. Legato reads
-//! those records and, for Google Meet, browser window titles; never audio.
+//! those records and, for Google Meet, Teams and Zoom in a browser, window
+//! titles; never audio. A minute before a meeting on your calendar, the bar
+//! offers to join it, with or without notes.
 
+use crate::calendar_rules::{self, Meeting};
 use crate::calls_rules::{self as rules, CallApp, CallEvent, Holder, Tracker};
 use crate::managers::notes_store::NoteKind;
 use crate::notes::{self, StartNotes};
@@ -60,6 +63,10 @@ pub enum CallAction {
     StopNow,
     Keep,
     UndoNever,
+    /// On a meeting's card: opens its link.
+    Join,
+    /// On a meeting's card: opens its link and starts notes.
+    JoinNotes,
 }
 
 /// A button pressed on the card Test detection showed; the page says what
@@ -90,6 +97,14 @@ enum CallCard {
         /// Notes stop after this long.
         stop_in_ms: Option<u64>,
         elapsed_ms: i64,
+    },
+    /// A meeting on your calendar about to start: Join with notes, Join,
+    /// Not now; Take notes when it has no link.
+    Meeting {
+        title: String,
+        /// Unix seconds.
+        starts_at: i64,
+        link: bool,
     },
 }
 
@@ -125,8 +140,14 @@ struct State {
     tracker: Tracker,
     live: Vec<Live>,
     card: Option<Shown>,
-    /// The browser whose window was the Meet call.
-    meet_browser: Option<String>,
+    /// The browser whose window was the call, and the call it showed.
+    call_browser: Option<(String, CallApp)>,
+    /// The calendar meeting the card offers to join.
+    meeting: Option<Meeting>,
+    /// Meetings offered already, by uid and start.
+    reminded: Vec<(String, i64)>,
+    /// Notes started from Join with notes, until the call they're for starts.
+    joined: Option<i64>,
     /// The note started for a call.
     note: Option<(i64, CallApp)>,
     /// The app Never here last turned off, for Undo.
@@ -197,17 +218,17 @@ pub fn set_settings(app: &AppHandle, calls: CallSettings) {
 }
 
 /// The executable that owns the call, to find its sound for notes.
-fn app_path(app: CallApp, meet_browser: Option<&str>) -> Option<String> {
+fn app_path(app: CallApp, browser: Option<&(String, CallApp)>) -> Option<String> {
     crate::loopback::audio_apps()
         .into_iter()
-        .find(|a| owns(app, meet_browser, &a.exe_path))
+        .find(|a| owns(app, browser, &a.exe_path))
         .map(|a| a.exe_path)
 }
 
-fn owns(app: CallApp, meet_browser: Option<&str>, exe_path: &str) -> bool {
+fn owns(app: CallApp, browser: Option<&(String, CallApp)>, exe_path: &str) -> bool {
     match rules::holder_for_exe(exe_path) {
         Holder::App(a) => a == app,
-        Holder::Browser(exe) => app == CallApp::Meet && meet_browser == Some(exe.as_str()),
+        Holder::Browser(exe) => browser.is_some_and(|(b, a)| *a == app && *b == exe),
         _ => false,
     }
 }
@@ -219,8 +240,88 @@ fn show_card(app: &AppHandle, card: Option<CallCard>) {
 
 fn hide_card(app: &AppHandle) {
     next_generation();
-    lock().card = None;
+    {
+        let mut st = lock();
+        st.card = None;
+        st.meeting = None;
+    }
     show_card(app, None);
+}
+
+/// Offers to join a meeting on the calendar that's about to start, unless
+/// a card shows or notes already run.
+fn remind_due(app: &AppHandle) {
+    if !get_settings(app).calls.meeting_cards {
+        return;
+    }
+    let now = chrono::Utc::now().timestamp();
+    let meetings = crate::calendar::meetings(app);
+    let meeting = {
+        let mut st = lock();
+        if st.card.is_some() || st.meeting.is_some() || notes::is_busy() {
+            return;
+        }
+        let Some(m) = calendar_rules::to_remind(&meetings, now, &st.reminded).cloned() else {
+            return;
+        };
+        st.reminded.push((m.uid.clone(), m.start));
+        let keep = st.reminded.len().saturating_sub(50);
+        st.reminded.drain(..keep);
+        st.meeting = Some(m.clone());
+        m
+    };
+    info!("Offering to join a meeting from the calendar");
+    next_generation();
+    show_card(
+        app,
+        Some(CallCard::Meeting {
+            title: meeting.title.clone(),
+            starts_at: meeting.start,
+            link: meeting.link.is_some(),
+        }),
+    );
+    let left = (meeting.start + calendar_rules::REMIND_LATE - now).max(30) as u64;
+    after(app, Duration::from_secs(left), hide_card);
+}
+
+/// A button on a meeting's card.
+fn meeting_action(app: &AppHandle, meeting: &Meeting, action: CallAction) {
+    let join = matches!(action, CallAction::Join | CallAction::JoinNotes);
+    if join {
+        if let Some(link) = &meeting.link {
+            use tauri_plugin_opener::OpenerExt;
+            if let Err(e) = app.opener().open_url(link, None::<String>) {
+                warn!("Opening the meeting's link: {e}");
+            }
+        }
+    }
+    let notes = matches!(action, CallAction::JoinNotes | CallAction::Start);
+    if !notes || notes::is_busy() {
+        return;
+    }
+    // Everything the PC plays is recorded, since the call's app isn't known
+    // yet; once the call starts, its end stops these notes like a call's.
+    let result = notes::start(
+        app,
+        StartNotes {
+            kind: NoteKind::Meeting,
+            title: Some(meeting.title.clone()),
+            microphone: None,
+            app_pid: None,
+        },
+    );
+    match result {
+        Ok(note) => lock().joined = Some(note.id),
+        Err(e) => {
+            warn!("Notes for the meeting didn't start: {e}");
+            crate::overlay::show_overlay_notice(
+                app,
+                &BarNotice::NotesFailed {
+                    reason: e.to_string(),
+                },
+            );
+        }
+    }
 }
 
 /// Offers notes for a call: Start notes, Not now, Never here, and a
@@ -230,14 +331,16 @@ fn offer(app: &AppHandle, call: CallApp, test: bool) {
     let countdown_ms = settings
         .auto_start
         .then(|| settings.countdown_secs.clamp(1, 60) as u64 * 1000);
-    let meet_browser = {
+    let browser = {
         let mut st = lock();
         st.card = Some(Shown {
             app: call,
             kind: CardKind::Offer,
             test,
         });
-        st.meet_browser.clone()
+        // A call card takes the place of a meeting's.
+        st.meeting = None;
+        st.call_browser.clone()
     };
     next_generation();
     show_card(
@@ -245,7 +348,7 @@ fn offer(app: &AppHandle, call: CallApp, test: bool) {
         Some(CallCard::Offer {
             app: call,
             name: call.name(),
-            app_path: app_path(call, meet_browser.as_deref()),
+            app_path: app_path(call, browser.as_ref()),
             countdown_ms,
             test,
         }),
@@ -276,10 +379,10 @@ fn when() -> String {
 }
 
 fn start_notes(app: &AppHandle, call: CallApp) {
-    let meet_browser = lock().meet_browser.clone();
+    let browser = lock().call_browser.clone();
     let app_pid = crate::loopback::audio_apps()
         .into_iter()
-        .find(|a| owns(call, meet_browser.as_deref(), &a.exe_path))
+        .find(|a| owns(call, browser.as_ref(), &a.exe_path))
         .map(|a| a.pid);
     let result = notes::start(
         app,
@@ -318,6 +421,17 @@ fn start_notes(app: &AppHandle, call: CallApp) {
 /// A button on the call card, or Start notes on the Notes page.
 pub fn act(app: &AppHandle, action: CallAction) {
     let settings = get_settings(app).calls;
+    let meeting = lock().meeting.clone();
+    if let Some(meeting) = meeting {
+        if matches!(
+            action,
+            CallAction::Join | CallAction::JoinNotes | CallAction::Start | CallAction::NotNow
+        ) {
+            hide_card(app);
+            meeting_action(app, &meeting, action);
+            return;
+        }
+    }
     let shown = lock().card;
     let test = shown.is_some_and(|s| s.test);
     let call = if action == CallAction::UndoNever {
@@ -385,6 +499,8 @@ pub fn act(app: &AppHandle, action: CallAction) {
             // Keep recording: the end of this call no longer stops it.
             lock().note = None;
         }
+        // Only on a meeting's card, handled above.
+        CallAction::Join | CallAction::JoinNotes => {}
     }
 }
 
@@ -398,6 +514,13 @@ fn started(app: &AppHandle, call: CallApp) {
             since,
             ask: Ask::Yes,
         });
+        // Notes from Join with notes belong to this call now, so its end
+        // stops them.
+        if let Some(id) = st.joined.take() {
+            if st.note.is_none() && notes::session().is_some_and(|s| s.note_id == id) {
+                st.note = Some((id, call));
+            }
+        }
         st.card
             .is_some_and(|c| c.app == call && c.kind == CardKind::Ended)
     };
@@ -444,14 +567,14 @@ fn ended(app: &AppHandle, call: CallApp) {
         let settings = get_settings(app).calls;
         let elapsed_ms = notes::session().map_or(0, |s| s.elapsed_ms);
         let stop_in_ms = settings.stop_on_end.then_some(rules::END_GRACE_MS);
-        let meet_browser = {
+        let browser = {
             let mut st = lock();
             st.card = Some(Shown {
                 app: call,
                 kind: CardKind::Ended,
                 test: false,
             });
-            st.meet_browser.clone()
+            st.call_browser.clone()
         };
         next_generation();
         show_card(
@@ -459,7 +582,7 @@ fn ended(app: &AppHandle, call: CallApp) {
             Some(CallCard::Ended {
                 app: call,
                 name: call.name(),
-                app_path: app_path(call, meet_browser.as_deref()),
+                app_path: app_path(call, browser.as_ref()),
                 stop_in_ms,
                 elapsed_ms,
             }),
@@ -476,6 +599,7 @@ fn ended(app: &AppHandle, call: CallApp) {
 
 /// Notes stopped: a call ended card has nothing left to stop.
 pub fn notes_stopped(app: &AppHandle) {
+    lock().joined = None;
     let ended_card = lock().card.is_some_and(|c| c.kind == CardKind::Ended);
     if ended_card {
         hide_card(app);
@@ -526,20 +650,22 @@ fn holding(settings: &CallSettings) -> Vec<CallApp> {
     for (entry, packaged) in mic_users() {
         match rules::holder_for_entry(&entry, packaged) {
             Holder::App(call) if settings.watched.contains(&call) => found.push(call),
-            Holder::Browser(exe)
-                if settings.browser_titles && settings.watched.contains(&CallApp::Meet) =>
-            {
-                // The Meet tab only names the call while it's in front; once
-                // the call is going, the browser keeping the microphone is
+            Holder::Browser(exe) if settings.browser_titles => {
+                // The tab only names the call while it's in front; once the
+                // call is going, the browser keeping the microphone is
                 // enough, so switching tabs doesn't end it.
                 let going = {
                     let st = lock();
-                    st.tracker.is_live(CallApp::Meet)
-                        && st.meet_browser.as_deref() == Some(exe.as_str())
+                    st.call_browser
+                        .as_ref()
+                        .filter(|(b, call)| *b == exe && st.tracker.is_live(*call))
+                        .map(|(_, call)| *call)
                 };
-                if going || browser_shows_meet(&exe) {
-                    lock().meet_browser = Some(exe);
-                    found.push(CallApp::Meet);
+                let call =
+                    going.or_else(|| browser_call(&exe).filter(|c| settings.watched.contains(c)));
+                if let Some(call) = call {
+                    lock().call_browser = Some((exe, call));
+                    found.push(call);
                 }
             }
             _ => {}
@@ -572,6 +698,7 @@ pub fn init(app: &AppHandle) {
                     }
                 }
                 offer_due(&app);
+                remind_due(&app);
                 watcher.wait(SCAN_EVERY);
             }
         });
@@ -581,7 +708,7 @@ pub fn init(app: &AppHandle) {
 }
 
 #[cfg(windows)]
-use win::{browser_shows_meet, mic_users, Watcher};
+use win::{browser_call, mic_users, Watcher};
 
 #[cfg(not(windows))]
 fn mic_users() -> Vec<(String, bool)> {
@@ -589,8 +716,8 @@ fn mic_users() -> Vec<(String, bool)> {
 }
 
 #[cfg(not(windows))]
-fn browser_shows_meet(_exe: &str) -> bool {
-    false
+fn browser_call(_exe: &str) -> Option<CallApp> {
+    None
 }
 
 #[cfg(not(windows))]
@@ -608,7 +735,7 @@ impl Watcher {
 
 #[cfg(windows)]
 mod win {
-    use super::rules;
+    use super::rules::{self, CallApp};
     use std::time::Duration;
     use windows::core::{w, BOOL, PCWSTR, PWSTR};
     use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM};
@@ -753,7 +880,7 @@ mod win {
 
     struct Search {
         exe: String,
-        found: bool,
+        found: Option<CallApp>,
     }
 
     unsafe extern "system" fn visit(hwnd: HWND, data: LPARAM) -> BOOL {
@@ -767,23 +894,24 @@ mod win {
             return BOOL(1);
         }
         let title = String::from_utf16_lossy(&buf[..len as usize]);
-        if !rules::is_meet_title(&title) {
+        let Some(call) = rules::web_call(&title) else {
             return BOOL(1);
-        }
+        };
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
         if exe_of_process(pid).as_deref() == Some(search.exe.as_str()) {
-            search.found = true;
+            search.found = Some(call);
             return BOOL(0);
         }
         BOOL(1)
     }
 
-    /// Whether a window of this browser has a Google Meet call in front.
-    pub fn browser_shows_meet(exe: &str) -> bool {
+    /// The call a window of this browser has in front: Google Meet, Teams
+    /// or Zoom.
+    pub fn browser_call(exe: &str) -> Option<CallApp> {
         let mut search = Search {
             exe: exe.to_string(),
-            found: false,
+            found: None,
         };
         // SAFETY: `search` outlives the enumeration, which is synchronous.
         unsafe {

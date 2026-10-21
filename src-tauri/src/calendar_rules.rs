@@ -621,6 +621,31 @@ pub fn current(meetings: &[Meeting], now: i64, soon: i64) -> Option<&Meeting> {
         .or_else(|| timed().find(|m| m.start > now && m.start - now <= soon))
 }
 
+/// How long before a meeting starts the bar offers to join it.
+pub const REMIND_BEFORE: i64 = 60;
+/// A meeting is still offered this long after it started, for a late join.
+pub const REMIND_LATE: i64 = 5 * 60;
+
+/// The meeting to offer to join at `now`: a timed one starting within a
+/// minute or started less than five minutes ago, not over, and not offered
+/// before (`offered` holds uid and start of those).
+pub fn to_remind<'a>(
+    meetings: &'a [Meeting],
+    now: i64,
+    offered: &[(String, i64)],
+) -> Option<&'a Meeting> {
+    meetings
+        .iter()
+        .filter(|m| !m.all_day && now < m.end)
+        .filter(|m| m.start - now <= REMIND_BEFORE && now - m.start <= REMIND_LATE)
+        .filter(|m| {
+            !offered
+                .iter()
+                .any(|(uid, start)| *uid == m.uid && *start == m.start)
+        })
+        .min_by_key(|m| (m.start - now).abs())
+}
+
 /// Accepts a pasted address: webcal:// becomes https://; anything that isn't
 /// http(s) is refused.
 pub fn feed_url(input: &str) -> Option<String> {
@@ -901,5 +926,39 @@ END:VCALENDAR\r
         assert_eq!(feed_url("https://a b"), None);
         assert!(is_calendar("\u{feff}BEGIN:VCALENDAR\r\n"));
         assert!(!is_calendar("<html>"));
+    }
+
+    fn meeting(uid: &str, start: i64, minutes: i64) -> Meeting {
+        Meeting {
+            uid: uid.into(),
+            title: uid.into(),
+            start,
+            end: start + minutes * 60,
+            all_day: false,
+            link: Some("https://meet.google.com/abc-defg-hij".into()),
+            location: None,
+            calendar: "Work".into(),
+        }
+    }
+
+    #[test]
+    fn a_meeting_is_offered_a_minute_ahead_and_once() {
+        let now = 1_000_000;
+        let standup = meeting("standup", now + 50, 15);
+        let later = meeting("review", now + 30 * 60, 30);
+        let all = vec![standup.clone(), later];
+        assert_eq!(to_remind(&all, now - 120, &[]), None, "too early");
+        assert_eq!(to_remind(&all, now, &[]), Some(&standup));
+        let offered = vec![("standup".to_string(), now + 50)];
+        assert_eq!(to_remind(&all, now, &offered), None, "offered already");
+        assert_eq!(
+            to_remind(&all, now + 50 + 4 * 60, &[]),
+            Some(&standup),
+            "a late join"
+        );
+        assert_eq!(to_remind(&all, now + 50 + 6 * 60, &[]), None, "too late");
+        let mut day = meeting("holiday", now + 30, 24 * 60);
+        day.all_day = true;
+        assert_eq!(to_remind(&[day], now, &[]), None, "all day");
     }
 }

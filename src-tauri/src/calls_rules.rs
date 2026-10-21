@@ -57,13 +57,14 @@ pub fn default_watched() -> Vec<CallApp> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Holder {
     App(CallApp),
-    /// A browser; a Google Meet call when one of its windows says so.
+    /// A browser; a call when one of its windows shows Google Meet, Teams
+    /// or Zoom.
     Browser(String),
     Legato,
     Other,
 }
 
-const BROWSERS: [&str; 7] = [
+const BROWSERS: [&str; 13] = [
     "chrome.exe",
     "msedge.exe",
     "brave.exe",
@@ -71,6 +72,12 @@ const BROWSERS: [&str; 7] = [
     "opera.exe",
     "vivaldi.exe",
     "arc.exe",
+    "zen.exe",
+    "floorp.exe",
+    "librewolf.exe",
+    "waterfox.exe",
+    "chromium.exe",
+    "thorium.exe",
 ];
 
 /// The file name of a desktop app's entry, lower-case: Windows writes the
@@ -131,6 +138,29 @@ pub fn is_meet_title(title: &str) -> bool {
         || t.starts_with("meet: ")
         || t.contains("google meet")
         || t.contains("meet.google.com")
+}
+
+/// The call a browser window's title shows: a Google Meet, Microsoft Teams
+/// or Zoom tab in front.
+pub fn web_call(title: &str) -> Option<CallApp> {
+    let t = title.trim().to_lowercase();
+    if is_meet_title(&t) {
+        Some(CallApp::Meet)
+    } else if t.contains("microsoft teams")
+        || t.contains("teams.microsoft.com")
+        || t.contains("teams.live.com")
+    {
+        Some(CallApp::Teams)
+    } else if t.starts_with("zoom - ")
+        || t.starts_with("zoom – ")
+        || t.contains("zoom meeting")
+        || t.contains("zoom workplace")
+        || t.contains("app.zoom.us")
+    {
+        Some(CallApp::Zoom)
+    } else {
+        None
+    }
 }
 
 /// A call has to hold the microphone this long before it counts, so a
@@ -243,6 +273,29 @@ mod tests {
             "Meeting notes - Google Docs - Google Chrome"
         ));
         assert!(!is_meet_title("YouTube - Google Chrome"));
+    }
+
+    #[test]
+    fn web_calls_by_tab_title_in_any_browser() {
+        assert_eq!(
+            web_call("Meet - abc-defg-hij — Zen Browser"),
+            Some(CallApp::Meet)
+        );
+        assert_eq!(
+            web_call("Meeting with Sam | Microsoft Teams - Google Chrome"),
+            Some(CallApp::Teams)
+        );
+        assert_eq!(web_call("Zoom - Microsoft Edge"), Some(CallApp::Zoom));
+        assert_eq!(
+            web_call("Zoom Meeting — Mozilla Firefox"),
+            Some(CallApp::Zoom)
+        );
+        assert_eq!(web_call("Zooming out on maps - Google Chrome"), None);
+        assert_eq!(web_call("YouTube — Zen Browser"), None);
+        assert_eq!(
+            holder_for_exe("C:#Program Files#Zen Browser#zen.exe"),
+            Holder::Browser("zen.exe".into())
+        );
     }
 
     #[test]

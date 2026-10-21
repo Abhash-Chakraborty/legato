@@ -100,7 +100,37 @@ type CallCard =
       app_path: string | null;
       stop_in_ms: number | null;
       elapsed_ms: number;
+    }
+  | {
+      kind: "meeting";
+      title: string;
+      /** Unix seconds. */
+      starts_at: number;
+      link: boolean;
     };
+
+/** A calendar, for a meeting's card. */
+const CalendarGlyph: React.FC = () => (
+  <svg viewBox="0 0 16 16" aria-hidden="true" className="scall-icon glyph">
+    <rect
+      x="2.5"
+      y="3.5"
+      width="11"
+      height="10"
+      rx="1.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+    />
+    <path
+      d="M2.5 6.5h11M5.5 2v3M10.5 2v3"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+    />
+  </svg>
+);
 
 /** The call app's own icon, or a phone. */
 const CallIcon: React.FC<{ path: string | null }> = ({ path }) => {
@@ -764,9 +794,74 @@ const RecordingOverlay: React.FC = () => {
     );
   }
 
+  // ---- Meeting: one on the calendar about to start; join it, with notes.
+  if (state === "call" && callCard?.card.kind === "meeting") {
+    const card = callCard.card;
+    const minutes = Math.round((card.starts_at * 1000 - now) / 60_000);
+    const desc =
+      minutes > 0
+        ? t("overlay.meeting.startsIn", { count: minutes })
+        : minutes === 0
+          ? t("overlay.meeting.now")
+          : t("overlay.meeting.started", { count: -minutes });
+    return (
+      <div
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div className="scard callcard" role="dialog" aria-label={card.title}>
+          <div className="scall-hd">
+            <CalendarGlyph />
+            <div className="scall-text">
+              <div className="scall-title">{card.title}</div>
+              <div className="scall-desc" aria-live="polite">
+                {desc}
+              </div>
+            </div>
+          </div>
+          <div className="spanel-actions">
+            {card.link ? (
+              <>
+                <button
+                  type="button"
+                  className="sbtn primary"
+                  onClick={() => commands.callCardAction("join_notes")}
+                >
+                  {t("overlay.meeting.joinNotes")}
+                </button>
+                <button
+                  type="button"
+                  className="sbtn"
+                  onClick={() => commands.callCardAction("join")}
+                >
+                  {t("overlay.meeting.join")}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="sbtn primary"
+                onClick={() => commands.callCardAction("start")}
+              >
+                {t("overlay.meeting.takeNotes")}
+              </button>
+            )}
+            <button
+              type="button"
+              className="sbtn quiet"
+              onClick={() => commands.callCardAction("not_now")}
+            >
+              {t("overlay.call.notNow")}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ---- Call: notes offered for a call that started, or the call ended.
-  if (state === "call" && callCard) {
-    const { card, at } = callCard;
+  if (state === "call" && callCard && callCard.card.kind !== "meeting") {
+    const { at } = callCard;
+    const card = callCard.card;
     const total = card.kind === "offer" ? card.countdown_ms : card.stop_in_ms;
     const left =
       total === null

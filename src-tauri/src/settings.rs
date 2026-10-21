@@ -288,7 +288,8 @@ pub struct CallSettings {
     /// Offer notes when a watched app starts a call.
     #[serde(default = "default_true")]
     pub detect: bool,
-    /// Reads browser window titles, for Google Meet.
+    /// Reads browser window titles, for Google Meet, Teams and Zoom in a
+    /// browser.
     #[serde(default = "default_true")]
     pub browser_titles: bool,
     #[serde(default = "crate::calls_rules::default_watched")]
@@ -314,6 +315,10 @@ pub struct CallSettings {
     /// Opens Notes on the note once its summary is ready.
     #[serde(default)]
     pub open_note: bool,
+    /// A minute before a meeting on a connected calendar, the bar offers to
+    /// join it, with or without notes.
+    #[serde(default = "default_true")]
+    pub meeting_cards: bool,
     /// The last call Legato noticed.
     #[serde(default)]
     pub last: Option<LastCall>,
@@ -332,6 +337,7 @@ impl Default for CallSettings {
             stop_on_end: true,
             max_minutes: default_notes_max_minutes(),
             open_note: false,
+            meeting_cards: true,
             last: None,
         }
     }

@@ -70,6 +70,7 @@ import {
   HideCardRow,
   LastCallRow,
   MaxLengthRow,
+  MeetingCardsRow,
   OpenNoteRow,
   SnoozeRow,
   StopOnEndRow,
@@ -1015,6 +1016,15 @@ export const buildSections = (
               "settings.connections.comingUp.help",
             ],
             render: () => <ComingUpRow />,
+            when: ({ settings }) => hasCalendars(settings?.calendars),
+          },
+          {
+            id: "meeting-cards",
+            searchKeys: [
+              "settings.calls.meetingCards.title",
+              "settings.calls.meetingCards.help",
+            ],
+            render: () => <MeetingCardsRow />,
             when: ({ settings }) => hasCalendars(settings?.calendars),
           },
         ],

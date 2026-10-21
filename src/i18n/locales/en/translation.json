@@ -897,7 +897,7 @@
       },
       "browserTitles": {
         "title": "Read browser window titles",
-        "help": "Needed for Google Meet in Chrome or Edge; Legato reads the window title, never the page."
+        "help": "Needed for Google Meet, Teams and Zoom in a browser; Legato reads the window title, never the page."
       },
       "apps": {
         "title": "Apps to watch",
@@ -914,9 +914,9 @@
           "discord": "Discord.exe"
         },
         "what": {
-          "teams": "",
-          "zoom": "",
-          "meet": " in a Chrome or Edge tab",
+          "teams": ", or teams.microsoft.com in a browser",
+          "zoom": ", or Zoom in a browser",
+          "meet": " in any browser tab",
           "slack": ", huddles",
           "discord": ", voice channels"
         }
@@ -972,6 +972,10 @@
       "openNote": {
         "title": "Open the note when it's ready",
         "help": "Opens Notes with the summary when processing finishes."
+      },
+      "meetingCards": {
+        "title": "Offer to join meetings",
+        "help": "A minute before a meeting on your calendar, the bar offers Join and Join with notes."
       }
     },
     "devices": {
@@ -1391,6 +1395,20 @@
       "stopNow": "Stop now",
       "stop": "Stop notes",
       "keep": "Keep recording"
+    },
+    "meeting": {
+      "startsIn_one": "Starts in {{count}} min",
+      "startsIn_other": "Starts in {{count}} min",
+      "now": "Starting now",
+      "started_one": "Started {{count}} min ago",
+      "started_other": "Started {{count}} min ago",
+      "joinNotes": "Join with notes",
+      "join": "Join",
+      "takeNotes": "Take notes"
+    },
+    "caption": {
+      "listening": "Listening…",
+      "label": "Live transcript"
     }
   },
   "titleBar": {

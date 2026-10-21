@@ -32,6 +32,7 @@ const DEFAULTS: Required<Omit<CallSettings, "last">> & {
   stop_on_end: true,
   max_minutes: 120,
   open_note: false,
+  meeting_cards: true,
   last: null,
 };
 
@@ -52,7 +53,8 @@ const CallToggle: React.FC<{
     | "auto_start"
     | "hide_card_from_capture"
     | "stop_on_end"
-    | "open_note";
+    | "open_note"
+    | "meeting_cards";
   labelKey: string;
 }> = ({ field, labelKey }) => {
   const { t } = useTranslation();
@@ -90,6 +92,9 @@ export const StopOnEndRow = () => (
 );
 export const OpenNoteRow = () => (
   <CallToggle field="open_note" labelKey="settings.calls.openNote" />
+);
+export const MeetingCardsRow = () => (
+  <CallToggle field="meeting_cards" labelKey="settings.calls.meetingCards" />
 );
 
 /** The apps watched for calls, each with how Legato recognises it. */
