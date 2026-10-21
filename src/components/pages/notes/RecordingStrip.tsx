@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { commands, type NoteLine, type SessionInfo } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
-import { useNotesStore } from "../../../stores/notesStore";
+import { useLiveLines, useNotesStore } from "../../../stores/notesStore";
 import { Button } from "../../ui/Button";
 import { clock, longClock } from "../../notes/notes";
 
@@ -40,10 +40,17 @@ export const SideMeter: React.FC<{ level: number; label: string }> = ({
   );
 };
 
-const LiveLine: React.FC<{ line: NoteLine }> = ({ line }) => {
+const LiveLine: React.FC<{ line: NoteLine; preview: boolean }> = ({
+  line,
+  preview,
+}) => {
   const { t } = useTranslation();
   return (
-    <li className="grid grid-cols-[44px_48px_minmax(0,1fr)] items-baseline gap-x-2 py-[3px] text-sm">
+    // A preview changes as the words come; the screen reader hears the line.
+    <li
+      aria-hidden={preview || undefined}
+      className="grid grid-cols-[44px_48px_minmax(0,1fr)] items-baseline gap-x-2 py-[3px] text-sm"
+    >
       <span className="text-xs tabular-nums text-text-3">
         {clock(line.at_ms)}
       </span>
@@ -52,7 +59,9 @@ const LiveLine: React.FC<{ line: NoteLine }> = ({ line }) => {
       >
         {t(`notes.who.${line.who}`)}
       </span>
-      <span className="min-w-0">{line.text}</span>
+      <span className={`min-w-0 ${preview ? "text-text-3" : ""}`}>
+        {line.text}
+      </span>
     </li>
   );
 };
@@ -64,7 +73,8 @@ export const RecordingStrip: React.FC<{ session: SessionInfo }> = ({
 }) => {
   const { t } = useTranslation();
   const tick = useNotesStore((s) => s.tick);
-  const live = useNotesStore((s) => s.live);
+  const live = useLiveLines();
+  const lines = useNotesStore((s) => s.live.length);
   const { settings, updateSetting } = useSettings();
   const [busy, setBusy] = useState(false);
   const listRef = useRef<HTMLOListElement>(null);
@@ -79,7 +89,7 @@ export const RecordingStrip: React.FC<{ session: SessionInfo }> = ({
   useEffect(() => {
     const list = listRef.current;
     if (list && pinned) list.scrollTop = list.scrollHeight;
-  }, [live.length, pinned, showLive]);
+  }, [live, pinned, showLive]);
 
   const run = async (fn: () => Promise<{ status: string; error?: string }>) => {
     if (busy) return;
@@ -188,9 +198,9 @@ export const RecordingStrip: React.FC<{ session: SessionInfo }> = ({
               {t("notes.strip.live")}
             </span>
             <span className="flex-1" />
-            {showLive && live.length > 0 && (
+            {showLive && lines > 0 && (
               <span className="tabular-nums">
-                {t("notes.strip.lines", { count: live.length })}
+                {t("notes.strip.lines", { count: lines })}
               </span>
             )}
             <button
@@ -222,8 +232,12 @@ export const RecordingStrip: React.FC<{ session: SessionInfo }> = ({
                   }}
                   className="max-h-[132px] overflow-y-auto pb-2.5 pe-4 ps-[18px]"
                 >
-                  {live.map((line) => (
-                    <LiveLine key={line.id} line={line} />
+                  {live.map(({ line, preview }) => (
+                    <LiveLine
+                      key={preview ? `p-${line.who}` : line.id}
+                      line={line}
+                      preview={preview}
+                    />
                   ))}
                 </ol>
               ) : (

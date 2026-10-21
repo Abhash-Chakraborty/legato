@@ -10,11 +10,12 @@ pub const RATE: usize = 16_000;
 const PRE_ROLL: usize = RATE * 300 / 1000;
 /// Silence that ends a line.
 const END_PAUSE: usize = RATE * 700 / 1000;
-/// Past this length a shorter pause ends the line.
-const LONG_LINE: usize = RATE * 20;
+/// Past this length a shorter pause ends the line. Short enough that a
+/// steady talker's words reach the transcript within seconds.
+const LONG_LINE: usize = RATE * 8;
 const LONG_LINE_PAUSE: usize = RATE * 200 / 1000;
 /// A line is cut here even without a pause.
-const MAX_LINE: usize = RATE * 30;
+const MAX_LINE: usize = RATE * 15;
 /// Less speech than this is a cough or a click, not a line.
 const MIN_SPEECH: usize = RATE * 300 / 1000;
 
@@ -115,6 +116,12 @@ impl Segmenter {
                 }
             }
         }
+    }
+
+    /// The line being spoken so far, for a preview of its words: where it
+    /// starts and its audio. None between lines.
+    pub fn open_line(&self) -> Option<(usize, &[f32])> {
+        self.line.as_ref().map(|l| (l.start, l.samples.as_slice()))
     }
 
     /// Ends the line being spoken, if any; the track has stopped.
@@ -500,15 +507,31 @@ mod tests {
     #[test]
     fn long_lines_end_at_the_next_short_pause_or_are_cut() {
         let lines = run(&[
-            (true, frames(21_000)),
+            (true, frames(9_000)),
             (false, frames(250)),
             (true, frames(500)),
         ]);
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].end_ms() >= 21_000 && lines[0].end_ms() < 21_500);
+        assert!(lines[0].end_ms() >= 9_000 && lines[0].end_ms() < 9_500);
         let lines = run(&[(true, frames(65_000))]);
-        assert_eq!(lines.len(), 3);
+        assert_eq!(lines.len(), 5);
         assert!(lines.iter().all(|l| l.samples.len() <= MAX_LINE + FRAME));
+    }
+
+    #[test]
+    fn the_open_line_grows_until_it_ends() {
+        let mut seg = Segmenter::new();
+        assert!(seg.open_line().is_none());
+        for _ in 0..frames(1000) {
+            seg.push(&[0.1; FRAME], true);
+        }
+        let (start, audio) = seg.open_line().unwrap();
+        assert_eq!(start, 0);
+        assert_eq!(audio.len(), frames(1000) * FRAME);
+        for _ in 0..frames(800) {
+            seg.push(&[0.0; FRAME], false);
+        }
+        assert!(seg.open_line().is_none());
     }
 
     #[test]

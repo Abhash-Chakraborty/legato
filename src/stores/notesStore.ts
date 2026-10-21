@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { create } from "zustand";
 import {
   commands,
@@ -17,6 +18,9 @@ interface NotesStore {
   tick: NotesTick | null;
   /** Lines transcribed so far in the recording in progress. */
   live: NoteLine[];
+  /** The words of lines still being spoken, at most one per side; they
+   *  give way to the line once it ends. */
+  previews: NoteLine[];
   /** Bumped when a line is added to or removed from any note, so an open
    *  transcript reloads. */
   linesVersion: number;
@@ -28,6 +32,7 @@ export const useNotesStore = create<NotesStore>()((set, get) => ({
   session: null,
   tick: null,
   live: [],
+  previews: [],
   linesVersion: 0,
   load: async () => {
     const [notes, session] = await Promise.all([
@@ -35,11 +40,14 @@ export const useNotesStore = create<NotesStore>()((set, get) => ({
       commands.getNotesSession().catch(() => null),
     ]);
     if (notes?.status === "ok") set({ notes: notes.data });
-    set((state) => ({
-      session,
-      live:
-        session && session.note_id === state.session?.note_id ? state.live : [],
-    }));
+    set((state) => {
+      const same = session && session.note_id === state.session?.note_id;
+      return {
+        session,
+        live: same ? state.live : [],
+        previews: same ? state.previews : [],
+      };
+    });
     // Opened mid-recording: the lines heard so far.
     if (session && !get().live.length) {
       const lines = await commands
@@ -89,14 +97,15 @@ export const watchNotes = () => {
     events.notesChanged.listen(() => useNotesStore.getState().load()),
     events.notesSessionChanged.listen((e) => {
       const session = e.payload.session;
-      set((state) => ({
-        session,
-        tick: session ? state.tick : null,
-        live:
-          session && session.note_id === state.session?.note_id
-            ? state.live
-            : [],
-      }));
+      set((state) => {
+        const same = session && session.note_id === state.session?.note_id;
+        return {
+          session,
+          tick: session ? state.tick : null,
+          live: same ? state.live : [],
+          previews: same && session.phase === "recording" ? state.previews : [],
+        };
+      });
     }),
     events.notesTick.listen((e) => set({ tick: e.payload })),
     events.noteLineAdded.listen((e) => {
@@ -108,6 +117,23 @@ export const watchNotes = () => {
             ? [...state.live, line].sort((a, b) => a.at_ms - b.at_ms)
             : state.live,
       }));
+    }),
+    events.notePreview.listen((e) => {
+      const { note_id, who, at_ms, text } = e.payload;
+      set((state) => {
+        if (state.session?.note_id !== note_id) return {};
+        const others = state.previews.filter((p) => p.who !== who);
+        if (!text) return { previews: others };
+        const preview: NoteLine = {
+          id: who === "you" ? -1 : -2,
+          note_id,
+          at_ms,
+          end_ms: at_ms,
+          who,
+          text,
+        };
+        return { previews: [...others, preview] };
+      });
     }),
     events.noteInsert.listen((e) => {
       const { note_id, text } = e.payload;
@@ -124,4 +150,24 @@ export const watchNotes = () => {
   ]).catch(() => {
     listening = false;
   });
+};
+
+/** A live transcript line, or the words of one still being spoken. */
+export interface LiveLine {
+  line: NoteLine;
+  preview: boolean;
+}
+
+/** The lines so far with the ones still being spoken, in time order. */
+export const useLiveLines = (): LiveLine[] => {
+  const live = useNotesStore((s) => s.live);
+  const previews = useNotesStore((s) => s.previews);
+  return useMemo(
+    () =>
+      [
+        ...live.map((line) => ({ line, preview: false })),
+        ...previews.map((line) => ({ line, preview: true })),
+      ].sort((a, b) => a.line.at_ms - b.line.at_ms),
+    [live, previews],
+  );
 };

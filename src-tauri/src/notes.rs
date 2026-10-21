@@ -33,6 +33,10 @@ use tauri_specta::Event;
 const TICK: Duration = Duration::from_millis(125);
 /// How often a track's WAV header is rewritten, so a crash keeps the audio.
 const FLUSH_EVERY: Duration = Duration::from_secs(10);
+/// A line being spoken is previewed once it's this long, then again each
+/// time it grows by `PREVIEW_EVERY`, while the transcriber has nothing else.
+const PREVIEW_AFTER: usize = RATE * 6 / 5;
+const PREVIEW_EVERY: usize = RATE * 3 / 2;
 /// System audio that falls this far behind the clock (nothing playing) is
 /// filled with silence, so both tracks stay in step.
 const PAD_AFTER: u64 = (RATE as u64) * 3 / 10;
@@ -47,6 +51,16 @@ pub struct NotesChanged;
 #[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct NoteLineAdded {
     pub line: NoteLine,
+}
+
+/// The words of the line being spoken, before it ends, for the live
+/// transcript. Empty text clears the preview.
+#[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct NotePreview {
+    pub note_id: i64,
+    pub who: Speaker,
+    pub at_ms: i64,
+    pub text: String,
 }
 
 /// A microphone line dropped because it was the speakers' echo of the call.
@@ -387,6 +401,8 @@ struct Shared {
     clock: Mutex<Clock>,
     paused: AtomicBool,
     pending: AtomicU32,
+    /// A preview is queued or being transcribed.
+    previewing: AtomicBool,
     you: Level,
     them: Level,
     stop_ticker: AtomicBool,
@@ -419,6 +435,8 @@ impl Sink for MicSink {
 struct Job {
     who: Speaker,
     utterance: Utterance,
+    /// The line so far, for the live transcript: shown, not saved.
+    preview: bool,
 }
 
 struct Session {
@@ -541,6 +559,7 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
         }),
         paused: AtomicBool::new(false),
         pending: AtomicU32::new(0),
+        previewing: AtomicBool::new(false),
         you: Level::default(),
         them: Level::default(),
         stop_ticker: AtomicBool::new(false),
@@ -799,6 +818,8 @@ struct Track {
     frame: usize,
     buffer: Vec<f32>,
     segmenter: Segmenter,
+    /// How much of the open line the last preview covered.
+    previewed: usize,
     written: u64,
     shared: Arc<Shared>,
     jobs: Sender<Job>,
@@ -825,9 +846,11 @@ impl Track {
                 None => level > 0.35,
             };
             if let Some(utterance) = self.segmenter.push(&frame, speech) {
+                self.previewed = 0;
                 self.send(utterance);
             }
         }
+        self.preview();
         Ok(())
     }
 
@@ -838,10 +861,44 @@ impl Track {
             .send(Job {
                 who: self.who,
                 utterance,
+                preview: false,
             })
             .is_err()
         {
             self.shared.pending.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Hands the line being spoken to the transcriber for a preview, when
+    /// it has grown enough and nothing waits to be transcribed. Lines only
+    /// end at a pause, so without this a long turn shows nothing until
+    /// its speaker stops.
+    fn preview(&mut self) {
+        let Some((start, samples)) = self.segmenter.open_line() else {
+            return;
+        };
+        let due = if self.previewed == 0 {
+            PREVIEW_AFTER
+        } else {
+            self.previewed + PREVIEW_EVERY
+        };
+        if samples.len() < due || self.shared.pending.load(Ordering::Relaxed) > 0 {
+            return;
+        }
+        if self.shared.previewing.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        self.previewed = samples.len();
+        let job = Job {
+            who: self.who,
+            utterance: Utterance {
+                start,
+                samples: samples.to_vec(),
+            },
+            preview: true,
+        };
+        if self.jobs.send(job).is_err() {
+            self.shared.previewing.store(false, Ordering::Relaxed);
         }
     }
 }
@@ -877,6 +934,7 @@ fn spawn_track(
         frame,
         buffer: Vec::new(),
         segmenter: Segmenter::new(),
+        previewed: 0,
         written: 0,
         shared: Arc::clone(shared),
         jobs,
@@ -952,7 +1010,33 @@ fn transcribe_lines(
             error!("Couldn't keep a failed Notes line: {e}");
         }
     };
+    let clear = |who: Speaker| {
+        let _ = NotePreview {
+            note_id,
+            who,
+            at_ms: 0,
+            text: String::new(),
+        }
+        .emit(app);
+    };
     for job in jobs {
+        if job.preview {
+            // Only with the model already loaded and the live transcript
+            // shown; a preview is never worth a wait.
+            if tm.is_model_loaded() && get_settings(app).notes_live_transcript {
+                if let Ok(f) = tm.transcribe(job.utterance.samples.clone()) {
+                    let _ = NotePreview {
+                        note_id,
+                        who: job.who,
+                        at_ms: job.utterance.start_ms(),
+                        text: f.text.trim().to_string(),
+                    }
+                    .emit(app);
+                }
+            }
+            shared.previewing.store(false, Ordering::Relaxed);
+            continue;
+        }
         // A cancelled dictation can stop a run in flight; one retry covers it.
         let text = ensure_model(&tm)
             .and_then(|_| tm.transcribe(job.utterance.samples.clone()))
@@ -978,6 +1062,8 @@ fn transcribe_lines(
                 failed += 1;
             }
         }
+        // The line is in (or dropped as an echo): its preview goes.
+        clear(job.who);
     }
     (saved, failed)
 }

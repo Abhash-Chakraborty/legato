@@ -2093,6 +2093,7 @@ calendarChanged: CalendarChanged,
 syncChanged: SyncChanged,
 noteInsert: NoteInsert,
 noteLineAdded: NoteLineAdded,
+notePreview: NotePreview,
 noteLineRemoved: NoteLineRemoved,
 notesChanged: NotesChanged,
 notesSessionChanged: NotesSessionChanged,
@@ -2120,6 +2121,7 @@ calendarChanged: "calendar-changed",
 syncChanged: "sync-changed",
 noteInsert: "note-insert",
 noteLineAdded: "note-line-added",
+notePreview: "note-preview",
 noteLineRemoved: "note-line-removed",
 notesChanged: "notes-changed",
 notesSessionChanged: "notes-session-changed",
@@ -2521,6 +2523,11 @@ export type NoteInsert = { note_id: number; text: string }
 export type NoteKind = "memo" | "meeting"
 export type NoteLine = { id: number; note_id: number; at_ms: number; end_ms: number; who: Speaker; text: string }
 export type NoteLineAdded = { line: NoteLine }
+/**
+ * The words of the line being spoken, before it ends, for the live
+ * transcript. Empty text clears the preview.
+ */
+export type NotePreview = { note_id: number; who: Speaker; at_ms: number; text: string }
 export type NoteLineRemoved = { note_id: number; line_id: number }
 export type NoteMatch = { id: number; line: NoteLine | null }
 export type NoteStatus = "recording" | "transcribing" | "summarising" | "ready"

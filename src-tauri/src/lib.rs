@@ -1029,6 +1029,7 @@ pub fn run(cli_args: CliArgs) {
             scratchpad::ScratchpadDictating,
             notes::NotesChanged,
             notes::NoteLineAdded,
+            notes::NotePreview,
             notes::NoteLineRemoved,
             notes::NotesSessionChanged,
             notes::NotesTick,

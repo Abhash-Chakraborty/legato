@@ -7,15 +7,24 @@ import { clock, longClock } from "@/components/notes/notes";
 import { SideMeter } from "@/components/pages/notes/RecordingStrip";
 import { AppToaster } from "@/components/shell/AppToaster";
 import { Button } from "@/components/ui/Button";
-import { takeDictation, useNotesStore, watchNotes } from "@/stores/notesStore";
+import {
+  takeDictation,
+  useLiveLines,
+  useNotesStore,
+  watchNotes,
+} from "@/stores/notesStore";
 
 /** Autosave waits this long after the last key. */
 const SAVE_DELAY_MS = 600;
 
-const Line: React.FC<{ line: NoteLine }> = ({ line }) => {
+const Line: React.FC<{ line: NoteLine; preview?: boolean }> = ({
+  line,
+  preview,
+}) => {
   const { t } = useTranslation();
   return (
-    <li className="py-1.5">
+    // A preview changes as the words come; the screen reader hears the line.
+    <li className="py-1.5" aria-hidden={preview || undefined}>
       <div className="flex items-baseline gap-2 text-xs">
         <span
           className={`font-medium ${line.who === "you" ? "text-teal-700" : "text-text-2"}`}
@@ -24,7 +33,11 @@ const Line: React.FC<{ line: NoteLine }> = ({ line }) => {
         </span>
         <span className="tabular-nums text-text-3">{clock(line.at_ms)}</span>
       </div>
-      <p className="mt-0.5 text-sm leading-relaxed">{line.text}</p>
+      <p
+        className={`mt-0.5 text-sm leading-relaxed ${preview ? "text-text-3" : ""}`}
+      >
+        {line.text}
+      </p>
     </li>
   );
 };
@@ -167,7 +180,7 @@ export const NotesPanel: React.FC = () => {
   const { t } = useTranslation();
   const session = useNotesStore((s) => s.session);
   const tick = useNotesStore((s) => s.tick);
-  const live = useNotesStore((s) => s.live);
+  const live = useLiveLines();
   const [busy, setBusy] = useState(false);
   const [pinned, setPinned] = useState(true);
   const listRef = useRef<HTMLOListElement>(null);
@@ -186,7 +199,7 @@ export const NotesPanel: React.FC = () => {
   useEffect(() => {
     const list = listRef.current;
     if (list && pinned) list.scrollTop = list.scrollHeight;
-  }, [live.length, pinned]);
+  }, [live, pinned]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -287,8 +300,12 @@ export const NotesPanel: React.FC = () => {
             }}
             className="min-h-0 flex-1 overflow-y-auto px-4 pb-2"
           >
-            {live.map((line) => (
-              <Line key={line.id} line={line} />
+            {live.map(({ line, preview }) => (
+              <Line
+                key={preview ? `p-${line.who}` : line.id}
+                line={line}
+                preview={preview}
+              />
             ))}
           </ol>
         ) : (
