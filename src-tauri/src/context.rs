@@ -397,6 +397,9 @@ const TERMINALS: &[&str] = &[
     "cursor.exe",
 ];
 
+/// Apps whose executable describes itself by another name.
+const NAMES: &[(&str, &str)] = &[("windowsterminal.exe", "Windows Terminal")];
+
 /// Splits a window title into its parts ("Inbox - me@x.com - Gmail - Google
 /// Chrome"), dropping unread counters such as "(3) ".
 fn title_parts(title: &str) -> Vec<String> {
@@ -446,6 +449,9 @@ fn classify(exe_path: &str, exe: &str, described: Option<&str>, title: &str) -> 
                 .map(|c| c.to_uppercase().collect::<String>() + chars.as_str())
                 .unwrap_or_default()
         });
+    if let Some((_, known)) = NAMES.iter().find(|(e, _)| *e == exe) {
+        name = known.to_string();
+    }
     let mut site = None;
     let mut category = APPS
         .iter()
@@ -967,7 +973,8 @@ mod tests {
         );
         assert_eq!(cc.name, "Claude Code");
         assert_eq!(cc.category, AppCategory::Ai);
-        let shell = info("windowsterminal.exe", Some("Windows Terminal"), "pwsh");
+        let shell = info("windowsterminal.exe", Some("Windows Terminal Host"), "pwsh");
+        assert_eq!(shell.name, "Windows Terminal");
         assert_eq!(shell.category, AppCategory::Code);
     }
 

@@ -394,6 +394,16 @@ pub static MIGRATIONS: &[M] = &[
     // Insights: each app's executable, for its icon, kept with the totals
     // because the history rows it came from are trimmed or deleted.
     M::up("ALTER TABLE daily_app_stats ADD COLUMN app_path TEXT;"),
+    // Windows Terminal describes itself as "Windows Terminal Host"; the
+    // dictations saved under that name move to the one shown now.
+    M::up(
+        "UPDATE transcription_history SET app_name = 'Windows Terminal'
+            WHERE app_name = 'Windows Terminal Host';
+         UPDATE daily_app_stats AS old SET app = 'Windows Terminal'
+            WHERE app = 'Windows Terminal Host' AND NOT EXISTS
+               (SELECT 1 FROM daily_app_stats n
+                WHERE n.day = old.day AND n.app = 'Windows Terminal');",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.
