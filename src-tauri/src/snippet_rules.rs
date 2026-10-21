@@ -123,9 +123,8 @@ pub fn mark(text: &str, snippets: &[SnippetRule]) -> Marked {
         // Speech splits and joins words ("linked in" for "LinkedIn"), so
         // windows one word longer or shorter are tried too.
         let lengths = [n, n + 1, n.saturating_sub(1)];
-        let mut i = 0;
-        while i < words.len() {
-            let best = lengths
+        let best_at = |i: usize, claimed: &[bool]| {
+            lengths
                 .iter()
                 .filter(|&&len| len > 0 && i + len <= words.len())
                 .filter(|&&len| !claimed[i..i + len].iter().any(|c| *c))
@@ -138,8 +137,19 @@ pub fn mark(text: &str, snippets: &[SnippetRule]) -> Marked {
                     (len, strsim::normalized_levenshtein(&window, &trigger))
                 })
                 .filter(|(_, score)| *score >= MATCH_THRESHOLD)
-                .max_by(|a, b| a.1.total_cmp(&b.1));
-            match best {
+                .max_by(|a, b| a.1.total_cmp(&b.1))
+        };
+        let mut i = 0;
+        while i < words.len() {
+            match best_at(i, &claimed) {
+                // A longer window can match a word early ("my sign off"
+                // for "sign off"); the trigger starts at the next word when
+                // that matches as well.
+                Some((_, score))
+                    if best_at(i + 1, &claimed).is_some_and(|(_, next)| next >= score) =>
+                {
+                    i += 1
+                }
                 Some((len, _)) => {
                     claimed[i..i + len].iter_mut().for_each(|c| *c = true);
                     found.push((words[i].start, words[i + len - 1].end, s.id));
@@ -318,6 +328,17 @@ mod tests {
         // Close misses count; distant words don't.
         assert_eq!(expand("here's my linked in", &rules), "here's <1>");
         assert_eq!(expand("here is my laptop", &rules), "here is my laptop");
+    }
+
+    #[test]
+    fn the_word_before_a_trigger_stays() {
+        let rules = [rule(1, "legato test signature", false)];
+        assert_eq!(
+            expand("Here is my legato test signature.", &rules),
+            "Here is my <1>."
+        );
+        let rules = [rule(2, "linkedin", false)];
+        assert_eq!(expand("see my linked in", &rules), "see my <2>");
     }
 
     #[test]
