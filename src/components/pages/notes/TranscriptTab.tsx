@@ -1,16 +1,34 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Copy, Pause, Play, RotateCw, Search, SpellCheck } from "lucide-react";
+import {
+  Copy,
+  Loader2,
+  Pause,
+  Play,
+  RotateCw,
+  Search,
+  SpellCheck,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import { commands, type Note, type NoteLine } from "@/bindings";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";
 import { useSettings } from "../../../hooks/useSettings";
+import { useSpeakerModel } from "../../../hooks/useSpeakerModel";
 import { useAiStore, watchAi } from "../../../stores/aiStore";
+import { useNavStore } from "../../../stores/navStore";
 import { useNotesStore } from "../../../stores/notesStore";
 import { Button } from "../../ui/Button";
 import { LineText } from "../../notes/LineText";
-import { clock, durationLabel, lineAt, lineMatches } from "../../notes/notes";
+import {
+  clock,
+  durationLabel,
+  lineAt,
+  lineMatches,
+  voiceChoices,
+} from "../../notes/notes";
+import { SpeakerTag } from "../../notes/SpeakerTag";
 import { FixReview } from "./FixReview";
 import type { Jump } from "./NoteDetail";
 
@@ -88,6 +106,9 @@ export const TranscriptTab: React.FC<{
   const [player, setPlayer] = useState(false);
   const [marked, setMarked] = useState<number | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  const [finding, setFinding] = useState(false);
+  const speakerModel = useSpeakerModel();
+  const go = useNavStore((s) => s.go);
   const aiStatus = useAiStore((s) => s.status);
   const { settings } = useSettings();
   const canFix =
@@ -151,6 +172,29 @@ export const TranscriptTab: React.FC<{
       el.removeEventListener("ended", pause);
     };
   }, [player, src]);
+
+  const voices = useMemo(() => voiceChoices(lines ?? []), [lines]);
+  const canFindSpeakers =
+    !!speakerModel?.downloaded && !!note.audio_file && note.status === "ready";
+  // A meeting with no voices told apart: say where that's set up.
+  const offerSpeakers =
+    !!speakerModel &&
+    !speakerModel.downloaded &&
+    note.kind === "meeting" &&
+    note.status === "ready" &&
+    !!note.audio_file;
+
+  const findSpeakers = async () => {
+    setFinding(true);
+    const result = await commands.findNoteSpeakers(note.id);
+    setFinding(false);
+    if (result.status === "error")
+      toast.error(t("notes.speakers.findFailed"), {
+        description: result.error,
+      });
+    else if (result.data < 2) toast(t("notes.speakers.oneVoice"));
+    else toast(t("notes.speakers.found", { count: result.data }));
+  };
 
   const shown = useMemo(
     () => (lines ?? []).filter((l) => !query.trim() || lineMatches(l, query)),
@@ -246,6 +290,36 @@ export const TranscriptTab: React.FC<{
           </span>
         )}
         <span className={src && player ? "" : "flex-1"} />
+        {offerSpeakers && (
+          <button
+            type="button"
+            onClick={() => go("settings", "calls")}
+            title={t("notes.speakers.setUpHint")}
+            className="inline-flex h-8 items-center gap-2 rounded-[var(--r-md)] px-2.5 text-[13px] font-medium text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:text-text hover:duration-0 active:scale-[0.97]"
+          >
+            <Users className="h-3.5 w-3.5" aria-hidden="true" />
+            {t("notes.speakers.setUp")}
+          </button>
+        )}
+        {canFindSpeakers && (
+          <button
+            type="button"
+            onClick={findSpeakers}
+            disabled={finding}
+            title={t("notes.speakers.findHint")}
+            className="inline-flex h-8 items-center gap-2 rounded-[var(--r-md)] px-2.5 text-[13px] font-medium text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:text-text hover:duration-0 active:scale-[0.97] disabled:opacity-50"
+          >
+            {finding ? (
+              <Loader2
+                className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+            ) : (
+              <Users className="h-3.5 w-3.5" aria-hidden="true" />
+            )}
+            {finding ? t("notes.speakers.finding") : t("notes.speakers.find")}
+          </button>
+        )}
         {canFix && (
           <button
             type="button"
@@ -347,7 +421,7 @@ export const TranscriptTab: React.FC<{
               <li
                 key={line.id}
                 data-line={line.id}
-                className={`grid grid-cols-[52px_52px_minmax(0,1fr)] items-baseline gap-x-2 rounded-[var(--r-sm)] px-1.5 py-[7px] text-[15px] leading-relaxed transition-colors duration-[var(--dur-2)] ${
+                className={`grid ${voices.length ? "grid-cols-[52px_96px_minmax(0,1fr)]" : "grid-cols-[52px_52px_minmax(0,1fr)]"} items-baseline gap-x-2 rounded-[var(--r-sm)] px-1.5 py-[7px] text-[15px] leading-relaxed transition-colors duration-[var(--dur-2)] ${
                   now ? "bg-teal-50" : mark ? "bg-surface-2" : ""
                 }`}
               >
@@ -366,12 +440,8 @@ export const TranscriptTab: React.FC<{
                 >
                   {clock(line.at_ms)}
                 </button>
-                <span
-                  className={`text-[13px] font-medium ${line.who === "you" ? "text-teal-700" : "text-text-2"}`}
-                >
-                  {t(`notes.who.${line.who}`)}
-                </span>
-                <LineText line={line} />
+                <SpeakerTag line={line} className="text-[13px]" />
+                <LineText line={line} voices={voices} />
               </li>
             );
           })}

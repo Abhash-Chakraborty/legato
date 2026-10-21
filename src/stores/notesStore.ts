@@ -21,8 +21,8 @@ interface NotesStore {
   /** The words of lines still being spoken, at most one per side; they
    *  give way to the line once it ends. */
   previews: NoteLine[];
-  /** Bumped when a line is added to or removed from any note, so an open
-   *  transcript reloads. */
+  /** Bumped when a line is added to, changed in or removed from any note,
+   *  so an open transcript reloads. */
   linesVersion: number;
   load: () => Promise<void>;
 }
@@ -124,6 +124,18 @@ export const watchNotes = () => {
         linesVersion: state.linesVersion + 1,
         live: state.live.map((l) => (l.id === line.id ? line : l)),
       }));
+    }),
+    events.noteLinesChanged.listen(async (e) => {
+      const { note_id } = e.payload;
+      set((state) => ({ linesVersion: state.linesVersion + 1 }));
+      // Voices found during the recording: the live lines get them too.
+      if (useNotesStore.getState().session?.note_id !== note_id) return;
+      const lines = await commands.getNoteLines(note_id).catch(() => null);
+      if (
+        lines?.status === "ok" &&
+        useNotesStore.getState().session?.note_id === note_id
+      )
+        set({ live: lines.data });
     }),
     events.notePreview.listen((e) => {
       const { note_id, who, at_ms, text } = e.payload;

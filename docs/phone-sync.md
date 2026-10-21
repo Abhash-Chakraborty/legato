@@ -228,7 +228,10 @@ Rules per kind:
   don't count in Insights, which measures this PC.
 - **Notes** sync once they're ready (not while recording or transcribing). The phone records
   voice memos too: `kind` is `memo`, each stretch of about 30 seconds is a line with `who` set to
-  `you`, and the recording itself stays on the phone only until it's written up.
+  `you`, and the recording itself stays on the phone only until it's written up. Once the
+  PC's speaker model has told voices apart, a line carries `speaker` (1, 2, …) and the note
+  `speakers`, a list of `{speaker, name}` for the voices given a name; both are left out when
+  unset, so older notes hash as before. Saved voice clips stay on the PC.
 - **Transforms** leave out the AI provider and model, since API keys stay on each device.
 - **Style** syncs the tone only. Paste method, the key after paste and the trailing space
   belong to the PC.

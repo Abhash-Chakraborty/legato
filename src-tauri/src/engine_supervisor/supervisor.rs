@@ -30,12 +30,17 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
-use transcribe_cpp::{Backend, RunOptions, StreamOptions, StreamText, StreamUpdate, Transcript};
+use transcribe_cpp::{
+    Backend, RunOptions, SpeakerSegment, StreamOptions, StreamText, StreamUpdate, Transcript,
+};
 
 /// Spawn, backend init and device listing (listing first opens the GPU).
 const HELLO_TIMEOUT: Duration = Duration::from_secs(60);
 /// Model loads stay generous: a slow load is slow, not hung (#1841).
 const LOAD_TIMEOUT: Duration = Duration::from_secs(180);
+/// Speaker detection gets this long plus its audio's length (on a GPU, a
+/// quarter of it) to load its model and run.
+const DIARIZE_FLOOR: Duration = Duration::from_secs(120);
 /// Floor for stream calls that do no decoding (begin, reset).
 const CALL_FLOOR: Duration = Duration::from_secs(30);
 /// How long a worker gets to exit after its stdin closes before it's killed.
@@ -254,6 +259,28 @@ impl Shared {
                     ));
                 }
             }
+        }
+    }
+
+    /// Detect speakers in a worker of its own, which exits when done.
+    fn diarize_in(
+        &self,
+        spec: &LoadSpec,
+        cpu_only: bool,
+        audio: &[PathBuf],
+        length: Duration,
+    ) -> Result<Vec<Vec<SpeakerSegment>>, Failure> {
+        let mut worker = self.hello(cpu_only, false)?;
+        let deadline = DIARIZE_FLOOR + if cpu_only { length } else { length / 4 };
+        let request = Request::Diarize {
+            path: spec.path.clone(),
+            backend: spec.backend,
+            device: spec.device.clone(),
+            audio: audio.to_vec(),
+        };
+        match worker.call(&request, None, deadline)? {
+            Response::Speakers(speakers) => Ok(speakers),
+            other => Err(unexpected(&other)),
         }
     }
 
@@ -478,6 +505,29 @@ impl EngineSupervisor {
             );
             call.control.kill();
         }
+    }
+
+    /// Who spoke when in each 16 kHz mono WAV in `audio`, `length` long in
+    /// all, with the diarization model at `spec.path`. Runs on the caller's
+    /// thread in a short-lived worker of its own beside any model worker, so
+    /// the speech model stays loaded. A GPU worker that crashes or hangs is
+    /// retried once on the CPU.
+    pub fn diarize(
+        &self,
+        spec: LoadSpec,
+        audio: &[PathBuf],
+        length: Duration,
+    ) -> Result<Vec<Vec<SpeakerSegment>>, EngineError> {
+        let cpu_only = spec.cpu_only() || !self.shared.gpu_allowed || self.shared.gpu_unavailable();
+        let spec = if cpu_only { spec.cpu() } else { spec };
+        match self.shared.diarize_in(&spec, cpu_only, audio, length) {
+            Err(failure) if failure.worker_lost() && !cpu_only => {
+                warn!("Speaker detection {failure} on the GPU; trying again on the CPU");
+                self.shared.diarize_in(&spec.cpu(), true, audio, length)
+            }
+            result => result,
+        }
+        .map_err(EngineError::from)
     }
 
     /// The compute devices, as listed by the latest worker. If no worker has
@@ -1390,6 +1440,7 @@ fn request_name(request: &Request) -> &'static str {
         Request::Feed => "stream feed",
         Request::Finalize { .. } => "stream finalize",
         Request::StreamReset => "stream reset",
+        Request::Diarize { .. } => "speaker detection",
     }
 }
 

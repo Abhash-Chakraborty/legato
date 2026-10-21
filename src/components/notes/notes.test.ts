@@ -9,7 +9,10 @@ import {
   lineAt,
   lineMatches,
   longClock,
+  speakerLabel,
   summaryText,
+  voiceChoices,
+  voicesIn,
   transcriptText,
   whenLabel,
 } from "./notes";
@@ -89,9 +92,41 @@ assert.deepEqual(answerParts("No times [here]."), [
   { kind: "text", text: "No times [here]." },
 ]);
 
+const names = {
+  you: "You",
+  them: "Them",
+  voice: (n: number) => `Speaker ${n}`,
+};
 assert.equal(
-  transcriptText(lines, { you: "You", them: "Them" }),
+  transcriptText(lines, names),
   "0:04 You: Okay, let's start.\n0:11 Them: Netbird routes are up.",
+);
+// Voices told apart: a name where one was given, a number elsewhere.
+const voiced: NoteLine[] = [
+  { ...lines[0], speaker: 1 },
+  { ...lines[1], speaker: 2 },
+  { ...lines[1], id: 9, at_ms: 15_000, speaker: 1 },
+];
+const named = [{ speaker: 1, name: "Robert" }];
+assert.equal(speakerLabel(voiced[1], named, names), "Speaker 2");
+assert.equal(
+  speakerLabel(voiced[1], [{ speaker: 2, name: "" }], names),
+  "Speaker 2",
+);
+assert.deepEqual(voicesIn([...voiced, lines[0]]), [1, 2]);
+// A meeting's voices are on Them, so You stays a choice of its own.
+assert.deepEqual(
+  voiceChoices([lines[0], voiced[1], { ...voiced[2], speaker: 3 }]),
+  [
+    { who: "you", speaker: null },
+    { who: "them", speaker: 2 },
+    { who: "them", speaker: 3 },
+  ],
+);
+assert.deepEqual(voiceChoices(lines), []);
+assert.equal(
+  transcriptText(voiced, names, named),
+  "0:04 Robert: Okay, let's start.\n0:11 Speaker 2: Netbird routes are up.\n0:15 Robert: Netbird routes are up.",
 );
 assert.ok(lineMatches(lines[1], "netbird UP"));
 assert.ok(!lineMatches(lines[1], "netbird down"));

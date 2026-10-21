@@ -227,6 +227,10 @@ const settingUpdaters: {
   learn_mode: (value) => commands.changeLearnModeSetting(value as LearnMode),
   notes_live_transcript: (value) =>
     commands.changeNotesLiveTranscriptSetting(value as boolean),
+  notes_speakers: (value) =>
+    commands.changeNotesSpeakersSetting(value as boolean),
+  notes_remember_voices: (value) =>
+    commands.changeNotesRememberVoicesSetting(value as boolean),
   scratchpad_open: (value) =>
     commands.changeScratchpadOpenSetting(value as ScratchpadOpen),
   bubble_enabled: (value) =>

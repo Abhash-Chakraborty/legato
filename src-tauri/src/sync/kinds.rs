@@ -399,14 +399,17 @@ fn export_notes(conn: &Connection, me: &str) -> Result<Vec<Item>> {
     let mut lines: HashMap<i64, Vec<Value>> = HashMap::new();
     {
         let mut stmt = conn.prepare(
-            "SELECT note_id, at_ms, end_ms, who, text FROM note_line ORDER BY note_id, at_ms, id",
+            "SELECT note_id, at_ms, end_ms, who, text, speaker FROM note_line
+             ORDER BY note_id, at_ms, id",
         )?;
         let rows = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                json!({"at_ms": r.get::<_, i64>(1)?, "end_ms": r.get::<_, i64>(2)?,
-                       "who": r.get::<_, String>(3)?, "text": r.get::<_, String>(4)?}),
-            ))
+            let mut line = json!({"at_ms": r.get::<_, i64>(1)?, "end_ms": r.get::<_, i64>(2)?,
+                       "who": r.get::<_, String>(3)?, "text": r.get::<_, String>(4)?});
+            // Only when set, so a line without one hashes as it always did.
+            if let Some(speaker) = r.get::<_, Option<i64>>(5)? {
+                line["speaker"] = json!(speaker);
+            }
+            Ok((r.get::<_, i64>(0)?, line))
         })?;
         for row in rows {
             let (id, line) = row?;
@@ -421,6 +424,21 @@ fn export_notes(conn: &Connection, me: &str) -> Result<Vec<Item>> {
         for row in rows {
             let (id, tag) = row?;
             tags.entry(id).or_default().push(tag);
+        }
+    }
+    let mut speakers: HashMap<i64, Vec<Value>> = HashMap::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT note_id, speaker, name FROM note_speaker ORDER BY note_id, speaker")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                json!({"speaker": r.get::<_, i64>(1)?, "name": r.get::<_, String>(2)?}),
+            ))
+        })?;
+        for row in rows {
+            let (id, speaker) = row?;
+            speakers.entry(id).or_default().push(speaker);
         }
     }
     let mut actions: HashMap<i64, Vec<Value>> = HashMap::new();
@@ -465,16 +483,21 @@ fn export_notes(conn: &Connection, me: &str) -> Result<Vec<Item>> {
         let (id, key, title, kind, started_at, duration_ms, app, my_notes, summary, decisions) =
             row?;
         let decisions: Value = serde_json::from_str(&decisions).unwrap_or_else(|_| json!([]));
+        let mut body = json!({
+            "title": title, "kind": kind, "started_at": started_at,
+            "duration_ms": duration_ms, "app": app, "my_notes": my_notes,
+            "summary": summary, "decisions": decisions,
+            "tags": tags.remove(&id).unwrap_or_default(),
+            "actions": actions.remove(&id).unwrap_or_default(),
+            "lines": lines.remove(&id).unwrap_or_default(),
+        });
+        // Names given to voices, only when there are any (see the lines).
+        if let Some(names) = speakers.remove(&id) {
+            body["speakers"] = json!(names);
+        }
         items.push(Item {
             key: key.unwrap_or_else(|| format!("{me}:{id}")),
-            body: json!({
-                "title": title, "kind": kind, "started_at": started_at,
-                "duration_ms": duration_ms, "app": app, "my_notes": my_notes,
-                "summary": summary, "decisions": decisions,
-                "tags": tags.remove(&id).unwrap_or_default(),
-                "actions": actions.remove(&id).unwrap_or_default(),
-                "lines": lines.remove(&id).unwrap_or_default(),
-            }),
+            body,
             at: seconds_to_ms(started_at),
         });
     }
@@ -498,7 +521,13 @@ fn apply_note(
         None => None,
     };
     let clear = |id: i64| -> Result<()> {
-        for table in ["note_line", "note_tag", "note_action", "note_failed_line"] {
+        for table in [
+            "note_line",
+            "note_tag",
+            "note_action",
+            "note_failed_line",
+            "note_speaker",
+        ] {
             conn.execute(&format!("DELETE FROM {table} WHERE note_id = ?1"), [id])?;
         }
         Ok(())
@@ -572,15 +601,25 @@ fn apply_note(
             "you"
         };
         conn.execute(
-            "INSERT INTO note_line (note_id, at_ms, end_ms, who, text) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO note_line (note_id, at_ms, end_ms, who, text, speaker)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 id,
                 int(line, "at_ms").unwrap_or_default(),
                 int(line, "end_ms").unwrap_or_default(),
                 who,
-                text(line, "text")
+                text(line, "text"),
+                int(line, "speaker")
             ],
         )?;
+    }
+    for speaker in body["speakers"].as_array().into_iter().flatten() {
+        if let Some(n) = int(speaker, "speaker") {
+            conn.execute(
+                "INSERT OR REPLACE INTO note_speaker (note_id, speaker, name) VALUES (?1, ?2, ?3)",
+                params![id, n, text(speaker, "name")],
+            )?;
+        }
     }
     for tag in body["tags"].as_array().into_iter().flatten() {
         if let Some(tag) = tag.as_str() {

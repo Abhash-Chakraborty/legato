@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use transcribe_cpp::{
-    Backend, Capabilities, DeviceType, RunOptions, StreamOptions, StreamText, StreamUpdate,
-    Transcript,
+    Backend, Capabilities, DeviceType, RunOptions, SpeakerSegment, StreamOptions, StreamText,
+    StreamUpdate, Transcript,
 };
 
 /// Refuse frames larger than this: a garbage length must not turn into a
@@ -50,6 +50,17 @@ pub enum Request {
         want_language: bool,
     },
     StreamReset,
+    /// Who spoke when in each 16 kHz mono WAV in `audio`, with a
+    /// diarization model loaded once for them and freed after. The worker
+    /// reads the files itself, so an hour of audio doesn't cross the pipe.
+    /// Sent to a worker of its own, never to the one holding the speech
+    /// model.
+    Diarize {
+        path: PathBuf,
+        backend: Backend,
+        device: DeviceSelector,
+        audio: Vec<PathBuf>,
+    },
 }
 
 /// How the worker should pick the device for a [`Request::Load`]. Device
@@ -83,6 +94,8 @@ pub enum Response {
         text: StreamText,
         language: Option<String>,
     },
+    /// One list per file of a [`Request::Diarize`], in order.
+    Speakers(Vec<Vec<SpeakerSegment>>),
     Ok,
     Error(String),
 }

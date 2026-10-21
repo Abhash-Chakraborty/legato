@@ -121,6 +121,9 @@ pub struct Note {
     /// When a line was last corrected (Unix seconds).
     #[serde(default)]
     pub edited_at: Option<i64>,
+    /// Names given to the note's voices; the rest are "Speaker 2" and so on.
+    #[serde(default)]
+    pub speakers: Vec<NoteSpeaker>,
     /// Lines that couldn't be transcribed.
     pub failed_lines: i64,
     /// Of those, the ones that can be tried again from the audio.
@@ -139,7 +142,36 @@ pub struct NoteLine {
     pub end_ms: i64,
     pub who: Speaker,
     pub text: String,
+    /// Which voice said it, 1, 2, …, when the speaker model told voices
+    /// apart; None before that, or when it couldn't tell.
+    #[serde(default)]
+    pub speaker: Option<i64>,
 }
+
+/// A name given to one of a note's voices.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct NoteSpeaker {
+    pub speaker: i64,
+    pub name: String,
+    /// The name came from a voice saved in an earlier meeting, not from you.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub recognised: bool,
+}
+
+/// A voice saved when you named someone, so later meetings recognise them.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct Voice {
+    pub id: i64,
+    pub name: String,
+    /// The clip's file in the voices folder.
+    pub file: String,
+    /// The clip's length.
+    pub ms: i64,
+    /// When it last named someone, or was saved (Unix seconds).
+    pub used_at: i64,
+}
+
+const LINE_COLUMNS: &str = "id, note_id, at_ms, end_ms, who, text, speaker";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct NoteAction {
@@ -217,6 +249,7 @@ fn map(row: &Row<'_>) -> rusqlite::Result<Note> {
         summary_at: row.get("summary_at")?,
         summary_error: row.get("summary_error")?,
         edited_at: row.get("edited_at")?,
+        speakers: Vec::new(),
         failed_lines: row.get("failed_lines")?,
         retryable: row.get("retryable")?,
         lines: row.get("lines")?,
@@ -233,6 +266,7 @@ fn map_line(row: &Row<'_>) -> rusqlite::Result<NoteLine> {
         end_ms: row.get("end_ms")?,
         who: Speaker::parse(&who),
         text: row.get("text")?,
+        speaker: row.get("speaker")?,
     })
 }
 
@@ -245,6 +279,18 @@ fn fill(conn: &Connection, mut note: Note) -> Result<Note> {
     let mut stmt = conn.prepare(
         "SELECT id, owner, text, done FROM note_action WHERE note_id = ?1 ORDER BY position, id",
     )?;
+    let mut speakers = conn.prepare(
+        "SELECT speaker, name, recognised FROM note_speaker WHERE note_id = ?1 ORDER BY speaker",
+    )?;
+    note.speakers = speakers
+        .query_map(params![note.id], |r| {
+            Ok(NoteSpeaker {
+                speaker: r.get(0)?,
+                name: r.get(1)?,
+                recognised: r.get(2)?,
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
     note.actions = stmt
         .query_map(params![note.id], |r| {
             Ok(NoteAction {
@@ -299,10 +345,9 @@ pub fn create(conn: &Connection, new: &NewNote<'_>) -> Result<Note> {
 
 /// The transcript, in order.
 pub fn lines(conn: &Connection, note_id: i64) -> Result<Vec<NoteLine>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, note_id, at_ms, end_ms, who, text FROM note_line
-         WHERE note_id = ?1 ORDER BY at_ms, id",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {LINE_COLUMNS} FROM note_line WHERE note_id = ?1 ORDER BY at_ms, id"
+    ))?;
     let lines = stmt
         .query_map(params![note_id], map_line)?
         .collect::<rusqlite::Result<_>>()?;
@@ -328,6 +373,7 @@ pub fn add_line(
         end_ms,
         who,
         text: text.to_string(),
+        speaker: None,
     })
 }
 
@@ -339,7 +385,7 @@ pub fn remove_line(conn: &Connection, line_id: i64) -> Result<()> {
 pub fn line(conn: &Connection, line_id: i64) -> Result<Option<NoteLine>> {
     Ok(conn
         .query_row(
-            "SELECT id, note_id, at_ms, end_ms, who, text FROM note_line WHERE id = ?1",
+            &format!("SELECT {LINE_COLUMNS} FROM note_line WHERE id = ?1"),
             params![line_id],
             map_line,
         )
@@ -347,14 +393,26 @@ pub fn line(conn: &Connection, line_id: i64) -> Result<Option<NoteLine>> {
 }
 
 /// A line's corrected words, or who said it.
-pub fn update_line(conn: &Connection, line_id: i64, who: Speaker, text: &str) -> Result<NoteLine> {
+pub fn update_line(
+    conn: &Connection,
+    line_id: i64,
+    who: Speaker,
+    speaker: Option<i64>,
+    text: &str,
+) -> Result<NoteLine> {
     let text = text.trim();
     if text.is_empty() {
         return Err(anyhow!("A line needs some words; delete it instead"));
     }
+    // Given to someone by hand: later passes of the speaker model leave it.
     conn.execute(
-        "UPDATE note_line SET who = ?2, text = ?3 WHERE id = ?1",
-        params![line_id, who.as_str(), text],
+        "UPDATE note_line SET speaker_fixed = 1
+         WHERE id = ?1 AND (who != ?2 OR speaker IS NOT ?3)",
+        params![line_id, who.as_str(), speaker],
+    )?;
+    conn.execute(
+        "UPDATE note_line SET who = ?2, speaker = ?3, text = ?4 WHERE id = ?1",
+        params![line_id, who.as_str(), speaker, text],
     )?;
     line(conn, line_id)?.ok_or_else(|| anyhow!("That line is gone"))
 }
@@ -371,18 +429,162 @@ pub fn mark_edited(conn: &Connection, note_id: i64, at: i64) -> Result<()> {
 /// Puts a deleted line back as it was, id and all.
 pub fn restore_line(conn: &Connection, line: &NoteLine) -> Result<()> {
     conn.execute(
-        "INSERT OR REPLACE INTO note_line (id, note_id, at_ms, end_ms, who, text)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT OR REPLACE INTO note_line (id, note_id, at_ms, end_ms, who, text, speaker)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             line.id,
             line.note_id,
             line.at_ms,
             line.end_ms,
             line.who.as_str(),
-            line.text
+            line.text,
+            line.speaker
         ],
     )?;
     Ok(())
+}
+
+/// Lines the speaker model may give to a voice: not given to someone by
+/// hand, and on `side` when there is one.
+pub fn speaker_lines(
+    conn: &Connection,
+    note_id: i64,
+    side: Option<Speaker>,
+) -> Result<Vec<NoteLine>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {LINE_COLUMNS} FROM note_line
+         WHERE note_id = ?1 AND speaker_fixed = 0 AND (?2 IS NULL OR who = ?2)
+         ORDER BY at_ms, id"
+    ))?;
+    let lines = stmt
+        .query_map(params![note_id, side.map(|s| s.as_str())], map_line)?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(lines)
+}
+
+/// Who said each line, from the speaker model. Names stay with their
+/// numbers; a name whose voice no longer says anything goes.
+pub fn set_speakers(
+    conn: &mut Connection,
+    note_id: i64,
+    lines: &[(i64, Option<i64>)],
+) -> Result<()> {
+    let tx = conn.transaction()?;
+    for (line_id, speaker) in lines {
+        tx.execute(
+            "UPDATE note_line SET speaker = ?3 WHERE id = ?1 AND note_id = ?2",
+            params![line_id, note_id, speaker],
+        )?;
+    }
+    tx.execute(
+        "DELETE FROM note_speaker WHERE note_id = ?1 AND speaker NOT IN
+         (SELECT speaker FROM note_line WHERE note_id = ?1 AND speaker IS NOT NULL)",
+        params![note_id],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Names a voice; an empty name goes back to "Speaker 2".
+pub fn name_speaker(conn: &Connection, note_id: i64, speaker: i64, name: &str) -> Result<()> {
+    let name = name.trim();
+    if name.is_empty() {
+        conn.execute(
+            "DELETE FROM note_speaker WHERE note_id = ?1 AND speaker = ?2",
+            params![note_id, speaker],
+        )?;
+    } else {
+        conn.execute(
+            "INSERT INTO note_speaker (note_id, speaker, name) VALUES (?1, ?2, ?3)
+             ON CONFLICT (note_id, speaker)
+             DO UPDATE SET name = excluded.name, recognised = 0, voice_id = NULL",
+            params![note_id, speaker, name],
+        )?;
+    }
+    Ok(())
+}
+
+/// Names a voice after the saved voice it sounds like.
+pub fn recognise_speaker(
+    conn: &Connection,
+    note_id: i64,
+    speaker: i64,
+    voice: &Voice,
+    now: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO note_speaker (note_id, speaker, name, recognised, voice_id)
+         VALUES (?1, ?2, ?3, 1, ?4)
+         ON CONFLICT (note_id, speaker) DO NOTHING",
+        params![note_id, speaker, voice.name, voice.id],
+    )?;
+    conn.execute(
+        "UPDATE voice SET used_at = ?2 WHERE id = ?1",
+        params![voice.id, now],
+    )?;
+    Ok(())
+}
+
+fn map_voice(r: &rusqlite::Row) -> rusqlite::Result<Voice> {
+    Ok(Voice {
+        id: r.get("id")?,
+        name: r.get("name")?,
+        file: r.get("file")?,
+        ms: r.get("ms")?,
+        used_at: r.get("used_at")?,
+    })
+}
+
+/// The saved voices, the most recently heard first.
+pub fn voices(conn: &Connection) -> Result<Vec<Voice>> {
+    let mut stmt = conn.prepare("SELECT * FROM voice ORDER BY used_at DESC, id DESC")?;
+    let voices = stmt
+        .query_map([], map_voice)?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(voices)
+}
+
+pub fn voice_named(conn: &Connection, name: &str) -> Result<Option<Voice>> {
+    Ok(conn
+        .query_row(
+            "SELECT * FROM voice WHERE name = ?1",
+            params![name.trim()],
+            map_voice,
+        )
+        .optional()?)
+}
+
+/// Saves a voice under a name, or gives a saved one a new clip. Returns
+/// the clip file it replaced, to remove.
+pub fn save_voice(
+    conn: &Connection,
+    name: &str,
+    file: &str,
+    ms: i64,
+    now: i64,
+) -> Result<Option<String>> {
+    let old = voice_named(conn, name)?;
+    conn.execute(
+        "INSERT INTO voice (name, file, ms, created_at, used_at) VALUES (?1, ?2, ?3, ?4, ?4)
+         ON CONFLICT (name) DO UPDATE SET file = excluded.file, ms = excluded.ms, used_at = excluded.used_at",
+        params![name.trim(), file, ms, now],
+    )?;
+    Ok(old.map(|v| v.file).filter(|f| f != file))
+}
+
+/// Forgets a saved voice; returns its clip file, to remove.
+pub fn delete_voice(conn: &Connection, id: i64) -> Result<Option<String>> {
+    let file = conn
+        .query_row("SELECT file FROM voice WHERE id = ?1", params![id], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    conn.execute("DELETE FROM voice WHERE id = ?1", params![id])?;
+    conn.execute(
+        "UPDATE note_speaker SET voice_id = NULL WHERE voice_id = ?1",
+        params![id],
+    )?;
+    Ok(file)
 }
 
 /// Lines by the other speaker that overlap `[from_ms, to_ms]`.
@@ -393,10 +595,10 @@ pub fn lines_near(
     from_ms: i64,
     to_ms: i64,
 ) -> Result<Vec<NoteLine>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, note_id, at_ms, end_ms, who, text FROM note_line
-         WHERE note_id = ?1 AND who = ?2 AND end_ms >= ?3 AND at_ms <= ?4",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {LINE_COLUMNS} FROM note_line
+         WHERE note_id = ?1 AND who = ?2 AND end_ms >= ?3 AND at_ms <= ?4"
+    ))?;
     let lines = stmt
         .query_map(params![note_id, who.as_str(), from_ms, to_ms], map_line)?
         .collect::<rusqlite::Result<_>>()?;
@@ -609,7 +811,7 @@ pub fn search(conn: &Connection, query: &str) -> Result<Vec<NoteMatch>> {
         let line = match line_id {
             Some(line_id) if !direct => conn
                 .query_row(
-                    "SELECT id, note_id, at_ms, end_ms, who, text FROM note_line WHERE id = ?1",
+                    &format!("SELECT {LINE_COLUMNS} FROM note_line WHERE id = ?1"),
                     params![line_id],
                     map_line,
                 )
@@ -629,7 +831,13 @@ pub fn delete(conn: &mut Connection, id: i64) -> Result<Option<DeletedRecording>
     let lines = lines(conn, id)?;
     let failed = failed_lines(conn, id)?;
     let tx = conn.transaction()?;
-    for table in ["note_line", "note_tag", "note_action", "note_failed_line"] {
+    for table in [
+        "note_line",
+        "note_tag",
+        "note_action",
+        "note_failed_line",
+        "note_speaker",
+    ] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE note_id = ?1"),
             params![id],
@@ -691,9 +899,23 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
     }
     for l in &deleted.lines {
         tx.execute(
-            "INSERT INTO note_line (id, note_id, at_ms, end_ms, who, text)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![l.id, n.id, l.at_ms, l.end_ms, l.who.as_str(), l.text],
+            "INSERT INTO note_line (id, note_id, at_ms, end_ms, who, text, speaker)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                l.id,
+                n.id,
+                l.at_ms,
+                l.end_ms,
+                l.who.as_str(),
+                l.text,
+                l.speaker
+            ],
+        )?;
+    }
+    for s in &n.speakers {
+        tx.execute(
+            "INSERT INTO note_speaker (note_id, speaker, name, recognised) VALUES (?1, ?2, ?3, ?4)",
+            params![n.id, s.speaker, s.name, s.recognised],
         )?;
     }
     for f in &deleted.failed {
@@ -721,6 +943,27 @@ pub fn recover_unfinished(conn: &Connection) -> Result<Vec<i64>> {
         [],
     )?;
     Ok(ids)
+}
+
+/// What a line's speaker is called: their name, "Speaker 2" (`numbered`
+/// with `{n}`), or You or Them.
+pub fn speaker_label(
+    note: &Note,
+    line: &NoteLine,
+    you: &str,
+    them: &str,
+    numbered: &str,
+) -> String {
+    match (line.who, line.speaker) {
+        (_, Some(n)) => note
+            .speakers
+            .iter()
+            .find(|s| s.speaker == n)
+            .map(|s| s.name.clone())
+            .unwrap_or_else(|| numbered.replace("{n}", &n.to_string())),
+        (Speaker::You, None) => you.to_string(),
+        (Speaker::Them, None) => them.to_string(),
+    }
 }
 
 /// The note as Markdown, for Copy and Export.
@@ -753,10 +996,7 @@ pub fn markdown(note: &Note, lines: &[NoteLine], you: &str, them: &str) -> Strin
     if !lines.is_empty() {
         out.push_str("## Transcript\n\n");
         for l in lines {
-            let who = match l.who {
-                Speaker::You => you,
-                Speaker::Them => them,
-            };
+            let who = speaker_label(note, l, you, them, "Speaker {n}");
             out.push_str(&format!("{} {}: {}\n", clock(l.at_ms), who, l.text));
         }
     }
@@ -959,14 +1199,104 @@ mod tests {
             "ship cubernetes",
         )
         .unwrap();
-        let fixed = update_line(&conn, line.id, Speaker::You, " ship Kubernetes ").unwrap();
+        let fixed =
+            update_line(&conn, line.id, Speaker::You, Some(2), " ship Kubernetes ").unwrap();
         assert_eq!(fixed.text, "ship Kubernetes");
         assert_eq!(fixed.who, Speaker::You);
-        assert!(update_line(&conn, line.id, Speaker::You, "  ").is_err());
+        assert_eq!(fixed.speaker, Some(2));
+        assert!(update_line(&conn, line.id, Speaker::You, None, "  ").is_err());
 
         remove_line(&conn, line.id).unwrap();
         assert!(super::line(&conn, line.id).unwrap().is_none());
         restore_line(&conn, &fixed).unwrap();
         assert_eq!(lines(&conn, note.id).unwrap(), vec![fixed]);
+    }
+
+    #[test]
+    fn voices_are_told_apart_named_and_survive_undo() {
+        let mut conn = db();
+        let note = meeting(&conn);
+        let a = add_line(&conn, note.id, 0, 2_000, Speaker::Them, "shall we start").unwrap();
+        let b = add_line(&conn, note.id, 2_000, 4_000, Speaker::Them, "yes please").unwrap();
+        let c = add_line(&conn, note.id, 4_000, 6_000, Speaker::You, "go ahead").unwrap();
+        set_speakers(&mut conn, note.id, &[(a.id, Some(1)), (b.id, Some(2))]).unwrap();
+        name_speaker(&conn, note.id, 2, " Priya ").unwrap();
+
+        let note = get(&conn, note.id).unwrap().unwrap();
+        let lines = lines(&conn, note.id).unwrap();
+        let label = |l: &NoteLine| speaker_label(&note, l, "You", "Them", "Speaker {n}");
+        assert_eq!(
+            lines.iter().map(label).collect::<Vec<_>>(),
+            ["Speaker 1", "Priya", "You"]
+        );
+        assert_eq!(lines[2].id, c.id);
+
+        // Undo of a delete brings the names back.
+        let deleted = delete(&mut conn, note.id).unwrap().unwrap();
+        assert!(get(&conn, note.id).unwrap().is_none());
+        restore(&mut conn, &deleted).unwrap();
+        let back = get(&conn, note.id).unwrap().unwrap();
+        assert_eq!(back.speakers, note.speakers);
+        assert_eq!(super::lines(&conn, note.id).unwrap(), lines);
+
+        // A line given to someone by hand is left out of the next pass.
+        update_line(&conn, a.id, Speaker::Them, Some(2), "shall we start").unwrap();
+        let open: Vec<i64> = speaker_lines(&conn, note.id, Some(Speaker::Them))
+            .unwrap()
+            .iter()
+            .map(|l| l.id)
+            .collect();
+        assert_eq!(open, vec![b.id]);
+        // A pass that no longer hears Priya drops her name; numbers keep theirs.
+        set_speakers(&mut conn, note.id, &[(b.id, Some(1))]).unwrap();
+        assert_eq!(get(&conn, note.id).unwrap().unwrap().speakers.len(), 1);
+        set_speakers(&mut conn, note.id, &[(a.id, None), (b.id, None)]).unwrap();
+        assert!(get(&conn, note.id).unwrap().unwrap().speakers.is_empty());
+
+        set_speakers(&mut conn, note.id, &[(b.id, Some(1))]).unwrap();
+        name_speaker(&conn, note.id, 1, "Sam").unwrap();
+        name_speaker(&conn, note.id, 1, "").unwrap();
+        assert!(get(&conn, note.id).unwrap().unwrap().speakers.is_empty());
+    }
+
+    #[test]
+    fn named_voices_are_saved_recognised_and_forgotten() {
+        let mut conn = db();
+        let note = meeting(&conn);
+        let a = add_line(&conn, note.id, 0, 4_000, Speaker::Them, "morning all").unwrap();
+        set_speakers(&mut conn, note.id, &[(a.id, Some(1))]).unwrap();
+
+        assert_eq!(
+            save_voice(&conn, "Priya", "v1.wav", 6_000, 100).unwrap(),
+            None
+        );
+        // The same name, any case, gets the new clip; the old file goes.
+        assert_eq!(
+            save_voice(&conn, "priya", "v2.wav", 8_000, 200).unwrap(),
+            Some("v1.wav".to_string())
+        );
+        let saved = voices(&conn).unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!((saved[0].file.as_str(), saved[0].ms), ("v2.wav", 8_000));
+
+        recognise_speaker(&conn, note.id, 1, &saved[0], 300).unwrap();
+        let named = get(&conn, note.id).unwrap().unwrap().speakers;
+        assert_eq!(named[0].name, "Priya");
+        assert!(named[0].recognised);
+        assert_eq!(voices(&conn).unwrap()[0].used_at, 300);
+        // A name you give wins over a recognised one, and isn't overwritten.
+        name_speaker(&conn, note.id, 1, "Priya S").unwrap();
+        recognise_speaker(&conn, note.id, 1, &saved[0], 400).unwrap();
+        let named = get(&conn, note.id).unwrap().unwrap().speakers;
+        assert_eq!(
+            (named[0].name.as_str(), named[0].recognised),
+            ("Priya S", false)
+        );
+
+        assert_eq!(
+            delete_voice(&conn, saved[0].id).unwrap(),
+            Some("v2.wav".to_string())
+        );
+        assert!(voices(&conn).unwrap().is_empty());
     }
 }

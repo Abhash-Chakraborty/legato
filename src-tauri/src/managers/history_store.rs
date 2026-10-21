@@ -367,6 +367,30 @@ pub static MIGRATIONS: &[M] = &[
     // Notes: when the transcript was last corrected, so a summary written
     // before that can say it's out of date.
     M::up("ALTER TABLE note ADD COLUMN edited_at INTEGER;"),
+    // Notes: who said each line when the speaker model told voices apart
+    // (1, 2, … within the note; fixed once you choose it by hand), the
+    // names given to them or recognised from a saved voice, and the voices
+    // saved when you name someone, as clips in the voices folder.
+    M::up(
+        "ALTER TABLE note_line ADD COLUMN speaker INTEGER;
+         ALTER TABLE note_line ADD COLUMN speaker_fixed INTEGER NOT NULL DEFAULT 0;
+         CREATE TABLE note_speaker (
+            note_id INTEGER NOT NULL,
+            speaker INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            recognised INTEGER NOT NULL DEFAULT 0,
+            voice_id INTEGER,
+            PRIMARY KEY (note_id, speaker)
+         );
+         CREATE TABLE voice (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            file TEXT NOT NULL,
+            ms INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            used_at INTEGER NOT NULL
+         );",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.

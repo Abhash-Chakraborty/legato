@@ -1744,9 +1744,9 @@ async renameNote(id: number, title: string) : Promise<Result<null, string>> {
 /**
  * Corrects a line's words, or who said it, during or after the recording.
  */
-async editNoteLine(id: number, who: Speaker, text: string) : Promise<Result<LineEdit, string>> {
+async editNoteLine(id: number, who: Speaker, speaker: number | null, text: string) : Promise<Result<LineEdit, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("edit_note_line", { id, who, text }) };
+    return { status: "ok", data: await TAURI_INVOKE("edit_note_line", { id, who, speaker, text }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2061,6 +2061,92 @@ async getClipImage(id: string) : Promise<Result<string, string>> {
 async notesDictate(noteId: number) : Promise<void> {
     return await TAURI_INVOKE("notes_dictate", { noteId });
 },
+/**
+ * Tells the voices apart in a finished note from its audio. Takes a while
+ * for a long meeting. Returns how many voices were found.
+ */
+async findNoteSpeakers(id: number) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("find_note_speakers", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Names one of a note's voices; an empty name goes back to "Speaker 2".
+ */
+async nameNoteSpeaker(id: number, speaker: number, name: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("name_note_speaker", { id, speaker, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getSpeakerModel() : Promise<SpeakerModel> {
+    return await TAURI_INVOKE("get_speaker_model");
+},
+/**
+ * Downloads the speaker model; progress comes as `SpeakerModelChanged`.
+ */
+async downloadSpeakerModel() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("download_speaker_model") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelSpeakerModelDownload() : Promise<void> {
+    return await TAURI_INVOKE("cancel_speaker_model_download");
+},
+async deleteSpeakerModel() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_speaker_model") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The voices saved when you named someone, the most recently heard first.
+ */
+async listVoices() : Promise<Result<Voice[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_voices") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Forgets a saved voice: later meetings no longer recognise it.
+ */
+async forgetVoice(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("forget_voice", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeNotesRememberVoicesSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_notes_remember_voices_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeNotesSpeakersSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_notes_speakers_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async openNote(id: number) : Promise<void> {
     return await TAURI_INVOKE("open_note", { id });
 },
@@ -2176,6 +2262,8 @@ syncChanged: SyncChanged,
 noteInsert: NoteInsert,
 noteLineAdded: NoteLineAdded,
 notePreview: NotePreview,
+noteLinesChanged: NoteLinesChanged,
+speakerModelChanged: SpeakerModelChanged,
 noteLineChanged: NoteLineChanged,
 noteLineRemoved: NoteLineRemoved,
 notesChanged: NotesChanged,
@@ -2205,6 +2293,8 @@ syncChanged: "sync-changed",
 noteInsert: "note-insert",
 noteLineAdded: "note-line-added",
 notePreview: "note-preview",
+noteLinesChanged: "note-lines-changed",
+speakerModelChanged: "speaker-model-changed",
 noteLineChanged: "note-line-changed",
 noteLineRemoved: "note-line-removed",
 notesChanged: "notes-changed",
@@ -2599,6 +2689,10 @@ export type Note = { id: number; title: string; kind: NoteKind; status: NoteStat
  */
 edited_at?: number | null; 
 /**
+ * Names given to the note's voices; the rest are "Speaker 2" and so on.
+ */
+speakers?: NoteSpeaker[]; 
+/**
  * Lines that couldn't be transcribed.
  */
 failed_lines: number; 
@@ -2609,7 +2703,61 @@ retryable?: number; lines: number; actions: NoteAction[] }
 export type NoteAction = { id: number; owner: string; text: string; done: boolean }
 export type NoteInsert = { note_id: number; text: string }
 export type NoteKind = "memo" | "meeting"
-export type NoteLine = { id: number; note_id: number; at_ms: number; end_ms: number; who: Speaker; text: string }
+export type NoteLine = { id: number; note_id: number; 
+/**
+ * Milliseconds from the start of the recording.
+ */
+at_ms: number; end_ms: number; who: Speaker; text: string; 
+/**
+ * Which voice said it, 1, 2, …, when the speaker model told voices
+ * apart; None before that, or when it couldn't tell.
+ */
+speaker?: number | null }
+/**
+ * Many of a note's lines changed at once (speakers were found), so an
+ * open transcript reloads.
+ */
+export type NoteLinesChanged = { note_id: number }
+/**
+ * A name given to one of a note's voices.
+ */
+export type NoteSpeaker = { speaker: number; name: string; 
+/**
+ * The name came from a voice saved in an earlier meeting, not from you.
+ */
+recognised?: boolean }
+/**
+ * A voice saved when you named someone, so later meetings recognise them.
+ */
+export type Voice = { id: number; name: string; 
+/**
+ * The clip's file in the voices folder.
+ */
+file: string; 
+/**
+ * The clip's length.
+ */
+ms: number; 
+/**
+ * When it last named someone, or was saved (Unix seconds).
+ */
+used_at: number }
+/**
+ * The speaker model on this PC.
+ */
+export type SpeakerModel = { downloaded: boolean; downloading: boolean; 
+/**
+ * Bytes downloaded so far.
+ */
+done: number; size: number; 
+/**
+ * Why the last download failed.
+ */
+error: string | null }
+/**
+ * The speaker model was downloaded, removed, or a download moved on.
+ */
+export type SpeakerModelChanged = { model: SpeakerModel }
 export type NoteLineAdded = { line: NoteLine }
 /**
  * A line corrected, or given to the other side.
@@ -3220,7 +3368,17 @@ notes_live_transcript?: boolean;
 /**
  * The recorder reminds you to tell people you're recording.
  */
-notes_reminder?: boolean; calls?: CallSettings; sync?: SyncSettings; scratchpad_open?: ScratchpadOpen; 
+notes_reminder?: boolean; 
+/**
+ * Notes tells voices apart after a recording, once the speaker model
+ * is downloaded.
+ */
+notes_speakers?: boolean; 
+/**
+ * Naming a speaker saves a short clip of their voice, so later
+ * meetings recognise them.
+ */
+notes_remember_voices?: boolean; calls?: CallSettings; sync?: SyncSettings; scratchpad_open?: ScratchpadOpen; 
 /**
  * The desktop bubble: a small Legato dot that stays on screen, with
  * Dictate, Notes and the Scratchpad on hover.

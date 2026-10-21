@@ -44,6 +44,7 @@ mod setup;
 mod shortcut;
 mod signal_handle;
 mod snippet_rules;
+mod speakers;
 mod style_rules;
 mod sync;
 mod transcription_coordinator;
@@ -979,6 +980,16 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::suggest_note_fixes,
             commands::notes::apply_note_fixes,
             commands::notes::draft_note_follow_up,
+            commands::notes::find_note_speakers,
+            commands::notes::name_note_speaker,
+            commands::notes::get_speaker_model,
+            commands::notes::download_speaker_model,
+            commands::notes::cancel_speaker_model_download,
+            commands::notes::delete_speaker_model,
+            commands::notes::change_notes_speakers_setting,
+            commands::notes::list_voices,
+            commands::notes::forget_voice,
+            commands::notes::change_notes_remember_voices_setting,
             commands::notes::save_note_my_notes,
             commands::notes::add_note_tag,
             commands::notes::remove_note_tag,
@@ -1039,6 +1050,8 @@ pub fn run(cli_args: CliArgs) {
             notes::NoteLineAdded,
             notes::NotePreview,
             notes::NoteLineChanged,
+            notes::NoteLinesChanged,
+            speakers::SpeakerModelChanged,
             notes::NoteLineRemoved,
             notes::NotesSessionChanged,
             notes::NotesTick,

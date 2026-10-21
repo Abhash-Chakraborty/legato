@@ -20,6 +20,7 @@ import { durationLabel, summaryText, transcriptText } from "../../notes/notes";
 import { MyNotesTab } from "./MyNotesTab";
 import { SummaryTab } from "./SummaryTab";
 import { TranscriptTab } from "./TranscriptTab";
+import { useSpeakerNames } from "../../notes/SpeakerTag";
 
 type Tab = "summary" | "transcript" | "mine";
 
@@ -215,7 +216,7 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
   const menuButton = useRef<HTMLButtonElement>(null);
   const shown: Tab = recording ? "mine" : tab;
 
-  const names = { you: t("notes.who.you"), them: t("notes.who.them") };
+  const names = useSpeakerNames();
   const started = new Date(note.started_at * 1000);
   const day = started.toLocaleDateString(i18n.language, {
     weekday: "long",
@@ -239,7 +240,9 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
   const copyTranscript = async () => {
     const result = await commands.getNoteLines(note.id);
     if (result.status !== "ok" || !result.data.length) return;
-    if (await copyToClipboard(transcriptText(result.data, names)))
+    if (
+      await copyToClipboard(transcriptText(result.data, names, note.speakers))
+    )
       toast(t("notes.toast.transcriptCopied"));
   };
 

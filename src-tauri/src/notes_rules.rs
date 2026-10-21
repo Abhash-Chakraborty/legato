@@ -186,6 +186,164 @@ pub fn replace_words(text: &str, from: &str, to: &str) -> Option<String> {
     })
 }
 
+/// One speaker's turn, as the speaker model found it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Turn {
+    pub speaker: i32,
+    pub t0_ms: i64,
+    pub t1_ms: i64,
+}
+
+/// A line counts as a speaker's when their turns cover at least this share
+/// of it.
+const SPEAKER_SHARE: f64 = 0.3;
+
+/// Who said each line, given as (start, end) in ms: the speaker whose turns
+/// cover most of it, numbered 1, 2, … in the order they first speak. None
+/// when no one covers enough of it, and for every line when only one
+/// speaker was found, since then there's no one to tell apart.
+pub fn assign_speakers(lines: &[(i64, i64)], turns: &[Turn]) -> Vec<Option<i64>> {
+    let raw: Vec<Option<i32>> = lines
+        .iter()
+        .map(|&(at, end)| {
+            let length = (end - at).max(1) as f64;
+            let mut cover: Vec<(i32, i64)> = Vec::new();
+            for turn in turns {
+                let overlap = turn.t1_ms.min(end) - turn.t0_ms.max(at);
+                if overlap <= 0 {
+                    continue;
+                }
+                match cover.iter_mut().find(|(s, _)| *s == turn.speaker) {
+                    Some((_, ms)) => *ms += overlap,
+                    None => cover.push((turn.speaker, overlap)),
+                }
+            }
+            cover
+                .into_iter()
+                .max_by_key(|&(speaker, ms)| (ms, -speaker))
+                .filter(|&(_, ms)| ms as f64 >= length * SPEAKER_SHARE)
+                .map(|(speaker, _)| speaker)
+        })
+        .collect();
+    // Renumber by first line, so Speaker 1 is the first to talk.
+    let mut order: Vec<i32> = Vec::new();
+    for speaker in raw.iter().flatten() {
+        if !order.contains(speaker) {
+            order.push(*speaker);
+        }
+    }
+    if order.len() < 2 {
+        return vec![None; lines.len()];
+    }
+    raw.into_iter()
+        .map(|s| {
+            s.and_then(|s| order.iter().position(|&o| o == s))
+                .map(|i| i as i64 + 1)
+        })
+        .collect()
+}
+
+/// Keeps the numbers people already see. `new` is a fresh pass over the
+/// same lines as `old` (the last pass); each new voice takes the number of
+/// the old one it shares the most lines with, and voices the last pass
+/// didn't have get the next free numbers, in the order they first speak.
+pub fn keep_numbers(old: &[Option<i64>], new: &[Option<i64>]) -> Vec<Option<i64>> {
+    let mut shared: Vec<((i64, i64), usize)> = Vec::new();
+    for (o, n) in old.iter().zip(new) {
+        if let (Some(o), Some(n)) = (o, n) {
+            match shared.iter_mut().find(|(pair, _)| *pair == (*n, *o)) {
+                Some((_, count)) => *count += 1,
+                None => shared.push(((*n, *o), 1)),
+            }
+        }
+    }
+    shared.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let mut map: Vec<(i64, i64)> = Vec::new();
+    for ((n, o), _) in shared {
+        if !map.iter().any(|&(mn, mo)| mn == n || mo == o) {
+            map.push((n, o));
+        }
+    }
+    let mut next = old.iter().flatten().copied().max().unwrap_or(0) + 1;
+    new.iter()
+        .map(|n| {
+            let n = (*n)?;
+            Some(match map.iter().find(|&&(mn, _)| mn == n) {
+                Some(&(_, o)) => o,
+                None => {
+                    map.push((n, next));
+                    next += 1;
+                    next - 1
+                }
+            })
+        })
+        .collect()
+}
+
+/// How sure the speaker model is that two clips are one voice, from 0 to 1,
+/// given its turns over the clips played one after the other: the first
+/// clip in `[0, a_end_ms)`, the second in `[b_start_ms, b_end_ms)`. The
+/// voice that holds most of the first clip must hold most of the second.
+pub fn same_voice(turns: &[Turn], a_end_ms: i64, b_start_ms: i64, b_end_ms: i64) -> f64 {
+    let held = |from: i64, to: i64| -> Vec<(i32, i64)> {
+        let mut cover: Vec<(i32, i64)> = Vec::new();
+        for turn in turns {
+            let overlap = turn.t1_ms.min(to) - turn.t0_ms.max(from);
+            if overlap > 0 {
+                match cover.iter_mut().find(|(s, _)| *s == turn.speaker) {
+                    Some((_, ms)) => *ms += overlap,
+                    None => cover.push((turn.speaker, overlap)),
+                }
+            }
+        }
+        cover
+    };
+    let top = |cover: &[(i32, i64)]| cover.iter().copied().max_by_key(|&(s, ms)| (ms, -s));
+    let a = held(0, a_end_ms);
+    let b = held(b_start_ms, b_end_ms);
+    let (Some((voice, a_ms)), Some((b_voice, _))) = (top(&a), top(&b)) else {
+        return 0.0;
+    };
+    // Mostly silence in the first clip: nothing to compare.
+    if voice != b_voice || (a_ms as f64) < a_end_ms as f64 * 0.5 {
+        return 0.0;
+    }
+    let b_ms = b.iter().find(|(s, _)| *s == voice).map_or(0, |&(_, ms)| ms);
+    (b_ms as f64 / (b_end_ms - b_start_ms).max(1) as f64).min(1.0)
+}
+
+/// Two clips count as one voice from this score up.
+pub const SAME_VOICE: f64 = 0.6;
+/// The best saved voice must beat the next by this much to be trusted.
+const VOICE_MARGIN: f64 = 0.15;
+
+/// Which saved voice each unnamed voice is, from `scores[voice][saved]`
+/// (`same_voice` for every pair). A voice gets a name only when one saved
+/// voice clearly fits it best; no saved voice names two voices.
+pub fn pick_voices(scores: &[Vec<f64>]) -> Vec<Option<usize>> {
+    let mut picked: Vec<Option<usize>> = scores
+        .iter()
+        .map(|row| {
+            let mut order: Vec<usize> = (0..row.len()).collect();
+            order.sort_by(|&a, &b| row[b].total_cmp(&row[a]));
+            let best = *order.first()?;
+            let second = order.get(1).map_or(0.0, |&i| row[i]);
+            (row[best] >= SAME_VOICE && row[best] - second >= VOICE_MARGIN).then_some(best)
+        })
+        .collect();
+    // A saved voice claimed twice names neither.
+    for i in 0..picked.len() {
+        if let Some(saved) = picked[i] {
+            if picked.iter().filter(|p| **p == Some(saved)).count() > 1 {
+                for p in picked.iter_mut().filter(|p| **p == Some(saved)) {
+                    *p = None;
+                }
+            }
+        }
+    }
+    picked
+}
+
 /// Whether a microphone line is the speakers playing a line of the call back
 /// into the microphone: said within two seconds, mostly the same words.
 pub fn is_echo(you: (&str, i64, i64), them: (&str, i64, i64)) -> bool {
@@ -244,7 +402,8 @@ pub const MIN_SUMMARY_WORDS: usize = 40;
 /// One transcript line as the prompts see it.
 pub struct PromptLine<'a> {
     pub at_ms: i64,
-    pub you: bool,
+    /// "You", "Them", or a voice's name or number.
+    pub who: &'a str,
     pub text: &'a str,
 }
 
@@ -260,8 +419,7 @@ pub fn clock(ms: i64) -> String {
 }
 
 fn format_line(line: &PromptLine<'_>) -> String {
-    let who = if line.you { "You" } else { "Them" };
-    format!("[{}] {}: {}", clock(line.at_ms), who, line.text)
+    format!("[{}] {}: {}", clock(line.at_ms), line.who, line.text)
 }
 
 fn word_count(text: &str) -> usize {
@@ -293,7 +451,7 @@ pub fn transcript_parts(lines: &[PromptLine<'_>]) -> Vec<String> {
     parts
 }
 
-pub const SUMMARY_SYSTEM: &str = "You summarise one recorded conversation for the person who recorded it. Lines marked You are that person; lines marked Them are everyone else, from the call or the room. Use only what the transcript says. Write in the transcript's language. Answer with JSON only.";
+pub const SUMMARY_SYSTEM: &str = "You summarise one recorded conversation for the person who recorded it. Lines marked You are that person; every other line is someone else, from the call or the room, marked Them or with their name or a speaker number. Use only what the transcript says. Write in the transcript's language. Answer with JSON only.";
 
 /// The request for one transcript, or one part of a long one.
 pub fn summary_request(transcript: &str, json_hint: bool) -> String {
@@ -426,8 +584,7 @@ pub fn numbered_parts(lines: &[PromptLine<'_>]) -> Vec<String> {
             parts.push(std::mem::take(&mut part));
             words = 0;
         }
-        let who = if line.you { "You" } else { "Them" };
-        part.push_str(&format!("{} {who}: {}\n", i + 1, line.text));
+        part.push_str(&format!("{} {}: {}\n", i + 1, line.who, line.text));
         words += n;
     }
     if !part.is_empty() {
@@ -560,7 +717,7 @@ pub fn follow_up_request(title: &str, summary: &NotesSummary, my_notes: &str) ->
     request
 }
 
-pub const ASK_SYSTEM: &str = "You answer questions about one recorded conversation, using only its transcript. Lines marked You are the person asking; lines marked Them are everyone else. After each statement, put the time of the line it comes from in square brackets, like [12:04]. If the transcript doesn't answer the question, say so in one sentence. Answer in two to four sentences, in the question's language, as plain text.";
+pub const ASK_SYSTEM: &str = "You answer questions about one recorded conversation, using only its transcript. Lines marked You are the person asking; every other line is someone else, marked Them or with their name or a speaker number. After each statement, put the time of the line it comes from in square brackets, like [12:04]. If the transcript doesn't answer the question, say so in one sentence. Answer in two to four sentences, in the question's language, as plain text.";
 
 const STOPWORDS: &[&str] = &[
     "a", "an", "and", "are", "about", "did", "do", "does", "for", "from", "has", "have", "how",
@@ -766,7 +923,11 @@ mod tests {
     fn lines(texts: &[(i64, bool, &'static str)]) -> Vec<PromptLine<'static>> {
         texts
             .iter()
-            .map(|&(at_ms, you, text)| PromptLine { at_ms, you, text })
+            .map(|&(at_ms, you, text)| PromptLine {
+                at_ms,
+                who: if you { "You" } else { "Them" },
+                text,
+            })
             .collect()
     }
 
@@ -872,18 +1033,126 @@ mod tests {
         let lines = [
             PromptLine {
                 at_ms: 0,
-                you: true,
+                who: "You",
                 text: &long,
             },
             PromptLine {
                 at_ms: 1,
-                you: false,
+                who: "Priya",
                 text: "short",
             },
         ];
         let parts = numbered_parts(&lines);
         assert_eq!(parts.len(), 2);
         assert!(parts[0].starts_with("1 You: word"));
-        assert_eq!(parts[1], "2 Them: short\n");
+        assert_eq!(parts[1], "2 Priya: short\n");
+    }
+
+    #[test]
+    fn lines_go_to_the_speaker_who_says_most_of_them() {
+        let turn = |speaker, t0_ms, t1_ms| Turn {
+            speaker,
+            t0_ms,
+            t1_ms,
+        };
+        let turns = [
+            turn(3, 0, 4_000),
+            turn(1, 4_000, 9_000),
+            turn(3, 9_500, 12_000),
+            turn(1, 11_000, 11_400),
+        ];
+        let lines = [
+            (0, 3_800),
+            (4_200, 8_000),
+            (3_000, 6_000),
+            (9_600, 12_000),
+            (20_000, 22_000),
+        ];
+        // Speaker 3 talks first, so becomes 1.
+        assert_eq!(
+            assign_speakers(&lines, &turns),
+            vec![Some(1), Some(2), Some(2), Some(1), None]
+        );
+        // One voice: nothing to tell apart.
+        assert_eq!(
+            assign_speakers(&lines[..1], &[turn(2, 0, 4_000)]),
+            vec![None]
+        );
+        // Too little of the first line covered.
+        assert_eq!(
+            assign_speakers(
+                &[(0, 10_000), (10_000, 12_000), (12_000, 14_000)],
+                &[
+                    turn(1, 0, 2_000),
+                    turn(2, 10_000, 12_000),
+                    turn(1, 12_000, 14_000)
+                ]
+            ),
+            vec![None, Some(1), Some(2)]
+        );
+    }
+
+    #[test]
+    fn a_fresh_pass_keeps_the_numbers_people_see() {
+        // The new pass calls the voices 2 and 1, and finds a third.
+        let old = [Some(1), Some(2), Some(1), None, Some(2)];
+        let new = [Some(2), Some(1), Some(2), Some(3), Some(1)];
+        assert_eq!(
+            keep_numbers(&old, &new),
+            vec![Some(1), Some(2), Some(1), Some(3), Some(2)]
+        );
+        // The first pass keeps its own numbers.
+        assert_eq!(
+            keep_numbers(&[None, None], &[Some(1), Some(2)]),
+            vec![Some(1), Some(2)]
+        );
+        // A voice the new pass doesn't hear any more leaves its number free.
+        assert_eq!(
+            keep_numbers(
+                &[Some(1), Some(3), Some(3), Some(2)],
+                &[Some(1), Some(2), Some(2), Some(2)]
+            ),
+            vec![Some(1), Some(3), Some(3), Some(3)]
+        );
+    }
+
+    #[test]
+    fn two_clips_of_one_voice_score_high() {
+        let turn = |speaker, t0_ms, t1_ms| Turn {
+            speaker,
+            t0_ms,
+            t1_ms,
+        };
+        // 0–5 s, a gap, then 5.6–10.6 s.
+        let same = [turn(1, 100, 4_900), turn(1, 5_700, 10_400)];
+        assert!(same_voice(&same, 5_000, 5_600, 10_600) > 0.9);
+        let different = [turn(1, 100, 4_900), turn(2, 5_700, 10_400)];
+        assert_eq!(same_voice(&different, 5_000, 5_600, 10_600), 0.0);
+        // The first clip barely heard: no answer.
+        assert_eq!(
+            same_voice(
+                &[turn(1, 0, 1_000), turn(1, 5_700, 10_400)],
+                5_000,
+                5_600,
+                10_600
+            ),
+            0.0
+        );
+    }
+
+    #[test]
+    fn a_name_needs_a_clear_best_match() {
+        assert_eq!(
+            pick_voices(&[
+                vec![0.9, 0.1],
+                vec![0.2, 0.8],
+                vec![0.65, 0.6],
+                vec![0.3, 0.2]
+            ]),
+            vec![Some(0), Some(1), None, None]
+        );
+        // Both voices sound like the same saved one: neither is named.
+        assert_eq!(pick_voices(&[vec![0.9], vec![0.8]]), vec![None, None]);
+        assert_eq!(pick_voices(&[vec![]]), vec![None]);
     }
 }

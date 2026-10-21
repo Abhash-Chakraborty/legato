@@ -699,7 +699,8 @@
       "whatSyncs": "What syncs",
       "clipboard": "Clipboard",
       "calendars": "Meetings",
-      "aiApps": "AI apps"
+      "aiApps": "AI apps",
+      "speakers": "Speakers in notes"
     },
     "requires": {
       "tray": "Needs the tray icon, or there would be no way to open the window.",
@@ -1225,6 +1226,45 @@
         "inApp": "In {{name}}",
         "copy": "Copy setup",
         "copied": "Copied"
+      }
+    },
+    "speakers": {
+      "toggle": {
+        "title": "Tell speakers apart",
+        "help": "After a meeting, and every so often during it, each line gets the voice that said it: Speaker 1, Speaker 2, or the name you give them. Up to four voices per meeting."
+      },
+      "model": {
+        "title": "Speaker model",
+        "help": "Needed to tell voices apart. {{size}} MB, downloaded once and run on this PC.",
+        "ready": "Downloaded, {{size}} MB.",
+        "downloading": "Downloading… {{done}} of {{size}} MB.",
+        "error": "The download stopped: {{error}}",
+        "licence": "NVIDIA Streaming Sortformer, under the NVIDIA Open Model License.",
+        "download": "Download ({{size}} MB)",
+        "retry": "Try again",
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "confirmDelete": "Delete the model",
+        "keep": "Keep",
+        "failed": "Couldn't download the speaker model",
+        "deleteFailed": "Couldn't delete the speaker model"
+      },
+      "remember": {
+        "title": "Remember voices",
+        "help": "When you name a speaker, Legato keeps an 8-second clip of their voice and puts the name on them in later meetings. The clips stay on this PC and are never synced or sent anywhere."
+      },
+      "voices": {
+        "title": "Saved voices",
+        "help": "Recognised names show with a dot; rename one if it's wrong, or forget the voice here.",
+        "none": "None yet. Name a speaker in a note to save their voice.",
+        "count_one": "{{count}} voice",
+        "count_other": "{{count}} voices",
+        "heard": "{{seconds}} s clip · last heard {{date}}",
+        "forget": "Forget",
+        "forgetLabel": "Forget {{name}}'s voice",
+        "confirm": "Forget the voice",
+        "forgotten": "Forgot {{name}}'s voice",
+        "forgetFailed": "Couldn't forget the voice"
       }
     }
   },
@@ -2864,6 +2904,22 @@
       "fixed_one": "Fixed 1 word",
       "fixed_other": "Fixed {{count}} words",
       "failed": "Couldn't fix the words"
+    },
+    "speakers": {
+      "voice": "Speaker {{n}}",
+      "rename": "Rename {{name}}",
+      "renameLabel": "Name for {{name}}",
+      "renameFailed": "Couldn't rename the speaker",
+      "find": "Find speakers",
+      "finding": "Finding speakers…",
+      "findHint": "Tell the voices in the recording apart and give each line to one of them",
+      "findFailed": "Couldn't tell the speakers apart",
+      "oneVoice": "Only one voice in this recording",
+      "found_one": "Found {{count}} speaker",
+      "found_other": "Found {{count}} speakers",
+      "setUp": "Tell speakers apart",
+      "setUpHint": "Download the speaker model in Settings",
+      "recognised": "{{name}}, recognised from an earlier meeting. Click to rename; clear the name if it's someone else."
     }
   },
   "calls": {

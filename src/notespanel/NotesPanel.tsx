@@ -1,10 +1,22 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Check, Loader2, Mic, Pause, Play, Square, X } from "lucide-react";
 import { commands, events, type NoteLine } from "@/bindings";
 import { LineText } from "@/components/notes/LineText";
-import { clock, longClock } from "@/components/notes/notes";
+import {
+  clock,
+  longClock,
+  voiceChoices,
+  type Voice,
+} from "@/components/notes/notes";
+import { SpeakerTag } from "@/components/notes/SpeakerTag";
 import { SideMeter } from "@/components/pages/notes/RecordingStrip";
 import { AppToaster } from "@/components/shell/AppToaster";
 import { Button } from "@/components/ui/Button";
@@ -18,32 +30,27 @@ import {
 /** Autosave waits this long after the last key. */
 const SAVE_DELAY_MS = 600;
 
-const Line: React.FC<{ line: NoteLine; preview?: boolean }> = ({
-  line,
-  preview,
-}) => {
-  const { t } = useTranslation();
-  return (
-    // A preview changes as the words come; the screen reader hears the line.
-    <li className="py-1.5" aria-hidden={preview || undefined}>
-      <div className="flex items-baseline gap-2 text-xs">
-        <span
-          className={`font-medium ${line.who === "you" ? "text-teal-700" : "text-text-2"}`}
-        >
-          {t(`notes.who.${line.who}`)}
-        </span>
-        <span className="tabular-nums text-text-3">{clock(line.at_ms)}</span>
-      </div>
-      <div className="mt-0.5">
-        <LineText
-          line={line}
-          preview={preview}
-          className="text-sm leading-relaxed"
-        />
-      </div>
-    </li>
-  );
-};
+const Line: React.FC<{
+  line: NoteLine;
+  preview?: boolean;
+  voices: Voice[];
+}> = ({ line, preview, voices }) => (
+  // A preview changes as the words come; the screen reader hears the line.
+  <li className="py-1.5" aria-hidden={preview || undefined}>
+    <div className="flex items-baseline gap-2 text-xs">
+      <SpeakerTag line={line} />
+      <span className="tabular-nums text-text-3">{clock(line.at_ms)}</span>
+    </div>
+    <div className="mt-0.5">
+      <LineText
+        line={line}
+        preview={preview}
+        voices={voices}
+        className="text-sm leading-relaxed"
+      />
+    </div>
+  </li>
+);
 
 /** Your notes on the recording, saved as you type; dictated words land at
  *  the cursor. */
@@ -184,6 +191,8 @@ export const NotesPanel: React.FC = () => {
   const session = useNotesStore((s) => s.session);
   const tick = useNotesStore((s) => s.tick);
   const live = useLiveLines();
+  const lines = useNotesStore((s) => s.live);
+  const voices = useMemo(() => voiceChoices(lines), [lines]);
   const [busy, setBusy] = useState(false);
   const [pinned, setPinned] = useState(true);
   const listRef = useRef<HTMLOListElement>(null);
@@ -308,6 +317,7 @@ export const NotesPanel: React.FC = () => {
                 key={preview ? `p-${line.who}` : line.id}
                 line={line}
                 preview={preview}
+                voices={voices}
               />
             ))}
           </ol>

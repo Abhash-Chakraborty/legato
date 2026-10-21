@@ -16,7 +16,8 @@ use std::path::Path;
 use std::sync::mpsc;
 use std::thread;
 use transcribe_cpp::{
-    Backend, BackendMask, DeviceType, Feature, Model, ModelOptions, Session, Stream,
+    Backend, BackendMask, DeviceType, DiarizeExtension, DiarizeOptions, Feature, Model,
+    ModelOptions, Session, SortformerDiarizeOptions, SortformerPreset, SpeakerSegment, Stream,
 };
 
 /// Prefix on worker log lines so the parent can tell them apart from raw
@@ -134,6 +135,15 @@ pub fn run() -> i32 {
             Request::Feed | Request::Finalize { .. } | Request::StreamReset => {
                 Response::Error("no active stream".to_string())
             }
+            Request::Diarize {
+                path,
+                backend,
+                device,
+                audio,
+            } => match diarize(&path, backend, device, &audio) {
+                Ok(speakers) => Response::Speakers(speakers),
+                Err(e) => Response::Error(e),
+            },
         };
         if let Err(e) = write_message(&mut output, &response, None) {
             error!("Protocol write failed: {}", e);
@@ -237,12 +247,46 @@ fn not_loaded() -> Response {
     Response::Error("no model loaded".to_string())
 }
 
-fn load(
+/// Who spoke when in each recording. The model is loaded once for them and
+/// freed when it returns.
+fn diarize(
     path: &Path,
     backend: Backend,
     selector: DeviceSelector,
-) -> Result<(Session, LoadedInfo), String> {
-    let device = match selector {
+    audio: &[std::path::PathBuf],
+) -> Result<Vec<Vec<SpeakerSegment>>, String> {
+    let device = resolve_device(selector)?;
+    inject_fault("diarize", backend != Backend::Cpu);
+    let model = Model::load_with(path, &ModelOptions { backend, device })
+        .map_err(|e| format!("Failed to load the speaker model: {e}"))?;
+    let mut session = model
+        .diarize_session()
+        .map_err(|e| format!("Failed to open a speaker session: {e}"))?;
+    // Whole recordings: the preset made for files, with the most lookahead.
+    let options = DiarizeOptions {
+        family: Some(DiarizeExtension::Sortformer(SortformerDiarizeOptions {
+            preset: Some(SortformerPreset::VeryHighLatency),
+        })),
+    };
+    audio
+        .iter()
+        .map(|file| {
+            let pcm: Vec<f32> = hound::WavReader::open(file)
+                .map_err(|e| format!("Couldn't read the recording: {e}"))?
+                .samples::<i16>()
+                .map_while(Result::ok)
+                .map(|s| s as f32 / i16::MAX as f32)
+                .collect();
+            session
+                .run(&pcm, &options)
+                .map_err(|e| format!("Telling speakers apart failed: {e}"))
+        })
+        .collect()
+}
+
+/// The device a selector names, or None for automatic selection.
+fn resolve_device(selector: DeviceSelector) -> Result<Option<transcribe_cpp::Device>, String> {
+    Ok(match selector {
         DeviceSelector::Auto => None,
         DeviceSelector::Key(key) => {
             let found = transcribe_cpp::devices().into_iter().find(|d| {
@@ -272,8 +316,15 @@ fn load(
             }
             Some(device)
         }
-    };
+    })
+}
 
+fn load(
+    path: &Path,
+    backend: Backend,
+    selector: DeviceSelector,
+) -> Result<(Session, LoadedInfo), String> {
+    let device = resolve_device(selector)?;
     inject_fault("load", backend != Backend::Cpu);
     let model = Model::load_with(path, &ModelOptions { backend, device })
         .map_err(|e| format!("Failed to load model: {e}"))?;

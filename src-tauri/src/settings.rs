@@ -862,6 +862,14 @@ pub struct AppSettings {
     /// The recorder reminds you to tell people you're recording.
     #[serde(default = "default_true")]
     pub notes_reminder: bool,
+    /// Notes tells voices apart after a recording, once the speaker model
+    /// is downloaded.
+    #[serde(default = "default_true")]
+    pub notes_speakers: bool,
+    /// Naming a speaker saves a short clip of their voice, so later
+    /// meetings recognise them.
+    #[serde(default = "default_true")]
+    pub notes_remember_voices: bool,
     #[serde(default)]
     pub calls: CallSettings,
     #[serde(default)]
@@ -1498,6 +1506,8 @@ pub fn get_default_settings() -> AppSettings {
         ai_notes_enabled: true,
         notes_live_transcript: true,
         notes_reminder: true,
+        notes_speakers: true,
+        notes_remember_voices: true,
         calls: CallSettings::default(),
         sync: SyncSettings::default(),
         scratchpad_open: ScratchpadOpen::default(),

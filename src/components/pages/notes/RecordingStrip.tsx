@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -14,7 +14,8 @@ import { useSettings } from "../../../hooks/useSettings";
 import { useLiveLines, useNotesStore } from "../../../stores/notesStore";
 import { Button } from "../../ui/Button";
 import { LineText } from "../../notes/LineText";
-import { clock, longClock } from "../../notes/notes";
+import { clock, longClock, voiceChoices, type Voice } from "../../notes/notes";
+import { SpeakerTag } from "../../notes/SpeakerTag";
 
 const BARS = 8;
 
@@ -41,29 +42,23 @@ export const SideMeter: React.FC<{ level: number; label: string }> = ({
   );
 };
 
-const LiveLine: React.FC<{ line: NoteLine; preview: boolean }> = ({
-  line,
-  preview,
-}) => {
-  const { t } = useTranslation();
-  return (
-    // A preview changes as the words come; the screen reader hears the line.
-    <li
-      aria-hidden={preview || undefined}
-      className="grid grid-cols-[44px_48px_minmax(0,1fr)] items-baseline gap-x-2 py-[3px] text-sm"
-    >
-      <span className="text-xs tabular-nums text-text-3">
-        {clock(line.at_ms)}
-      </span>
-      <span
-        className={`text-xs font-medium ${line.who === "you" ? "text-teal-700" : "text-text-2"}`}
-      >
-        {t(`notes.who.${line.who}`)}
-      </span>
-      <LineText line={line} preview={preview} />
-    </li>
-  );
-};
+const LiveLine: React.FC<{
+  line: NoteLine;
+  preview: boolean;
+  voices: Voice[];
+}> = ({ line, preview, voices }) => (
+  // A preview changes as the words come; the screen reader hears the line.
+  <li
+    aria-hidden={preview || undefined}
+    className={`grid ${voices.length ? "grid-cols-[44px_88px_minmax(0,1fr)]" : "grid-cols-[44px_48px_minmax(0,1fr)]"} items-baseline gap-x-2 py-[3px] text-sm`}
+  >
+    <span className="text-xs tabular-nums text-text-3">
+      {clock(line.at_ms)}
+    </span>
+    <SpeakerTag line={line} className="text-xs" />
+    <LineText line={line} preview={preview} voices={voices} />
+  </li>
+);
 
 /** The recording in progress: its clock, a meter per side, Pause and Stop,
  *  and the lines transcribed so far. */
@@ -73,6 +68,8 @@ export const RecordingStrip: React.FC<{ session: SessionInfo }> = ({
   const { t } = useTranslation();
   const tick = useNotesStore((s) => s.tick);
   const live = useLiveLines();
+  const heard = useNotesStore((s) => s.live);
+  const voices = useMemo(() => voiceChoices(heard), [heard]);
   const lines = useNotesStore((s) => s.live.length);
   const { settings, updateSetting } = useSettings();
   const [busy, setBusy] = useState(false);
@@ -236,6 +233,7 @@ export const RecordingStrip: React.FC<{ session: SessionInfo }> = ({
                       key={preview ? `p-${line.who}` : line.id}
                       line={line}
                       preview={preview}
+                      voices={voices}
                     />
                   ))}
                 </ol>

@@ -1,4 +1,4 @@
-import type { Note, NoteLine } from "@/bindings";
+import type { Note, NoteLine, NoteSpeaker, Speaker } from "@/bindings";
 
 /** Which notes the list shows. */
 export type Filter = "all" | "meeting" | "memo";
@@ -69,14 +69,61 @@ export const answerParts = (answer: string): AnswerPart[] => {
 };
 
 /** The transcript as text, for Copy transcript. */
+/** What transcripts call each side, and a voice the speaker model found. */
+export interface SpeakerNames {
+  you: string;
+  them: string;
+  /** "Speaker 2". */
+  voice: (n: number) => string;
+}
+
+/** Who said a line: the name given to its voice, "Speaker 2", or You or
+ *  Them before voices were told apart. */
+export const speakerLabel = (
+  line: NoteLine,
+  speakers: NoteSpeaker[] | undefined,
+  names: SpeakerNames,
+): string => {
+  const n = line.speaker;
+  if (n == null) return line.who === "you" ? names.you : names.them;
+  return speakers?.find((s) => s.speaker === n)?.name || names.voice(n);
+};
+
+/** The voices found in a transcript, in order. */
+export const voicesIn = (lines: NoteLine[]): number[] =>
+  [
+    ...new Set(lines.flatMap((l) => (l.speaker == null ? [] : [l.speaker]))),
+  ].sort((a, b) => a - b);
+
+/** Who a line can be given to: a side, or one of the voices on it. */
+export interface Voice {
+  who: Speaker;
+  speaker: number | null;
+}
+
+/** Said by's choices once voices were told apart: each voice, plus You or
+ *  Them for a side with no voices of its own. Empty before that. */
+export const voiceChoices = (lines: NoteLine[]): Voice[] => {
+  const found = new Map<number, Speaker>();
+  for (const l of lines)
+    if (l.speaker != null && !found.has(l.speaker)) found.set(l.speaker, l.who);
+  if (!found.size) return [];
+  const voices: Voice[] = [...found]
+    .sort((a, b) => a[0] - b[0])
+    .map(([speaker, who]) => ({ who, speaker }));
+  const bare = (who: Speaker): Voice[] =>
+    voices.some((v) => v.who === who) ? [] : [{ who, speaker: null }];
+  return [...bare("you"), ...voices, ...bare("them")];
+};
+
 export const transcriptText = (
   lines: NoteLine[],
-  names: { you: string; them: string },
+  names: SpeakerNames,
+  speakers?: NoteSpeaker[],
 ): string =>
   lines
     .map(
-      (l) =>
-        `${clock(l.at_ms)} ${l.who === "you" ? names.you : names.them}: ${l.text}`,
+      (l) => `${clock(l.at_ms)} ${speakerLabel(l, speakers, names)}: ${l.text}`,
     )
     .join("\n");
 

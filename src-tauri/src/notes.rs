@@ -56,6 +56,13 @@ pub struct NoteLineAdded {
     pub line: NoteLine,
 }
 
+/// Many of a note's lines changed at once (speakers were found), so an
+/// open transcript reloads.
+#[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct NoteLinesChanged {
+    pub note_id: i64,
+}
+
 /// A line corrected, or given to the other side.
 #[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct NoteLineChanged {
@@ -164,7 +171,7 @@ impl NotesManager {
         Ok(manager)
     }
 
-    fn conn(&self) -> Result<Connection> {
+    pub(crate) fn conn(&self) -> Result<Connection> {
         Ok(Connection::open(&self.db_path)?)
     }
 
@@ -271,10 +278,16 @@ impl NotesManager {
     }
 
     /// Corrects a line's words, or who said it.
-    pub fn edit_line(&self, line_id: i64, who: Speaker, text: &str) -> Result<LineEdit> {
+    pub fn edit_line(
+        &self,
+        line_id: i64,
+        who: Speaker,
+        speaker: Option<i64>,
+        text: &str,
+    ) -> Result<LineEdit> {
         let conn = self.conn()?;
         let before = store::line(&conn, line_id)?.ok_or_else(|| anyhow!("That line is gone"))?;
-        let line = store::update_line(&conn, line_id, who, text)?;
+        let line = store::update_line(&conn, line_id, who, speaker, text)?;
         self.mark_edited(&conn, line.note_id);
         let _ = NoteLineChanged { line: line.clone() }.emit(&self.app);
         self.changed();
@@ -320,7 +333,7 @@ impl NotesManager {
             let Some(text) = notes_rules::replace_words(&line.text, &fix.heard, &fix.word) else {
                 continue;
             };
-            let changed = store::update_line(&conn, id, line.who, &text)?;
+            let changed = store::update_line(&conn, id, line.who, line.speaker, &text)?;
             let _ = NoteLineChanged { line: changed }.emit(&self.app);
             originals.push(line);
         }
@@ -381,7 +394,7 @@ impl NotesManager {
             if text == line.text {
                 continue;
             }
-            let after = store::update_line(&conn, line.id, line.who, &text)?;
+            let after = store::update_line(&conn, line.id, line.who, line.speaker, &text)?;
             let _ = NoteLineChanged { line: after }.emit(&self.app);
             originals.push(line);
         }
@@ -410,7 +423,7 @@ impl NotesManager {
         };
         let conn = self.conn()?;
         for line in &undo.lines {
-            let back = store::update_line(&conn, line.id, line.who, &line.text)?;
+            let back = store::update_line(&conn, line.id, line.who, line.speaker, &line.text)?;
             let _ = NoteLineChanged { line: back }.emit(&self.app);
         }
         if let Some(line) = undo.lines.first() {
@@ -423,6 +436,43 @@ impl NotesManager {
         }
         self.changed();
         Ok(())
+    }
+
+    /// Names one of the note's voices; an empty name goes back to
+    /// "Speaker 2". A name keeps a clip of the voice, so later meetings
+    /// recognise it.
+    pub fn name_speaker(&self, note_id: i64, speaker: i64, name: &str) -> Result<()> {
+        store::name_speaker(&self.conn()?, note_id, speaker, name)?;
+        self.changed();
+        if !name.trim().is_empty() {
+            if let Some(audio) = self.voice_audio(note_id)? {
+                let (app, name) = (self.app.clone(), name.to_string());
+                std::thread::spawn(move || {
+                    if let Err(e) = crate::speakers::remember(&app, note_id, speaker, &name, &audio)
+                    {
+                        warn!("Couldn't save the voice: {e}");
+                    }
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The audio a note's voices are heard in: while it records, the side
+    /// with the voices (the call in a meeting); after, the recording.
+    fn voice_audio(&self, note_id: i64) -> Result<Option<PathBuf>> {
+        if current_note() == Some(note_id) {
+            let note = self
+                .get(note_id)?
+                .ok_or_else(|| anyhow!("That note is gone"))?;
+            let side = match note.kind {
+                NoteKind::Meeting => Speaker::Them,
+                NoteKind::Memo => Speaker::You,
+            };
+            let track = self.track_path(note_id, side);
+            return Ok(track.exists().then_some(track));
+        }
+        self.audio_file(note_id)
     }
 
     /// Deletes a line; returns it for Undo.
@@ -944,6 +994,7 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
             .unwrap_or_default()
     );
     spawn_ticker(app, Arc::clone(&shared), meeting, max);
+    spawn_speaker_passes(app, note.id, meeting, Arc::clone(&shared));
     *slot = Some(Session {
         info,
         shared,
@@ -953,7 +1004,8 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
         transcriber,
     });
     drop(slot);
-    // The model loads now, so the first line doesn't wait for it.
+    // Load the speech model now: previews never wait for a load, so without
+    // this the live transcript stays empty until the first line ends.
     if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
         tm.initiate_model_load();
     }
@@ -1066,6 +1118,61 @@ fn spawn_ticker(app: &AppHandle, shared: Arc<Shared>, meeting: bool, max: Option
 
 /// One track: writes it to a WAV and cuts it into lines for the
 /// transcriber.
+/// The first live pass of the speaker model waits for this much talk.
+const SPEAKERS_FIRST: Duration = Duration::from_secs(30);
+/// Live passes are at least this far apart, and twice as far as the last
+/// one took, so a long meeting never piles up work.
+const SPEAKERS_EVERY: Duration = Duration::from_secs(40);
+
+/// Tells the voices apart while the recording runs, so lines get their
+/// speakers (and names you give, or saved voices it recognises) during the
+/// call. Each pass reads the side with the voices as written so far.
+fn spawn_speaker_passes(app: &AppHandle, note_id: i64, meeting: bool, shared: Arc<Shared>) {
+    let app = app.clone();
+    let side = if meeting { Speaker::Them } else { Speaker::You };
+    let _ = std::thread::Builder::new()
+        .name("notes-speakers".into())
+        .spawn(move || {
+            let m = manager(&app);
+            let track = m.track_path(note_id, side);
+            let mut wait = SPEAKERS_FIRST;
+            let mut since = Instant::now();
+            let mut heard = 0;
+            while !shared.stop_ticker.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_secs(1));
+                if shared.paused.load(Ordering::Relaxed) || since.elapsed() < wait {
+                    continue;
+                }
+                let settings = get_settings(&app);
+                if !settings.notes_speakers || !crate::speakers::is_downloaded(&app) {
+                    continue;
+                }
+                // Only when the side has new lines to give out.
+                let lines = m
+                    .conn()
+                    .and_then(|c| store::speaker_lines(&c, note_id, meeting.then_some(side)))
+                    .map(|l| l.len())
+                    .unwrap_or(0);
+                if lines < 2 || lines == heard {
+                    since = Instant::now();
+                    wait = Duration::from_secs(10);
+                    continue;
+                }
+                let started = Instant::now();
+                match find_speakers_in(&app, note_id, &track, meeting.then_some(side)) {
+                    Ok(count) => debug!(
+                        "Live speaker pass: {count} voices in {:?}",
+                        started.elapsed()
+                    ),
+                    Err(e) => warn!("A live speaker pass failed: {e}"),
+                }
+                heard = lines;
+                since = Instant::now();
+                wait = SPEAKERS_EVERY.max(started.elapsed() * 2);
+            }
+        });
+}
+
 struct Track {
     who: Speaker,
     writer: hound::WavWriter<std::io::BufWriter<std::fs::File>>,
@@ -1451,6 +1558,19 @@ fn finish(app: &AppHandle, session: Session) {
 
     let you = m.track_path(note_id, Speaker::You);
     let them = m.track_path(note_id, Speaker::Them);
+    // Voices are told apart on the side that has several: the call in a
+    // meeting, the room in a memo. Before mixing, which removes the tracks.
+    let voices = if meeting { &them } else { &you };
+    if saved > 1
+        && get_settings(app).notes_speakers
+        && crate::speakers::is_downloaded(app)
+        && voices.exists()
+    {
+        match find_speakers_in(app, note_id, voices, meeting.then_some(Speaker::Them)) {
+            Ok(count) => info!("Told {count} voices apart"),
+            Err(e) => warn!("Couldn't tell the voices apart: {e}"),
+        }
+    }
     let out = m.audio_path(note_id);
     let audio = mix_tracks(&you, meeting.then_some(them.as_path()), &out);
     let duration_ms = match &audio {
@@ -1491,6 +1611,79 @@ fn finish(app: &AppHandle, session: Session) {
     crate::calls::note_ready(app, note_id);
 }
 
+/// One pass of the speaker model at a time: the live passes and the last
+/// one after Stop.
+static SPEAKER_PASS: Mutex<()> = Mutex::new(());
+
+/// Tells the voices in `audio` apart and gives each line of `side` (every
+/// line when None) to one of them. Numbers (and so names) stay with the
+/// voices they had, and lines given to someone by hand stay theirs. Then
+/// unnamed voices that sound like a saved one get its name. Returns how
+/// many voices were found.
+fn find_speakers_in(
+    app: &AppHandle,
+    note_id: i64,
+    audio: &Path,
+    side: Option<Speaker>,
+) -> Result<usize> {
+    let _pass = lock(&SPEAKER_PASS);
+    let turns = crate::speakers::turns(app, audio)?;
+    let m = manager(app);
+    let conn = m.conn()?;
+    let open = store::speaker_lines(&conn, note_id, side)?;
+    let spans: Vec<(i64, i64)> = open.iter().map(|l| (l.at_ms, l.end_ms)).collect();
+    let fresh = notes_rules::assign_speakers(&spans, &turns);
+    // Numbers taken by hand count as taken, so a new voice can't get one.
+    let mut old: Vec<Option<i64>> = open.iter().map(|l| l.speaker).collect();
+    let mut new = fresh;
+    for line in store::lines(&conn, note_id)? {
+        if line.speaker.is_some() && !open.iter().any(|o| o.id == line.id) {
+            old.push(line.speaker);
+            new.push(None);
+        }
+    }
+    let speakers = notes_rules::keep_numbers(&old, &new);
+    let mut voices: Vec<i64> = speakers.iter().flatten().copied().collect();
+    voices.sort_unstable();
+    voices.dedup();
+    let assigned: Vec<(i64, Option<i64>)> = open.iter().map(|l| l.id).zip(speakers).collect();
+    if open
+        .iter()
+        .zip(&assigned)
+        .any(|(l, (_, s))| l.speaker != *s)
+    {
+        store::set_speakers(&mut m.conn()?, note_id, &assigned)?;
+        let _ = NoteLinesChanged { note_id }.emit(app);
+        m.changed();
+    }
+    if let Err(e) = crate::speakers::recognise(app, note_id, audio) {
+        warn!("Couldn't compare the voices with saved ones: {e}");
+    }
+    Ok(voices.len())
+}
+
+/// Finds the speakers in a finished note from its audio: for notes from
+/// before the speaker model, or to try again. Blocks for a while.
+pub fn find_speakers(app: &AppHandle, note_id: i64) -> Result<usize> {
+    if !crate::speakers::is_downloaded(app) {
+        return Err(anyhow!(
+            "Download the speaker model in Settings › Notes first"
+        ));
+    }
+    if current_note() == Some(note_id) {
+        return Err(anyhow!("The note is still recording"));
+    }
+    let m = manager(app);
+    let note = m
+        .get(note_id)?
+        .ok_or_else(|| anyhow!("That note is gone"))?;
+    let audio = m
+        .audio_file(note_id)?
+        .ok_or_else(|| anyhow!("The note's audio isn't kept"))?;
+    let side = (note.kind == NoteKind::Meeting).then_some(Speaker::Them);
+    find_speakers_in(app, note_id, &audio, side)
+}
+
 /// Why a note has no summary, as Notes words it: "short", or how the
 /// provider answered.
 fn problem_code(kind: crate::ai::AiStatusKind) -> String {
@@ -1500,13 +1693,26 @@ fn problem_code(kind: crate::ai::AiStatusKind) -> String {
         .unwrap_or_else(|| "failed".to_string())
 }
 
-/// The transcript as the prompts see it.
-fn prompt_lines(lines: &[NoteLine]) -> Vec<notes_rules::PromptLine<'_>> {
+/// Who said each line, as the prompts name them: You, Them, or a voice's
+/// name or number.
+fn speaker_labels(note: &Note, lines: &[NoteLine]) -> Vec<String> {
     lines
         .iter()
-        .map(|l| notes_rules::PromptLine {
+        .map(|l| store::speaker_label(note, l, "You", "Them", "Speaker {n}"))
+        .collect()
+}
+
+/// The transcript as the prompts see it.
+fn prompt_lines<'a>(
+    lines: &'a [NoteLine],
+    labels: &'a [String],
+) -> Vec<notes_rules::PromptLine<'a>> {
+    lines
+        .iter()
+        .zip(labels)
+        .map(|(l, who)| notes_rules::PromptLine {
             at_ms: l.at_ms,
-            you: l.who == Speaker::You,
+            who,
             text: &l.text,
         })
         .collect()
@@ -1537,7 +1743,11 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
             return;
         }
     };
-    let prompt = prompt_lines(&lines);
+    let labels = match m.get(note_id) {
+        Ok(Some(note)) => speaker_labels(&note, &lines),
+        _ => Vec::new(),
+    };
+    let prompt = prompt_lines(&lines, &labels);
     let save = |result: Result<()>| {
         if let Err(e) = result {
             error!("Couldn't save the note's summary: {e}");
@@ -1613,7 +1823,12 @@ pub async fn ask(app: &AppHandle, note_id: i64, question: &str) -> Result<String
     if lines.is_empty() {
         return Err("empty".to_string());
     }
-    crate::ai::ask_note(app, &config, &prompt_lines(&lines), question)
+    let note = manager(app)
+        .get(note_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "gone".to_string())?;
+    let labels = speaker_labels(&note, &lines);
+    crate::ai::ask_note(app, &config, &prompt_lines(&lines, &labels), question)
         .await
         .map_err(|p| problem_code(p.kind))
 }
@@ -1647,10 +1862,16 @@ pub async fn suggest_fixes(app: &AppHandle, note_id: i64) -> Result<Vec<Suggeste
                 .collect()
         })
         .unwrap_or_default();
-    let fixes =
-        crate::ai::find_note_fixes(app, &config, &prompt_lines(&lines), &note.title, &words)
-            .await
-            .map_err(|p| problem_code(p.kind))?;
+    let labels = speaker_labels(&note, &lines);
+    let fixes = crate::ai::find_note_fixes(
+        app,
+        &config,
+        &prompt_lines(&lines, &labels),
+        &note.title,
+        &words,
+    )
+    .await
+    .map_err(|p| problem_code(p.kind))?;
     Ok(fixes
         .into_iter()
         .map(|f| {

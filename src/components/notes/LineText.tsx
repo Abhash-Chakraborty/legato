@@ -9,19 +9,28 @@ import {
   X,
 } from "lucide-react";
 import { commands, type NoteLine, type WordFix } from "@/bindings";
+import { useNotesStore } from "../../stores/notesStore";
 import { ActionMenu, type ActionMenuItem } from "../ui/ActionMenu";
+import { speakerLabel, type Voice } from "./notes";
+import { useSpeakerNames } from "./SpeakerTag";
 
 /** A transcript line's words, which can be corrected in place (double-click,
- *  or Edit in its menu), given to the other side or deleted, during the
+ *  or Edit in its menu), given to someone else or deleted, during the
  *  recording and after it. A corrected word is offered for the note's other
  *  lines and the Dictionary. */
 export const LineText: React.FC<{
   line: NoteLine;
   /** The words of a line still being spoken: shown, not editable. */
   preview?: boolean;
+  /** Who the line can be given to, once voices were told apart. */
+  voices?: Voice[];
   className?: string;
-}> = ({ line, preview, className = "" }) => {
+}> = ({ line, preview, voices = [], className = "" }) => {
   const { t } = useTranslation();
+  const names = useSpeakerNames();
+  const speakers = useNotesStore(
+    (s) => s.notes?.find((n) => n.id === line.note_id)?.speakers,
+  );
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(line.text);
   const [menu, setMenu] = useState(false);
@@ -78,7 +87,12 @@ export const LineText: React.FC<{
       remove();
       return;
     }
-    const result = await commands.editNoteLine(line.id, line.who, text);
+    const result = await commands.editNoteLine(
+      line.id,
+      line.who,
+      line.speaker ?? null,
+      text,
+    );
     if (result.status === "error") {
       toast.error(t("notes.line.saveFailed"), { description: result.error });
       return;
@@ -87,8 +101,13 @@ export const LineText: React.FC<{
     setFix(result.data.fix);
   };
 
-  const giveToOther = async () => {
-    const result = await commands.editNoteLine(line.id, other, line.text);
+  const giveTo = async (to: Voice) => {
+    const result = await commands.editNoteLine(
+      line.id,
+      to.who,
+      to.speaker,
+      line.text,
+    );
     if (result.status === "error")
       toast.error(t("notes.line.saveFailed"), { description: result.error });
   };
@@ -126,12 +145,23 @@ export const LineText: React.FC<{
 
   const items: ActionMenuItem[] = [
     { id: "edit", label: t("notes.line.edit"), icon: Pencil, onSelect: edit },
-    {
-      id: "who",
-      label: t("notes.line.saidBy", { who: t(`notes.who.${other}`) }),
-      icon: ArrowLeftRight,
-      onSelect: giveToOther,
-    },
+    ...(voices.length
+      ? voices.map((v) => ({
+          id: `who-${v.who}-${v.speaker ?? ""}`,
+          label: t("notes.line.saidBy", {
+            who: speakerLabel({ ...line, ...v }, speakers, names),
+          }),
+          checked: v.who === line.who && v.speaker === (line.speaker ?? null),
+          onSelect: () => giveTo(v),
+        }))
+      : [
+          {
+            id: "who",
+            label: t("notes.line.saidBy", { who: t(`notes.who.${other}`) }),
+            icon: ArrowLeftRight,
+            onSelect: () => giveTo({ who: other, speaker: null }),
+          },
+        ]),
     "separator",
     {
       id: "delete",

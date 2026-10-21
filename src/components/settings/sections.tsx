@@ -78,6 +78,12 @@ import {
   WatchedAppsRow,
 } from "./calls/CallSettings";
 import {
+  RememberVoicesRow,
+  SavedVoicesRow,
+  SpeakerModelRow,
+  SpeakersToggleRow,
+} from "./calls/SpeakerSettings";
+import {
   ClipboardImagesRow,
   NeverShareAppsRow,
   NeverSyncsRow,
@@ -992,6 +998,44 @@ export const buildSections = (
             ],
             render: () => <OpenNoteRow />,
             requires: needsCallDetection,
+          },
+        ],
+      },
+      {
+        id: "speakers",
+        titleKey: "settings.groups.speakers",
+        rows: [
+          {
+            id: "speaker-model",
+            searchKeys: [
+              "settings.speakers.model.title",
+              "settings.speakers.toggle.title",
+            ],
+            render: () => <SpeakerModelRow />,
+          },
+          {
+            id: "tell-speakers",
+            searchKeys: [
+              "settings.speakers.toggle.title",
+              "settings.speakers.toggle.help",
+            ],
+            render: () => <SpeakersToggleRow />,
+          },
+          {
+            id: "remember-voices",
+            searchKeys: [
+              "settings.speakers.remember.title",
+              "settings.speakers.remember.help",
+            ],
+            render: () => <RememberVoicesRow />,
+          },
+          {
+            id: "saved-voices",
+            searchKeys: [
+              "settings.speakers.voices.title",
+              "settings.speakers.voices.help",
+            ],
+            render: () => <SavedVoicesRow />,
           },
         ],
       },

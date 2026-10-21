@@ -2,11 +2,12 @@
 
 use crate::loopback::{self, AudioApp};
 use crate::managers::notes_store::Speaker;
-use crate::managers::notes_store::{DeletedRecording, Note, NoteLine, NoteMatch};
+use crate::managers::notes_store::{DeletedRecording, Note, NoteLine, NoteMatch, Voice};
 use crate::notes::{
     self, LineEdit, NotesManager, SessionInfo, StartNotes, SuggestedFix, WordFix, WordFixed,
 };
 use crate::settings::{get_settings, write_settings};
+use crate::speakers::{self, SpeakerModel};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
@@ -53,9 +54,10 @@ pub fn edit_note_line(
     notes: Notes<'_>,
     id: i64,
     who: Speaker,
+    speaker: Option<i64>,
     text: String,
 ) -> Result<LineEdit, String> {
-    self::text(notes.edit_line(id, who, &text))
+    self::text(notes.edit_line(id, who, speaker, &text))
 }
 
 /// Fixes a corrected word in the note's other lines, and adds it to the
@@ -245,6 +247,87 @@ pub fn open_note(app: AppHandle, id: i64) {
 pub fn change_notes_live_transcript_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = get_settings(&app);
     settings.notes_live_transcript = enabled;
+    write_settings(&app, settings);
+    Ok(())
+}
+
+/// Tells the voices apart in a finished note from its audio. Takes a while
+/// for a long meeting. Returns how many voices were found.
+#[tauri::command]
+#[specta::specta]
+pub async fn find_note_speakers(app: AppHandle, id: i64) -> Result<u32, String> {
+    tauri::async_runtime::spawn_blocking(move || notes::find_speakers(&app, id))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|count| count as u32)
+        .map_err(|e| e.to_string())
+}
+
+/// Names one of a note's voices; an empty name goes back to "Speaker 2".
+#[tauri::command]
+#[specta::specta]
+pub fn name_note_speaker(
+    notes: Notes<'_>,
+    id: i64,
+    speaker: i64,
+    name: String,
+) -> Result<(), String> {
+    text(notes.name_speaker(id, speaker, &name))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_speaker_model(app: AppHandle) -> SpeakerModel {
+    speakers::state(&app)
+}
+
+/// Downloads the speaker model; progress comes as `SpeakerModelChanged`.
+#[tauri::command]
+#[specta::specta]
+pub async fn download_speaker_model(app: AppHandle) -> Result<(), String> {
+    speakers::download(&app).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn cancel_speaker_model_download() {
+    speakers::cancel();
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn delete_speaker_model(app: AppHandle) -> Result<(), String> {
+    text(speakers::delete(&app))
+}
+
+/// The voices saved when you named someone, the most recently heard first.
+#[tauri::command]
+#[specta::specta]
+pub fn list_voices(app: AppHandle) -> Result<Vec<Voice>, String> {
+    text(speakers::list(&app))
+}
+
+/// Forgets a saved voice: later meetings no longer recognise it.
+#[tauri::command]
+#[specta::specta]
+pub fn forget_voice(app: AppHandle, id: i64) -> Result<(), String> {
+    text(speakers::forget(&app, id))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_notes_remember_voices_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings.notes_remember_voices = enabled;
+    write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_notes_speakers_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings.notes_speakers = enabled;
     write_settings(&app, settings);
     Ok(())
 }

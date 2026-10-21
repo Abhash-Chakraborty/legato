@@ -501,6 +501,54 @@ impl TranscriptionManager {
         self.load_model_with_device(model_id, None)
     }
 
+    /// The backend and device from the accelerator setting.
+    fn device_choice(&self) -> (Backend, DeviceSelector) {
+        let settings = get_settings(&self.app_handle);
+        let accelerator = settings.transcribe_accelerator;
+        match resolve_gpu_device(accelerator, settings.transcribe_gpu_device.as_deref()) {
+            // Backend::Auto accepts an exact GPU device.
+            Some(key) => (Backend::Auto, DeviceSelector::Key(key)),
+            // Without a valid exact device, backend selection handles the
+            // retired generic GPU state and host CPU guard.
+            None => (select_transcribe_backend(accelerator), DeviceSelector::Auto),
+        }
+    }
+
+    /// Who spoke when in each 16 kHz mono WAV in `audio`, with the speaker
+    /// model at `model`, on the device the speech model uses or, with
+    /// `cpu_only`, on the CPU. Blocks until done; the speech model stays
+    /// loaded meanwhile.
+    pub fn diarize(
+        &self,
+        model: std::path::PathBuf,
+        audio: &[std::path::PathBuf],
+        cpu_only: bool,
+    ) -> Result<Vec<Vec<transcribe_cpp::SpeakerSegment>>> {
+        let mut length = Duration::ZERO;
+        for file in audio {
+            let reader = hound::WavReader::open(file)?;
+            length += Duration::from_secs_f64(
+                reader.duration() as f64 / reader.spec().sample_rate.max(1) as f64,
+            );
+        }
+        let (backend, device) = if cpu_only {
+            (Backend::Cpu, DeviceSelector::Auto)
+        } else {
+            self.device_choice()
+        };
+        self.engine
+            .diarize(
+                LoadSpec {
+                    path: model,
+                    backend,
+                    device,
+                },
+                audio,
+                length,
+            )
+            .map_err(|e| anyhow::anyhow!("{e}"))
+    }
+
     /// Like [`load_model`](Self::load_model), but lets a caller hard-select the
     /// compute device for this one load by its transcribe-cpp device
     /// registry index (the index shown by `--list-devices`). `None` keeps the
@@ -583,18 +631,7 @@ impl TranscriptionManager {
         // loadable device (a host without GPU access lists none).
         let (backend, device) = match device_index {
             Some(index) => (Backend::Auto, DeviceSelector::Index(index)),
-            None => {
-                let settings = get_settings(&self.app_handle);
-                let accelerator = settings.transcribe_accelerator;
-                match resolve_gpu_device(accelerator, settings.transcribe_gpu_device.as_deref()) {
-                    // Backend::Auto accepts an exact GPU device.
-                    Some(key) => (Backend::Auto, DeviceSelector::Key(key)),
-                    // Without a valid exact device, backend selection
-                    // handles the retired generic GPU state and host
-                    // CPU guard.
-                    None => (select_transcribe_backend(accelerator), DeviceSelector::Auto),
-                }
-            }
+            None => self.device_choice(),
         };
         let requested_device = format!("{:?}", device);
         let info = self
