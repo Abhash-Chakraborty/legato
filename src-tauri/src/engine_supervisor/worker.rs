@@ -319,18 +319,60 @@ fn resolve_device(selector: DeviceSelector) -> Result<Option<transcribe_cpp::Dev
     })
 }
 
+/// Reads the model file start to end beside the load and logs how long
+/// that took. A load after the model was unloaded took 13 to 50 seconds on
+/// a laptop's GPU against 2 seconds at another time; next to the load's own
+/// steps this says whether the disk was the slow part. A file already in
+/// the system's cache reads in well under a second.
+fn read_ahead(path: &Path) {
+    let path = path.to_path_buf();
+    let _ = thread::Builder::new()
+        .name("model-read-ahead".into())
+        .spawn(move || {
+            use std::io::Read;
+            let started = std::time::Instant::now();
+            let Ok(mut file) = File::open(&path) else {
+                return;
+            };
+            let mut buf = vec![0u8; 8 << 20];
+            let mut total = 0u64;
+            while let Ok(n) = file.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                total += n as u64;
+            }
+            debug!(
+                "Read the model file ({} MB) in {}ms",
+                total >> 20,
+                started.elapsed().as_millis()
+            );
+        });
+}
+
 fn load(
     path: &Path,
     backend: Backend,
     selector: DeviceSelector,
 ) -> Result<(Session, LoadedInfo), String> {
+    let started = std::time::Instant::now();
+    read_ahead(path);
     let device = resolve_device(selector)?;
+    let device_at = started.elapsed();
     inject_fault("load", backend != Backend::Cpu);
     let model = Model::load_with(path, &ModelOptions { backend, device })
         .map_err(|e| format!("Failed to load model: {e}"))?;
+    let model_at = started.elapsed();
     let session = model
         .session()
         .map_err(|e| format!("Failed to create session: {e}"))?;
+    debug!(
+        "Model load took {}ms: finding the device {}ms, the model {}ms, its session {}ms",
+        started.elapsed().as_millis(),
+        device_at.as_millis(),
+        (model_at - device_at).as_millis(),
+        (started.elapsed() - model_at).as_millis()
+    );
     let bound = model.device().ok().map(|d| DeviceInfo::from_device(&d));
     let backend_name = model.backend();
     let info = LoadedInfo {
