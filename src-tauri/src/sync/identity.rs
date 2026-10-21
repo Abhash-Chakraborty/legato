@@ -96,7 +96,7 @@ impl Identity {
     }
 
     /// The phone's side: the PC must have `fingerprint`.
-    #[allow(dead_code)] // Used by tools/stand-in-phone, not the app.
+    #[allow(dead_code)] // Used by phone/core, not the app.
     pub fn client_config(&self, fingerprint: &str) -> Result<Arc<ClientConfig>> {
         let provider = provider();
         let config = ClientConfig::builder_with_provider(provider.clone())
@@ -111,7 +111,7 @@ impl Identity {
     }
 }
 
-#[allow(dead_code)] // The phone's side, used by tools/stand-in-phone.
+#[allow(dead_code)] // The phone's side, used by phone/core.
 pub fn server_name() -> ServerName<'static> {
     ServerName::try_from(CERT_NAME).expect("a valid DNS name")
 }
@@ -217,7 +217,7 @@ impl ClientCertVerifier for AnyClientCert {
     }
 }
 
-#[allow(dead_code)] // The phone's side, used by tools/stand-in-phone.
+#[allow(dead_code)] // The phone's side, used by phone/core.
 #[derive(Debug)]
 struct Pinned {
     provider: Arc<CryptoProvider>,

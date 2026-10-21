@@ -1076,7 +1076,7 @@ impl ModelManager {
                 // A models-dir copy counts too: mirror-fallback downloads land
                 // there, and it makes manual drop-ins of catalog files work.
                 let local_path = self.models_dir.join(&model.filename);
-                let partial_path = self.models_dir.join(format!("{}.partial", &model.filename));
+                let partial_path = self.models_dir.join(format!("{}.partial", model.filename));
                 model.is_downloaded = hf_cached_path(repo_id, revision, &model.filename).is_some()
                     || local_path.exists();
                 model.is_downloading = false;
@@ -1094,7 +1094,7 @@ impl ModelManager {
                 continue;
             }
             let model_path = self.models_dir.join(&model.filename);
-            let partial_path = self.models_dir.join(format!("{}.partial", &model.filename));
+            let partial_path = self.models_dir.join(format!("{}.partial", model.filename));
 
             model.is_downloaded = model_path.exists();
             model.is_downloading = false;
@@ -1877,7 +1877,7 @@ impl ModelManager {
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir
-            .join(format!("{}.partial", &model_info.filename));
+            .join(format!("{}.partial", model_info.filename));
 
         // Don't download if complete version already exists
         if model_path.exists() {
@@ -2004,7 +2004,7 @@ impl ModelManager {
             for path in [
                 self.models_dir.join(&model_info.filename),
                 self.models_dir
-                    .join(format!("{}.partial", &model_info.filename)),
+                    .join(format!("{}.partial", model_info.filename)),
             ] {
                 if path.exists() {
                     info!("Deleting model file at: {:?}", path);
@@ -2035,7 +2035,7 @@ impl ModelManager {
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir
-            .join(format!("{}.partial", &model_info.filename));
+            .join(format!("{}.partial", model_info.filename));
         debug!("ModelManager: Model path: {:?}", model_path);
         debug!("ModelManager: Partial path: {:?}", partial_path);
 
@@ -2146,7 +2146,7 @@ impl ModelManager {
             if local_path.exists() {
                 let partial_path = self
                     .models_dir
-                    .join(format!("{}.partial", &model_info.filename));
+                    .join(format!("{}.partial", model_info.filename));
                 if partial_path.exists() {
                     let _ = fs::remove_file(&partial_path);
                 }
@@ -2162,7 +2162,7 @@ impl ModelManager {
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir
-            .join(format!("{}.partial", &model_info.filename));
+            .join(format!("{}.partial", model_info.filename));
 
         if !model_path.exists() {
             self.mark_model_unavailable(model_id);

@@ -222,7 +222,7 @@ impl PairLink {
         )
     }
 
-    #[allow(dead_code)] // The phone reads the link; see tools/stand-in-phone.
+    #[allow(dead_code)] // The phone reads the link; see phone/core.
     pub fn parse(uri: &str) -> Result<Self> {
         let query = uri
             .trim()

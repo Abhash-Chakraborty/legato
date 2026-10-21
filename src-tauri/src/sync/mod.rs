@@ -2,7 +2,7 @@
 //! of the Dictionary, snippets, history, notes, Scratchpad, transforms and
 //! Style up to date over the home network, Netbird or Bluetooth, and the shared
 //! clipboard. docs/phone-sync.md has the protocol; the modules below it are
-//! plain code the stand-in phone (tools/stand-in-phone) runs too.
+//! plain code the stand-in phone (phone/core) runs too.
 
 mod bluetooth;
 pub mod clipboard;
