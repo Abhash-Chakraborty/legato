@@ -79,7 +79,7 @@ class BubbleAccessibilityService : AccessibilityService() {
     fun insert(text: String): Boolean {
         val node = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
         if (!node.isEditable) return false
-        val current = node.text?.toString().orEmpty()
+        val current = typedText(node)
         val start = node.textSelectionStart.takeIf { it >= 0 } ?: current.length
         val end = node.textSelectionEnd.takeIf { it >= 0 } ?: start
         val before = current.substring(0, minOf(start, current.length))
@@ -107,6 +107,18 @@ class BubbleAccessibilityService : AccessibilityService() {
         val pasted = node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
         main.postDelayed({ keep?.let { cm.setPrimaryClip(it) } }, 400)
         return pasted
+    }
+
+    /**
+     * What's typed in the field. An empty field reports its grey hint ("Ask
+     * Google about this…") as its text, which would end up in front of the
+     * dictation, so a hint counts as nothing typed.
+     */
+    private fun typedText(node: AccessibilityNodeInfo): String {
+        val text = node.text?.toString().orEmpty()
+        if (node.isShowingHintText) return ""
+        val hint = node.hintText?.toString()
+        return if (!hint.isNullOrEmpty() && text == hint) "" else text
     }
 
     companion object {
