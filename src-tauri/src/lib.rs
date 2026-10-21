@@ -456,6 +456,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 cancel_current_operation(app);
             }
             "quit" => {
+                log::info!("Quit from the tray menu.");
                 app.exit(0);
             }
             id if id.starts_with("model_select:") => {
@@ -1416,7 +1417,13 @@ pub fn run(cli_args: CliArgs) {
     // worker process, which exits by itself as soon as this process's end
     // of its stdin closes, even if it is hung. Waiting on an unload here
     // could block quitting behind a hung model load.
-    app.run(|_, _| {});
+    // A clean exit leaves this line, so a log that stops without it means
+    // the process was ended from outside or crashed.
+    app.run(|_, event| {
+        if let tauri::RunEvent::Exit = event {
+            log::info!("Legato is exiting.");
+        }
+    });
 }
 
 #[cfg(test)]
