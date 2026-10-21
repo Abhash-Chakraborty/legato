@@ -118,6 +118,13 @@ export const watchNotes = () => {
             : state.live,
       }));
     }),
+    events.noteLineChanged.listen((e) => {
+      const line = e.payload.line;
+      set((state) => ({
+        linesVersion: state.linesVersion + 1,
+        live: state.live.map((l) => (l.id === line.id ? line : l)),
+      }));
+    }),
     events.notePreview.listen((e) => {
       const { note_id, who, at_ms, text } = e.payload;
       set((state) => {

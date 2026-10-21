@@ -7,6 +7,7 @@ import { commands, type Note, type NoteLine } from "@/bindings";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";
 import { useNotesStore } from "../../../stores/notesStore";
 import { Button } from "../../ui/Button";
+import { LineText } from "../../notes/LineText";
 import { clock, durationLabel, lineAt, lineMatches } from "../../notes/notes";
 import type { Jump } from "./NoteDetail";
 
@@ -333,9 +334,7 @@ export const TranscriptTab: React.FC<{
                 >
                   {t(`notes.who.${line.who}`)}
                 </span>
-                <span data-line-text className="min-w-0">
-                  {line.text}
-                </span>
+                <LineText line={line} />
               </li>
             );
           })}

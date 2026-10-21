@@ -1,8 +1,9 @@
 //! Commands behind the Notes page and its recorder.
 
 use crate::loopback::{self, AudioApp};
+use crate::managers::notes_store::Speaker;
 use crate::managers::notes_store::{DeletedRecording, Note, NoteLine, NoteMatch};
-use crate::notes::{self, NotesManager, SessionInfo, StartNotes};
+use crate::notes::{self, LineEdit, NotesManager, SessionInfo, StartNotes, WordFix, WordFixed};
 use crate::settings::{get_settings, write_settings};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
@@ -41,6 +42,44 @@ pub fn get_note_tags(notes: Notes<'_>) -> Result<Vec<String>, String> {
 #[specta::specta]
 pub fn rename_note(notes: Notes<'_>, id: i64, title: String) -> Result<(), String> {
     text(notes.rename(id, &title))
+}
+
+/// Corrects a line's words, or who said it, during or after the recording.
+#[tauri::command]
+#[specta::specta]
+pub fn edit_note_line(
+    notes: Notes<'_>,
+    id: i64,
+    who: Speaker,
+    text: String,
+) -> Result<LineEdit, String> {
+    self::text(notes.edit_line(id, who, &text))
+}
+
+/// Fixes a corrected word in the note's other lines, and adds it to the
+/// Dictionary when `learn` is on.
+#[tauri::command]
+#[specta::specta]
+pub fn fix_note_word(notes: Notes<'_>, fix: WordFix, learn: bool) -> Result<WordFixed, String> {
+    text(notes.fix_word(&fix, learn))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn undo_note_word_fix(notes: Notes<'_>, undo_token: u32) -> Result<(), String> {
+    text(notes.undo_fix_word(undo_token))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn delete_note_line(notes: Notes<'_>, id: i64) -> Result<NoteLine, String> {
+    text(notes.delete_line(id))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn restore_note_line(notes: Notes<'_>, line: NoteLine) -> Result<(), String> {
+    text(notes.restore_line(&line))
 }
 
 #[tauri::command]

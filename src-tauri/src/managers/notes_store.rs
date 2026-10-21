@@ -332,6 +332,46 @@ pub fn remove_line(conn: &Connection, line_id: i64) -> Result<()> {
     Ok(())
 }
 
+pub fn line(conn: &Connection, line_id: i64) -> Result<Option<NoteLine>> {
+    Ok(conn
+        .query_row(
+            "SELECT id, note_id, at_ms, end_ms, who, text FROM note_line WHERE id = ?1",
+            params![line_id],
+            map_line,
+        )
+        .optional()?)
+}
+
+/// A line's corrected words, or who said it.
+pub fn update_line(conn: &Connection, line_id: i64, who: Speaker, text: &str) -> Result<NoteLine> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(anyhow!("A line needs some words; delete it instead"));
+    }
+    conn.execute(
+        "UPDATE note_line SET who = ?2, text = ?3 WHERE id = ?1",
+        params![line_id, who.as_str(), text],
+    )?;
+    line(conn, line_id)?.ok_or_else(|| anyhow!("That line is gone"))
+}
+
+/// Puts a deleted line back as it was, id and all.
+pub fn restore_line(conn: &Connection, line: &NoteLine) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO note_line (id, note_id, at_ms, end_ms, who, text)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            line.id,
+            line.note_id,
+            line.at_ms,
+            line.end_ms,
+            line.who.as_str(),
+            line.text
+        ],
+    )?;
+    Ok(())
+}
+
 /// Lines by the other speaker that overlap `[from_ms, to_ms]`.
 pub fn lines_near(
     conn: &Connection,
@@ -889,5 +929,29 @@ mod tests {
             failed_lines(&conn, note.id).unwrap(),
             vec![failed[1].clone()]
         );
+    }
+
+    #[test]
+    fn a_line_is_corrected_and_comes_back_after_delete() {
+        let conn = db();
+        let note = meeting(&conn);
+        let line = add_line(
+            &conn,
+            note.id,
+            1_000,
+            3_000,
+            Speaker::Them,
+            "ship cubernetes",
+        )
+        .unwrap();
+        let fixed = update_line(&conn, line.id, Speaker::You, " ship Kubernetes ").unwrap();
+        assert_eq!(fixed.text, "ship Kubernetes");
+        assert_eq!(fixed.who, Speaker::You);
+        assert!(update_line(&conn, line.id, Speaker::You, "  ").is_err());
+
+        remove_line(&conn, line.id).unwrap();
+        assert!(super::line(&conn, line.id).unwrap().is_none());
+        restore_line(&conn, &fixed).unwrap();
+        assert_eq!(lines(&conn, note.id).unwrap(), vec![fixed]);
     }
 }

@@ -1741,6 +1741,53 @@ async renameNote(id: number, title: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Corrects a line's words, or who said it, during or after the recording.
+ */
+async editNoteLine(id: number, who: Speaker, text: string) : Promise<Result<LineEdit, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("edit_note_line", { id, who, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Fixes a corrected word in the note's other lines, and adds it to the
+ * Dictionary when `learn` is on.
+ */
+async fixNoteWord(fix: WordFix, learn: boolean) : Promise<Result<WordFixed, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fix_note_word", { fix, learn }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async undoNoteWordFix(undoToken: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("undo_note_word_fix", { undoToken }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteNoteLine(id: number) : Promise<Result<NoteLine, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_note_line", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreNoteLine(line: NoteLine) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_note_line", { line }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async saveNoteMyNotes(id: number, text: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("save_note_my_notes", { id, text }) };
@@ -2094,6 +2141,7 @@ syncChanged: SyncChanged,
 noteInsert: NoteInsert,
 noteLineAdded: NoteLineAdded,
 notePreview: NotePreview,
+noteLineChanged: NoteLineChanged,
 noteLineRemoved: NoteLineRemoved,
 notesChanged: NotesChanged,
 notesSessionChanged: NotesSessionChanged,
@@ -2122,6 +2170,7 @@ syncChanged: "sync-changed",
 noteInsert: "note-insert",
 noteLineAdded: "note-line-added",
 notePreview: "note-preview",
+noteLineChanged: "note-line-changed",
 noteLineRemoved: "note-line-removed",
 notesChanged: "notes-changed",
 notesSessionChanged: "notes-session-changed",
@@ -2523,6 +2572,39 @@ export type NoteInsert = { note_id: number; text: string }
 export type NoteKind = "memo" | "meeting"
 export type NoteLine = { id: number; note_id: number; at_ms: number; end_ms: number; who: Speaker; text: string }
 export type NoteLineAdded = { line: NoteLine }
+/**
+ * A line corrected, or given to the other side.
+ */
+export type NoteLineChanged = { line: NoteLine }
+/**
+ * What correcting a line came to: the line, and the word it swapped, if
+ * it swapped one, for fixing elsewhere in the note or the Dictionary.
+ */
+export type LineEdit = { line: NoteLine; fix: WordFix | null }
+/**
+ * A word corrected in one line.
+ */
+export type WordFix = { note_id: number; 
+/**
+ * What the model wrote.
+ */
+heard: string; 
+/**
+ * What it should be.
+ */
+word: string; 
+/**
+ * The note's other lines with the same miss.
+ */
+others: number[] }
+/**
+ * What fixing a word across a note came to.
+ */
+export type WordFixed = { 
+/**
+ * Pass to `undo_note_word_fix`.
+ */
+undo_token: number; lines: number; learned: boolean }
 /**
  * The words of the line being spoken, before it ends, for the live
  * transcript. Empty text clears the preview.

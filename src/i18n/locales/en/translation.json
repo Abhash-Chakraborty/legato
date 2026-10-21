@@ -2817,6 +2817,27 @@
       "waitingHelp": "Watching {{apps}} for calls.",
       "test": "Test detection",
       "list": "{{list}} and {{last}}"
+    },
+    "line": {
+      "menu": "Line actions",
+      "edit": "Edit",
+      "editLabel": "Edit line",
+      "saidBy": "Said by {{who}}",
+      "delete": "Delete line",
+      "deleted": "Line deleted",
+      "deleteFailed": "Couldn't delete the line",
+      "saveFailed": "Couldn't save the line"
+    },
+    "fix": {
+      "offer": "“{{heard}}” is now “{{word}}”",
+      "others_one": "Fix 1 more line",
+      "others_other": "Fix {{count}} more lines",
+      "learn": "Add to Dictionary",
+      "dismiss": "Dismiss",
+      "fixed_one": "Fixed 1 more line",
+      "fixed_other": "Fixed {{count}} more lines",
+      "learned": "Added {{word}} to the Dictionary",
+      "failed": "Couldn't fix the word"
     }
   },
   "calls": {

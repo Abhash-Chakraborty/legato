@@ -151,6 +151,41 @@ impl Segmenter {
 /// How close in time two lines must be for one to be the other's echo.
 const ECHO_WINDOW_MS: i64 = 2_000;
 
+/// `text` with each whole-word `from` (one or more words, any case)
+/// written as `to`; None when it has none.
+pub fn replace_words(text: &str, from: &str, to: &str) -> Option<String> {
+    let from = from.trim();
+    if from.is_empty() {
+        return None;
+    }
+    let lower = text.to_lowercase();
+    let needle = from.to_lowercase();
+    // Lowercasing can change byte lengths; then offsets wouldn't line up.
+    if lower.len() != text.len() {
+        return None;
+    }
+    let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+    let mut out = String::with_capacity(text.len());
+    let mut from_byte = 0;
+    let mut found = false;
+    let mut search = 0;
+    while let Some(i) = lower[search..].find(&needle) {
+        let at = search + i;
+        let end = at + needle.len();
+        if !word(text[..at].chars().next_back()) && !word(text[end..].chars().next()) {
+            out.push_str(&text[from_byte..at]);
+            out.push_str(to);
+            from_byte = end;
+            found = true;
+        }
+        search = end;
+    }
+    found.then(|| {
+        out.push_str(&text[from_byte..]);
+        out
+    })
+}
+
 /// Whether a microphone line is the speakers playing a line of the call back
 /// into the microphone: said within two seconds, mostly the same words.
 pub fn is_echo(you: (&str, i64, i64), them: (&str, i64, i64)) -> bool {
@@ -627,5 +662,29 @@ mod tests {
             ask_transcript(&short, "anything"),
             "[0:04] You: Okay, let's start.\n"
         );
+    }
+
+    #[test]
+    fn words_are_replaced_whole_and_in_any_case() {
+        assert_eq!(
+            replace_words(
+                "Ship cubernetes. Cubernetes again",
+                "cubernetes",
+                "Kubernetes"
+            )
+            .as_deref(),
+            Some("Ship Kubernetes. Kubernetes again")
+        );
+        assert_eq!(
+            replace_words("ask cool if I today", "cool if I", "Coolify").as_deref(),
+            Some("ask Coolify today")
+        );
+        // Not inside another word.
+        assert_eq!(replace_words("scrumptious", "scrum", "Scrum"), None);
+        assert_eq!(
+            replace_words("nothing here", "cubernetes", "Kubernetes"),
+            None
+        );
+        assert_eq!(replace_words("text", " ", "x"), None);
     }
 }

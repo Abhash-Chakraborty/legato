@@ -5,7 +5,10 @@
 //! after it stops. Audio is kept as one WAV next to the history recordings
 //! and deleted with the note.
 
+use crate::learn_rules;
 use crate::loopback::{self, Capture, Source};
+use crate::managers::dictionary::DictionaryManager;
+use crate::managers::dictionary_store::{self, DictionarySource, Learned};
 use crate::managers::notes_store::{
     self as store, DeletedRecording, NewNote, Note, NoteKind, NoteLine, NoteMatch, NoteStatus,
     Speaker,
@@ -50,6 +53,12 @@ pub struct NotesChanged;
 /// A line transcribed during a recording.
 #[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct NoteLineAdded {
+    pub line: NoteLine,
+}
+
+/// A line corrected, or given to the other side.
+#[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct NoteLineChanged {
     pub line: NoteLine,
 }
 
@@ -254,6 +263,145 @@ impl NotesManager {
         Ok(())
     }
 
+    /// Corrects a line's words, or who said it.
+    pub fn edit_line(&self, line_id: i64, who: Speaker, text: &str) -> Result<LineEdit> {
+        let conn = self.conn()?;
+        let before = store::line(&conn, line_id)?.ok_or_else(|| anyhow!("That line is gone"))?;
+        let line = store::update_line(&conn, line_id, who, text)?;
+        let _ = NoteLineChanged { line: line.clone() }.emit(&self.app);
+        self.changed();
+        let threshold = get_settings(&self.app).word_correction_threshold;
+        let fix = match learn_rules::find_edits(&before.text, &line.text, threshold)
+            .into_iter()
+            .next()
+        {
+            Some(edit) => {
+                let others = store::lines(&conn, line.note_id)?
+                    .into_iter()
+                    .filter(|l| {
+                        l.id != line_id
+                            && notes_rules::replace_words(&l.text, &edit.heard, &edit.word)
+                                .is_some()
+                    })
+                    .map(|l| l.id)
+                    .collect();
+                Some(WordFix {
+                    note_id: line.note_id,
+                    heard: edit.heard,
+                    word: edit.word,
+                    others,
+                })
+            }
+            None => None,
+        };
+        Ok(LineEdit { line, fix })
+    }
+
+    /// Fixes a corrected word in the note's other lines and, if asked,
+    /// teaches it to the Dictionary.
+    pub fn fix_word(&self, fix: &WordFix, learn: bool) -> Result<WordFixed> {
+        let conn = self.conn()?;
+        let mut originals = Vec::new();
+        for &id in &fix.others {
+            let Some(line) = store::line(&conn, id)? else {
+                continue;
+            };
+            if line.note_id != fix.note_id {
+                continue;
+            }
+            let Some(text) = notes_rules::replace_words(&line.text, &fix.heard, &fix.word) else {
+                continue;
+            };
+            let changed = store::update_line(&conn, id, line.who, &text)?;
+            let _ = NoteLineChanged { line: changed }.emit(&self.app);
+            originals.push(line);
+        }
+        let learned = if learn {
+            let dictionary = self
+                .app
+                .try_state::<Arc<DictionaryManager>>()
+                .ok_or_else(|| anyhow!("The Dictionary isn't ready"))?;
+            let word = dictionary_store::clean_word(&fix.word);
+            Some(dictionary.learn(
+                &word,
+                Some(fix.heard.trim()),
+                DictionarySource::Fixed,
+                false,
+                None,
+            )?)
+        } else {
+            None
+        };
+        if !originals.is_empty() {
+            self.changed();
+        }
+        let result = WordFixed {
+            undo_token: 0,
+            lines: originals.len() as u32,
+            learned: learned.is_some(),
+        };
+        let mut stash = lock(&FIX_UNDO);
+        let undo_token = stash.last().map_or(1, |(t, _)| t + 1);
+        stash.push((
+            undo_token,
+            FixUndo {
+                lines: originals,
+                learned,
+            },
+        ));
+        if stash.len() > FIX_UNDO_KEEP {
+            stash.remove(0);
+        }
+        Ok(WordFixed {
+            undo_token,
+            ..result
+        })
+    }
+
+    pub fn undo_fix_word(&self, undo_token: u32) -> Result<()> {
+        let undo = {
+            let mut stash = lock(&FIX_UNDO);
+            let i = stash
+                .iter()
+                .position(|(t, _)| *t == undo_token)
+                .ok_or_else(|| anyhow!("That fix can no longer be undone"))?;
+            stash.remove(i).1
+        };
+        let conn = self.conn()?;
+        for line in &undo.lines {
+            let back = store::update_line(&conn, line.id, line.who, &line.text)?;
+            let _ = NoteLineChanged { line: back }.emit(&self.app);
+        }
+        if let Some(learned) = &undo.learned {
+            if let Some(dictionary) = self.app.try_state::<Arc<DictionaryManager>>() {
+                dictionary.unlearn(learned)?;
+            }
+        }
+        self.changed();
+        Ok(())
+    }
+
+    /// Deletes a line; returns it for Undo.
+    pub fn delete_line(&self, line_id: i64) -> Result<NoteLine> {
+        let conn = self.conn()?;
+        let line = store::line(&conn, line_id)?.ok_or_else(|| anyhow!("That line is gone"))?;
+        store::remove_line(&conn, line_id)?;
+        let _ = NoteLineRemoved {
+            note_id: line.note_id,
+            line_id,
+        }
+        .emit(&self.app);
+        self.changed();
+        Ok(line)
+    }
+
+    pub fn restore_line(&self, line: &NoteLine) -> Result<()> {
+        store::restore_line(&self.conn()?, line)?;
+        let _ = NoteLineAdded { line: line.clone() }.emit(&self.app);
+        self.changed();
+        Ok(())
+    }
+
     pub fn set_action_done(&self, action_id: i64, done: bool) -> Result<()> {
         store::set_action_done(&self.conn()?, action_id, done)?;
         self.changed();
@@ -395,6 +543,44 @@ impl Level {
         f32::from_bits(self.0.swap(0f32.to_bits(), Ordering::Relaxed))
     }
 }
+
+/// What correcting a line came to: the line, and the word it swapped, if
+/// it swapped one, for fixing elsewhere in the note or the Dictionary.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct LineEdit {
+    pub line: NoteLine,
+    pub fix: Option<WordFix>,
+}
+
+/// A word corrected in one line.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+pub struct WordFix {
+    pub note_id: i64,
+    /// What the model wrote.
+    pub heard: String,
+    /// What it should be.
+    pub word: String,
+    /// The note's other lines with the same miss.
+    pub others: Vec<i64>,
+}
+
+/// What fixing a word across a note came to.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct WordFixed {
+    /// Pass to `undo_note_word_fix`.
+    pub undo_token: u32,
+    pub lines: u32,
+    pub learned: bool,
+}
+
+struct FixUndo {
+    lines: Vec<NoteLine>,
+    learned: Option<Learned>,
+}
+
+/// Recent word fixes, for Undo; the oldest go first.
+static FIX_UNDO: Mutex<Vec<(u32, FixUndo)>> = Mutex::new(Vec::new());
+const FIX_UNDO_KEEP: usize = 10;
 
 /// What a recording shares between its threads.
 struct Shared {

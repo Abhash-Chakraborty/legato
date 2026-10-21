@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Check, Loader2, Mic, Pause, Play, Square, X } from "lucide-react";
 import { commands, events, type NoteLine } from "@/bindings";
+import { LineText } from "@/components/notes/LineText";
 import { clock, longClock } from "@/components/notes/notes";
 import { SideMeter } from "@/components/pages/notes/RecordingStrip";
 import { AppToaster } from "@/components/shell/AppToaster";
@@ -33,11 +34,13 @@ const Line: React.FC<{ line: NoteLine; preview?: boolean }> = ({
         </span>
         <span className="tabular-nums text-text-3">{clock(line.at_ms)}</span>
       </div>
-      <p
-        className={`mt-0.5 text-sm leading-relaxed ${preview ? "text-text-3" : ""}`}
-      >
-        {line.text}
-      </p>
+      <div className="mt-0.5">
+        <LineText
+          line={line}
+          preview={preview}
+          className="text-sm leading-relaxed"
+        />
+      </div>
     </li>
   );
 };

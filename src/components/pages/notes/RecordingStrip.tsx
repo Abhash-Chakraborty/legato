@@ -13,6 +13,7 @@ import { commands, type NoteLine, type SessionInfo } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useLiveLines, useNotesStore } from "../../../stores/notesStore";
 import { Button } from "../../ui/Button";
+import { LineText } from "../../notes/LineText";
 import { clock, longClock } from "../../notes/notes";
 
 const BARS = 8;
@@ -59,9 +60,7 @@ const LiveLine: React.FC<{ line: NoteLine; preview: boolean }> = ({
       >
         {t(`notes.who.${line.who}`)}
       </span>
-      <span className={`min-w-0 ${preview ? "text-text-3" : ""}`}>
-        {line.text}
-      </span>
+      <LineText line={line} preview={preview} />
     </li>
   );
 };
