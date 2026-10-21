@@ -306,7 +306,9 @@ mod win {
     /// An audio client on one process tree's sound. Needs Windows 10 build
     /// 20348 or later.
     unsafe fn process_client(pid: u32) -> Result<IAudioClient> {
-        let mut params = AUDIOCLIENT_ACTIVATION_PARAMS {
+        // On the heap, so a late answer from Windows after the timeout below
+        // still reads live memory: it's leaked then rather than freed.
+        let mut params = Box::new(AUDIOCLIENT_ACTIVATION_PARAMS {
             ActivationType: AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
             Anonymous: AUDIOCLIENT_ACTIVATION_PARAMS_0 {
                 ProcessLoopbackParams: AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS {
@@ -314,10 +316,12 @@ mod win {
                     ProcessLoopbackMode: PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE,
                 },
             },
-        };
-        // The blob points at `params`, which outlives the activation; the
-        // variant is never cleared, so nothing frees it.
-        let variant = PROPVARIANT {
+        });
+        // The blob borrows `params`. The windows crate's PROPVARIANT clears
+        // itself on drop, and clearing a VT_BLOB frees its data with
+        // CoTaskMemFree, which on memory Rust owns corrupts the heap, so the
+        // variant must never be dropped.
+        let variant = ManuallyDrop::new(PROPVARIANT {
             Anonymous: PROPVARIANT_0 {
                 Anonymous: ManuallyDrop::new(PROPVARIANT_0_0 {
                     vt: VT_BLOB,
@@ -327,22 +331,26 @@ mod win {
                     Anonymous: PROPVARIANT_0_0_0 {
                         blob: BLOB {
                             cbSize: std::mem::size_of::<AUDIOCLIENT_ACTIVATION_PARAMS>() as u32,
-                            pBlobData: &mut params as *mut _ as *mut u8,
+                            pBlobData: &mut *params as *mut _ as *mut u8,
                         },
                     },
                 }),
             },
-        };
+        });
         let (tx, rx) = sync_channel(1);
         let handler: IActivateAudioInterfaceCompletionHandler = Activated(tx).into();
         let operation = ActivateAudioInterfaceAsync(
             VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
             &IAudioClient::IID,
-            Some(&variant),
+            Some(&*variant),
             &handler,
         )?;
-        rx.recv_timeout(Duration::from_secs(5))
-            .map_err(|_| anyhow!("Windows didn't answer the process loopback request"))?;
+        if rx.recv_timeout(Duration::from_secs(5)).is_err() {
+            Box::leak(params);
+            return Err(anyhow!(
+                "Windows didn't answer the process loopback request"
+            ));
+        }
         let mut result = HRESULT(0);
         let mut activated = None;
         operation.GetActivateResult(&mut result, &mut activated)?;
