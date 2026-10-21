@@ -1,4 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import "./RecordingOverlay.css";
@@ -15,6 +15,13 @@ import type { ModelStateEvent } from "@/lib/types/events";
 import { wordDiff } from "@/lib/utils/diff";
 import { formatKeyCombination } from "@/lib/utils/keyboard";
 
+// Listens only for events sent to this window: a bare `listen` also hears
+// the ones meant for the bar, the bubble and the main window.
+const listen: ReturnType<typeof getCurrentWebviewWindow>["listen"] = (
+  event,
+  handler,
+) => getCurrentWebviewWindow().listen(event, handler);
+
 type OverlayState =
   | "recording"
   | "streaming"
@@ -24,7 +31,8 @@ type OverlayState =
   | "changes"
   | "pick"
   | "notes"
-  | "call";
+  | "call"
+  | "caption";
 
 type AiProblemKind =
   | "none"
@@ -300,6 +308,9 @@ const RecordingOverlay: React.FC = () => {
   // Minimal is the small dark pill (cancel, waveform, finish); Live is the
   // roomier bar that opens to show words with streaming models.
   const [mini, setMini] = useState(false);
+  // The live transcript box sits at the top of the screen rather than the
+  // bottom (Settings › Bar), so its box hugs that edge of the window.
+  const [captionTop, setCaptionTop] = useState(false);
   // True once live text overflows the cap. A top overlay fades its top edge only
   // while overflowing, so the resting first line stays crisp flush under the pill.
   const [overflowing, setOverflowing] = useState(false);
@@ -318,7 +329,11 @@ const RecordingOverlay: React.FC = () => {
         // Reset synchronously before settings I/O. A fast microphone can emit
         // recording-ready while the awaits below are in flight; resetting after
         // them would overwrite that event and leave the overlay stuck arming.
-        if (overlayState === "recording" || overlayState === "streaming") {
+        if (
+          overlayState === "recording" ||
+          overlayState === "streaming" ||
+          overlayState === "caption"
+        ) {
           setCaptureReady(false);
           smoothedLevelsRef.current = Array(16).fill(0);
           setLevels(Array(WAVE_BARS).fill(0));
@@ -334,6 +349,7 @@ const RecordingOverlay: React.FC = () => {
               settings.data.overlay_position === "top" ? "top" : "bottom",
             );
             setMini(settings.data.overlay_style === "minimal");
+            setCaptionTop(settings.data.live_caption === "top");
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
@@ -571,6 +587,39 @@ const RecordingOverlay: React.FC = () => {
       <div className="sbase-r">{showCancel && cancelBtn}</div>
     </div>
   );
+
+  // ---- Live transcript box: the words as you say them while the bubble has
+  // the dictation; clicks go through to what's under it.
+  if (state === "caption") {
+    const hasText =
+      streamText.committed.length > 0 || streamText.tentative.length > 0;
+    return (
+      <div
+        className={`ov-stage ${captionTop ? "top" : ""} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div
+          className="caption"
+          role="status"
+          aria-label={t("overlay.caption.label")}
+        >
+          <div className="caption-text" ref={capRef}>
+            <p>
+              {hasText ? (
+                <>
+                  {streamText.committed ? streamText.committed + " " : ""}
+                  <span className="tentative">{streamText.tentative}</span>
+                </>
+              ) : (
+                <span className="caption-wait">
+                  {t("overlay.caption.listening")}
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ---- Live overlay: a pill that sculpts open into a panel ----
   if (state === "streaming") {

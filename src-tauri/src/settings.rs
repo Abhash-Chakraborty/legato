@@ -378,6 +378,16 @@ pub enum LearnMode {
     Auto,
 }
 
+/// Where the live transcript box shows while the bubble has a dictation.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LiveCaption {
+    #[default]
+    Off,
+    Bottom,
+    Top,
+}
+
 /// What the Scratchpad shortcut opens.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
@@ -862,6 +872,10 @@ pub struct AppSettings {
     /// Dictate, Notes and the Scratchpad on hover.
     #[serde(default = "default_true")]
     pub bubble_enabled: bool,
+    /// A see-through box at the top or bottom of the screen with the words
+    /// as you say them, while the bubble shows the dictation.
+    #[serde(default)]
+    pub live_caption: LiveCaption,
     /// Run Legato as administrator (through a scheduled task) so dictation
     /// and shortcuts reach apps run as administrator.
     #[serde(default)]
@@ -1488,6 +1502,7 @@ pub fn get_default_settings() -> AppSettings {
         sync: SyncSettings::default(),
         scratchpad_open: ScratchpadOpen::default(),
         bubble_enabled: true,
+        live_caption: LiveCaption::default(),
         admin_apps: false,
         bubble_spot: None,
         calendars: Vec::new(),

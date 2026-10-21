@@ -10,6 +10,25 @@ pub fn change_bubble_enabled_setting(app: AppHandle, enabled: bool) -> Result<()
     Ok(())
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn change_live_caption_setting(
+    app: AppHandle,
+    place: crate::settings::LiveCaption,
+) -> Result<(), String> {
+    let mut settings = crate::settings::get_settings(&app);
+    settings.live_caption = place;
+    crate::settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Where the dot is in the bubble's window, for its page as it opens.
+#[tauri::command]
+#[specta::specta]
+pub fn bubble_layout() -> Option<bubble::BubbleLayout> {
+    bubble::layout()
+}
+
 /// The pointer came onto the bubble (true) or left it (false).
 #[tauri::command]
 #[specta::specta]
@@ -35,7 +54,10 @@ pub fn bubble_press(app: AppHandle, dx: f64, dy: f64) {
 pub async fn bubble_action(app: AppHandle, action: String) -> Result<(), String> {
     log::debug!("Bubble: {action}");
     match action.as_str() {
+        // Starts a dictation, or while one records, finishes and pastes it.
         "dictate" => crate::signal_handle::send_transcription_input(&app, "transcribe", "bubble"),
+        // Drops the dictation in progress, like the cancel key.
+        "cancel" => crate::utils::cancel_current_operation(&app),
         // Starts notes and opens the panel; while they run, the panel,
         // which has Stop.
         "notes" => {

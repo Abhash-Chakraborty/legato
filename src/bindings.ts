@@ -484,6 +484,20 @@ async changeBubbleEnabledSetting(enabled: boolean) : Promise<Result<null, string
     else return { status: "error", error: e  as any };
 }
 },
+async changeLiveCaptionSetting(place: LiveCaption) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_live_caption_setting", { place }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Where the dot is in the bubble's window, for its page as it opens.
+ */
+async bubbleLayout() : Promise<BubbleLayout | null> {
+    return await TAURI_INVOKE("bubble_layout");
+},
 /**
  * The pointer came onto the bubble (true) or left it (false).
  */
@@ -2883,6 +2897,10 @@ export type ScratchpadState = { tabs: ScratchNote[]; active: number | null; keep
  */
 target_app: string | null; target_app_path: string | null }
 /**
+ * Where the live transcript box shows while the bubble has a dictation.
+ */
+export type LiveCaption = "off" | "bottom" | "top"
+/**
  * What the Scratchpad shortcut opens.
  */
 export type ScratchpadOpen = 
@@ -3071,7 +3089,11 @@ notes_reminder?: boolean; calls?: CallSettings; sync?: SyncSettings; scratchpad_
  * The desktop bubble: a small Legato dot that stays on screen, with
  * Dictate, Notes and the Scratchpad on hover.
  */
-bubble_enabled?: boolean; 
+bubble_enabled?: boolean; /**
+ * A see-through box at the top or bottom of the screen with the words
+ * as you say them, while the bubble shows the dictation.
+ */
+live_caption?: LiveCaption; 
 /**
  * Run Legato as administrator (through a scheduled task) so dictation
  * and shortcuts reach apps run as administrator.

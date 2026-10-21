@@ -1,6 +1,6 @@
 use crate::input;
 use crate::settings;
-use crate::settings::{OverlayPosition, OverlayStyle};
+use crate::settings::{LiveCaption, OverlayPosition, OverlayStyle};
 use log::debug;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -279,11 +279,111 @@ const BUBBLE_STATES: [&str; 4] = ["recording", "streaming", "transcribing", "pro
 /// aren't two of them, else on the bar.
 fn show_dictation_state(app_handle: &AppHandle, state: &str) {
     if BUBBLE_STATES.contains(&state) && crate::bubble::takes_dictation(app_handle) {
+        BUBBLE_DICTATION.store(true, Ordering::SeqCst);
         crate::bubble::set_dictating(app_handle, true);
-        let _ = app_handle.emit_to(crate::bubble::WINDOW, "show-overlay", state);
+        let _ = app_handle.emit_to(crate::bubble::WINDOW, "bubble-dictation", Some(state));
+        // The words come only from a model that writes as you speak.
+        if state == "streaming"
+            && settings::get_settings(app_handle).live_caption != LiveCaption::Off
+        {
+            show_caption(app_handle);
+        }
         return;
     }
     show_overlay_state(app_handle, state);
+}
+
+/// The live transcript box: about three lines of words.
+const CAPTION_WIDTH: f64 = 640.0;
+const CAPTION_HEIGHT: f64 = 104.0;
+
+/// Set while the bar's window shows the live transcript box, which lets
+/// clicks through to what's under it.
+static CAPTION_SHOWN: AtomicBool = AtomicBool::new(false);
+
+/// Shows the live transcript box at the top or bottom of the screen the
+/// bubble is on, clear of the bubble when it sits on the same edge.
+fn show_caption(app_handle: &AppHandle) {
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        let Some(overlay_window) = handle.get_webview_window("recording_overlay") else {
+            return;
+        };
+        OVERLAY_SHOW_GENERATION.fetch_add(1, Ordering::SeqCst);
+        CAPTION_SHOWN.store(true, Ordering::SeqCst);
+        WINDOWS_OVERLAY_IS_STREAMING.store(false, Ordering::Relaxed);
+        exclude_from_capture(&overlay_window, false);
+        let _ = overlay_window.set_ignore_cursor_events(true);
+        // Placed again after showing, for the same DPI reason as the bar.
+        if let Err(error) = place_caption(&handle, &overlay_window) {
+            log::error!("Failed to place the live transcript box: {error}");
+        }
+        let _ = overlay_window.show();
+        force_overlay_topmost(&overlay_window);
+        let _ = place_caption(&handle, &overlay_window);
+        let _ = handle.emit_to("recording_overlay", "show-overlay", "caption");
+    });
+}
+
+/// Moves and sizes the bar's window for the live transcript box, in the
+/// monitor's physical pixels like `place_windows_overlay`.
+fn place_caption(
+    app_handle: &AppHandle,
+    overlay_window: &tauri::webview::WebviewWindow,
+) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+
+    let top = settings::get_settings(app_handle).live_caption == LiveCaption::Top;
+    let (area, scale, bubble) = match crate::bubble::caption_area(app_handle) {
+        Some((area, scale, bubble)) => (area, scale, Some(bubble)),
+        None => {
+            let monitor = get_monitor_with_cursor(app_handle)
+                .ok_or_else(|| "no monitor under the cursor".to_string())?;
+            (
+                crate::bubble::logical_area(&monitor),
+                monitor.scale_factor(),
+                None,
+            )
+        }
+    };
+    let text_scale = windows_text_scale_factor();
+    let r = crate::bubble_rules::caption_rect(
+        area,
+        (CAPTION_WIDTH * text_scale, CAPTION_HEIGHT * text_scale),
+        top,
+        bubble,
+    );
+    let hwnd = overlay_window
+        .hwnd()
+        .map_err(|error| format!("failed to get overlay window handle: {error}"))?;
+    let px = |v: f64| (v * scale).round() as i32;
+    // SAFETY: the overlay window is ours and alive.
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            None,
+            px(r.x),
+            px(r.y),
+            px(r.w).max(1),
+            px(r.h).max(1),
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        )
+        .map_err(|error| format!("failed to set the box's bounds: {error}"))
+    }
+}
+
+/// Set while the bubble shows a dictation, so only the dictation's end
+/// takes it back, never a notice timing out on the bar.
+static BUBBLE_DICTATION: AtomicBool = AtomicBool::new(false);
+
+/// A dictation finished, failed or was cancelled: the bubble goes back to
+/// rest and the bar hides.
+pub fn end_dictation(app_handle: &AppHandle) {
+    if BUBBLE_DICTATION.swap(false, Ordering::SeqCst) {
+        let _ = app_handle.emit_to(crate::bubble::WINDOW, "bubble-dictation", None::<&str>);
+        crate::bubble::set_dictating(app_handle, false);
+    }
+    hide_recording_overlay(app_handle);
 }
 
 fn show_overlay_state(app_handle: &AppHandle, state: &str) {
@@ -313,6 +413,9 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
         OVERLAY_SHOW_GENERATION.fetch_add(1, Ordering::SeqCst);
 
         WINDOWS_OVERLAY_IS_STREAMING.store(state == "streaming", Ordering::Relaxed);
+        if CAPTION_SHOWN.swap(false, Ordering::SeqCst) {
+            let _ = overlay_window.set_ignore_cursor_events(false);
+        }
 
         exclude_from_capture(
             &overlay_window,
@@ -345,7 +448,9 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
             show_elapsed
         );
 
-        let _ = overlay_window.emit("show-overlay", state);
+        // `emit` would reach every window, and the bubble must not take the
+        // bar's notices for its own states.
+        let _ = app_handle.emit_to("recording_overlay", "show-overlay", state);
     }
 }
 
@@ -449,6 +554,12 @@ pub fn update_overlay_position(app_handle: &AppHandle) {
 
 fn update_overlay_position_on_main(app_handle: &AppHandle) {
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        if CAPTION_SHOWN.load(Ordering::SeqCst) {
+            if let Err(error) = place_caption(app_handle, &overlay_window) {
+                log::error!("Failed to place the live transcript box: {error}");
+            }
+            return;
+        }
         let state = if WINDOWS_OVERLAY_IS_STREAMING.load(Ordering::Relaxed) {
             "streaming"
         } else {
@@ -545,11 +656,10 @@ fn exclude_from_capture(overlay_window: &tauri::webview::WebviewWindow, exclude:
     }
 }
 
-/// Hides the recording overlay window with fade-out animation; while a call
-/// card is up it comes back, and during a Notes recording the bar goes back
-/// to its pill.
+/// Hides the bar with its fade-out; while a call card is up it comes back,
+/// and during a Notes recording the bar goes back to its pill. A dictation
+/// ends with `end_dictation`, which also frees the bubble.
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
-    crate::bubble::set_dictating(app_handle, false);
     if let Some(card) = call_card() {
         show_bar(app_handle, "call", "bar-call", &card, None);
         return;
@@ -565,7 +675,7 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
         // after this point invalidates the delayed hide below.
         let scheduled_at = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
         // Emit event to trigger fade-out animation
-        let _ = overlay_window.emit("hide-overlay", ());
+        let _ = app_handle.emit_to("recording_overlay", "hide-overlay", ());
         // Hide the window after a short delay to allow animation to complete,
         // unless a newer session has shown the overlay again by then.
         let window_clone = overlay_window.clone();

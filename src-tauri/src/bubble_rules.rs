@@ -127,6 +127,31 @@ pub fn snap(center: (f64, f64), area: Rect) -> (Edge, (f64, f64)) {
     (edge, edge_center(edge, area))
 }
 
+/// The live transcript box's distance from the screen's edge.
+pub const CAPTION_MARGIN: f64 = 16.0;
+/// Its distance from the bubble, when the bubble sits on the same edge.
+pub const CAPTION_CLEAR: f64 = 8.0;
+
+/// Where the live transcript box goes: `size` big (its width capped to
+/// the area), centred along the top or bottom of `area`. When the bubble's
+/// window (`bubble`, collapsed) sits on that edge under the box, the box
+/// goes just past it instead of covering it; on a side, it's ignored.
+pub fn caption_rect(area: Rect, size: (f64, f64), top: bool, bubble: Option<Placement>) -> Rect {
+    let w = size.0.min(area.w - 2.0 * CAPTION_MARGIN).max(1.0);
+    let h = size.1;
+    let x = area.x + (area.w - w) / 2.0;
+    let edge = if top { Edge::Top } else { Edge::Bottom };
+    let in_the_way =
+        bubble.filter(|b| b.edge == edge && b.window.x < x + w && x < b.window.x + b.window.w);
+    let y = match (in_the_way, top) {
+        (Some(b), true) => b.window.y + b.window.h + CAPTION_CLEAR,
+        (Some(b), false) => b.window.y - h - CAPTION_CLEAR,
+        (None, true) => area.y + CAPTION_MARGIN,
+        (None, false) => area.y + area.h - h - CAPTION_MARGIN,
+    };
+    Rect { x, y, w, h }
+}
+
 /// Whether a window fills its monitor, as a video, a game or a slideshow
 /// does; the bubble steps aside for those. `window` and `monitor` are
 /// physical (left, top, right, bottom).
@@ -144,6 +169,40 @@ mod tests {
         w: 1536.0,
         h: 816.0,
     };
+
+    #[test]
+    fn the_caption_clears_a_bubble_on_its_edge_only() {
+        let size = (640.0, 112.0);
+        let bottom = place(edge_center(Edge::Bottom, AREA), Edge::Bottom, AREA, false);
+        let top = place(edge_center(Edge::Top, AREA), Edge::Top, AREA, false);
+        let side = place(edge_center(Edge::Right, AREA), Edge::Right, AREA, false);
+
+        // On its own, a margin from the edge, centred.
+        let alone = caption_rect(AREA, size, false, Some(side));
+        assert_eq!(alone, caption_rect(AREA, size, false, None));
+        assert_eq!(alone.x, (AREA.w - 640.0) / 2.0);
+        assert_eq!(alone.y + alone.h, AREA.h - CAPTION_MARGIN);
+        assert_eq!(caption_rect(AREA, size, true, Some(side)).y, CAPTION_MARGIN);
+
+        // Over the bubble at the bottom, under it at the top.
+        let above = caption_rect(AREA, size, false, Some(bottom));
+        assert_eq!(above.y + above.h, bottom.window.y - CAPTION_CLEAR);
+        let below = caption_rect(AREA, size, true, Some(top));
+        assert_eq!(below.y, top.window.y + top.window.h + CAPTION_CLEAR);
+
+        // A bubble on the other edge doesn't move it.
+        assert_eq!(
+            caption_rect(AREA, size, true, Some(bottom)).y,
+            CAPTION_MARGIN
+        );
+
+        // A narrow screen narrows the box.
+        let narrow = Rect { w: 500.0, ..AREA };
+        assert_eq!(
+            caption_rect(narrow, size, false, None).w,
+            500.0 - 2.0 * CAPTION_MARGIN
+        );
+    }
 
     #[test]
     fn collapsed_lies_along_its_edge() {

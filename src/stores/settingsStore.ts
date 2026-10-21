@@ -14,6 +14,7 @@ import type {
   TranscribeAcceleratorSetting,
   ShortcutActivation,
   LearnMode,
+  LiveCaption,
   ScratchpadOpen,
   VadBackend,
 } from "@/bindings";
@@ -230,6 +231,8 @@ const settingUpdaters: {
     commands.changeScratchpadOpenSetting(value as ScratchpadOpen),
   bubble_enabled: (value) =>
     commands.changeBubbleEnabledSetting(value as boolean),
+  live_caption: (value) =>
+    commands.changeLiveCaptionSetting(value as LiveCaption),
   mcp_enabled: (value) => commands.changeMcpEnabledSetting(value as boolean),
   scratchpad_keep_on_top: (value) =>
     commands.changeScratchpadKeepOnTopSetting(value as boolean),

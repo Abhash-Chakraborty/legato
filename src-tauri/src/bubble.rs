@@ -61,7 +61,7 @@ fn now_s() -> u64 {
         .unwrap_or(0)
 }
 
-fn logical_area(monitor: &tauri::Monitor) -> Rect {
+pub(crate) fn logical_area(monitor: &tauri::Monitor) -> Rect {
     let scale = monitor.scale_factor();
     let area = monitor.work_area();
     Rect {
@@ -123,21 +123,60 @@ fn saved_spot(app: &AppHandle) -> Option<Spot> {
     })
 }
 
+/// Where the window and the dot go now, and whether it's open.
+fn placement() -> Option<(bubble_rules::Placement, bool)> {
+    let expanded = EXPANDED.load(Ordering::SeqCst);
+    let guard = SPOT.lock().unwrap_or_else(|e| e.into_inner());
+    let spot = guard.as_ref()?;
+    let edge = spot
+        .edge
+        .unwrap_or_else(|| bubble_rules::nearest_edge(spot.center, spot.area));
+    Some((
+        bubble_rules::place(spot.center, edge, spot.area, expanded),
+        expanded,
+    ))
+}
+
+fn layout_of(placement: &bubble_rules::Placement, expanded: bool) -> BubbleLayout {
+    BubbleLayout {
+        expanded,
+        dot_x: placement.dot.0,
+        dot_y: placement.dot.1,
+        edge: placement.edge,
+    }
+}
+
+/// For the live transcript box: the work area of the monitor the bubble is
+/// on, that monitor's scale, and where the collapsed bubble sits there.
+/// None while the bubble isn't on screen.
+pub fn caption_area(app: &AppHandle) -> Option<(Rect, f64, bubble_rules::Placement)> {
+    if !VISIBLE.load(Ordering::Relaxed) {
+        return None;
+    }
+    let (center, area, edge) = {
+        let guard = SPOT.lock().unwrap_or_else(|e| e.into_inner());
+        let spot = guard.as_ref()?;
+        (spot.center, spot.area, spot.edge)
+    };
+    let edge = edge.unwrap_or_else(|| bubble_rules::nearest_edge(center, area));
+    let scale = monitor_at(app, Some(center))?.scale_factor();
+    Some((area, scale, bubble_rules::place(center, edge, area, false)))
+}
+
+/// The layout as it is now, for a page that opened after the last
+/// `bubble-layout` went out (at startup, the window is placed before its
+/// page listens).
+pub fn layout() -> Option<BubbleLayout> {
+    placement().map(|(p, expanded)| layout_of(&p, expanded))
+}
+
 /// Moves and sizes the window for the dot and tells the page.
 fn apply(app: &AppHandle) {
     let Some(window) = app.get_webview_window(WINDOW) else {
         return;
     };
-    let expanded = EXPANDED.load(Ordering::SeqCst);
-    let placement = {
-        let guard = SPOT.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(spot) = guard.as_ref() else {
-            return;
-        };
-        let edge = spot
-            .edge
-            .unwrap_or_else(|| bubble_rules::nearest_edge(spot.center, spot.area));
-        bubble_rules::place(spot.center, edge, spot.area, expanded)
+    let Some((placement, expanded)) = placement() else {
+        return;
     };
     let r = placement.window;
     // Size first when growing and position first when shrinking, so the
@@ -151,15 +190,7 @@ fn apply(app: &AppHandle) {
         let _ = window.set_position(pos);
         let _ = window.set_size(size);
     }
-    let _ = window.emit(
-        "bubble-layout",
-        BubbleLayout {
-            expanded,
-            dot_x: placement.dot.0,
-            dot_y: placement.dot.1,
-            edge: placement.edge,
-        },
-    );
+    let _ = window.emit("bubble-layout", layout_of(&placement, expanded));
 }
 
 fn should_show(app: &AppHandle) -> bool {

@@ -427,7 +427,8 @@ impl ShortcutAction for TranscribeAction {
         match settings.overlay_style {
             OverlayStyle::Live if model_supports_streaming => utils::show_streaming_overlay(app),
             OverlayStyle::Live | OverlayStyle::Minimal => show_recording_overlay(app),
-            OverlayStyle::None => {} // show_overlay_state no-ops on None anyway
+            // The bar stays off, but the bubble still shows the dictation.
+            OverlayStyle::None => show_recording_overlay(app),
         }
         // Everything above runs before capture can begin, so each span here is
         // added keypress->capture latency.
@@ -506,7 +507,7 @@ impl ShortcutAction for TranscribeAction {
             // Starting failed (for example due to blocked microphone permissions).
             // Revert UI state so we don't stay stuck in the recording overlay.
             tm.cancel_stream();
-            utils::hide_recording_overlay(app);
+            utils::end_dictation(app);
             set_tray_state(app, TrayIconState::Idle);
             if let Some(err) = recording_error {
                 let _ = app.emit(
@@ -598,7 +599,7 @@ impl ShortcutAction for TranscribeAction {
                 if rm.was_cancelled_since(cancel_generation) {
                     debug!("Transcription operation cancelled after recording stop");
                     tm.cancel_stream();
-                    utils::hide_recording_overlay(&ah);
+                    utils::end_dictation(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
                     return;
                 }
@@ -608,7 +609,7 @@ impl ShortcutAction for TranscribeAction {
                     // Tear down any streaming worker so its channel doesn't leak
                     // and block the next start_stream.
                     tm.cancel_stream();
-                    utils::hide_recording_overlay(&ah);
+                    utils::end_dictation(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
                 } else {
                     // Save WAV concurrently with transcription
@@ -669,7 +670,7 @@ impl ShortcutAction for TranscribeAction {
 
                     if rm.was_cancelled_since(cancel_generation) {
                         debug!("Transcription operation cancelled before output handling");
-                        utils::hide_recording_overlay(&ah);
+                        utils::end_dictation(&ah);
                         set_tray_state(&ah, TrayIconState::Idle);
                         return;
                     }
@@ -700,7 +701,7 @@ impl ShortcutAction for TranscribeAction {
                                     ms,
                                 )
                                 .await;
-                                utils::hide_recording_overlay(&ah);
+                                utils::end_dictation(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 return;
                             }
@@ -708,7 +709,7 @@ impl ShortcutAction for TranscribeAction {
                             // Ask: the words are the instruction, not text to paste.
                             if mode == DictationMode::Ask {
                                 let _ = std::fs::remove_file(hm.recordings_dir().join(&file_name));
-                                utils::hide_recording_overlay(&ah);
+                                utils::end_dictation(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 crate::transforms::ask(&ah, transcription);
                                 return;
@@ -738,14 +739,14 @@ impl ShortcutAction for TranscribeAction {
                             .await
                             else {
                                 debug!("Transcription operation cancelled during output handling");
-                                utils::hide_recording_overlay(&ah);
+                                utils::end_dictation(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 return;
                             };
 
                             if rm.was_cancelled_since(cancel_generation) {
                                 debug!("Transcription operation cancelled before paste");
-                                utils::hide_recording_overlay(&ah);
+                                utils::end_dictation(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 return;
                             }
@@ -817,11 +818,11 @@ impl ShortcutAction for TranscribeAction {
                                         error!("Failed to record the paste: {}", e);
                                     }
                                 }
-                                utils::hide_recording_overlay(&ah);
+                                utils::end_dictation(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 crate::scratchpad::receive(&ah, processed.final_text);
                             } else if processed.final_text.is_empty() {
-                                utils::hide_recording_overlay(&ah);
+                                utils::end_dictation(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                             } else {
                                 let ah_clone = ah.clone();
@@ -844,7 +845,7 @@ impl ShortcutAction for TranscribeAction {
                                 ah.run_on_main_thread(move || {
                                     if rm_for_paste.was_cancelled_since(cancel_generation) {
                                         debug!("Transcription operation cancelled before paste");
-                                        utils::hide_recording_overlay(&ah_clone);
+                                        utils::end_dictation(&ah_clone);
                                         set_tray_state(&ah_clone, TrayIconState::Idle);
                                         return;
                                     }
@@ -948,7 +949,7 @@ impl ShortcutAction for TranscribeAction {
                                             error!("Failed to record the paste: {}", e);
                                         }
                                     }
-                                    utils::hide_recording_overlay(&ah_clone);
+                                    utils::end_dictation(&ah_clone);
                                     set_tray_state(&ah_clone, TrayIconState::Idle);
                                     // The bar says what happened: a skipped AI
                                     // step, the transform's changes, or the paste.
@@ -966,7 +967,7 @@ impl ShortcutAction for TranscribeAction {
                                 })
                                 .unwrap_or_else(|e| {
                                     error!("Failed to run paste on main thread: {:?}", e);
-                                    utils::hide_recording_overlay(&ah);
+                                    utils::end_dictation(&ah);
                                     set_tray_state(&ah, TrayIconState::Idle);
                                 });
                             }
@@ -976,7 +977,7 @@ impl ShortcutAction for TranscribeAction {
                                 debug!(
                                     "Transcription operation cancelled after transcription error"
                                 );
-                                utils::hide_recording_overlay(&ah);
+                                utils::end_dictation(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 return;
                             }
@@ -1001,7 +1002,7 @@ impl ShortcutAction for TranscribeAction {
                                     error!("Failed to save failed history entry: {}", save_err);
                                 }
                             }
-                            utils::hide_recording_overlay(&ah);
+                            utils::end_dictation(&ah);
                             set_tray_state(&ah, TrayIconState::Idle);
                         }
                     }
@@ -1010,7 +1011,7 @@ impl ShortcutAction for TranscribeAction {
                 debug!("No samples retrieved from recording stop");
                 // Tear down any streaming worker so its channel doesn't leak.
                 tm.cancel_stream();
-                utils::hide_recording_overlay(&ah);
+                utils::end_dictation(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
             }
         });

@@ -108,7 +108,7 @@ pub fn cancel_current_operation(app: &AppHandle) {
 
     // Update tray icon and hide overlay
     set_tray_state(app, crate::tray::TrayIconState::Idle);
-    hide_recording_overlay(app);
+    end_dictation(app);
 
     // Unload model if immediate unload is enabled. Done before notifying the
     // coordinator, so a recording started next always loads afresh; it

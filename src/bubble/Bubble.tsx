@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Menu } from "@tauri-apps/api/menu";
-import { Mic, NotebookPen, Square } from "lucide-react";
+import { Check, Mic, NotebookPen, Square, X } from "lucide-react";
 import {
   commands,
   events,
@@ -13,6 +13,13 @@ import {
 import { formatKeyCombination } from "@/lib/utils/keyboard";
 import "./Bubble.css";
 
+// Listens only for events sent to this window: a bare `listen` also hears
+// the ones meant for the bar, the bubble and the main window.
+const listen: ReturnType<typeof getCurrentWebviewWindow>["listen"] = (
+  event,
+  handler,
+) => getCurrentWebviewWindow().listen(event, handler);
+
 interface Layout {
   expanded: boolean;
   dot_x: number;
@@ -20,7 +27,7 @@ interface Layout {
   edge: Edge;
 }
 
-type Action = "dictate" | "notes" | "scratchpad" | "stop-notes";
+type Action = "dictate" | "cancel" | "notes" | "scratchpad" | "stop-notes";
 
 /** How far the pointer moves before a press becomes a drag. */
 const DRAG_PX = 5;
@@ -117,6 +124,7 @@ const Bubble: React.FC = () => {
   const [hot, setHot] = useState<Action | null>(null);
   const [keys, setKeys] = useState<Record<Action, string>>({
     dictate: "",
+    cancel: "",
     notes: "",
     scratchpad: "",
     "stop-notes": "",
@@ -150,19 +158,17 @@ const Bubble: React.FC = () => {
         if (!e.payload.expanded) setHot(null);
       }),
       // A dictation's states, sent here instead of the bar while the
-      // bubble shows; the bar's other states reach every window too.
-      listen<string>("show-overlay", (e) =>
+      // bubble shows, and null when it's over.
+      listen<string | null>("bubble-dictation", (e) => {
+        const state = e.payload;
         setPhase(
-          e.payload === "recording" || e.payload === "streaming"
+          state === "recording" || state === "streaming"
             ? "rec"
-            : e.payload === "transcribing" || e.payload === "processing"
+            : state === "transcribing" || state === "processing"
               ? "work"
               : null,
-        ),
-      ),
-      listen("hide-overlay", () => {
-        setPhase(null);
-        setLevels(Array(BARS).fill(0));
+        );
+        if (!state) setLevels(Array(BARS).fill(0));
       }),
       // The bar's sixteen bands, low to high, sent here only while the
       // bubble shows; speech sits in the lower ten.
@@ -193,6 +199,12 @@ const Bubble: React.FC = () => {
           .catch(() => {}),
       ),
     ];
+    // At startup the window is placed before this page listens, so ask for
+    // the layout once listening; until then the dot assumes the right edge.
+    subs[0]
+      .then(() => commands.bubbleLayout())
+      .then((l) => l && setLayout(l))
+      .catch(() => {});
     commands
       .calendarMeetings()
       .then(setMeetings)
@@ -208,6 +220,7 @@ const Bubble: React.FC = () => {
         const b = r.data.bindings ?? {};
         setKeys({
           dictate: b.transcribe?.current_binding ?? "",
+          cancel: b.cancel?.current_binding ?? "",
           notes: b.toggle_notes?.current_binding ?? "",
           scratchpad: b.open_scratchpad?.current_binding ?? "",
           "stop-notes": b.toggle_notes?.current_binding ?? "",
@@ -327,13 +340,15 @@ const Bubble: React.FC = () => {
     on: boolean;
     icon: React.ReactNode;
   }[] = [
+    // Dictate turns into Done where it was, so a second click finishes;
+    // Cancel takes the last place while a dictation records.
     {
       id: "dictate",
       dy: -STEP,
-      label: recording ? t("bubble.stopDictating") : t("bubble.dictate"),
+      label: recording ? t("bubble.finishDictation") : t("bubble.dictate"),
       on: recording,
       icon: recording ? (
-        <Square aria-hidden="true" className="bstop" />
+        <Check aria-hidden="true" />
       ) : (
         <Mic aria-hidden="true" />
       ),
@@ -347,21 +362,29 @@ const Bubble: React.FC = () => {
     },
     // While notes record, Stop takes the Scratchpad's place; the Notes
     // button opens the panel, which also has Pause.
-    notesOn
+    recording
       ? {
-          id: "stop-notes",
+          id: "cancel",
           dy: STEP,
-          label: t("bubble.stopNotes"),
+          label: t("bubble.cancelDictation"),
           on: false,
-          icon: <Square aria-hidden="true" className="bstop" />,
+          icon: <X aria-hidden="true" />,
         }
-      : {
-          id: "scratchpad",
-          dy: STEP,
-          label: t("bubble.scratchpad"),
-          on: false,
-          icon: <NotebookPen aria-hidden="true" />,
-        },
+      : notesOn
+        ? {
+            id: "stop-notes",
+            dy: STEP,
+            label: t("bubble.stopNotes"),
+            on: false,
+            icon: <Square aria-hidden="true" className="bstop" />,
+          }
+        : {
+            id: "scratchpad",
+            dy: STEP,
+            label: t("bubble.scratchpad"),
+            on: false,
+            icon: <NotebookPen aria-hidden="true" />,
+          },
   ];
   // At rest: a dictation's meter, else notes recording behind everything
   // (the bar's Notes pill lives here while the bubble is on), else the dot.
@@ -417,7 +440,7 @@ const Bubble: React.FC = () => {
               {hot === b.id && (
                 <span className="blabel" role="tooltip">
                   <span className="btext">{b.label}</span>
-                  {key && !b.on && (
+                  {key && (!b.on || recording) && (
                     <b className="bkeys">{formatKeyCombination(key)}</b>
                   )}
                 </span>

@@ -101,7 +101,12 @@ import {
   McpToggle,
 } from "./connections/ConnectionSettings";
 import { ShowOverlay } from "./ShowOverlay";
-import { ConfirmPaste, ShowBubble, ShowChanges } from "./BarMessages";
+import {
+  ConfirmPaste,
+  LiveCaptionPlace,
+  ShowBubble,
+  ShowChanges,
+} from "./BarMessages";
 import { RememberApp } from "./RememberApp";
 import { HistoryLimit } from "./HistoryLimit";
 import { RecordingRetentionPeriodSelector } from "./RecordingRetentionPeriod";
@@ -1082,6 +1087,18 @@ export const buildSections = (
               "settings.bar.bubble.help",
             ],
             render: () => <ShowBubble grouped />,
+          },
+          {
+            id: "live-caption",
+            searchKeys: [
+              "settings.bar.liveCaption.title",
+              "settings.bar.liveCaption.help",
+            ],
+            render: () => <LiveCaptionPlace grouped />,
+            requires: ({ settings }) =>
+              settings?.bubble_enabled === false
+                ? { reasonKey: "settings.requires.bubble" }
+                : null,
           },
         ],
       },

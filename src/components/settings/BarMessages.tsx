@@ -1,7 +1,10 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
+import { Dropdown } from "../ui/Dropdown";
+import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
+import type { LiveCaption } from "@/bindings";
 
 /** Whether the bar confirms each paste, with Undo. */
 export const ConfirmPaste: React.FC<{ grouped?: boolean }> = ({ grouped }) => {
@@ -49,5 +52,34 @@ export const ShowBubble: React.FC<{ grouped?: boolean }> = ({ grouped }) => {
       description={t("settings.bar.bubble.help")}
       grouped={grouped}
     />
+  );
+};
+
+/** The live transcript box while the bubble has a dictation: off, or at the
+ *  bottom or top of the screen. */
+export const LiveCaptionPlace: React.FC<{ grouped?: boolean }> = ({
+  grouped,
+}) => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
+  const options = (["off", "bottom", "top"] as const).map((value) => ({
+    value,
+    label: t(`settings.bar.liveCaption.options.${value}`),
+  }));
+  return (
+    <SettingContainer
+      title={t("settings.bar.liveCaption.title")}
+      description={t("settings.bar.liveCaption.help")}
+      grouped={grouped}
+    >
+      <Dropdown
+        options={options}
+        selectedValue={getSetting("live_caption") ?? "off"}
+        onSelect={(value) =>
+          updateSetting("live_caption", value as LiveCaption)
+        }
+        disabled={isUpdating("live_caption")}
+      />
+    </SettingContainer>
   );
 };
