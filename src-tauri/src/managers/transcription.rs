@@ -1091,10 +1091,12 @@ impl TranscriptionManager {
         let settings = get_settings(&self.app_handle);
         let language =
             effective_language_for_model(&settings, self.model_manager.as_ref(), model_id);
+        let mut audio = audio.to_vec();
+        log_lift(crate::audio_toolkit::audio::lift_quiet(&mut audio));
         let mut setup = None;
         let transcript = self
             .engine
-            .transcribe_aside(mark, path, audio, stop, |info| {
+            .transcribe_aside(mark, path, &audio, stop, |info| {
                 let run = run_setup(info, &settings, &language);
                 let options = run.run_options.clone();
                 setup = Some(run);
@@ -1247,11 +1249,12 @@ impl TranscriptionManager {
         &self,
         mark: CancelMark,
         info: LoadedInfo,
-        audio: Vec<f32>,
+        mut audio: Vec<f32>,
         settings: &AppSettings,
         validated_language: &str,
         active_model: &str,
     ) -> Result<RunOutcome> {
+        log_lift(crate::audio_toolkit::audio::lift_quiet(&mut audio));
         let setup = run_setup(&info, settings, validated_language);
         let whole = |pcm: Vec<f32>| {
             self.run_batch(mark, pcm, &setup.run_options, active_model)
@@ -1432,6 +1435,14 @@ fn run_setup(info: &LoadedInfo, settings: &AppSettings, validated_language: &str
         languages,
         applied_language_hint,
         output_was_translated,
+    }
+}
+
+/// A quiet recording is raised before a batch run; the live decode hears
+/// it as it is.
+fn log_lift(gain: f32) {
+    if gain > 1.0 {
+        debug!("Raised a quiet recording {gain:.1} times for the batch run");
     }
 }
 
