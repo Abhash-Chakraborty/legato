@@ -141,3 +141,34 @@ export const whenLabel = (
   }
   return `${day} · ${time}`;
 };
+
+/** A line around the first whole-word `heard`, for showing a fix: the
+ *  words before (cut to about `room` characters), the match and the words
+ *  after. Null when the line doesn't have it. */
+export const fixContext = (
+  text: string,
+  heard: string,
+  room = 48,
+): { before: string; match: string; after: string } | null => {
+  const escaped = heard.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!escaped) return null;
+  const found = new RegExp(
+    `(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`,
+    "iu",
+  ).exec(text);
+  if (!found) return null;
+  const cut = (part: string, fromEnd: boolean) => {
+    if (part.length <= room) return part;
+    if (fromEnd) {
+      const tail = part.slice(part.length - room);
+      return `…${tail.slice(tail.indexOf(" ") + 1)}`;
+    }
+    const head = part.slice(0, room);
+    return `${head.slice(0, head.lastIndexOf(" "))}…`;
+  };
+  return {
+    before: cut(text.slice(0, found.index), true),
+    match: found[0],
+    after: cut(text.slice(found.index + found[0].length), false),
+  };
+};

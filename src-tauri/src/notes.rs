@@ -263,11 +263,19 @@ impl NotesManager {
         Ok(())
     }
 
+    /// Notes the transcript changed, so an older summary says so.
+    fn mark_edited(&self, conn: &Connection, note_id: i64) {
+        if let Err(e) = store::mark_edited(conn, note_id, chrono::Utc::now().timestamp()) {
+            error!("Couldn't note a transcript edit: {e}");
+        }
+    }
+
     /// Corrects a line's words, or who said it.
     pub fn edit_line(&self, line_id: i64, who: Speaker, text: &str) -> Result<LineEdit> {
         let conn = self.conn()?;
         let before = store::line(&conn, line_id)?.ok_or_else(|| anyhow!("That line is gone"))?;
         let line = store::update_line(&conn, line_id, who, text)?;
+        self.mark_edited(&conn, line.note_id);
         let _ = NoteLineChanged { line: line.clone() }.emit(&self.app);
         self.changed();
         let threshold = get_settings(&self.app).word_correction_threshold;
@@ -333,28 +341,61 @@ impl NotesManager {
             None
         };
         if !originals.is_empty() {
+            self.mark_edited(&conn, fix.note_id);
             self.changed();
         }
-        let result = WordFixed {
-            undo_token: 0,
+        Ok(WordFixed {
             lines: originals.len() as u32,
             learned: learned.is_some(),
-        };
-        let mut stash = lock(&FIX_UNDO);
-        let undo_token = stash.last().map_or(1, |(t, _)| t + 1);
-        stash.push((
-            undo_token,
-            FixUndo {
+            undo_token: stash_undo(FixUndo {
                 lines: originals,
                 learned,
-            },
-        ));
-        if stash.len() > FIX_UNDO_KEEP {
-            stash.remove(0);
+            }),
+        })
+    }
+
+    /// Applies the AI's fixes that were accepted, as one change for Undo.
+    pub fn apply_fixes(&self, note_id: i64, fixes: &[SuggestedFix]) -> Result<WordFixed> {
+        let conn = self.conn()?;
+        // A line can have more than one fix; each applies to the text so far.
+        let mut changed: Vec<(NoteLine, String)> = Vec::new();
+        for fix in fixes {
+            let i = match changed.iter().position(|(l, _)| l.id == fix.line_id) {
+                Some(i) => i,
+                None => match store::line(&conn, fix.line_id)? {
+                    Some(line) if line.note_id == note_id => {
+                        let text = line.text.clone();
+                        changed.push((line, text));
+                        changed.len() - 1
+                    }
+                    _ => continue,
+                },
+            };
+            let entry = &mut changed[i];
+            if let Some(text) = notes_rules::replace_words(&entry.1, &fix.heard, &fix.word) {
+                entry.1 = text;
+            }
+        }
+        let mut originals = Vec::new();
+        for (line, text) in changed {
+            if text == line.text {
+                continue;
+            }
+            let after = store::update_line(&conn, line.id, line.who, &text)?;
+            let _ = NoteLineChanged { line: after }.emit(&self.app);
+            originals.push(line);
+        }
+        if !originals.is_empty() {
+            self.mark_edited(&conn, note_id);
+            self.changed();
         }
         Ok(WordFixed {
-            undo_token,
-            ..result
+            lines: originals.len() as u32,
+            learned: false,
+            undo_token: stash_undo(FixUndo {
+                lines: originals,
+                learned: None,
+            }),
         })
     }
 
@@ -372,6 +413,9 @@ impl NotesManager {
             let back = store::update_line(&conn, line.id, line.who, &line.text)?;
             let _ = NoteLineChanged { line: back }.emit(&self.app);
         }
+        if let Some(line) = undo.lines.first() {
+            self.mark_edited(&conn, line.note_id);
+        }
         if let Some(learned) = &undo.learned {
             if let Some(dictionary) = self.app.try_state::<Arc<DictionaryManager>>() {
                 dictionary.unlearn(learned)?;
@@ -386,6 +430,7 @@ impl NotesManager {
         let conn = self.conn()?;
         let line = store::line(&conn, line_id)?.ok_or_else(|| anyhow!("That line is gone"))?;
         store::remove_line(&conn, line_id)?;
+        self.mark_edited(&conn, line.note_id);
         let _ = NoteLineRemoved {
             note_id: line.note_id,
             line_id,
@@ -396,7 +441,9 @@ impl NotesManager {
     }
 
     pub fn restore_line(&self, line: &NoteLine) -> Result<()> {
-        store::restore_line(&self.conn()?, line)?;
+        let conn = self.conn()?;
+        store::restore_line(&conn, line)?;
+        self.mark_edited(&conn, line.note_id);
         let _ = NoteLineAdded { line: line.clone() }.emit(&self.app);
         self.changed();
         Ok(())
@@ -581,6 +628,28 @@ struct FixUndo {
 /// Recent word fixes, for Undo; the oldest go first.
 static FIX_UNDO: Mutex<Vec<(u32, FixUndo)>> = Mutex::new(Vec::new());
 const FIX_UNDO_KEEP: usize = 10;
+
+/// Keeps a fix for Undo; returns its token.
+fn stash_undo(undo: FixUndo) -> u32 {
+    let mut stash = lock(&FIX_UNDO);
+    let token = stash.last().map_or(1, |(t, _)| t + 1);
+    stash.push((token, undo));
+    if stash.len() > FIX_UNDO_KEEP {
+        stash.remove(0);
+    }
+    token
+}
+
+/// A word the AI thinks was misheard, for review before it's applied.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+pub struct SuggestedFix {
+    pub line_id: i64,
+    pub at_ms: i64,
+    pub heard: String,
+    pub word: String,
+    /// The line as it reads now.
+    pub text: String,
+}
 
 /// What a recording shares between its threads.
 struct Shared {
@@ -1547,6 +1616,90 @@ pub async fn ask(app: &AppHandle, note_id: i64, question: &str) -> Result<String
     crate::ai::ask_note(app, &config, &prompt_lines(&lines), question)
         .await
         .map_err(|p| problem_code(p.kind))
+}
+
+/// Dictionary words sent with a transcript, so the AI knows how they're
+/// spelled; pinned ones first.
+const FIX_WORDS: usize = 200;
+
+/// Asks your AI for misheard words in the note. Nothing changes until the
+/// fixes are accepted. Errors are codes, as for Ask.
+pub async fn suggest_fixes(app: &AppHandle, note_id: i64) -> Result<Vec<SuggestedFix>, String> {
+    let config = notes_ai(app)?;
+    let m = manager(app);
+    let note = m
+        .get(note_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "gone".to_string())?;
+    let lines = m.lines(note_id).map_err(|e| e.to_string())?;
+    if lines.is_empty() {
+        return Err("empty".to_string());
+    }
+    let words: Vec<String> = app
+        .try_state::<Arc<DictionaryManager>>()
+        .and_then(|d| d.list().ok())
+        .map(|mut entries| {
+            entries.sort_by_key(|e| !e.pinned);
+            entries
+                .into_iter()
+                .take(FIX_WORDS)
+                .map(|e| e.text)
+                .collect()
+        })
+        .unwrap_or_default();
+    let fixes =
+        crate::ai::find_note_fixes(app, &config, &prompt_lines(&lines), &note.title, &words)
+            .await
+            .map_err(|p| problem_code(p.kind))?;
+    Ok(fixes
+        .into_iter()
+        .map(|f| {
+            let line = &lines[f.index];
+            SuggestedFix {
+                line_id: line.id,
+                at_ms: line.at_ms,
+                heard: f.heard,
+                word: f.word,
+                text: line.text.clone(),
+            }
+        })
+        .collect())
+}
+
+/// Drafts a follow-up email from the note's summary with your AI and opens
+/// it in the Scratchpad. Errors are codes, as for Ask, plus "nosummary".
+pub async fn follow_up(app: &AppHandle, note_id: i64) -> Result<(), String> {
+    let config = notes_ai(app)?;
+    let note = manager(app)
+        .get(note_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "gone".to_string())?;
+    if note.summary.trim().is_empty() {
+        return Err("nosummary".to_string());
+    }
+    let summary = notes_rules::NotesSummary {
+        summary: note.summary.clone(),
+        decisions: note.decisions.clone(),
+        actions: note
+            .actions
+            .iter()
+            .map(|a| (a.owner.clone(), a.text.clone()))
+            .collect(),
+    };
+    let request = notes_rules::follow_up_request(&note.title, &summary, &note.my_notes);
+    let email = crate::ai::follow_up(app, &config, request)
+        .await
+        .map_err(|p| problem_code(p.kind))?;
+    let scratch = app
+        .try_state::<Arc<crate::scratchpad::ScratchpadManager>>()
+        .ok_or_else(|| "The Scratchpad isn't ready".to_string())?;
+    let draft = scratch
+        .create(&crate::managers::scratch_store::NewNote {
+            text: format!("Follow-up: {}\n\n{email}", note.title),
+            ..Default::default()
+        })
+        .map_err(|e| e.to_string())?;
+    crate::scratchpad::show(app, Some(draft.id)).map_err(|e| e.to_string())
 }
 
 /// Dictated words for My notes: into the page when it's open, else saved at

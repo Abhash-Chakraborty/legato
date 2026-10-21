@@ -409,6 +409,157 @@ pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
     })
 }
 
+pub const FIX_SYSTEM: &str = "You proofread a speech-to-text transcript of one conversation. Speech models mishear names, product names, jargon and acronyms, writing words that sound alike, such as \"cube cuddle\" for \"kubectl\". Find the words that are clearly misheard, judging from the rest of the conversation, its title and the person's own word list, and give the word that was meant. Fix only misheard words: never rephrase, fix grammar or style, change punctuation, or translate. When unsure, leave the word alone. Answer with JSON only.";
+
+/// At most this many fixes are suggested for one note.
+pub const FIX_MAX: usize = 40;
+
+/// The transcript numbered line by line, in parts of about `PART_WORDS`
+/// words; the numbers run on across parts.
+pub fn numbered_parts(lines: &[PromptLine<'_>]) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut part = String::new();
+    let mut words = 0;
+    for (i, line) in lines.iter().enumerate() {
+        let n = word_count(line.text);
+        if words > 0 && words + n > PART_WORDS {
+            parts.push(std::mem::take(&mut part));
+            words = 0;
+        }
+        let who = if line.you { "You" } else { "Them" };
+        part.push_str(&format!("{} {who}: {}\n", i + 1, line.text));
+        words += n;
+    }
+    if !part.is_empty() {
+        parts.push(part);
+    }
+    parts
+}
+
+/// The request for misheard words in one numbered part.
+pub fn fix_request(part: &str, title: &str, words: &[String], json_hint: bool) -> String {
+    let mut request = format!("Title: {title}\n");
+    if !words.is_empty() {
+        request.push_str(&format!(
+            "Words this person uses, spelled right: {}\n",
+            words.join(", ")
+        ));
+    }
+    request.push_str(
+        "\nList the misheard words. line: the line's number. heard: the words exactly as that line has them. word: what was meant. An empty list when nothing is misheard.\n",
+    );
+    if json_hint {
+        request.push_str(
+            "\nAnswer exactly like this, with no other text:\n\
+             {\"fixes\": [{\"line\": 12, \"heard\": \"…\", \"word\": \"…\"}]}\n",
+        );
+    }
+    request.push_str("\nTranscript, one numbered line per row:\n");
+    request.push_str(part);
+    request
+}
+
+pub fn fix_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "fixes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "line": { "type": "integer" },
+                        "heard": { "type": "string" },
+                        "word": { "type": "string" }
+                    },
+                    "required": ["line", "heard", "word"],
+                    "additionalProperties": false
+                }
+            }
+        },
+        "required": ["fixes"],
+        "additionalProperties": false
+    })
+}
+
+/// A misheard word the model found: the line's index, what it says, and
+/// what was meant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineFix {
+    pub index: usize,
+    pub heard: String,
+    pub word: String,
+}
+
+/// The fixes in the model's answer that hold up: the line exists and has
+/// the heard words, whole, and the word differs. `texts` are the lines in
+/// the order they were numbered.
+pub fn parse_fixes(answer: &str, texts: &[&str]) -> Vec<LineFix> {
+    let (Some(start), Some(end)) = (answer.find('{'), answer.rfind('}')) else {
+        return Vec::new();
+    };
+    let Some(value) = answer
+        .get(start..=end)
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+    else {
+        return Vec::new();
+    };
+    let Some(items) = value.get("fixes").and_then(|f| f.as_array()) else {
+        return Vec::new();
+    };
+    let mut fixes: Vec<LineFix> = Vec::new();
+    for item in items {
+        let Some(line) = item.get("line").and_then(|l| l.as_u64()) else {
+            continue;
+        };
+        let text = |key: &str| {
+            item.get(key)
+                .and_then(|v| v.as_str())
+                .map(|v| v.trim().to_string())
+                .unwrap_or_default()
+        };
+        let (heard, word) = (text("heard"), text("word"));
+        let Some(index) = (line as usize).checked_sub(1).filter(|&i| i < texts.len()) else {
+            continue;
+        };
+        if heard.is_empty()
+            || word.is_empty()
+            || heard == word
+            || word_count(&heard) > 4
+            || word_count(&word) > 6
+            || replace_words(texts[index], &heard, &word).is_none()
+            || fixes
+                .iter()
+                .any(|f| f.index == index && f.heard.eq_ignore_ascii_case(&heard))
+        {
+            continue;
+        }
+        fixes.push(LineFix { index, heard, word });
+        if fixes.len() == FIX_MAX {
+            break;
+        }
+    }
+    fixes
+}
+
+pub const FOLLOW_UP_SYSTEM: &str = "You write a short follow-up email after a meeting, for the person who recorded it to send to the others. Use only the notes given. Plain text, no subject line, no markdown: a one-line greeting, two or three sentences on what was discussed, then what was agreed and who does what, one per line starting with a dash, and a one-line sign-off without a name. Write in the notes' language.";
+
+/// The request for a follow-up email from a note's summary.
+pub fn follow_up_request(title: &str, summary: &NotesSummary, my_notes: &str) -> String {
+    let mut request = format!("Meeting: {title}\n\nSummary: {}\n", summary.summary);
+    for d in &summary.decisions {
+        request.push_str(&format!("Decision: {d}\n"));
+    }
+    for (owner, task) in &summary.actions {
+        request.push_str(&format!("Action ({owner}): {task}\n"));
+    }
+    let mine = my_notes.trim();
+    if !mine.is_empty() {
+        request.push_str(&format!("\nTheir own notes:\n{mine}\n"));
+    }
+    request
+}
+
 pub const ASK_SYSTEM: &str = "You answer questions about one recorded conversation, using only its transcript. Lines marked You are the person asking; lines marked Them are everyone else. After each statement, put the time of the line it comes from in square brackets, like [12:04]. If the transcript doesn't answer the question, say so in one sentence. Answer in two to four sentences, in the question's language, as plain text.";
 
 const STOPWORDS: &[&str] = &[
@@ -686,5 +837,53 @@ mod tests {
             None
         );
         assert_eq!(replace_words("text", " ", "x"), None);
+    }
+
+    #[test]
+    fn fixes_that_dont_hold_up_are_dropped() {
+        let texts = [
+            "we deploy with cube cuddle today",
+            "ask Ronja about it",
+            "fine",
+        ];
+        let answer = r#"Sure: {"fixes": [
+            {"line": 1, "heard": "cube cuddle", "word": "kubectl"},
+            {"line": 1, "heard": "Cube Cuddle", "word": "kubectl"},
+            {"line": 2, "heard": "Ronja", "word": "Ronja"},
+            {"line": 2, "heard": "Ron", "word": "Rohan"},
+            {"line": 3, "heard": "nothing", "word": "else"},
+            {"line": 9, "heard": "fine", "word": "find"},
+            {"line": 0, "heard": "we", "word": "We"}
+        ]}"#;
+        assert_eq!(
+            parse_fixes(answer, &texts),
+            vec![LineFix {
+                index: 0,
+                heard: "cube cuddle".into(),
+                word: "kubectl".into()
+            }]
+        );
+        assert!(parse_fixes("no json here", &texts).is_empty());
+    }
+
+    #[test]
+    fn numbered_parts_count_on_across_parts() {
+        let long = "word ".repeat(PART_WORDS);
+        let lines = [
+            PromptLine {
+                at_ms: 0,
+                you: true,
+                text: &long,
+            },
+            PromptLine {
+                at_ms: 1,
+                you: false,
+                text: "short",
+            },
+        ];
+        let parts = numbered_parts(&lines);
+        assert_eq!(parts.len(), 2);
+        assert!(parts[0].starts_with("1 You: word"));
+        assert_eq!(parts[1], "2 Them: short\n");
     }
 }

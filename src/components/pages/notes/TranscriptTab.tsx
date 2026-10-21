@@ -1,14 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Copy, Pause, Play, RotateCw, Search } from "lucide-react";
+import { Copy, Pause, Play, RotateCw, Search, SpellCheck } from "lucide-react";
 import { toast } from "sonner";
 import { commands, type Note, type NoteLine } from "@/bindings";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";
+import { useSettings } from "../../../hooks/useSettings";
+import { useAiStore, watchAi } from "../../../stores/aiStore";
 import { useNotesStore } from "../../../stores/notesStore";
 import { Button } from "../../ui/Button";
 import { LineText } from "../../notes/LineText";
 import { clock, durationLabel, lineAt, lineMatches } from "../../notes/notes";
+import { FixReview } from "./FixReview";
 import type { Jump } from "./NoteDetail";
 
 /** Play, a seek bar and the time; the line playing is marked below. */
@@ -84,8 +87,19 @@ export const TranscriptTab: React.FC<{
   const [playing, setPlaying] = useState(false);
   const [player, setPlayer] = useState(false);
   const [marked, setMarked] = useState<number | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const aiStatus = useAiStore((s) => s.status);
+  const { settings } = useSettings();
+  const canFix =
+    (settings?.ai_notes_enabled ?? true) &&
+    !!aiStatus &&
+    aiStatus.kind !== "none" &&
+    note.status === "ready";
   const audio = useRef<HTMLAudioElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
+
+  useEffect(watchAi, []);
+  useEffect(() => setReviewing(false), [note.id]);
 
   useEffect(() => {
     let live = true;
@@ -232,6 +246,17 @@ export const TranscriptTab: React.FC<{
           </span>
         )}
         <span className={src && player ? "" : "flex-1"} />
+        {canFix && (
+          <button
+            type="button"
+            onClick={() => setReviewing(true)}
+            disabled={reviewing}
+            className="inline-flex h-8 items-center gap-2 rounded-[var(--r-md)] px-2.5 text-[13px] font-medium text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:text-text hover:duration-0 active:scale-[0.97] disabled:opacity-50"
+          >
+            <SpellCheck className="h-3.5 w-3.5" aria-hidden="true" />
+            {t("notes.aiFix.find")}
+          </button>
+        )}
         <div className="relative w-[200px]">
           <Search
             className="pointer-events-none absolute start-[10px] top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-text-3"
@@ -263,6 +288,18 @@ export const TranscriptTab: React.FC<{
           <Copy className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
+
+      {reviewing && (
+        <FixReview
+          note={note}
+          onJump={(id) => {
+            setQuery("");
+            setMarked(id);
+            requestAnimationFrame(() => scrollTo(id));
+          }}
+          onClose={() => setReviewing(false)}
+        />
+      )}
 
       {note.failed_lines > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">

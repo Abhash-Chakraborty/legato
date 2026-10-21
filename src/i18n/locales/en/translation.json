@@ -2735,7 +2735,9 @@
       "lastFailed": "Regenerate didn't work: {{problem}}",
       "openAi": "Open AI settings",
       "readTranscript": "Read the transcript",
-      "failedWith": "No summary: {{problem}}."
+      "failedWith": "No summary: {{problem}}.",
+      "stale": "You corrected the transcript after this summary was written.",
+      "update": "Update summary"
     },
     "ask": {
       "title": "Ask about this note",
@@ -2838,6 +2840,30 @@
       "fixed_other": "Fixed {{count}} more lines",
       "learned": "Added {{word}} to the Dictionary",
       "failed": "Couldn't fix the word"
+    },
+    "followUp": {
+      "draft": "Draft follow-up",
+      "drafting": "Drafting…",
+      "failed": "Couldn't draft the follow-up",
+      "noSummary": "Write a summary first; the follow-up is drafted from it."
+    },
+    "aiFix": {
+      "find": "Find misheard words",
+      "title": "Misheard words",
+      "reading": "Reading the transcript for misheard words…",
+      "none": "Nothing in the transcript looks misheard.",
+      "found_one": "{{count}} word looks misheard",
+      "found_other": "{{count}} words look misheard",
+      "pick": "Fix “{{heard}}” as “{{word}}”",
+      "show": "Show in the transcript",
+      "apply_one": "Fix 1 word",
+      "apply_other": "Fix {{count}} words",
+      "cancel": "Cancel",
+      "close": "Close",
+      "hint": "Untick any that were right.",
+      "fixed_one": "Fixed 1 word",
+      "fixed_other": "Fixed {{count}} words",
+      "failed": "Couldn't fix the words"
     }
   },
   "calls": {

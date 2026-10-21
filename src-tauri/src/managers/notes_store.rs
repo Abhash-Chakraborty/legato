@@ -118,6 +118,9 @@ pub struct Note {
     pub summary_at: Option<i64>,
     /// Why there is no summary, when writing one failed.
     pub summary_error: Option<String>,
+    /// When a line was last corrected (Unix seconds).
+    #[serde(default)]
+    pub edited_at: Option<i64>,
     /// Lines that couldn't be transcribed.
     pub failed_lines: i64,
     /// Of those, the ones that can be tried again from the audio.
@@ -186,7 +189,7 @@ pub struct NewNote<'a> {
 
 const COLUMNS: &str = "id, title, kind, status, app, app_path, microphone, system_audio,
     started_at, duration_ms, audio_file, my_notes, summary, decisions, summary_model,
-    summary_at, summary_error, failed_lines,
+    summary_at, summary_error, failed_lines, edited_at,
     (SELECT COUNT(*) FROM note_line l WHERE l.note_id = note.id) AS lines,
     (SELECT COUNT(*) FROM note_failed_line f WHERE f.note_id = note.id) AS retryable";
 
@@ -213,6 +216,7 @@ fn map(row: &Row<'_>) -> rusqlite::Result<Note> {
         summary_model: row.get("summary_model")?,
         summary_at: row.get("summary_at")?,
         summary_error: row.get("summary_error")?,
+        edited_at: row.get("edited_at")?,
         failed_lines: row.get("failed_lines")?,
         retryable: row.get("retryable")?,
         lines: row.get("lines")?,
@@ -353,6 +357,15 @@ pub fn update_line(conn: &Connection, line_id: i64, who: Speaker, text: &str) ->
         params![line_id, who.as_str(), text],
     )?;
     line(conn, line_id)?.ok_or_else(|| anyhow!("That line is gone"))
+}
+
+/// Notes that the transcript was corrected now.
+pub fn mark_edited(conn: &Connection, note_id: i64, at: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE note SET edited_at = ?2 WHERE id = ?1",
+        params![note_id, at],
+    )?;
+    Ok(())
 }
 
 /// Puts a deleted line back as it was, id and all.
@@ -638,8 +651,9 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
     tx.execute(
         "INSERT INTO note (id, title, kind, status, app, app_path, microphone, system_audio,
             started_at, duration_ms, audio_file, my_notes, summary, decisions, summary_model,
-            summary_at, summary_error, failed_lines)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+            summary_at, summary_error, failed_lines, edited_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
+            ?19)",
         params![
             n.id,
             n.title,
@@ -658,7 +672,8 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
             n.summary_model,
             n.summary_at,
             n.summary_error,
-            n.failed_lines
+            n.failed_lines,
+            n.edited_at
         ],
     )?;
     for tag in &n.tags {

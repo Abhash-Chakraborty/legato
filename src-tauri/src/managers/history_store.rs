@@ -364,6 +364,9 @@ pub static MIGRATIONS: &[M] = &[
             from_app TEXT
          );",
     ),
+    // Notes: when the transcript was last corrected, so a summary written
+    // before that can say it's out of date.
+    M::up("ALTER TABLE note ADD COLUMN edited_at INTEGER;"),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.

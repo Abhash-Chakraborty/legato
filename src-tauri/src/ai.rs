@@ -413,6 +413,54 @@ pub async fn ask_note(
     Ok(answer.trim().to_string())
 }
 
+/// Misheard words in a note's transcript, found part by part.
+pub async fn find_note_fixes(
+    app: &AppHandle,
+    config: &AiConfig,
+    lines: &[notes_rules::PromptLine<'_>],
+    title: &str,
+    words: &[String],
+) -> Result<Vec<notes_rules::LineFix>, AiProblem> {
+    let json_hint = !config.provider.supports_structured_output
+        || config.provider.api_format == PostProcessApiFormat::Anthropic;
+    let texts: Vec<&str> = lines.iter().map(|l| l.text).collect();
+    let mut fixes = Vec::new();
+    for part in notes_rules::numbered_parts(lines) {
+        let answer = run_json(
+            app,
+            config,
+            notes_rules::FIX_SYSTEM,
+            notes_rules::fix_request(&part, title, words, json_hint),
+            notes_rules::fix_schema(),
+            NOTES_TIMEOUT,
+        )
+        .await?;
+        fixes.extend(notes_rules::parse_fixes(&answer, &texts));
+        if fixes.len() >= notes_rules::FIX_MAX {
+            fixes.truncate(notes_rules::FIX_MAX);
+            break;
+        }
+    }
+    Ok(fixes)
+}
+
+/// A follow-up email from a note's summary.
+pub async fn follow_up(
+    app: &AppHandle,
+    config: &AiConfig,
+    request: String,
+) -> Result<String, AiProblem> {
+    let answer = run(
+        app,
+        config,
+        notes_rules::FOLLOW_UP_SYSTEM,
+        request,
+        NOTES_TIMEOUT,
+    )
+    .await?;
+    Ok(answer.trim().to_string())
+}
+
 /// Shown on the recording pill after a paste that went out without the AI's
 /// changes.
 #[derive(Serialize, Clone, Debug)]

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { toast } from "sonner";
-import { ArrowUp, Copy, Loader2, RotateCw } from "lucide-react";
+import { ArrowUp, Copy, Loader2, Mail, RotateCw } from "lucide-react";
 import {
   commands,
   type AiStatus,
@@ -18,7 +18,7 @@ import { answerParts } from "../../notes/notes";
 
 /** Why a note has no summary, or why Ask can't answer, in words; `fix`
  *  opens Settings › AI. */
-const problemText = (
+export const problemText = (
   code: string,
   status: AiStatus | null,
   t: TFunction,
@@ -34,6 +34,8 @@ const problemText = (
       return { text: t("notes.summary.none"), fix: true };
     case "recording":
       return { text: t("notes.summary.recording"), fix: false };
+    case "nosummary":
+      return { text: t("notes.followUp.noSummary"), fix: false };
     default: {
       if (!status) return { text: t("notes.summary.failed"), fix: false };
       const line = describeAi({ ...status, kind: code as AiStatusKind }, t);
@@ -204,6 +206,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
   const go = useNavStore((s) => s.go);
   const { settings } = useSettings();
   const [regenerating, setRegenerating] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const [done, setDone] = useState<Record<number, boolean>>({});
 
   useEffect(watchAi, []);
@@ -234,6 +237,19 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
       });
   };
 
+  const draft = async () => {
+    if (drafting) return;
+    setDrafting(true);
+    const result = await commands
+      .draftNoteFollowUp(note.id)
+      .catch((e) => ({ status: "error" as const, error: String(e) }));
+    setDrafting(false);
+    if (result.status === "error")
+      toast.error(t("notes.followUp.failed"), {
+        description: problemText(result.error, status, t).text,
+      });
+  };
+
   const toggle = async (id: number, next: boolean) => {
     setDone((d) => ({ ...d, [id]: next }));
     const result = await commands.setNoteActionDone(id, next).catch(() => null);
@@ -246,6 +262,12 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
   }));
   const doneCount = actions.filter((a) => a.done).length;
   const canAsk = enabled && hasAi && note.lines > 0;
+  // Lines were corrected after the summary was written.
+  const stale =
+    hasSummary &&
+    !!note.edited_at &&
+    !!note.summary_at &&
+    note.edited_at > note.summary_at;
 
   if (transcribing)
     return (
@@ -270,6 +292,18 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
         </p>
       ) : hasSummary ? (
         <>
+          {stale && enabled && hasAi && (
+            <p className="mb-4 flex max-w-[640px] flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--r-md)] bg-surface-2 px-3 py-2 text-[13px] text-text-2">
+              {t("notes.summary.stale")}
+              <button
+                type="button"
+                onClick={regenerate}
+                className="font-medium text-teal-700 underline-offset-2 hover:underline"
+              >
+                {t("notes.summary.update")}
+              </button>
+            </p>
+          )}
           <p className="max-w-[640px] text-[15px] leading-relaxed">
             {note.summary}
           </p>
@@ -391,6 +425,26 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
                   : t("notes.summary.summarise")}
               </Button>
             )
+          )}
+          {hasSummary && enabled && hasAi && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={drafting}
+              onClick={draft}
+            >
+              {drafting ? (
+                <Loader2
+                  className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
+                  aria-hidden="true"
+                />
+              ) : (
+                <Mail className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+              {drafting
+                ? t("notes.followUp.drafting")
+                : t("notes.followUp.draft")}
+            </Button>
           )}
           {hasSummary && note.summary_model && (
             <span className="ms-1 text-xs text-text-3">

@@ -3,7 +3,9 @@
 use crate::loopback::{self, AudioApp};
 use crate::managers::notes_store::Speaker;
 use crate::managers::notes_store::{DeletedRecording, Note, NoteLine, NoteMatch};
-use crate::notes::{self, LineEdit, NotesManager, SessionInfo, StartNotes, WordFix, WordFixed};
+use crate::notes::{
+    self, LineEdit, NotesManager, SessionInfo, StartNotes, SuggestedFix, WordFix, WordFixed,
+};
 use crate::settings::{get_settings, write_settings};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
@@ -195,6 +197,33 @@ pub async fn retry_note_lines(app: AppHandle, id: i64) -> Result<notes::RetryRes
 #[specta::specta]
 pub async fn ask_note(app: AppHandle, id: i64, question: String) -> Result<String, String> {
     notes::ask(&app, id, &question).await
+}
+
+/// Misheard words your AI found in the note, for review. Errors are codes
+/// the page words.
+#[tauri::command]
+#[specta::specta]
+pub async fn suggest_note_fixes(app: AppHandle, id: i64) -> Result<Vec<SuggestedFix>, String> {
+    notes::suggest_fixes(&app, id).await
+}
+
+/// Applies the fixes that were accepted; returns a token for Undo.
+#[tauri::command]
+#[specta::specta]
+pub fn apply_note_fixes(
+    notes: Notes<'_>,
+    id: i64,
+    fixes: Vec<SuggestedFix>,
+) -> Result<WordFixed, String> {
+    text(notes.apply_fixes(id, &fixes))
+}
+
+/// Drafts a follow-up email from the summary and opens it in the
+/// Scratchpad. Errors are codes the page words.
+#[tauri::command]
+#[specta::specta]
+pub async fn draft_note_follow_up(app: AppHandle, id: i64) -> Result<(), String> {
+    notes::follow_up(&app, id).await
 }
 
 /// Dictate here in My notes: starts a dictation into the note, or stops it.

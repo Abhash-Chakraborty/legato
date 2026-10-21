@@ -4,6 +4,7 @@ import {
   answerParts,
   clock,
   durationLabel,
+  fixContext,
   inFilter,
   lineAt,
   lineMatches,
@@ -122,6 +123,28 @@ assert.equal(
 assert.equal(
   whenLabel(at(new Date(2025, 9, 3, 15, 30)), now, "en-US"),
   "Oct 3, 2025 · 3:30 PM",
+);
+
+assert.deepEqual(
+  fixContext("we deploy with Cube Cuddle today", "cube cuddle"),
+  {
+    before: "we deploy with ",
+    match: "Cube Cuddle",
+    after: " today",
+  },
+);
+assert.equal(fixContext("scrumptious", "scrum"), null);
+assert.deepEqual(
+  fixContext(
+    "one two three four five six seven eight nine ten eleven twelve kubectl and then the rest of it goes on",
+    "kubectl",
+    20,
+  ),
+  {
+    before: "…ten eleven twelve ",
+    match: "kubectl",
+    after: " and then the rest…",
+  },
 );
 
 console.log("notes: ok");

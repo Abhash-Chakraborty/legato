@@ -1898,6 +1898,41 @@ async summariseNote(id: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Misheard words your AI found in the note, for review. Errors are codes
+ * the page words.
+ */
+async suggestNoteFixes(id: number) : Promise<Result<SuggestedFix[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("suggest_note_fixes", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Applies the fixes that were accepted; returns a token for Undo.
+ */
+async applyNoteFixes(id: number, fixes: SuggestedFix[]) : Promise<Result<WordFixed, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("apply_note_fixes", { id, fixes }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Drafts a follow-up email from the summary and opens it in the
+ * Scratchpad. Errors are codes the page words.
+ */
+async draftNoteFollowUp(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("draft_note_follow_up", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async askNote(id: number, question: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("ask_note", { id, question }) };
@@ -2560,6 +2595,10 @@ export type DeletedRecording = { note: Note; lines: NoteLine[]; failed?: FailedL
 export type FailedLine = { id: number; note_id: number; at_ms: number; end_ms: number; who: Speaker }
 export type Note = { id: number; title: string; kind: NoteKind; status: NoteStatus; app: string | null; app_path: string | null; microphone: string | null; system_audio: string | null; started_at: number; duration_ms: number; audio_file: string | null; tags: string[]; my_notes: string; summary: string; decisions: string[]; summary_model: string | null; summary_at: number | null; summary_error: string | null; 
 /**
+ * When a line was last corrected (Unix seconds).
+ */
+edited_at?: number | null; 
+/**
  * Lines that couldn't be transcribed.
  */
 failed_lines: number; 
@@ -2576,6 +2615,14 @@ export type NoteLineAdded = { line: NoteLine }
  * A line corrected, or given to the other side.
  */
 export type NoteLineChanged = { line: NoteLine }
+/**
+ * A word the AI thinks was misheard, for review before it's applied.
+ */
+export type SuggestedFix = { line_id: number; at_ms: number; heard: string; word: string; 
+/**
+ * The line as it reads now.
+ */
+text: string }
 /**
  * What correcting a line came to: the line, and the word it swapped, if
  * it swapped one, for fixing elsewhere in the note or the Dictionary.
