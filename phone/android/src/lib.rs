@@ -350,6 +350,12 @@ impl Core {
             .transcribe_on_pc(&self.sessions, &samples, Duration::from_secs(120))?)
     }
 
+    /// Asks the PC to load its speech model now, as the user starts talking.
+    /// False when not connected.
+    pub fn warm_pc(&self) -> bool {
+        self.phone.warm_pc(&self.sessions)
+    }
+
     /// Loads a speech model (a GGUF file) for `transcribe`.
     pub fn load_model(&self, path: String) -> Result<String, CoreError> {
         #[cfg(feature = "speech")]

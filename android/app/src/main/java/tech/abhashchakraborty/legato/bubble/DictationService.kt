@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -70,6 +72,12 @@ class DictationService : Service() {
         }
     }
 
+    // Main thread only. A recording that's still being written up when the
+    // next starts, or when ✕ is tapped, mustn't stop or type over that one.
+    private var session = 0
+    private var cancelled = 0
+    private var pending = 0
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -103,6 +111,8 @@ class DictationService : Service() {
             }
         }
         recorder.start()
+        session++
+        legato.warmPc()
         Dictation.set(Dictation.State.Listening(0f))
         main.post(tick)
     }
@@ -113,6 +123,8 @@ class DictationService : Service() {
         val samples = recorder.stop()
         Dictation.set(Dictation.State.Transcribing)
         val legato = applicationContext.legato
+        val mine = session
+        pending++
         scope.launch {
             val text = runCatching {
                 withContext(Dispatchers.Default) { legato.transcribe(samples) }
@@ -123,23 +135,32 @@ class DictationService : Service() {
                 ""
             }
             withContext(Dispatchers.Main) {
-                if (text.isNotBlank()) {
+                pending--
+                if (text.isNotBlank() && mine > cancelled) {
                     val typed = BubbleAccessibilityService.instance?.insert(text) ?: false
                     if (!typed) {
-                        Toast.makeText(this@DictationService, getString(R.string.not_typed), Toast.LENGTH_SHORT).show()
-                        legato.onLine("Couldn't type into this field: $text")
+                        // The field went away while the text was written up; keep it.
+                        getSystemService(ClipboardManager::class.java)
+                            .setPrimaryClip(ClipData.newPlainText("Legato", text))
+                        Toast.makeText(this@DictationService, getString(R.string.not_typed), Toast.LENGTH_LONG).show()
+                        legato.onLine("Couldn't type into this field, so it's on the clipboard: $text")
                     }
                     legato.run { dictate(text) }
                 }
-                Dictation.set(Dictation.State.Idle)
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                if (!recorder.isRecording) {
+                    Dictation.set(Dictation.State.Idle)
+                    if (pending == 0) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf()
+                    }
+                }
             }
         }
     }
 
     private fun cancel() {
         main.removeCallbacks(tick)
+        cancelled = session
         if (recorder.isRecording) recorder.stop()
         Dictation.set(Dictation.State.Idle)
         stopForeground(STOP_FOREGROUND_REMOVE)

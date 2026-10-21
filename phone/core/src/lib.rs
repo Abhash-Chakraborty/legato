@@ -183,6 +183,19 @@ impl Phone {
         result
     }
 
+    /// Asks the PC to load its speech model while the user is still talking,
+    /// with an empty recording; its answer is ignored. False when not connected.
+    pub fn warm_pc(&self, sessions: &Sessions) -> bool {
+        let Some(pc) = self.paired_pc() else {
+            return false;
+        };
+        let message = sync::protocol::Message::Transcribe {
+            id: sync::identity::uuid(),
+            pcm: String::new(),
+        };
+        sessions.send(&pc.device_id, link::Command::Send(message))
+    }
+
     /// How the phone is connected: "lan", "netbird" or "bluetooth".
     pub fn via(&self) -> Option<&'static str> {
         *self.via.lock().unwrap()

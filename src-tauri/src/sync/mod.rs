@@ -899,6 +899,11 @@ impl hub::Events for AppEvents {
             let seconds = samples.len() as f32 / 16_000.0;
             let started = std::time::Instant::now();
             crate::notes::ensure_model(&tm).map_err(|e| e.to_string())?;
+            // An empty recording is the phone saying it started listening:
+            // the model is loaded now, so the real one doesn't wait for it.
+            if samples.is_empty() {
+                return Ok(String::new());
+            }
             let heard = tm.transcribe(samples).map_err(|e| e.to_string())?;
             if heard.text.trim().is_empty() {
                 return Ok(String::new());

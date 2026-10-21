@@ -12,5 +12,5 @@
     <string name="memo_recording">Recording a memo</string>
     <string name="memo_stop">Stop and save</string>
     <string name="send_to_pc">Send to PC</string>
-    <string name="not_typed">Legato couldn\'t type into this field</string>
+    <string name="not_typed">Legato couldn\'t type here, so the text is on the clipboard</string>
 </resources>

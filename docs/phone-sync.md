@@ -178,6 +178,10 @@ PC, and answers with the same `id`:
 {"type":"transcript","id":"…","error":"The speech model didn't load"}
 ```
 
+When the phone starts listening it sends a `transcribe` with an empty `pcm`. The PC loads its
+model then, if it had put it away, so the recording doesn't wait for it, and answers with an
+empty `text` that the phone ignores.
+
 Either side keeps syncing while a recording is being written up. A phone that gets an error, or
 no answer, uses its own model if it has one. The recording isn't kept on the PC, and the
 phone records the dictation in its history, which syncs as usual.

@@ -8,6 +8,7 @@ import android.provider.Settings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -181,6 +182,20 @@ class Legato(private val context: Context) : CoreListener {
         val until = System.currentTimeMillis() + 8_000
         while (!canTranscribe() && pcMayTranscribe() && System.currentTimeMillis() < until) Thread.sleep(250)
         return canTranscribe()
+    }
+
+    /**
+     * Has the PC load its speech model as you start talking, so a model it
+     * had put away doesn't hold up the text. Waits a moment for a PC that's
+     * still being reached.
+     */
+    fun warmPc() {
+        if (!pcMayTranscribe()) return
+        scope.launch(Dispatchers.IO) {
+            val until = System.currentTimeMillis() + 8_000
+            while (!pcWillTranscribe() && pcMayTranscribe() && System.currentTimeMillis() < until) delay(250)
+            if (pcWillTranscribe()) runCatching { core.warmPc() }
+        }
     }
 
     /**

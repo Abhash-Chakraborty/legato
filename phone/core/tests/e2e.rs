@@ -56,6 +56,11 @@ impl Events for Recorder {
         }
     }
     fn transcribe(&self, _device_id: &str, samples: Vec<f32>) -> Option<link::TranscribeJob> {
+        self.0
+             .0
+            .lock()
+            .unwrap()
+            .push(format!("transcribe {}", samples.len()));
         Some(Box::new(move || {
             Ok(format!("heard {} samples", samples.len()))
         }))
@@ -532,6 +537,17 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
         .unwrap()
     };
     assert_eq!(text, "heard 16000 samples");
+
+    // Starting to listen asks the PC to load its model, with an empty recording.
+    assert!(pixel.warm_pc(&phone_sessions));
+    until("the PC is asked to load its model", || {
+        pc.heard
+            .0
+            .lock()
+            .unwrap()
+            .contains(&"transcribe 0".to_string())
+    })
+    .await;
 }
 
 /// A PC that's off, asleep or behind a firewall answers with "connection
