@@ -136,6 +136,26 @@ fn open_scratchpad_from_cli(app: &AppHandle, new_note: bool) {
     }
 }
 
+/// What a second Legato process asked for: a remote-control flag, or just
+/// the window.
+fn handle_second_instance(app: &AppHandle, args: &[String]) {
+    if args.iter().any(|a| a == "--toggle-transcription") {
+        signal_handle::send_transcription_input(app, "transcribe", "CLI");
+    } else if args.iter().any(|a| a == "--toggle-post-process") {
+        signal_handle::send_transcription_input(app, "transcribe_with_post_process", "CLI");
+    } else if args.iter().any(|a| a == "--cancel") {
+        crate::utils::cancel_current_operation(app);
+    } else if args.iter().any(|a| a == desktop::SCRATCHPAD_ARG) {
+        open_scratchpad_from_cli(app, false);
+    } else if args.iter().any(|a| a == desktop::NEW_NOTE_ARG) {
+        open_scratchpad_from_cli(app, true);
+    } else {
+        // A second process was launched without remote-control flags:
+        // raise the window.
+        show_main_window(app);
+    }
+}
+
 pub(crate) fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
         if let Err(e) = main_window.unminimize() {
@@ -1146,21 +1166,12 @@ pub fn run(cli_args: CliArgs) {
     // instance instead.
     if !headless_mode {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            if args.iter().any(|a| a == "--toggle-transcription") {
-                signal_handle::send_transcription_input(app, "transcribe", "CLI");
-            } else if args.iter().any(|a| a == "--toggle-post-process") {
-                signal_handle::send_transcription_input(app, "transcribe_with_post_process", "CLI");
-            } else if args.iter().any(|a| a == "--cancel") {
-                crate::utils::cancel_current_operation(app);
-            } else if args.iter().any(|a| a == desktop::SCRATCHPAD_ARG) {
-                open_scratchpad_from_cli(app, false);
-            } else if args.iter().any(|a| a == desktop::NEW_NOTE_ARG) {
-                open_scratchpad_from_cli(app, true);
-            } else {
-                // A second process was launched without remote-control flags:
-                // raise the window.
-                show_main_window(app);
-            }
+            // The plugin calls this while the second process waits in
+            // SendMessage, and WebView2 can't start inside that call: the
+            // Scratchpad, built on first use, opened blank from the jump list.
+            // Act once the call has returned.
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move { handle_second_instance(&app, &args) });
         }));
     }
 
