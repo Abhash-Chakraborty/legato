@@ -677,7 +677,12 @@ impl ShortcutAction for TranscribeAction {
         let style = get_settings(app).overlay_style;
         // Capture this before finalizing the stream so every later working state
         // targets the same overlay that was shown for this transcription.
-        let use_streaming_overlay = should_use_streaming_overlay(style, tm.is_streaming());
+        // With the bubble on, the bar's live view is hidden, so its working
+        // states would reach nobody and the bubble would keep its recording
+        // meter until the paste; the plain states go to the bubble, and to
+        // the bar with the step's name when it takes a while.
+        let use_streaming_overlay = should_use_streaming_overlay(style, tm.is_streaming())
+            && !crate::bubble::takes_dictation(app);
         if use_streaming_overlay {
             tm.emit_stream_working(StreamWorkKind::Transcribing);
         } else {
