@@ -1,7 +1,7 @@
 //! A recording's live decode: a stream the model decodes as audio arrives,
 //! or long-form chunks decoded as the recording goes.
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use log::{debug, error, info};
@@ -124,6 +124,23 @@ fn finish_chunks(
     }
 }
 
+/// A recording's live decode is dropped for one batch run when, at the end,
+/// it still has more than this share of the recording to decode. Streaming
+/// costs several times what a batch run does for the same audio (a 10 s
+/// recording: 24.5 s streamed against 3.5 s in one run, both on a CPU), so
+/// a stream that fell far behind, on a GPU busy with a game say, finishes
+/// later than a batch run of the whole recording would.
+const BEHIND_SHARE: f64 = 0.3;
+/// ...and at least this much audio (16 kHz samples): a short stream that's
+/// a moment behind finishes quickly anyway.
+const BEHIND_MIN_SAMPLES: usize = 2 * 16_000;
+
+/// Whether a stream with `behind` samples still to decode of a `total`
+/// sample recording should give way to a batch run.
+fn too_far_behind(behind: usize, total: usize) -> bool {
+    behind >= BEHIND_MIN_SAMPLES && behind as f64 > total as f64 * BEHIND_SHARE
+}
+
 /// A stream the model decodes as audio arrives, with preview text emitted
 /// to the overlay.
 struct StreamSession<'a> {
@@ -131,6 +148,10 @@ struct StreamSession<'a> {
     model_id: String,
     stream: StreamHandle,
     perf: Arc<Mutex<StreamPerf>>,
+    /// The length of each feed sent, in order, and how many the worker has
+    /// decoded, so finishing knows how far behind the stream is.
+    sent: Vec<usize>,
+    decoded: Arc<AtomicUsize>,
     /// In auto mode the model's own LID is the best remaining evidence; the
     /// snapshot is only materialized when it can change the outcome.
     want_language: bool,
@@ -149,12 +170,15 @@ impl<'a> StreamSession<'a> {
         // Feed results arrive on the engine's thread; this callback only
         // converts and emits preview text.
         let perf = Arc::new(Mutex::new(StreamPerf::new()));
+        let decoded = Arc::new(AtomicUsize::new(0));
         let on_progress = {
             let perf = Arc::clone(&perf);
+            let decoded = Arc::clone(&decoded);
             let app_handle = tm.app_handle.clone();
             let languages = setup.languages.clone();
             let mut preview_script = PreviewScript::new(settings.chinese_script, &output_language);
             move |progress: StreamProgress| {
+                decoded.fetch_add(1, Ordering::Release);
                 let mut perf = lock_perf(&perf);
                 perf.record_compute(progress.elapsed);
                 perf.record_update(&progress.update);
@@ -196,16 +220,33 @@ impl<'a> StreamSession<'a> {
             model_id: model_id.to_string(),
             stream,
             perf,
+            sent: Vec::new(),
+            decoded,
             want_language: matches!(output_language, OutputLanguageEvidence::Unknown),
         })
     }
 
     fn feed(&mut self, pcm: Vec<f32>) {
         lock_perf(&self.perf).record_feed(pcm.len());
+        self.sent.push(pcm.len());
         self.stream.feed(pcm);
     }
 
     fn finish(self) -> Result<Option<Decoded>, EngineError> {
+        let decoded = self.decoded.load(Ordering::Acquire).min(self.sent.len());
+        let behind: usize = self.sent[decoded..].iter().sum();
+        let total: usize = self.sent.iter().sum();
+        if too_far_behind(behind, total) {
+            info!(
+                "The live transcription is {:.1}s behind at the end of {:.1}s; \
+                 transcribing the recording in one run instead",
+                behind as f64 / 16_000.0,
+                total as f64 / 16_000.0
+            );
+            // Dropping the handle skips its queued feeds and resets the
+            // stream, so the batch run doesn't wait behind them.
+            return Ok(None);
+        }
         let result = match self.stream.finalize(self.want_language) {
             // After finalize the committed prefix holds the full text;
             // display() = committed + tentative is the safe read.
@@ -244,5 +285,29 @@ impl<'a> StreamSession<'a> {
         };
         lock_perf(&self.perf).log_finalized(chars);
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::too_far_behind;
+
+    const S: usize = 16_000;
+
+    #[test]
+    fn a_stream_far_behind_gives_way_to_a_batch_run() {
+        // The gaming case: 29 s recorded, most of it still queued.
+        assert!(too_far_behind(20 * S, 29 * S));
+        assert!(too_far_behind(3 * S, 8 * S));
+    }
+
+    #[test]
+    fn a_stream_keeping_up_finishes_itself() {
+        // Normally a fraction of a second is left.
+        assert!(!too_far_behind(S / 3, 30 * S));
+        // A short recording a moment behind.
+        assert!(!too_far_behind(S, 2 * S));
+        // A long recording a few seconds behind: the stream is closer.
+        assert!(!too_far_behind(10 * S, 60 * S));
     }
 }
