@@ -59,6 +59,7 @@ import {
   CorrectionPassRow,
   MinWordsRow,
   TimeoutRow,
+  NotesTimeoutRow,
   TransformsUseRow,
   NotesSummaryRow,
 } from "./ai/AiSettings";
@@ -855,6 +856,15 @@ export const buildSections = (
               "settings.ai.limits.timeout.help",
             ],
             render: () => <TimeoutRow />,
+            requires: needsAiModel,
+          },
+          {
+            id: "ai-notes-timeout",
+            searchKeys: [
+              "settings.ai.limits.notesTimeout.title",
+              "settings.ai.limits.notesTimeout.help",
+            ],
+            render: () => <NotesTimeoutRow />,
             requires: needsAiModel,
           },
           {

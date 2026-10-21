@@ -902,6 +902,7 @@ pub fn run(cli_args: CliArgs) {
             commands::ai::change_ai_notes_setting,
             commands::ai::change_ai_min_words_setting,
             commands::ai::change_ai_timeout_setting,
+            commands::ai::change_notes_ai_timeout_setting,
             commands::transforms::get_transform_runs,
             commands::transforms::clear_transform_runs,
             commands::transforms::save_transform,

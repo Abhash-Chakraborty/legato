@@ -175,6 +175,7 @@ pub async fn finish(
         &text,
         crate::actions::DictationMode::Plain,
         Some(target),
+        &crate::actions::no_stage,
     )
     .await;
     let settings = get_settings(app);

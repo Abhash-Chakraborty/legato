@@ -74,12 +74,32 @@ fn now() -> i64 {
     chrono::Utc::now().timestamp()
 }
 
+/// How long an AI step in a dictation waits before the text is pasted
+/// without it.
+pub fn dictation_timeout(settings: &AppSettings) -> Duration {
+    Duration::from_secs(u64::from(settings.ai_timeout_secs.clamp(
+        crate::settings::AI_TIMEOUT_RANGE.0,
+        crate::settings::AI_TIMEOUT_RANGE.1,
+    )))
+}
+
+/// How long a Notes request waits; a long meeting takes the model longer
+/// than a dictation.
+pub fn notes_timeout(settings: &AppSettings) -> Duration {
+    Duration::from_secs(u64::from(settings.notes_ai_timeout_secs.clamp(
+        crate::settings::NOTES_AI_TIMEOUT_RANGE.0,
+        crate::settings::NOTES_AI_TIMEOUT_RANGE.1,
+    )))
+}
+
 /// Everything a request needs, when the AI is set up.
 pub struct AiConfig {
     pub provider: PostProcessProvider,
     pub model: String,
     pub api_key: String,
     pub timeout: Duration,
+    /// How long a Notes request (summary, question, fixes, follow-up) waits.
+    pub notes_timeout: Duration,
 }
 
 impl AiConfig {
@@ -103,7 +123,8 @@ impl AiConfig {
             provider,
             model,
             api_key,
-            timeout: Duration::from_secs(u64::from(settings.ai_timeout_secs.clamp(1, 60))),
+            timeout: dictation_timeout(settings),
+            notes_timeout: notes_timeout(settings),
         })
     }
 
@@ -130,7 +151,8 @@ impl AiConfig {
             provider,
             model,
             api_key,
-            timeout: Duration::from_secs(u64::from(settings.ai_timeout_secs.clamp(1, 60))),
+            timeout: dictation_timeout(settings),
+            notes_timeout: notes_timeout(settings),
         })
     }
 
@@ -334,7 +356,6 @@ pub async fn run(
 
 /// A Notes summary or Ask answer may take this long: local models read a
 /// long transcript slowly.
-const NOTES_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// `run`, with an answer format the provider is asked to follow.
 async fn run_json(
@@ -373,7 +394,7 @@ pub async fn summarise_note(
             notes_rules::SUMMARY_SYSTEM,
             request,
             notes_rules::summary_schema(),
-            NOTES_TIMEOUT,
+            config.notes_timeout,
         )
         .await?;
         notes_rules::parse_summary(&answer).ok_or_else(|| {
@@ -407,7 +428,7 @@ pub async fn ask_note(
         config,
         notes_rules::ASK_SYSTEM,
         notes_rules::ask_request(&transcript, question),
-        NOTES_TIMEOUT,
+        config.notes_timeout,
     )
     .await?;
     Ok(answer.trim().to_string())
@@ -432,7 +453,7 @@ pub async fn find_note_fixes(
             notes_rules::FIX_SYSTEM,
             notes_rules::fix_request(&part, title, words, json_hint),
             notes_rules::fix_schema(),
-            NOTES_TIMEOUT,
+            config.notes_timeout,
         )
         .await?;
         fixes.extend(notes_rules::parse_fixes(&answer, &texts));
@@ -455,7 +476,7 @@ pub async fn follow_up(
         config,
         notes_rules::FOLLOW_UP_SYSTEM,
         request,
-        NOTES_TIMEOUT,
+        config.notes_timeout,
     )
     .await?;
     Ok(answer.trim().to_string())

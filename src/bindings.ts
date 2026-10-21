@@ -1279,6 +1279,14 @@ async changeAiTimeoutSetting(seconds: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async changeNotesAiTimeoutSetting(seconds: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_notes_ai_timeout_setting", { seconds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getTransformRuns() : Promise<Result<TransformRuns, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_transform_runs") };
@@ -3312,6 +3320,11 @@ ai_min_words?: number;
  * AI changes.
  */
 ai_timeout_secs?: number; 
+/**
+ * Notes' AI requests (summary, questions, fixes, follow-ups) give up
+ * after this long.
+ */
+notes_ai_timeout_secs?: number; 
 /**
  * The last successful Test connection, shown in the AI status line.
  */

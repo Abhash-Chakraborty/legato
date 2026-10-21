@@ -939,6 +939,13 @@
 .mdots i:nth-child(5) {
   animation-delay: 360ms;
 }
+.mlabel {
+  font-size: 12px;
+  line-height: 16px;
+  color: rgb(255 255 255 / 0.85);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 @keyframes mdots-wave {
   0%,
   60%,

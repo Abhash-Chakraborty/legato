@@ -189,6 +189,8 @@ const settingUpdaters: {
   },
   ai_min_words: (value) => commands.changeAiMinWordsSetting(value as number),
   ai_timeout_secs: (value) => commands.changeAiTimeoutSetting(value as number),
+  notes_ai_timeout_secs: (value) =>
+    commands.changeNotesAiTimeoutSetting(value as number),
   background_audio: (value) =>
     commands.changeBackgroundAudioSetting(value as BackgroundAudio),
   append_trailing_space: (value) =>

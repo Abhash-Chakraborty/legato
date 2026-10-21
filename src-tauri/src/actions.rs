@@ -95,6 +95,11 @@ impl PasteTurn {
         Self(NEXT_TURN.fetch_add(1, Ordering::SeqCst))
     }
 
+    /// Whether every earlier dictation has finished.
+    fn ready(&self) -> bool {
+        *TURN_NOW.borrow() >= self.0
+    }
+
     /// Waits for every earlier dictation to finish.
     async fn wait(&self) {
         let mut now = TURN_NOW.subscribe();
@@ -112,6 +117,36 @@ impl Drop for PasteTurn {
         TURN_NOW.send_replace(now);
     }
 }
+
+/// What a dictation is doing after you stop talking, named on the bar so a
+/// slow step doesn't look stuck.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Stage {
+    /// The AI is checking for misheard Dictionary words.
+    Fixing,
+    /// The AI is cleaning up the text (Cleanup at Medium).
+    Polishing,
+    /// A transform is rewriting the text.
+    Transforming,
+    /// An earlier dictation is still being finished and pastes first.
+    Waiting,
+    Pasting,
+}
+
+impl Stage {
+    fn key(self) -> &'static str {
+        match self {
+            Stage::Fixing => "fixing",
+            Stage::Polishing => "polishing",
+            Stage::Transforming => "transforming",
+            Stage::Waiting => "waiting",
+            Stage::Pasting => "pasting",
+        }
+    }
+}
+
+/// For callers whose dictation has no bar to tell.
+pub(crate) fn no_stage(_: Stage) {}
 
 // Shortcut Action Trait
 pub trait ShortcutAction: Send + Sync {
@@ -282,6 +317,7 @@ pub(crate) async fn process_transcription_output(
     transcription: &str,
     mode: DictationMode,
     target: Option<&AppInfo>,
+    stage: &(dyn Fn(Stage) + Sync),
 ) -> ProcessedTranscription {
     let settings = get_settings(app);
     let mut text = transcription.to_string();
@@ -294,6 +330,12 @@ pub(crate) async fn process_transcription_output(
     let medium = settings.cleanup_level == CleanupLevel::Medium
         && ai::AiConfig::from_settings(&settings).is_some();
     if !medium {
+        if settings.ai_correction_enabled
+            && text.split_whitespace().count() as u32 >= settings.ai_min_words
+            && ai::AiConfig::from_settings(&settings).is_some()
+        {
+            stage(Stage::Fixing);
+        }
         match ai::correction_pass(app, &settings, &text).await {
             Ok(Some(corrected)) => {
                 text = corrected.text;
@@ -321,6 +363,7 @@ pub(crate) async fn process_transcription_output(
             styled = cleanup_rules::light(&styled, &rules, lists);
         }
         if medium {
+            stage(Stage::Polishing);
             match ai::medium_pass(app, &settings, &styled, marked.hits.len()).await {
                 Ok(Some(cleaned)) => styled = cleaned,
                 Ok(None) => {}
@@ -362,8 +405,9 @@ pub(crate) async fn process_transcription_output(
     if let Some(chosen) =
         dictation_transform(&settings, mode, target.map(|_| category), &final_text)
     {
+        stage(Stage::Transforming);
         let started = Instant::now();
-        let timeout = Duration::from_secs(u64::from(settings.ai_timeout_secs.clamp(1, 60)));
+        let timeout = crate::ai::dictation_timeout(&settings);
         let app_name = target.map(|a| a.name.as_str());
         match crate::transforms::apply(app, &settings, &chosen, &final_text, app_name, timeout)
             .await
@@ -816,12 +860,20 @@ impl ShortcutAction for TranscribeAction {
                             // the next dictation while this one is polished
                             // and pasted.
                             guard.release();
+                            // Steps of a dictation still finishing after the
+                            // next one started stay off that one's bar.
+                            let stage = |s: Stage| {
+                                if is_current(session) {
+                                    crate::overlay::set_stage(&ah, Some(s.key()));
+                                }
+                            };
                             let Some(processed) = complete_unless_cancelled(
                                 process_transcription_output(
                                     &ah,
                                     &transcription,
                                     mode,
                                     app_info.as_ref(),
+                                    &stage,
                                 ),
                                 &cancelled,
                             )
@@ -839,7 +891,11 @@ impl ShortcutAction for TranscribeAction {
                             }
 
                             // Earlier dictations still polishing paste first.
+                            if !turn.ready() {
+                                stage(Stage::Waiting);
+                            }
                             turn.wait().await;
+                            stage(Stage::Pasting);
                             let quiet = !is_current(session);
                             // The next dictation's shortcut may be held: a
                             // Ctrl+V now would reach the app as Win+Ctrl+V

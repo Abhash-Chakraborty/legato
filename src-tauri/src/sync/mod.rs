@@ -922,6 +922,7 @@ impl hub::Events for AppEvents {
                     &heard.text,
                     crate::actions::DictationMode::Plain,
                     target.as_ref(),
+                    &crate::actions::no_stage,
                 ));
             log::info!(
                 "Transcribed {seconds:.1} s from {device} in {:.1} s",

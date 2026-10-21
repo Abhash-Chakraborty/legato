@@ -277,11 +277,37 @@ const BUBBLE_STATES: [&str; 4] = ["recording", "streaming", "transcribing", "pro
 
 /// Shows a dictation's state: on the bubble while it's turned on, so there
 /// aren't two of them, else on the bar.
+/// Counts the dictation states sent while the bubble has the dictation, so
+/// a delayed showing of the bar knows whether its state still holds.
+static BUBBLE_STATE_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// How long the bubble alone shows a working dictation before the bar
+/// comes up to name the step; quick ones never show the bar.
+const WORK_ON_BAR_AFTER_MS: u64 = 1200;
+
 fn show_dictation_state(app_handle: &AppHandle, state: &str) {
+    if state == "recording" || state == "streaming" {
+        set_stage(app_handle, None);
+    }
     if BUBBLE_STATES.contains(&state) && crate::bubble::takes_dictation(app_handle) {
         BUBBLE_DICTATION.store(true, Ordering::SeqCst);
+        let generation = BUBBLE_STATE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
         crate::bubble::set_dictating(app_handle, true);
         let _ = app_handle.emit_to(crate::bubble::WINDOW, "bubble-dictation", Some(state));
+        // The bubble is too small to say what it's doing; a step that takes
+        // a while is named on the bar, with Cancel.
+        if state == "transcribing" || state == "processing" {
+            let handle = app_handle.clone();
+            let state = state.to_string();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(WORK_ON_BAR_AFTER_MS));
+                if BUBBLE_DICTATION.load(Ordering::SeqCst)
+                    && BUBBLE_STATE_GENERATION.load(Ordering::SeqCst) == generation
+                {
+                    show_overlay_state(&handle, &state);
+                }
+            });
+        }
         // The words come only from a model that writes as you speak.
         if state == "streaming"
             && settings::get_settings(app_handle).live_caption != LiveCaption::Off
@@ -379,7 +405,9 @@ static BUBBLE_DICTATION: AtomicBool = AtomicBool::new(false);
 /// A dictation finished, failed or was cancelled: the bubble goes back to
 /// rest and the bar hides.
 pub fn end_dictation(app_handle: &AppHandle) {
+    set_stage(app_handle, None);
     if BUBBLE_DICTATION.swap(false, Ordering::SeqCst) {
+        BUBBLE_STATE_GENERATION.fetch_add(1, Ordering::SeqCst);
         let _ = app_handle.emit_to(crate::bubble::WINDOW, "bubble-dictation", None::<&str>);
         crate::bubble::set_dictating(app_handle, false);
     }
@@ -542,6 +570,13 @@ pub fn show_bar<T: serde::Serialize>(
 /// None goes back to the default.
 pub fn set_working_label(app_handle: &AppHandle, label: Option<&str>) {
     let _ = app_handle.emit_to("recording_overlay", "overlay-working-label", label);
+}
+
+/// Names the step a dictation is on after you stop talking ("fixing",
+/// "polishing", "transforming", "waiting", "pasting"); None goes back to
+/// transcribing. The bar shows it with the seconds the step has taken.
+pub fn set_stage(app_handle: &AppHandle, stage: Option<&str>) {
+    let _ = app_handle.emit_to("recording_overlay", "overlay-stage", stage);
 }
 
 /// Updates the overlay window position based on current settings

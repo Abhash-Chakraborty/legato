@@ -276,6 +276,11 @@ const RecordingOverlay: React.FC = () => {
   const [now, setNow] = useState(Date.now());
   // "Polish…" while a transform runs; the default label otherwise.
   const [workingLabel, setWorkingLabel] = useState<string | null>(null);
+  // The step a dictation is on after you stop talking, and since when, so
+  // a slow AI step reads as work rather than a stuck bar.
+  const [stage, setStage] = useState<{ key: string; at: number } | null>(null);
+  // When the dictation stopped and the work began; 0 while listening.
+  const [workSince, setWorkSince] = useState(0);
   // `Stream::play()` returning does not mean hardware callbacks are flowing.
   // Stay visually in an arming state until the backend processes the first
   // actual microphone sample chunk.
@@ -335,6 +340,8 @@ const RecordingOverlay: React.FC = () => {
           overlayState === "caption"
         ) {
           setCaptureReady(false);
+          setStage(null);
+          setWorkSince(0);
           smoothedLevelsRef.current = Array(16).fill(0);
           setLevels(Array(WAVE_BARS).fill(0));
           setStreamText({ committed: "", tentative: "" });
@@ -355,6 +362,9 @@ const RecordingOverlay: React.FC = () => {
           // Keep the previous/default placement if settings can't be read.
         }
         setState(overlayState);
+        if (overlayState === "transcribing" || overlayState === "processing") {
+          setWorkSince((since) => since || Date.now());
+        }
         if (overlayState === "streaming") {
           setPhase("listening");
           setWorkKind("transcribing");
@@ -396,6 +406,14 @@ const RecordingOverlay: React.FC = () => {
         (event) => setWorkingLabel(event.payload),
       );
 
+      const unlistenStage = await listen<string | null>(
+        "overlay-stage",
+        (event) =>
+          setStage(
+            event.payload ? { key: event.payload, at: Date.now() } : null,
+          ),
+      );
+
       const unlistenHide = await listen("hide-overlay", () => {
         setIsVisible(false);
         setCaptureReady(false);
@@ -426,6 +444,9 @@ const RecordingOverlay: React.FC = () => {
         const payload: StreamPhaseEvent = event.payload;
         setPhase(payload.phase);
         if (payload.kind) setWorkKind(payload.kind);
+        if (payload.phase === "working") {
+          setWorkSince((since) => since || Date.now());
+        }
       });
 
       // The backend ends every `loading_started` with exactly one of completed
@@ -464,6 +485,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenNotesTick();
         unlistenCall();
         unlistenLabel();
+        unlistenStage();
         unlistenHide();
         unlistenReady();
         unlistenLevel();
@@ -514,6 +536,18 @@ const RecordingOverlay: React.FC = () => {
     return () => clearInterval(timer);
   }, [state, isVisible, callCard]);
 
+  // The working label counts the seconds the step has taken.
+  const busy =
+    state === "transcribing" ||
+    state === "processing" ||
+    (state === "streaming" && phase === "working");
+  useEffect(() => {
+    if (!busy || !isVisible) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(timer);
+  }, [busy, isVisible]);
+
   if (!isVisible) return null;
 
   // Re-pin when the user is within ~a line of the bottom; unpin otherwise.
@@ -529,6 +563,15 @@ const RecordingOverlay: React.FC = () => {
   const transcribingLabel = modelLoading
     ? t("overlay.loadingModel")
     : t("overlay.transcribing");
+
+  // The step's name, or `fallback` before the first step is named, with
+  // its seconds once it has taken a couple.
+  const stageText = (fallback: string) => {
+    const name = stage ? t(`overlay.stage.${stage.key}`) : fallback;
+    const since = stage?.at ?? workSince;
+    const seconds = since ? Math.floor((now - since) / 1000) : 0;
+    return seconds >= 2 ? t("overlay.stage.withTime", { name, seconds }) : name;
+  };
 
   // ---- Shared building blocks (one visual language for every overlay form) ----
   const waveform = (
@@ -670,9 +713,11 @@ const RecordingOverlay: React.FC = () => {
           </div>
           {working
             ? workingRow(
-                workKind === "polishing"
-                  ? t("overlay.processing")
-                  : transcribingLabel,
+                stageText(
+                  workKind === "polishing"
+                    ? t("overlay.processing")
+                    : transcribingLabel,
+                ),
                 true,
               )
             : listeningRow(open, true)}
@@ -1211,12 +1256,13 @@ const RecordingOverlay: React.FC = () => {
   // spinner + label (transcribing / processing). Never both. The pill animates its
   // width between them; the cancel button is in both rows so it stays put.
   const working = state === "transcribing" || state === "processing";
-  const workLabel =
+  const workLabel = stageText(
     state === "processing"
       ? workingLabel
         ? t("overlay.working", { name: workingLabel })
         : t("overlay.processing")
-      : transcribingLabel;
+      : transcribingLabel,
+  );
 
   if (mini) {
     return (
@@ -1241,13 +1287,18 @@ const RecordingOverlay: React.FC = () => {
             </svg>
           </button>
           {working ? (
-            <span className="mdots" role="status" aria-label={workLabel}>
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-            </span>
+            <>
+              <span className="mdots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+              <span className="mlabel" role="status">
+                {workLabel}
+              </span>
+            </>
           ) : (
             waveform
           )}

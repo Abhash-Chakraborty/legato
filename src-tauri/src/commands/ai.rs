@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use tauri::AppHandle;
 
 /// The longest the AI may take before a dictation goes out without it.
-const TIMEOUT_CHOICES: [u32; 4] = [3, 6, 10, 20];
 const MAX_MIN_WORDS: u32 = 30;
 
 #[tauri::command]
@@ -59,11 +58,27 @@ pub fn change_ai_min_words_setting(app: AppHandle, words: u32) -> Result<(), Str
 #[tauri::command]
 #[specta::specta]
 pub fn change_ai_timeout_setting(app: AppHandle, seconds: u32) -> Result<(), String> {
-    if !TIMEOUT_CHOICES.contains(&seconds) {
-        return Err(format!("Unsupported AI time limit: {seconds} seconds"));
+    let (min, max) = crate::settings::AI_TIMEOUT_RANGE;
+    if !(min..=max).contains(&seconds) {
+        return Err(format!("The AI time limit must be {min} to {max} seconds"));
     }
     let mut settings = get_settings(&app);
     settings.ai_timeout_secs = seconds;
+    write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_notes_ai_timeout_setting(app: AppHandle, seconds: u32) -> Result<(), String> {
+    let (min, max) = crate::settings::NOTES_AI_TIMEOUT_RANGE;
+    if !(min..=max).contains(&seconds) {
+        return Err(format!(
+            "The Notes AI time limit must be {min} to {max} seconds"
+        ));
+    }
+    let mut settings = get_settings(&app);
+    settings.notes_ai_timeout_secs = seconds;
     write_settings(&app, settings);
     Ok(())
 }

@@ -803,6 +803,10 @@ pub struct AppSettings {
     /// AI changes.
     #[serde(default = "default_ai_timeout_secs")]
     pub ai_timeout_secs: u32,
+    /// Notes' AI requests (summary, questions, fixes, follow-ups) give up
+    /// after this long.
+    #[serde(default = "default_notes_ai_timeout_secs")]
+    pub notes_ai_timeout_secs: u32,
     /// The last successful Test connection, shown in the AI status line.
     #[serde(default)]
     pub ai_last_test: Option<AiLastTest>,
@@ -1112,6 +1116,16 @@ fn default_ai_min_words() -> u32 {
 fn default_ai_timeout_secs() -> u32 {
     6
 }
+
+/// The seconds Settings › AI lets a dictation's AI steps wait, inclusive.
+pub const AI_TIMEOUT_RANGE: (u32, u32) = (2, 120);
+
+fn default_notes_ai_timeout_secs() -> u32 {
+    120
+}
+
+/// The seconds Notes' AI requests may wait, inclusive.
+pub const NOTES_AI_TIMEOUT_RANGE: (u32, u32) = (15, 600);
 
 fn default_true() -> bool {
     true
@@ -1486,6 +1500,7 @@ pub fn get_default_settings() -> AppSettings {
         ai_correction_enabled: false,
         ai_min_words: default_ai_min_words(),
         ai_timeout_secs: default_ai_timeout_secs(),
+        notes_ai_timeout_secs: default_notes_ai_timeout_secs(),
         ai_last_test: None,
         transforms: crate::transform_rules::shipped(),
         dictate_transform_id: default_dictate_transform_id(),

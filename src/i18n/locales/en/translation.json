@@ -861,10 +861,13 @@
           "valueOff": "Off"
         },
         "timeout": {
-          "title": "Give up after",
-          "help": "If the model hasn't answered by then, Legato pastes the text without AI changes.",
-          "option_one": "{{count}} second",
-          "option_other": "{{count}} seconds"
+          "title": "Give up on a dictation after",
+          "help": "If the model hasn't answered by then, Legato pastes the text without AI changes. {{min}} to {{max}} seconds.",
+          "unit": "seconds"
+        },
+        "notesTimeout": {
+          "title": "Give up on a Notes request after",
+          "help": "For summaries, questions, misheard-word fixes and follow-ups, which take longer on a long meeting. {{min}} to {{max}} seconds."
         }
       },
       "privacy": {
@@ -1350,6 +1353,14 @@
     "transcribing": "Transcribing...",
     "processing": "Processing...",
     "loadingModel": "Loading model...",
+    "stage": {
+      "fixing": "Fixing words...",
+      "polishing": "Polishing...",
+      "transforming": "Running your transform...",
+      "waiting": "Finishing the last dictation...",
+      "pasting": "Pasting...",
+      "withTime": "{{name}} {{seconds}} s"
+    },
     "notice": {
       "word_added": "Added “{{word}}” to your Dictionary",
       "word_exists": "“{{word}}” is already in your Dictionary",

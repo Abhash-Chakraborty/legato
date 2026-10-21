@@ -181,8 +181,14 @@ pub async fn retry_history_entry_transcription(
             title: entry.app_title.clone().unwrap_or_default(),
         })
     });
-    let processed =
-        process_transcription_output(&app, &transcription.text, mode, target.as_ref()).await;
+    let processed = process_transcription_output(
+        &app,
+        &transcription.text,
+        mode,
+        target.as_ref(),
+        &crate::actions::no_stage,
+    )
+    .await;
     let fixes = processed.all_fixes(&transcription.fixes);
     let model_id = crate::settings::get_settings(&app).selected_model;
     let model_name = app

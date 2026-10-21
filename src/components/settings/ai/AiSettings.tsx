@@ -30,6 +30,7 @@ import { aiName } from "../../../lib/utils/aiStatus";
 import { reveal } from "../../../lib/utils/reveal";
 import { Button } from "../../ui/Button";
 import { Dropdown } from "../../ui/Dropdown";
+import { Input } from "../../ui/Input";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { AiDotMark, useAiRetry } from "../../shared/AiStatusLine";
 
@@ -46,7 +47,10 @@ const KEY_INFO: Record<string, { prefix: string; console: string }> = {
 
 const KEYLESS = ["ollama", "custom"];
 const URL_EDITABLE = ["ollama", "custom"];
-export const AI_TIMEOUTS = [3, 6, 10, 20];
+/** Seconds a dictation's AI steps may wait (as in settings.rs). */
+export const AI_TIMEOUT_RANGE = [2, 120] as const;
+/** Seconds a Notes AI request may wait (as in settings.rs). */
+export const NOTES_AI_TIMEOUT_RANGE = [15, 600] as const;
 
 const hostOf = (url: string) => {
   try {
@@ -1004,6 +1008,51 @@ export const MinWordsRow: React.FC = () => {
   );
 };
 
+/** A number of seconds typed in, kept within `min`–`max` and saved when
+ *  the field loses focus or on Enter. */
+const SecondsField: React.FC<{
+  value: number;
+  min: number;
+  max: number;
+  label: string;
+  onSave: (seconds: number) => void;
+}> = ({ value, min, max, label, onSave }) => {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const save = () => {
+    const typed = Math.round(Number(draft));
+    if (!Number.isFinite(typed) || draft.trim() === "") {
+      setDraft(String(value));
+      return;
+    }
+    const seconds = Math.min(max, Math.max(min, typed));
+    setDraft(String(seconds));
+    if (seconds !== value) onSave(seconds);
+  };
+  return (
+    <label className="flex items-center gap-2 text-[13px] text-text-2">
+      <Input
+        type="number"
+        variant="compact"
+        inputMode="numeric"
+        className="w-20 text-end tabular-nums"
+        aria-label={label}
+        min={min}
+        max={max}
+        step={1}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+      />
+      {t("settings.ai.limits.timeout.unit")}
+    </label>
+  );
+};
+
 export const TimeoutRow: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting, updateSetting } = useSettings();
@@ -1011,17 +1060,40 @@ export const TimeoutRow: React.FC = () => {
   return (
     <SettingContainer
       title={t("settings.ai.limits.timeout.title")}
-      description={t("settings.ai.limits.timeout.help")}
+      description={t("settings.ai.limits.timeout.help", {
+        min: AI_TIMEOUT_RANGE[0],
+        max: AI_TIMEOUT_RANGE[1],
+      })}
     >
-      <Dropdown
-        className="w-[200px]"
-        ariaLabel={t("settings.ai.limits.timeout.title")}
-        selectedValue={String(seconds)}
-        options={AI_TIMEOUTS.map((s) => ({
-          value: String(s),
-          label: t("settings.ai.limits.timeout.option", { count: s }),
-        }))}
-        onSelect={(v) => updateSetting("ai_timeout_secs", Number(v))}
+      <SecondsField
+        value={seconds}
+        min={AI_TIMEOUT_RANGE[0]}
+        max={AI_TIMEOUT_RANGE[1]}
+        label={t("settings.ai.limits.timeout.title")}
+        onSave={(v) => updateSetting("ai_timeout_secs", v)}
+      />
+    </SettingContainer>
+  );
+};
+
+export const NotesTimeoutRow: React.FC = () => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting } = useSettings();
+  const seconds = getSetting("notes_ai_timeout_secs") ?? 120;
+  return (
+    <SettingContainer
+      title={t("settings.ai.limits.notesTimeout.title")}
+      description={t("settings.ai.limits.notesTimeout.help", {
+        min: NOTES_AI_TIMEOUT_RANGE[0],
+        max: NOTES_AI_TIMEOUT_RANGE[1],
+      })}
+    >
+      <SecondsField
+        value={seconds}
+        min={NOTES_AI_TIMEOUT_RANGE[0]}
+        max={NOTES_AI_TIMEOUT_RANGE[1]}
+        label={t("settings.ai.limits.notesTimeout.title")}
+        onSave={(v) => updateSetting("notes_ai_timeout_secs", v)}
       />
     </SettingContainer>
   );
