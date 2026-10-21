@@ -64,28 +64,12 @@ export const SnippetRow: React.FC<SnippetRowProps> = ({
       aria-selected={selected}
       onFocus={(e) => e.target === e.currentTarget && onFocusRow()}
       onClick={onEdit}
-      className={`group relative flex cursor-pointer items-center gap-3 border-b border-line py-3 ps-3 pe-4 transition-colors duration-[var(--dur-1)] last:border-b-0 hover:duration-0 ring-inside ${
+      className={`group relative flex cursor-pointer items-center gap-3 border-b border-line py-3 ps-4 pe-4 transition-colors duration-[var(--dur-1)] last:border-b-0 hover:duration-0 ring-inside ${
         selected
           ? "bg-teal-50 hover:bg-teal-50"
           : "hover:bg-surface-2 focus-visible:bg-surface-2"
       }`}
     >
-      <label
-        onClick={(e) => e.stopPropagation()}
-        className={`grid h-8 w-8 flex-none cursor-pointer place-items-center ${
-          selecting || selected
-            ? ""
-            : "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
-        }`}
-      >
-        <input
-          type="checkbox"
-          className="check"
-          checked={selected}
-          onChange={(e) => onSelect(e.target.checked)}
-          aria-label={t("snippets.row.select", { trigger: snippet.trigger })}
-        />
-      </label>
       <div className="w-[220px] min-w-0 flex-none">
         <div data-snippet-trigger className="truncate text-[15px] font-medium">
           {snippet.trigger}
@@ -100,7 +84,13 @@ export const SnippetRow: React.FC<SnippetRowProps> = ({
         <SnippetText text={snippet.text} />
       </div>
 
-      <div className="w-[170px] flex-none text-end text-[13px] group-focus-within:invisible group-hover:invisible">
+      <div
+        className={`w-[170px] flex-none text-end text-[13px] ${
+          selecting || selected
+            ? "invisible"
+            : "group-focus-within:invisible group-hover:invisible"
+        }`}
+      >
         {snippet.uses > 0 ? (
           <>
             <div className="tabular-nums text-text-2">
@@ -133,18 +123,38 @@ export const SnippetRow: React.FC<SnippetRowProps> = ({
         )}
       </div>
 
-      <div className="invisible absolute end-3 top-1/2 flex -translate-y-1/2 items-center gap-0.5 group-focus-within:visible group-hover:visible">
-        <RowButton
-          label={t("snippets.row.edit", { trigger: snippet.trigger })}
-          icon={Pencil}
-          onClick={onEdit}
-        />
-        <RowButton
-          label={t("snippets.row.delete", { trigger: snippet.trigger })}
-          icon={Trash2}
-          danger
-          onClick={onDelete}
-        />
+      {/* At the end rather than in front of the trigger, so an idle row
+          has no empty space where the checkbox would be. */}
+      <div className="absolute end-3 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+        <div className="invisible flex items-center gap-0.5 group-focus-within:visible group-hover:visible">
+          <RowButton
+            label={t("snippets.row.edit", { trigger: snippet.trigger })}
+            icon={Pencil}
+            onClick={onEdit}
+          />
+          <RowButton
+            label={t("snippets.row.delete", { trigger: snippet.trigger })}
+            icon={Trash2}
+            danger
+            onClick={onDelete}
+          />
+        </div>
+        <label
+          onClick={(e) => e.stopPropagation()}
+          className={`grid h-8 w-8 flex-none cursor-pointer place-items-center ${
+            selecting || selected
+              ? ""
+              : "invisible group-focus-within:visible group-hover:visible"
+          }`}
+        >
+          <input
+            type="checkbox"
+            className="check"
+            checked={selected}
+            onChange={(e) => onSelect(e.target.checked)}
+            aria-label={t("snippets.row.select", { trigger: snippet.trigger })}
+          />
+        </label>
       </div>
     </li>
   );
