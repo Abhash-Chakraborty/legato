@@ -67,6 +67,15 @@ pub fn is_elevated() -> bool {
     crate::elevation::is_elevated()
 }
 
+/// The clipboard's text, for Paste in the right-click menu; the webview
+/// can't read the clipboard without asking.
+#[tauri::command]
+#[specta::specta]
+pub fn read_clipboard_text(app: AppHandle) -> Option<String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    app.clipboard().read_text().ok()
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn is_portable() -> bool {

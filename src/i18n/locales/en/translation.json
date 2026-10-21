@@ -1296,6 +1296,12 @@
     "noOptionsFound": "No options found",
     "resetToDefault": "Reset to default"
   },
+  "contextMenu": {
+    "cut": "Cut",
+    "copy": "Copy",
+    "paste": "Paste",
+    "selectAll": "Select all"
+  },
   "accessibility": {
     "openSettings": "Open Privacy Settings"
   },

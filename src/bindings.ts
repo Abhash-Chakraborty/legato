@@ -619,6 +619,13 @@ async changeAdminAppsSetting(enabled: boolean) : Promise<Result<null, string>> {
 async isElevated() : Promise<boolean> {
     return await TAURI_INVOKE("is_elevated");
 },
+/**
+ * The clipboard's text, for Paste in the right-click menu; the webview
+ * can't read the clipboard without asking.
+ */
+async readClipboardText() : Promise<string | null> {
+    return await TAURI_INVOKE("read_clipboard_text");
+},
 async isPortable() : Promise<boolean> {
     return await TAURI_INVOKE("is_portable");
 },

@@ -818,6 +818,7 @@ pub fn run(cli_args: CliArgs) {
             commands::connections::change_mcp_enabled_setting,
             commands::connections::mcp_add_to,
             commands::is_portable,
+            commands::read_clipboard_text,
             commands::has_mica,
             commands::notify_update,
             commands::is_update_checks_locked,

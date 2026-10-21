@@ -14,6 +14,8 @@ syncThemeFromSettings();
 
 // Initialize i18n
 import "./i18n";
+import { installContextMenu } from "./lib/contextMenu";
+installContextMenu();
 
 // Initialize model store (loads models and sets up event listeners)
 import { useModelStore } from "./stores/modelStore";
