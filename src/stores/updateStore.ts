@@ -9,7 +9,10 @@ export type UpdateStatus =
   | "checking"
   | "upToDate"
   | "available"
-  | "installing";
+  | "installing"
+  /** A check you asked for didn't reach the update server. */
+  | "checkFailed"
+  | "installFailed";
 
 interface UpdateStore {
   status: UpdateStatus;

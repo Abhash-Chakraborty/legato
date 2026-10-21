@@ -40,6 +40,9 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
   const [isInstalling, setIsInstalling] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [showUpToDate, setShowUpToDate] = useState(false);
+  // A check you asked for, or an install, that failed: said until the next
+  // try, so the button doesn't look like it did nothing.
+  const [failed, setFailed] = useState<"check" | "install" | null>(null);
   const [showPortableUpdateDialog, setShowPortableUpdateDialog] =
     useState(false);
   const [portableInstallerUrl, setPortableInstallerUrl] = useState<string>(
@@ -102,6 +105,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
 
     try {
       setIsChecking(true);
+      if (isManualCheckRef.current) setFailed(null);
       const update = await check();
 
       if (update) {
@@ -128,6 +132,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
       }
     } catch (error) {
       console.error("Failed to check for updates:", error);
+      if (isManualCheckRef.current) setFailed("check");
     } finally {
       setIsChecking(false);
       isManualCheckRef.current = false;
@@ -151,6 +156,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
 
     try {
       setIsInstalling(true);
+      setFailed(null);
       setDownloadProgress(0);
       downloadedBytesRef.current = 0;
       contentLengthRef.current = 0;
@@ -183,6 +189,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
       await relaunch();
     } catch (error) {
       console.error("Failed to install update:", error);
+      setFailed("install");
     } finally {
       setIsInstalling(false);
       setDownloadProgress(0);
@@ -200,9 +207,13 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
         ? "checking"
         : updateAvailable
           ? "available"
-          : showUpToDate
-            ? "upToDate"
-            : "idle";
+          : failed === "check"
+            ? "checkFailed"
+            : failed === "install"
+              ? "installFailed"
+              : showUpToDate
+                ? "upToDate"
+                : "idle";
   useEffect(() => {
     useUpdateStore.getState().setStatus(status);
   }, [status]);
@@ -274,6 +285,14 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
           className={`inline-flex h-7 items-center gap-2 px-2 text-[13px] tabular-nums text-text-2 ${className}`}
         >
           {installingText}
+        </span>
+      )}
+      {(status === "checkFailed" || status === "installFailed") && (
+        <span
+          role="status"
+          className={`inline-flex h-7 items-center px-2 text-[13px] text-text-2 ${className}`}
+        >
+          {t(`footer.${status}`)}
         </span>
       )}
       {status === "upToDate" && (

@@ -40,7 +40,9 @@ export const VersionRow: React.FC = () => {
             ? progress > 0 && progress < 100
               ? t("footer.downloading", { progress })
               : t("footer.installing")
-            : t("settings.about.version.description");
+            : status === "checkFailed" || status === "installFailed"
+              ? t(`footer.${status}`)
+              : t("settings.about.version.description");
 
   return (
     <SettingContainer

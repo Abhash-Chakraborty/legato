@@ -1280,6 +1280,8 @@
     "installing": "Installing...",
     "preparing": "Preparing...",
     "checkForUpdates": "Check for updates",
+    "checkFailed": "Couldn't reach the update server. Try again later.",
+    "installFailed": "Couldn't install the update. Try again later.",
     "portableUpdateTitle": "Manual update required",
     "portableUpdateMessage": "Portable installs cannot be updated automatically. Download the installer for your system below, run it, and install to the same folder — your Data/ folder (settings, models, recordings) is kept in place.",
     "portableUpdateButton": "Download installer",
