@@ -38,9 +38,11 @@ export const NoteStatus: React.FC<{
   return (
     <span
       aria-live="polite"
-      className="inline-flex min-w-0 items-center gap-[7px] whitespace-nowrap text-xs tabular-nums text-text-3"
+      className="inline-flex min-w-0 max-w-full items-center gap-[7px] whitespace-nowrap text-xs tabular-nums text-text-3"
     >
-      <span>{t("scratchpad.words", { count: wordCount(text) })}</span>
+      <span className="flex-none">
+        {t("scratchpad.words", { count: wordCount(text) })}
+      </span>
       <span className="h-[3px] w-[3px] flex-none rounded-full bg-text-4" />
       {state === "failed" ? (
         <span className="text-danger">
@@ -64,7 +66,8 @@ export const NoteStatus: React.FC<{
           {t("scratchpad.status.saved")}
         </span>
       ) : (
-        <span>
+        // Next to Send to a named app the line runs out of room.
+        <span className="min-w-0 truncate">
           {t("scratchpad.status.edited", {
             when: relativeTime(note.updated_at, now, i18n.language),
           })}

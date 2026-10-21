@@ -1226,7 +1226,9 @@ export const ScratchpadWindow: React.FC = () => {
                   <Copy className="h-4 w-4" aria-hidden="true" />
                   {t("scratchpad.copy")}
                 </button>
-                <div className="pointer-events-auto relative flex flex-none">
+                {/* It gives way first: with the notes list open, the app's
+                    name shortens rather than pushing the menu button out. */}
+                <div className="pointer-events-auto relative flex min-w-0">
                   <button
                     type="button"
                     onClick={send}
@@ -1236,7 +1238,7 @@ export const ScratchpadWindow: React.FC = () => {
                         ? t("scratchpad.window.sendTip", { app: target.name })
                         : t("scratchpad.window.noTarget")
                     }
-                    className="inline-flex h-9 max-w-[200px] items-center gap-[7px] rounded-s-full bg-teal-fill pe-3 ps-3.5 text-[13px] font-medium text-white transition-colors duration-[var(--dur-1)] hover:bg-teal-fill-hover hover:duration-0 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-teal-fill"
+                    className="inline-flex h-9 min-w-0 max-w-[200px] items-center gap-[7px] rounded-s-full bg-teal-fill pe-3 ps-3.5 text-[13px] font-medium text-white transition-colors duration-[var(--dur-1)] hover:bg-teal-fill-hover hover:duration-0 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-teal-fill"
                   >
                     {target ? (
                       <AppIcon path={target.path} className="h-4 w-4" />
