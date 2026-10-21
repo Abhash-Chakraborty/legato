@@ -1249,6 +1249,7 @@ pub fn run(cli_args: CliArgs) {
             // Start menu shortcut and its jump list.
             desktop::set_app_id(app.handle());
             desktop::set_jump_list(app.handle());
+            desktop::raise_priority();
 
             // Create main window programmatically so we can set data_directory
             // for portable mode (redirects WebView2 cache to portable Data dir)

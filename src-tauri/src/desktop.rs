@@ -61,6 +61,24 @@ pub fn set_app_id(app: &AppHandle) {
     let _ = app;
 }
 
+/// Runs Legato a step above normal priority. It barely uses the CPU, but
+/// while a game had it, the microphone's capture thread missed its turn
+/// hundreds of times a dictation ("xruns": audio lost before it reached
+/// Legato) and shortcuts could lag. Processes Legato starts (the model's
+/// worker, WebView2) start at normal priority, so the heavy work doesn't
+/// compete with the game.
+pub fn raise_priority() {
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::System::Threading::{
+            GetCurrentProcess, SetPriorityClass, ABOVE_NORMAL_PRIORITY_CLASS,
+        };
+        if let Err(e) = SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS) {
+            warn!("Couldn't raise Legato's priority: {e}");
+        }
+    }
+}
+
 /// Writes the jump list's tasks: Dictate, Scratchpad and New note.
 pub fn set_jump_list(app: &AppHandle) {
     let id = app.config().identifier.clone();
