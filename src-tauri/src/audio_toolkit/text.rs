@@ -66,6 +66,32 @@ fn supports_soundex(key: &str) -> bool {
 
 /// How far apart two match keys are: Levenshtein distance over the longer
 /// length, with a boost when they sound alike. 0.0 is the same.
+/// The largest share of letters that may differ for a sound-alike to count
+/// as closer than its spelling.
+const PHONETIC_BOOST_LIMIT: f64 = 0.34;
+
+/// Words so common that a run made only of them is what the person said, not
+/// a name the model misheard: "in one" stays, though it sounds like "Inyon".
+const EVERYDAY: &[&str] = &[
+    "a", "about", "after", "again", "all", "also", "am", "an", "and", "any", "are", "as", "at",
+    "back", "be", "been", "but", "by", "can", "could", "day", "did", "do", "does", "done", "down",
+    "even", "for", "from", "get", "go", "going", "good", "got", "had", "has", "have", "he", "her",
+    "here", "him", "his", "how", "i", "if", "in", "into", "is", "it", "its", "just", "know", "let",
+    "like", "make", "may", "me", "might", "more", "most", "much", "must", "my", "need", "new",
+    "no", "not", "now", "of", "off", "oh", "ok", "okay", "on", "one", "only", "or", "our", "out",
+    "over", "right", "said", "say", "saying", "see", "she", "should", "so", "some", "than", "that",
+    "the", "their", "them", "then", "there", "these", "they", "think", "this", "those", "time",
+    "to", "too", "two", "up", "us", "very", "want", "was", "way", "we", "well", "were", "what",
+    "when", "where", "which", "who", "why", "will", "with", "would", "yeah", "yes", "you", "your",
+];
+
+/// Whether every word of a phrase is an everyday word, so the Dictionary
+/// shouldn't take it for one of its own.
+pub fn everyday_phrase(phrase: &str) -> bool {
+    let mut words = phrase.split_whitespace().map(build_match_key).peekable();
+    words.peek().is_some() && words.all(|w| w.is_empty() || EVERYDAY.contains(&w.as_str()))
+}
+
 fn match_score(a: &str, b: &str) -> f64 {
     let max_len = a.chars().count().max(b.chars().count()) as f64;
     // Calculate Levenshtein distance (normalized by length)
@@ -79,8 +105,11 @@ fn match_score(a: &str, b: &str) -> f64 {
     // still use edit distance, but must not receive a phonetic boost.
     let phonetic_match = supports_soundex(a) && supports_soundex(b) && soundex(a, b);
 
-    // Combine scores: favor phonetic matches, but also consider string similarity
-    if phonetic_match {
+    // Combine scores: favor phonetic matches, but also consider string
+    // similarity. Soundex keeps only a letter and three consonants, so short
+    // words that share them can still be far apart ("in one" and "Inyon");
+    // the boost goes only to near misses, about one edit in three letters.
+    if phonetic_match && levenshtein_score <= PHONETIC_BOOST_LIMIT {
         levenshtein_score * 0.3 // Give significant boost to phonetic matches
     } else {
         levenshtein_score
@@ -224,6 +253,9 @@ fn correct_close_words(
                 .iter()
                 .any(|word| !extract_punctuation(word).1.is_empty())
             {
+                continue;
+            }
+            if everyday_phrase(&ngram_words.join(" ")) {
                 continue;
             }
             let ngram = build_ngram(ngram_words);
@@ -743,6 +775,27 @@ mod tests {
         let language = OutputLanguageEvidence::UserSelected(language.to_string());
         let filtered = remove_filler_words(text, &language, custom_filler_words, true);
         normalize_transcription_output(&filtered)
+    }
+
+    #[test]
+    fn everyday_words_are_not_taken_for_names() {
+        let words = vec!["Inyon".to_string(), "Netbird".to_string()];
+        for said in [
+            "we can do it in one go",
+            "let me fill you in on it",
+            "I am saying the errors are back",
+            "this is not bad",
+        ] {
+            assert_eq!(apply_custom_words(said, &words, 0.18), said);
+        }
+        assert_eq!(
+            apply_custom_words("the netboard tunnel is down", &words, 0.18),
+            "the Netbird tunnel is down"
+        );
+        assert_eq!(
+            apply_custom_words("open in yon now", &words, 0.18),
+            "open Inyon now"
+        );
     }
 
     #[test]

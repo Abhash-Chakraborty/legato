@@ -557,6 +557,12 @@ pub async fn medium_pass(
         warn!("Cleanup at Medium: the answer changed too much, kept the rule-based text");
         return Ok(None);
     }
+    if ai_rules::invents_words(&input, &cleaned, &words) {
+        warn!(
+            "Cleanup at Medium: the answer brought in a Dictionary word, kept the rule-based text"
+        );
+        return Ok(None);
+    }
     let Some(restored) = crate::snippet_rules::from_ai(&cleaned, placeholders) else {
         warn!("Cleanup at Medium: the answer lost a snippet, kept the rule-based text");
         return Ok(None);
@@ -635,8 +641,7 @@ pub async fn correction_pass(
         warn!("Correction pass: the model's answer wasn't the expected JSON");
         return Ok(None);
     };
-    let spellings: Vec<&str> = entries.iter().map(|e| e.text.as_str()).collect();
-    let (corrected, changes) = ai_rules::apply_replacements(text, &spellings, &replacements);
+    let (corrected, changes) = ai_rules::apply_replacements(text, &words, &replacements);
     debug!(
         "Correction pass: {} of {} suggestions applied in {:?}",
         changes.len(),
