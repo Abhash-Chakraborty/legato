@@ -798,6 +798,8 @@ pub struct AfterPaste {
     pub history_id: Option<i64>,
     pub transform: Option<DictationTransform>,
     pub problem: Option<AiProblem>,
+    /// A newer dictation has the bar: record the run, show nothing.
+    pub quiet: bool,
 }
 
 /// Records the dictation's transform run and says what happened: the AI
@@ -830,6 +832,9 @@ pub fn after_dictation_paste(app: &AppHandle, done: AfterPaste) {
         change = Some(remember_change(run_id, &t.name, &t.before, &t.after));
     }
 
+    if done.quiet {
+        return;
+    }
     if let Some(problem) = &done.problem {
         overlay::show_overlay_notice_for(app, &ai::AiNotice::from(problem), PROBLEM_MS);
         return;

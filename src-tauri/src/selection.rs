@@ -204,20 +204,27 @@ fn with_enigo<T>(
 /// read as Win+Alt+Ctrl+C.
 #[cfg(windows)]
 pub(crate) fn wait_for_keys_up() {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
-    };
     let deadline = Instant::now() + Duration::from_secs(2);
-    while Instant::now() < deadline {
-        let down = [VK_LWIN, VK_RWIN, VK_MENU, VK_CONTROL, VK_SHIFT]
-            .iter()
-            .any(|key| unsafe { GetAsyncKeyState(i32::from(key.0)) } as u16 & 0x8000 != 0);
-        if !down {
-            break;
-        }
+    while Instant::now() < deadline && modifiers_down() {
         std::thread::sleep(Duration::from_millis(15));
     }
     std::thread::sleep(Duration::from_millis(40));
+}
+
+/// Whether Win, Alt, Ctrl or Shift is held.
+#[cfg(windows)]
+pub(crate) fn modifiers_down() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    };
+    [VK_LWIN, VK_RWIN, VK_MENU, VK_CONTROL, VK_SHIFT]
+        .iter()
+        .any(|key| unsafe { GetAsyncKeyState(i32::from(key.0)) } as u16 & 0x8000 != 0)
+}
+
+#[cfg(not(windows))]
+pub(crate) fn modifiers_down() -> bool {
+    false
 }
 
 #[cfg(not(windows))]

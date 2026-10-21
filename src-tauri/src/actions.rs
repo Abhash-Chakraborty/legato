@@ -23,9 +23,11 @@ use crate::TranscriptionCoordinator;
 use crate::{cleanup_rules, snippet_rules, style_rules};
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
@@ -39,15 +41,75 @@ struct RecordingErrorEvent {
     detail: Option<String>,
 }
 
-/// Drop guard that finishes the transcription pipeline, including immediate
-/// model unloading on early exits.
-struct FinishGuard(AppHandle, Arc<TranscriptionManager>);
-impl Drop for FinishGuard {
-    fn drop(&mut self) {
+/// Frees the shortcut for the next dictation: once the speech is
+/// transcribed (`release`), so the AI step and the paste go on in the
+/// background, or at the latest when the task ends, early exits included.
+struct FinishGuard(AppHandle, Arc<TranscriptionManager>, AtomicBool);
+impl FinishGuard {
+    fn release(&self) {
+        // Only once: a second drain would end the next dictation's
+        // recording in the coordinator.
+        if self.2.swap(true, Ordering::SeqCst) {
+            return;
+        }
         self.1.maybe_unload_immediately("transcription session");
         if let Some(c) = self.0.try_state::<TranscriptionCoordinator>() {
             c.notify_processing_finished();
         }
+    }
+}
+impl Drop for FinishGuard {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+/// Counts dictations as they start. One still finishing in the background
+/// when the next starts leaves the bar, the bubble and the tray to it.
+static DICTATION_SESSION: AtomicU64 = AtomicU64::new(0);
+
+fn is_current(session: u64) -> bool {
+    DICTATION_SESSION.load(Ordering::SeqCst) == session
+}
+
+/// Ends a dictation's bar, bubble and tray, unless a newer one has them.
+fn end_session(app: &AppHandle, session: u64) {
+    if is_current(session) {
+        utils::end_dictation(app);
+        set_tray_state(app, TrayIconState::Idle);
+    }
+}
+
+/// Dictations paste in the order they were spoken, even when a later one's
+/// AI step answers first. Each takes a turn when it stops.
+static NEXT_TURN: AtomicU64 = AtomicU64::new(0);
+static TURNS_DONE: Mutex<BTreeSet<u64>> = Mutex::new(BTreeSet::new());
+static TURN_NOW: once_cell::sync::Lazy<tokio::sync::watch::Sender<u64>> =
+    once_cell::sync::Lazy::new(|| tokio::sync::watch::Sender::new(0));
+
+/// A dictation's place in the paste order; dropping it, once the text is
+/// out or the dictation ended without any, lets the next one go.
+struct PasteTurn(u64);
+impl PasteTurn {
+    fn take() -> Self {
+        Self(NEXT_TURN.fetch_add(1, Ordering::SeqCst))
+    }
+
+    /// Waits for every earlier dictation to finish.
+    async fn wait(&self) {
+        let mut now = TURN_NOW.subscribe();
+        let _ = now.wait_for(|n| *n >= self.0).await;
+    }
+}
+impl Drop for PasteTurn {
+    fn drop(&mut self) {
+        let mut done = TURNS_DONE.lock().unwrap_or_else(|e| e.into_inner());
+        done.insert(self.0);
+        let mut now = *TURN_NOW.borrow();
+        while done.remove(&now) {
+            now += 1;
+        }
+        TURN_NOW.send_replace(now);
     }
 }
 
@@ -200,6 +262,21 @@ fn dictation_transform(
     }
 }
 
+/// Whether a dictation goes to the AI before it's pasted, so the bar can
+/// say it's polishing rather than leave the transcribing spinner up.
+fn polishes(
+    settings: &AppSettings,
+    text: &str,
+    mode: DictationMode,
+    category: Option<&str>,
+) -> bool {
+    let ai = ai::AiConfig::from_settings(settings).is_some();
+    let words = text.split_whitespace().count() as u32;
+    (ai && settings.cleanup_level == CleanupLevel::Medium)
+        || (ai && settings.ai_correction_enabled && words >= settings.ai_min_words)
+        || dictation_transform(settings, mode, category, text).is_some()
+}
+
 pub(crate) async fn process_transcription_output(
     app: &AppHandle,
     transcription: &str,
@@ -335,6 +412,7 @@ impl ShortcutAction for TranscribeAction {
         if crate::setup::intercept_start(app) {
             return;
         }
+        DICTATION_SESSION.fetch_add(1, Ordering::SeqCst);
 
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
@@ -577,9 +655,14 @@ impl ShortcutAction for TranscribeAction {
         // A practice scene in setup gets the text instead of the app in front.
         let practice = crate::setup::scene_target();
         crate::setup::status(app, crate::setup::PracticePhase::Transcribing);
+        let session = DICTATION_SESSION.load(Ordering::SeqCst);
+        let turn = PasteTurn::take();
 
         tauri::async_runtime::spawn(async move {
-            let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
+            let guard = FinishGuard(ah.clone(), Arc::clone(&tm), AtomicBool::new(false));
+            // A cancel stops this dictation only while it's the current one,
+            // never one finishing in the background behind the next.
+            let cancelled = || rm.was_cancelled_since(cancel_generation) && is_current(session);
             let _practice = practice
                 .is_some()
                 .then(|| crate::setup::PracticeGuard(ah.clone()));
@@ -596,11 +679,10 @@ impl ShortcutAction for TranscribeAction {
                     samples.len()
                 );
 
-                if rm.was_cancelled_since(cancel_generation) {
+                if cancelled() {
                     debug!("Transcription operation cancelled after recording stop");
                     tm.cancel_stream();
-                    utils::end_dictation(&ah);
-                    set_tray_state(&ah, TrayIconState::Idle);
+                    end_session(&ah, session);
                     return;
                 }
 
@@ -609,8 +691,7 @@ impl ShortcutAction for TranscribeAction {
                     // Tear down any streaming worker so its channel doesn't leak
                     // and block the next start_stream.
                     tm.cancel_stream();
-                    utils::end_dictation(&ah);
-                    set_tray_state(&ah, TrayIconState::Idle);
+                    end_session(&ah, session);
                 } else {
                     // Save WAV concurrently with transcription
                     let sample_count = samples.len();
@@ -668,10 +749,9 @@ impl ShortcutAction for TranscribeAction {
                         }
                     };
 
-                    if rm.was_cancelled_since(cancel_generation) {
+                    if cancelled() {
                         debug!("Transcription operation cancelled before output handling");
-                        utils::end_dictation(&ah);
-                        set_tray_state(&ah, TrayIconState::Idle);
+                        end_session(&ah, session);
                         return;
                     }
 
@@ -701,16 +781,14 @@ impl ShortcutAction for TranscribeAction {
                                     ms,
                                 )
                                 .await;
-                                utils::end_dictation(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
+                                end_session(&ah, session);
                                 return;
                             }
 
                             // Ask: the words are the instruction, not text to paste.
                             if mode == DictationMode::Ask {
                                 let _ = std::fs::remove_file(hm.recordings_dir().join(&file_name));
-                                utils::end_dictation(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
+                                end_session(&ah, session);
                                 crate::transforms::ask(&ah, transcription);
                                 return;
                             }
@@ -720,13 +798,24 @@ impl ShortcutAction for TranscribeAction {
                                 .as_ref()
                                 .filter(|_| mode != DictationMode::Scratchpad)
                                 .map(context::resolve);
-                            if post_process {
+                            let polishing = post_process
+                                || polishes(
+                                    &get_settings(&ah),
+                                    &transcription,
+                                    mode,
+                                    app_info.as_ref().map(|a| a.category.as_str()),
+                                );
+                            if polishing {
                                 if use_streaming_overlay {
                                     tm.emit_stream_working(StreamWorkKind::Polishing);
                                 } else {
                                     show_processing_overlay(&ah);
                                 }
                             }
+                            // The speech is text now: the shortcut can start
+                            // the next dictation while this one is polished
+                            // and pasted.
+                            guard.release();
                             let Some(processed) = complete_unless_cancelled(
                                 process_transcription_output(
                                     &ah,
@@ -734,21 +823,34 @@ impl ShortcutAction for TranscribeAction {
                                     mode,
                                     app_info.as_ref(),
                                 ),
-                                || rm.was_cancelled_since(cancel_generation),
+                                &cancelled,
                             )
                             .await
                             else {
                                 debug!("Transcription operation cancelled during output handling");
-                                utils::end_dictation(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
+                                end_session(&ah, session);
                                 return;
                             };
 
-                            if rm.was_cancelled_since(cancel_generation) {
+                            if cancelled() {
                                 debug!("Transcription operation cancelled before paste");
-                                utils::end_dictation(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
+                                end_session(&ah, session);
                                 return;
+                            }
+
+                            // Earlier dictations still polishing paste first.
+                            turn.wait().await;
+                            let quiet = !is_current(session);
+                            // The next dictation's shortcut may be held: a
+                            // Ctrl+V now would reach the app as Win+Ctrl+V
+                            // and let go of Ctrl under the hold.
+                            if quiet {
+                                let deadline = Instant::now() + Duration::from_secs(120);
+                                while crate::selection::modifiers_down()
+                                    && Instant::now() < deadline
+                                {
+                                    tokio::time::sleep(Duration::from_millis(20)).await;
+                                }
                             }
 
                             let fixes = processed.all_fixes(&fixes);
@@ -818,12 +920,10 @@ impl ShortcutAction for TranscribeAction {
                                         error!("Failed to record the paste: {}", e);
                                     }
                                 }
-                                utils::end_dictation(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
+                                end_session(&ah, session);
                                 crate::scratchpad::receive(&ah, processed.final_text);
                             } else if processed.final_text.is_empty() {
-                                utils::end_dictation(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
+                                end_session(&ah, session);
                             } else {
                                 let ah_clone = ah.clone();
                                 let paste_time = Instant::now();
@@ -843,10 +943,9 @@ impl ShortcutAction for TranscribeAction {
                                     .unwrap_or(get_settings(&ah).paste_method)
                                     == PasteMethod::None;
                                 ah.run_on_main_thread(move || {
-                                    if rm_for_paste.was_cancelled_since(cancel_generation) {
+                                    if rm_for_paste.was_cancelled_since(cancel_generation) && is_current(session) {
                                         debug!("Transcription operation cancelled before paste");
-                                        utils::end_dictation(&ah_clone);
-                                        set_tray_state(&ah_clone, TrayIconState::Idle);
+                                        end_session(&ah_clone, session);
                                         return;
                                     }
 
@@ -894,6 +993,7 @@ impl ShortcutAction for TranscribeAction {
                                             app_info.as_ref(),
                                             reason,
                                         );
+                                        if !quiet {
                                         crate::overlay::show_overlay_notice(
                                             &ah_clone,
                                             &crate::scratchpad::failed_paste_notice(
@@ -902,6 +1002,7 @@ impl ShortcutAction for TranscribeAction {
                                                 note_id,
                                             ),
                                         );
+                                        }
                                     }
                                     match &paste_result {
                                         Ok(()) => debug!(
@@ -949,8 +1050,7 @@ impl ShortcutAction for TranscribeAction {
                                             error!("Failed to record the paste: {}", e);
                                         }
                                     }
-                                    utils::end_dictation(&ah_clone);
-                                    set_tray_state(&ah_clone, TrayIconState::Idle);
+                                    end_session(&ah_clone, session);
                                     // The bar says what happened: a skipped AI
                                     // step, the transform's changes, or the paste.
                                     crate::transforms::after_dictation_paste(
@@ -962,23 +1062,25 @@ impl ShortcutAction for TranscribeAction {
                                             history_id: saved_id,
                                             transform: transform_run,
                                             problem: ai_problem,
+                                            quiet,
                                         },
                                     );
+                                    // The text is out: the next dictation's
+                                    // paste may go.
+                                    drop(turn);
                                 })
                                 .unwrap_or_else(|e| {
                                     error!("Failed to run paste on main thread: {:?}", e);
-                                    utils::end_dictation(&ah);
-                                    set_tray_state(&ah, TrayIconState::Idle);
+                                    end_session(&ah, session);
                                 });
                             }
                         }
                         Err(err) => {
-                            if rm.was_cancelled_since(cancel_generation) {
+                            if cancelled() {
                                 debug!(
                                     "Transcription operation cancelled after transcription error"
                                 );
-                                utils::end_dictation(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
+                                end_session(&ah, session);
                                 return;
                             }
 
@@ -1002,8 +1104,7 @@ impl ShortcutAction for TranscribeAction {
                                     error!("Failed to save failed history entry: {}", save_err);
                                 }
                             }
-                            utils::end_dictation(&ah);
-                            set_tray_state(&ah, TrayIconState::Idle);
+                            end_session(&ah, session);
                         }
                     }
                 }
@@ -1011,8 +1112,7 @@ impl ShortcutAction for TranscribeAction {
                 debug!("No samples retrieved from recording stop");
                 // Tear down any streaming worker so its channel doesn't leak.
                 tm.cancel_stream();
-                utils::end_dictation(&ah);
-                set_tray_state(&ah, TrayIconState::Idle);
+                end_session(&ah, session);
             }
         });
 
