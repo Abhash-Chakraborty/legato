@@ -610,3 +610,50 @@ async fn a_pairing_finishes_once_the_pc_can_be_reached() {
     stop_tx.send(true).unwrap();
     looping.abort();
 }
+
+/// A phone that had to connect over Bluetooth (the network wasn't up yet)
+/// moves to the network once the PC answers there, since Bluetooth is slow
+/// for recordings.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_phone_on_bluetooth_moves_to_the_network_when_it_answers() {
+    let (pc, _stop_pc) = start_pc().await;
+    let port: u16 = pc.addr.rsplit(':').next().unwrap().parse().unwrap();
+    let dial: Dialer = Arc::new(move |_mac: &str| Some(port));
+    let secret = pc.hub.open_pairing();
+    // Where the PC says it is now; the phone only knew a stale address.
+    pc.hub
+        .set_addrs(vec![pc.addr.clone(), "bt:AA:BB:CC:DD:EE:FF".into()]);
+    let pixel = phone("Pixel 8");
+    pixel
+        .network_check_ms
+        .store(300, std::sync::atomic::Ordering::Relaxed);
+    *pixel.bluetooth.lock().unwrap() = Some(dial);
+    pixel
+        .save_pc(&PairedPc {
+            device_id: pc.identity.device_id.clone(),
+            name: "Desk PC".into(),
+            fingerprint: pc.identity.fingerprint(),
+            addrs: vec!["127.0.0.1:1".into(), "bt:AA:BB:CC:DD:EE:FF".into()],
+        })
+        .unwrap();
+    let (stop_tx, stop) = watch::channel(false);
+    let looping = {
+        let pixel = pixel.clone();
+        tokio::spawn(async move {
+            pixel
+                .link_loop(Sessions::default(), Some(secret), stop)
+                .await
+        })
+    };
+    until("the link over Bluetooth", || {
+        pixel.via() == Some("bluetooth")
+    })
+    .await;
+    until("the move to the network", || {
+        pixel.is_online() && pixel.via().is_some_and(|v| v != "bluetooth")
+    })
+    .await;
+    assert!(pixel.paired_pc().is_some());
+    stop_tx.send(true).unwrap();
+    looping.abort();
+}

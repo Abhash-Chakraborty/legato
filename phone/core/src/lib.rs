@@ -52,6 +52,8 @@ pub struct Phone {
     pub bluetooth: Mutex<Option<Dialer>>,
     /// The PC said it transcribes recordings for the phone.
     pc_transcribes: AtomicBool,
+    /// How often a link over Bluetooth looks for the PC on the network again.
+    pub network_check_ms: std::sync::atomic::AtomicU64,
     /// Recordings sent to the PC, waiting for their text, by request id.
     waiting: Mutex<HashMap<String, std::sync::mpsc::Sender<Result<String, String>>>>,
     say: Box<dyn Fn(String) + Send + Sync>,
@@ -138,6 +140,7 @@ impl Phone {
             via: Mutex::new(None),
             bluetooth: Mutex::new(None),
             pc_transcribes: AtomicBool::new(false),
+            network_check_ms: std::sync::atomic::AtomicU64::new(30_000),
             waiting: Mutex::new(HashMap::new()),
             say,
         })
@@ -200,6 +203,12 @@ impl Phone {
             };
             let host: Arc<dyn Host> = self.clone();
             let dial = self.bluetooth.lock().unwrap().clone();
+            let upgraded = Arc::new(AtomicBool::new(false));
+            let watcher = tokio::spawn(self.clone().back_to_network(
+                sessions.clone(),
+                pc.device_id.clone(),
+                upgraded.clone(),
+            ));
             let result = link::connect(
                 &pc.addrs,
                 &pc.fingerprint,
@@ -211,6 +220,7 @@ impl Phone {
                 stop.clone(),
             )
             .await;
+            watcher.abort();
             self.online.store(false, Ordering::Relaxed);
             // The secret is spent once the PC has heard it, not when the PC was out of reach.
             if !matches!(&result, Err(e) if e.is::<link::Unreachable>()) {
@@ -229,9 +239,41 @@ impl Phone {
                     "Can't reach {}: {e:#}. Trying again in 5 s.",
                     pc.name
                 )),
+                Ok(_) if upgraded.load(Ordering::Relaxed) => {
+                    self.say(format!(
+                        "{} answers on the network again; moving off Bluetooth.",
+                        pc.name
+                    ));
+                    continue;
+                }
                 Ok(_) => self.say("Connection closed. Reconnecting in 5 s."),
             }
             tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    }
+
+    /// While the link runs over Bluetooth (the network wasn't there when it
+    /// connected), looks for the PC on the network every 30 s and, once it
+    /// answers and nothing is being transcribed, drops the slow link so the
+    /// next connection takes the network.
+    async fn back_to_network(
+        self: Arc<Self>,
+        sessions: Sessions,
+        pc_id: String,
+        upgraded: Arc<AtomicBool>,
+    ) {
+        loop {
+            let every = self.network_check_ms.load(Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_millis(every)).await;
+            if self.via() != Some("bluetooth") || !self.waiting.lock().unwrap().is_empty() {
+                continue;
+            }
+            let Some(pc) = self.paired_pc() else { return };
+            if link::network_answers(&pc.addrs).await && self.waiting.lock().unwrap().is_empty() {
+                upgraded.store(true, Ordering::Relaxed);
+                sessions.close(&pc_id);
+                return;
+            }
         }
     }
 

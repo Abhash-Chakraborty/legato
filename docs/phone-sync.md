@@ -38,7 +38,9 @@ legato://pair?v=1&id=<pc device id>&name=<pc name>&fp=<pc fingerprint>
 - Values are percent-encoded.
 
 The phone tries the network addresses all at once and takes the first that answers; when
-none does within 4 seconds, it tries Bluetooth. Either way it checks that the PC's
+none does within 4 seconds, it tries Bluetooth. A phone linked over Bluetooth looks for the PC
+on the network every 30 seconds and moves there once it answers and no recording is waiting
+on the PC, since Bluetooth is slow for recordings. Either way it checks that the PC's
 certificate matches `fp`. Then it sends `hello` with the secret. If the secret is right, the PC stores the
 phone's device ID and fingerprint and answers `welcome`. From then on, both sides only accept
 each other's stored fingerprint. Until the PC has heard the `hello`, the phone keeps the

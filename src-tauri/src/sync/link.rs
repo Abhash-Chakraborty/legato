@@ -155,6 +155,13 @@ impl Sessions {
         self.lock().1.clear();
     }
 
+    /// Ends this device's session here, without a goodbye: the link drops
+    /// and the other side sees it close.
+    #[allow(dead_code)] // Used by the phone (phone/core), not the app.
+    pub fn close(&self, device_id: &str) {
+        self.lock().1.remove(device_id);
+    }
+
     fn insert(&self, device_id: &str) -> (u64, mpsc::Receiver<Command>) {
         let (tx, rx) = mpsc::channel(64);
         let mut guard = self.lock();
@@ -317,6 +324,16 @@ async fn first_answer(addrs: &[&String]) -> Result<(TcpStream, SocketAddr)> {
         }
     }
     Err(last)
+}
+
+/// Whether any of the PC's network addresses (not Bluetooth) answers now.
+#[allow(dead_code)] // Used by the phone (phone/core), not the app.
+pub async fn network_answers(addrs: &[String]) -> bool {
+    let net: Vec<&String> = addrs
+        .iter()
+        .filter(|a| !a.starts_with(protocol::BT_PREFIX))
+        .collect();
+    !net.is_empty() && first_answer(&net).await.is_ok()
 }
 
 /// Opens the wire to the PC: any network address that answers, else
