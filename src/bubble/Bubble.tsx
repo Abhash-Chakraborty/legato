@@ -139,6 +139,9 @@ const Bubble: React.FC = () => {
   // both to the bubble while the bubble shows.
   const [phase, setPhase] = useState<"rec" | "work" | null>(null);
   const recording = phase === "rec";
+  const working = phase === "work";
+  // Which work: the words, or the steps after them (AI, a transform).
+  const [polishing, setPolishing] = useState(false);
   const [notes, setNotes] = useState<SessionInfo | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -161,6 +164,7 @@ const Bubble: React.FC = () => {
       // bubble shows, and null when it's over.
       listen<string | null>("bubble-dictation", (e) => {
         const state = e.payload;
+        setPolishing(state === "processing");
         setPhase(
           state === "recording" || state === "streaming"
             ? "rec"
@@ -340,14 +344,24 @@ const Bubble: React.FC = () => {
     on: boolean;
     icon: React.ReactNode;
   }[] = [
-    // Dictate turns into Done where it was, so a second click finishes;
-    // Cancel takes the last place while a dictation records.
+    // Dictate turns into Done where it was, so a second click finishes,
+    // then ripples while the words are written up, since the bubble stays
+    // open under the pointer that clicked Done; Cancel takes the last place
+    // until the dictation is over.
     {
       id: "dictate",
       dy: -STEP,
-      label: recording ? t("bubble.finishDictation") : t("bubble.dictate"),
-      on: recording,
-      icon: recording ? (
+      label: working
+        ? polishing
+          ? t("overlay.processing")
+          : t("overlay.transcribing")
+        : recording
+          ? t("bubble.finishDictation")
+          : t("bubble.dictate"),
+      on: recording || working,
+      icon: working ? (
+        <Meter levels={[0, 0, 0]} upright={false} />
+      ) : recording ? (
         <Check aria-hidden="true" />
       ) : (
         <Mic aria-hidden="true" />
@@ -362,7 +376,7 @@ const Bubble: React.FC = () => {
     },
     // While notes record, Stop takes the Scratchpad's place; the Notes
     // button opens the panel, which also has Pause.
-    recording
+    recording || working
       ? {
           id: "cancel",
           dy: STEP,
@@ -406,6 +420,7 @@ const Bubble: React.FC = () => {
       {layout.expanded ? (
         buttons.map((b) => {
           const key = keys[b.id];
+          const busy = working && b.id === "dictate";
           return (
             <div
               key={b.id}
@@ -421,11 +436,13 @@ const Bubble: React.FC = () => {
             >
               <button
                 type="button"
-                className={`bbtn ${b.on ? "on" : ""} ${b.id}`}
+                className={`bbtn ${b.on ? "on" : ""} ${b.id} ${busy ? "busy" : ""}`}
                 aria-label={b.label}
+                aria-disabled={busy || undefined}
                 onPointerEnter={() => setHot(b.id)}
                 onPointerLeave={() => setHot((h) => (h === b.id ? null : h))}
-                onPointerDown={(e) => onPointerDown(e, b.id)}
+                // Working, Dictate only says so: a click does nothing.
+                onPointerDown={(e) => onPointerDown(e, busy ? null : b.id)}
                 onPointerMove={(e) => {
                   // The bubble opens under a still pointer, so the middle
                   // button may not hear it enter.

@@ -194,6 +194,16 @@
   background: var(--teal-600);
   border-color: transparent;
 }
+/* Done was clicked and the words are being written up: the dot's ripple,
+   small, in the Dictate button. */
+.bbtn.busy .bmeter.h span {
+  height: 12px;
+  animation: bwork-h 900ms ease-in-out infinite;
+  animation-delay: calc(var(--i) * 110ms);
+}
+.bbtn.busy:active {
+  transform: translate(-50%, -50%);
+}
 .bbtn.on.notes {
   animation:
     bbtn-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both,
