@@ -1,10 +1,13 @@
 import React from "react";
 import { Toaster } from "sonner";
 
-/** Toasts, styled once for every window that shows them. */
-export const AppToaster: React.FC = () => (
+/** Toasts, styled once for every window that shows them. `bottom` lifts
+ *  them clear of controls along the window's bottom edge. */
+export const AppToaster: React.FC<{ bottom?: number }> = ({ bottom }) => (
   <Toaster
     theme="system"
+    offset={bottom === undefined ? undefined : { bottom }}
+    mobileOffset={bottom === undefined ? undefined : { bottom }}
     toastOptions={{
       unstyled: true,
       classNames: {

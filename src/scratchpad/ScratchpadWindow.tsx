@@ -1322,7 +1322,9 @@ export const ScratchpadWindow: React.FC = () => {
       {versionsOf && (
         <VersionHistory note={versionsOf} onClose={() => setVersionsOf(null)} />
       )}
-      <AppToaster />
+      {/* Above the floating Copy and Send bar (12 px from the bottom, 36 px
+          tall), which the toasts covered. */}
+      <AppToaster bottom={60} />
     </div>
   );
 };
