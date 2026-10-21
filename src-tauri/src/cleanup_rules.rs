@@ -164,6 +164,7 @@ pub fn light(text: &str, rules: &CleanupRules, list_style: ListStyle) -> String 
     }
     if rules.corrections {
         toks = scratch_that(toks);
+        toks = restarts(toks);
     }
     if rules.numbers {
         toks = numbers(toks);
@@ -467,6 +468,85 @@ fn scratch_that(mut toks: Vec<Tok>) -> Vec<Tok> {
     toks
 }
 
+/// Words that take back what was just said, longest first.
+const RESTART_MARKERS: &[&[&str]] = &[
+    &["no", "wait"],
+    &["i", "mean"],
+    &["or", "rather"],
+    &["no"],
+    &["actually"],
+    &["sorry"],
+    &["wait"],
+];
+
+/// Words that show a sentence describes or quotes speech, where a restart
+/// is meant to stay: "like, if I say at 12, no, at 4, it should…".
+const QUOTING: &[&str] = &[
+    "like", "say", "says", "said", "saying", "example", "quote", "if", "when",
+];
+
+/// "A meeting at 12, no, I want it at 4": when the words after a marker
+/// say again at least two words from earlier in the sentence, the speaker
+/// started over, so the first try and the marker go.
+fn restarts(mut toks: Vec<Tok>) -> Vec<Tok> {
+    let mut i = 1;
+    while i < toks.len() {
+        let Some(marker) = RESTART_MARKERS.iter().find(|m| {
+            m.iter()
+                .enumerate()
+                .all(|(k, w)| word_at(&toks, i + k).is_some_and(|t| core(t) == *w))
+        }) else {
+            i += 1;
+            continue;
+        };
+        let start = sentence_start(&toks, i);
+        let before: Vec<String> = (start..i)
+            .filter_map(|j| word_at(&toks, j))
+            .map(core)
+            .collect();
+        if before.is_empty() || before.iter().any(|w| QUOTING.contains(&w.as_str())) {
+            i += 1;
+            continue;
+        }
+        let after = i + marker.len();
+        let mut end = after;
+        while let Some(Tok::Word(w)) = toks.get(end) {
+            end += 1;
+            if ends_sentence(w) {
+                break;
+            }
+        }
+        let again: Vec<String> = (after..end)
+            .filter_map(|j| word_at(&toks, j))
+            .map(core)
+            .collect();
+        let found = (0..before.len()).find(|&p| {
+            before[p..]
+                .iter()
+                .zip(&again)
+                .take_while(|(a, b)| a == b)
+                .count()
+                >= 2
+        });
+        let Some(p) = found else {
+            i += 1;
+            continue;
+        };
+        let from = start + p;
+        let opened = word_at(&toks, from)
+            .and_then(|w| w.chars().find(|c| c.is_alphabetic()))
+            .is_some_and(char::is_uppercase);
+        toks.drain(from..after);
+        if opened {
+            if let Some(Tok::Word(w)) = toks.get_mut(from) {
+                *w = capitalize(w);
+            }
+        }
+        i = from + 1;
+    }
+    toks
+}
+
 fn is_numeric(word: &str) -> bool {
     let c = core(word);
     !c.is_empty()
@@ -486,6 +566,7 @@ fn corrections(toks: Vec<Tok>) -> Vec<Tok> {
                 (&["actually"][..], true),
                 (&["sorry"][..], true),
                 (&["no", "wait"][..], true),
+                (&["no"][..], true),
                 (&["i", "mean"][..], false),
             ]
             .into_iter()
@@ -1094,6 +1175,29 @@ mod tests {
             "ask Kasia, about it"
         );
         assert_eq!(all("I mean it"), "I mean it");
+        assert_eq!(all("at twelve no sixteen"), "at 16");
+    }
+
+    #[test]
+    fn a_restarted_sentence_keeps_the_second_try() {
+        assert_eq!(
+            all("I want to do a meeting at 12 no I want to do it at 16 o'clock"),
+            "I want to do it at 16 o'clock"
+        );
+        assert_eq!(
+            all("send it to Karol, no, send it to Kasia"),
+            "send it to Kasia"
+        );
+        assert_eq!(
+            all("Okay. We meet Monday, actually we meet Tuesday."),
+            "Okay. We meet Tuesday."
+        );
+        // Described, not meant: both stay.
+        let described = "like if I say at 12 no I want it at 16 it should keep the second";
+        assert_eq!(all(described), described);
+        // Nothing said again: no restart.
+        assert_eq!(all("there is no way, no way"), "there is no way, no way");
+        assert_eq!(all("I'm sorry I'm late"), "I'm sorry I'm late");
     }
 
     #[test]

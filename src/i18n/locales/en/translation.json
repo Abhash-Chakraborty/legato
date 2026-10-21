@@ -2240,7 +2240,7 @@
       },
       "corrections": {
         "title": "Self-corrections",
-        "help": "“at 3, actually 4” keeps 4; “scratch that” drops what came before it."
+        "help": "“at 3, actually 4” keeps 4; “at 12, no, I want it at 4” keeps the second try; “scratch that” drops what came before it."
       },
       "lists": {
         "title": "Lists",

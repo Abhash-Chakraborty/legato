@@ -2,15 +2,25 @@ use rustfft::{num_complex::Complex32, Fft, FftPlanner};
 use std::sync::Arc;
 
 // `db` below is not true dBFS: it's a per-bin average divided by the FFT
-// window size, which lands ~20 dB low for speech. So this window is calibrated
-// against measured mic audio (dictation ~-32 dBFS, room tone ~-48 dBFS) rather
-// than absolute dBFS. The old -55/-8 left speech ~1 px above the overlay's
-// floor, which reads as a frozen waveform (#1694). Not lowered past -68: at
-// -70 a noisy room starts making the idle waveform twitch.
+// window size, which lands ~20 dB low for speech. The meter starts from a
+// window calibrated against measured room tone (~-48 dBFS), then follows the microphone: the room's quiet sets the
+// bottom and the recent loudest moment the top. A fixed window left a quiet
+// mic ~1 px above the floor (#1694) and pinned a loud one at the top, and
+// either reads as a meter that doesn't follow the voice.
 const DB_MIN: f32 = -68.0;
-const DB_MAX: f32 = -30.0;
-const GAIN: f32 = 1.3;
-const CURVE_POWER: f32 = 0.7;
+const CURVE_POWER: f32 = 0.8;
+/// The top never comes closer to the room's quiet than this, so a silent
+/// room doesn't fill the bars with its own noise.
+const MIN_RANGE_DB: f32 = 16.0;
+/// How far above the room's quiet the bars start.
+const FLOOR_MARGIN_DB: f32 = 3.0;
+/// How fast the top falls back after a loud moment, per frame (~30 a
+/// second): about 4 dB a second.
+const PEAK_DECAY_DB: f32 = 0.13;
+/// How fast the quiet estimate follows a quieter frame, and creeps up to
+/// a louder one (about 10 s), per frame.
+const FLOOR_FALL: f32 = 0.2;
+const FLOOR_RISE: f32 = 0.004;
 
 pub struct AudioVisualiser {
     fft: Arc<dyn Fft<f32>>,
@@ -18,6 +28,9 @@ pub struct AudioVisualiser {
     bucket_ranges: Vec<(usize, usize)>,
     fft_input: Vec<Complex32>,
     noise_floor: Vec<f32>,
+    /// The room's quiet and the recent loudest frame, in the `db` scale.
+    floor: f32,
+    peak: f32,
     buffer: Vec<f32>,
     window_size: usize,
     buckets: usize,
@@ -77,6 +90,8 @@ impl AudioVisualiser {
             bucket_ranges,
             fft_input: vec![Complex32::new(0.0, 0.0); window_size],
             noise_floor: vec![-40.0; buckets], // Initialize to reasonable noise floor
+            floor: DB_MIN,
+            peak: DB_MIN + MIN_RANGE_DB,
             buffer: Vec::with_capacity(window_size * 2),
             window_size,
             buckets,
@@ -109,6 +124,7 @@ impl AudioVisualiser {
 
         // Compute power spectrum and bucket levels
         let mut buckets = vec![0.0; self.buckets];
+        let mut dbs = vec![-80.0f32; self.buckets];
 
         for (bucket_idx, &(start_bin, end_bin)) in self.bucket_ranges.iter().enumerate() {
             if start_bin >= end_bin || end_bin > self.fft_input.len() / 2 {
@@ -138,9 +154,27 @@ impl AudioVisualiser {
                     NOISE_ALPHA * db + (1.0 - NOISE_ALPHA) * self.noise_floor[bucket_idx];
             }
 
-            // Map configurable dB range to 0-1 with gain and curve shaping
-            let normalized = ((db - DB_MIN) / (DB_MAX - DB_MIN)).clamp(0.0, 1.0);
-            buckets[bucket_idx] = (normalized * GAIN).powf(CURVE_POWER).clamp(0.0, 1.0);
+            dbs[bucket_idx] = db;
+        }
+
+        // Follow the microphone: the loudest band sets this frame's level.
+        let frame_db = dbs.iter().copied().fold(f32::MIN, f32::max);
+        let rate = if frame_db < self.floor {
+            FLOOR_FALL
+        } else {
+            FLOOR_RISE
+        };
+        self.floor += (frame_db - self.floor) * rate;
+        self.peak = if frame_db > self.peak {
+            frame_db
+        } else {
+            self.peak - PEAK_DECAY_DB
+        };
+        let bottom = self.floor + FLOOR_MARGIN_DB;
+        let top = self.peak.max(self.floor + MIN_RANGE_DB);
+        for (level, db) in buckets.iter_mut().zip(&dbs) {
+            let normalized = ((db - bottom) / (top - bottom)).clamp(0.0, 1.0);
+            *level = normalized.powf(CURVE_POWER);
         }
 
         // Apply light smoothing to reduce jitter
@@ -158,5 +192,65 @@ impl AudioVisualiser {
         self.buffer.clear();
         // Reset noise floor to initial values
         self.noise_floor.fill(-40.0);
+        self.floor = DB_MIN;
+        self.peak = DB_MIN + MIN_RANGE_DB;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bars while "speaking" (a chord) and in the gaps (faint noise), after
+    /// the meter had a few seconds to settle, for a voice at `amplitude`.
+    fn speech_and_gaps(amplitude: f32) -> (f32, f32) {
+        let mut v = AudioVisualiser::new(16_000, 512, 16, 400.0, 4000.0);
+        let mut noise = 12345u32;
+        let (mut loud, mut quiet) = (Vec::new(), Vec::new());
+        for chunk in 0..(8 * 16_000 / 512) {
+            // 384 ms on, 384 ms off.
+            let speaking = (chunk / 12) % 2 == 0;
+            let samples: Vec<f32> = (0..512)
+                .map(|i| {
+                    let t = (chunk * 512 + i) as f32 / 16_000.0;
+                    noise = noise.wrapping_mul(1_103_515_245).wrapping_add(12345);
+                    // Room tone around -48 dBFS.
+                    let n = ((noise >> 16) as f32 / 32_768.0 - 1.0) * 0.007;
+                    let chord = [300.0, 800.0, 1500.0, 2500.0]
+                        .iter()
+                        .map(|f| (2.0 * std::f32::consts::PI * f * t).sin())
+                        .sum::<f32>()
+                        / 4.0;
+                    n + if speaking { chord * amplitude } else { 0.0 }
+                })
+                .collect();
+            let Some(levels) = v.feed(&samples) else {
+                continue;
+            };
+            let top = levels.iter().copied().fold(0.0, f32::max);
+            // Skip the first few seconds and the edges of each burst.
+            if chunk > 4 * 16_000 / 512 && chunk % 12 > 1 {
+                if speaking {
+                    loud.push(top)
+                } else {
+                    quiet.push(top)
+                }
+            }
+        }
+        let mean = |v: &[f32]| v.iter().sum::<f32>() / v.len() as f32;
+        (mean(&loud), mean(&quiet))
+    }
+
+    #[test]
+    fn bars_follow_a_quiet_and_a_loud_voice() {
+        // A quiet mic (~-40 dBFS speech) to a loud one.
+        for amplitude in [0.03, 0.15, 0.8] {
+            let (speaking, gaps) = speech_and_gaps(amplitude);
+            assert!(
+                speaking > 0.6 && speaking < 0.98,
+                "amplitude {amplitude}: speaking {speaking}"
+            );
+            assert!(gaps < 0.2, "amplitude {amplitude}: gaps {gaps}");
+        }
     }
 }
