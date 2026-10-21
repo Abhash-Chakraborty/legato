@@ -2882,6 +2882,7 @@
       "edit": "Edit",
       "editLabel": "Edit line",
       "saidBy": "Said by {{who}}",
+      "edited": "Line changed",
       "delete": "Delete line",
       "deleted": "Line deleted",
       "deleteFailed": "Couldn't delete the line",

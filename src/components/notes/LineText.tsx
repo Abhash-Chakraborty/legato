@@ -99,6 +99,18 @@ export const LineText: React.FC<{
     }
     setLearned(false);
     setFix(result.data.fix);
+    const before = line.text;
+    toast(t("notes.line.edited"), {
+      action: {
+        label: t("notes.toast.undo"),
+        onClick: () => {
+          setFix(null);
+          commands
+            .editNoteLine(line.id, line.who, line.speaker ?? null, before)
+            .catch(() => {});
+        },
+      },
+    });
   };
 
   const giveTo = async (to: Voice) => {
