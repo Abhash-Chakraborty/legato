@@ -24,10 +24,18 @@ fn with_enigo<T>(
 }
 
 fn write_text_to_clipboard(app_handle: &AppHandle, text: &str) -> Result<(), String> {
-    app_handle
-        .clipboard()
-        .write_text(text)
-        .map_err(|e| format!("Failed to write to clipboard: {}", e))
+    // Another app (a clipboard manager, a browser reading a copy) can hold
+    // the clipboard for a moment; giving up at once sent the dictation to
+    // the Scratchpad instead of pasting it.
+    let mut error = String::new();
+    for attempt in 1..=6 {
+        match app_handle.clipboard().write_text(text) {
+            Ok(()) => return Ok(()),
+            Err(e) => error = e.to_string(),
+        }
+        std::thread::sleep(Duration::from_millis(40 * attempt));
+    }
+    Err(format!("Failed to write to clipboard: {}", error))
 }
 
 fn finish_clipboard_paste(
