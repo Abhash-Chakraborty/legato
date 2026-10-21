@@ -24,14 +24,15 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::io::{self, BufRead, BufReader, Write};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command as ProcessCommand, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 use transcribe_cpp::{
-    Backend, RunOptions, SpeakerSegment, StreamOptions, StreamText, StreamUpdate, Transcript,
+    Backend, DeviceType, RunOptions, SpeakerSegment, StreamOptions, StreamText, StreamUpdate,
+    Transcript,
 };
 
 /// Spawn, backend init and device listing (listing first opens the GPU).
@@ -161,6 +162,40 @@ impl std::error::Error for EngineError {}
 #[derive(Debug, Clone, Copy)]
 pub struct CancelMark(u64);
 
+/// Stops an [`EngineSupervisor::transcribe_aside`] that's no longer
+/// wanted, by killing its worker.
+#[derive(Clone, Default)]
+pub struct AsideStop(Arc<Mutex<AsideState>>);
+
+#[derive(Default)]
+struct AsideState {
+    stopped: bool,
+    control: Option<Arc<Control>>,
+}
+
+impl AsideStop {
+    pub fn stop(&self) {
+        let mut state = lock(&self.0);
+        state.stopped = true;
+        if let Some(control) = state.control.take() {
+            control.kill();
+        }
+    }
+
+    fn stopped(&self) -> bool {
+        lock(&self.0).stopped
+    }
+
+    /// Hands over the worker to kill on a stop; false if already stopped.
+    fn attach(&self, control: &Arc<Control>) -> bool {
+        let mut state = lock(&self.0);
+        if !state.stopped {
+            state.control = Some(Arc::clone(control));
+        }
+        !state.stopped
+    }
+}
+
 /// The result of one stream feed, handed to the stream's callback.
 pub struct StreamProgress {
     pub update: StreamUpdate,
@@ -280,6 +315,34 @@ impl Shared {
         };
         match worker.call(&request, None, deadline)? {
             Response::Speakers(speakers) => Ok(speakers),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Transcribe one clip on the CPU in a worker of its own, which exits
+    /// when done.
+    fn transcribe_aside(
+        &self,
+        path: &Path,
+        pcm: &[f32],
+        stop: &AsideStop,
+        run: impl FnOnce(&LoadedInfo) -> RunOptions,
+    ) -> Result<Transcript, Failure> {
+        let mut worker = self.hello(true, false)?;
+        if !stop.attach(&worker.control) {
+            return Err(Failure::Cancelled);
+        }
+        let spec = LoadSpec {
+            path: path.to_path_buf(),
+            backend: Backend::Cpu,
+            device: DeviceSelector::Auto,
+        };
+        let info = worker.load(&spec)?;
+        let request = Request::Run {
+            options: run(&info),
+        };
+        match worker.call(&request, Some(pcm), CPU_DEADLINES.run(pcm.len()))? {
+            Response::Transcript(transcript) => Ok(transcript),
             other => Err(unexpected(&other)),
         }
     }
@@ -528,6 +591,37 @@ impl EngineSupervisor {
             result => result,
         }
         .map_err(EngineError::from)
+    }
+
+    /// Transcribe one clip of 16 kHz mono PCM with the model at `path`, on
+    /// the CPU, in a short-lived worker of its own beside the model worker,
+    /// which it leaves alone: a recording that ends while the model is
+    /// still loading on the GPU needn't wait for that load. `run` sets the
+    /// run up for the model once it's loaded there. A cancel since `mark`
+    /// or a [`AsideStop::stop`] stops it.
+    pub fn transcribe_aside(
+        &self,
+        mark: CancelMark,
+        path: &Path,
+        pcm: &[f32],
+        stop: &AsideStop,
+        run: impl FnOnce(&LoadedInfo) -> RunOptions,
+    ) -> Result<Transcript, EngineError> {
+        let result = self.shared.transcribe_aside(path, pcm, stop, run);
+        if stop.stopped() || self.shared.cancelled_since(mark.0) {
+            return Err(EngineError::Cancelled);
+        }
+        result.map_err(EngineError::from)
+    }
+
+    /// Whether a model may load on a GPU here: one is listed, it's allowed
+    /// and it hasn't failed. Never starts a worker to find out.
+    pub fn has_usable_gpu(&self) -> bool {
+        self.shared.gpu_allowed
+            && !self.shared.gpu_unavailable()
+            && lock(&self.shared.devices)
+                .as_ref()
+                .is_some_and(|devices| devices.iter().any(|d| d.device_type != DeviceType::Cpu))
     }
 
     /// The compute devices, as listed by the latest worker. If no worker has

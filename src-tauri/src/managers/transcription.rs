@@ -6,8 +6,8 @@ use crate::audio_toolkit::{
 };
 use crate::chinese_script::{convert_chinese_script, ChineseVariety};
 use crate::engine_supervisor::{
-    CancelMark, DeviceInfo, DeviceSelector, EngineError, EngineSupervisor, LoadSpec, LoadedInfo,
-    Unloading,
+    AsideStop, CancelMark, DeviceInfo, DeviceSelector, EngineError, EngineSupervisor, LoadSpec,
+    LoadedInfo, Unloading,
 };
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::model::ModelManager;
@@ -22,6 +22,7 @@ use policy::{batch_decode, live_decode, BatchDecode, ModelTraits};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
@@ -264,7 +265,19 @@ pub struct TranscriptionManager {
     /// yet. This prevents a second worker from starting after finalize/cancel
     /// closes the router but before the first worker has fully exited.
     active_stream_worker: Arc<AtomicU64>,
+    /// The model (id and file) being loaded onto a GPU, while that load
+    /// runs, so a recording that ends before it's done can be transcribed
+    /// on the CPU meanwhile.
+    gpu_load: Arc<Mutex<Option<(String, PathBuf)>>>,
+    /// Stops the CPU transcription running beside a GPU load, on a cancel.
+    aside: Arc<Mutex<Option<AsideStop>>>,
 }
+
+/// Recordings up to this long (16 kHz samples) are transcribed on the CPU
+/// when they end while the model is still loading on the GPU. Every model
+/// takes this much in one run, and the CPU gets through it in a few
+/// seconds; a longer recording usually ends after the load anyway.
+const ASIDE_MAX_SAMPLES: usize = 25 * 16_000;
 
 impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
@@ -283,6 +296,8 @@ impl TranscriptionManager {
             stream_active: Arc::new(AtomicBool::new(false)),
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
+            gpu_load: Arc::new(Mutex::new(None)),
+            aside: Arc::new(Mutex::new(None)),
         };
 
         // Start the idle watcher
@@ -634,18 +649,24 @@ impl TranscriptionManager {
             None => self.device_choice(),
         };
         let requested_device = format!("{:?}", device);
-        let info = self
-            .engine
-            .load(LoadSpec {
-                path: model_path.clone(),
-                backend,
-                device,
-            })
-            .map_err(|e| {
-                let error_msg = format!("Failed to load model {}: {}", model_id, e);
-                emit_loading_failed(&error_msg);
-                anyhow::anyhow!(error_msg)
-            })?;
+        let on_gpu =
+            device_index.is_none() && backend != Backend::Cpu && self.engine.has_usable_gpu();
+        if on_gpu {
+            *self.gpu_load.lock().unwrap() = Some((model_id.to_string(), model_path.clone()));
+        }
+        let loaded = self.engine.load(LoadSpec {
+            path: model_path.clone(),
+            backend,
+            device,
+        });
+        if on_gpu {
+            *self.gpu_load.lock().unwrap() = None;
+        }
+        let info = loaded.map_err(|e| {
+            let error_msg = format!("Failed to load model {}: {}", model_id, e);
+            emit_loading_failed(&error_msg);
+            anyhow::anyhow!(error_msg)
+        })?;
         // Reconcile the registry's advertised capabilities with the
         // loaded model's real ones (GGUF metadata) so badges/gating
         // reflect runtime truth, not the pre-download probe. The
@@ -947,6 +968,9 @@ impl TranscriptionManager {
     /// worker for it.
     pub fn cancel_transcription(&self) {
         self.engine.cancel();
+        if let Some(aside) = self.aside.lock().unwrap().take() {
+            aside.stop();
+        }
     }
 
     /// Emit a working-phase event to the streaming overlay (spinner + label).
@@ -968,8 +992,122 @@ impl TranscriptionManager {
     /// batch run of the whole recording when there is no live result.
     pub fn transcribe_recording(&self, samples: Vec<f32>) -> Result<FinishedText> {
         let started = Instant::now();
+        // Checked first: the live decode's finalize waits behind the load.
+        if let Some(outcome) = self.race_the_load(&samples) {
+            return self.complete(started, samples, Some(outcome?));
+        }
         let live = self.finalize_live(samples.len())?;
         self.complete(started, samples, live)
+    }
+
+    /// The first dictation after the model was unloaded can end while the
+    /// model is still loading on the GPU, which took 13 to 50 seconds on a
+    /// laptop's GPU that was busy or asleep. The CPU then transcribes the
+    /// recording in a worker of its own while the load goes on for the next
+    /// dictation, and whichever is ready first is used. `None` when no GPU
+    /// load is under way or the recording is too long for it.
+    fn race_the_load(&self, audio: &[f32]) -> Option<Result<RunOutcome>> {
+        if audio.len() > ASIDE_MAX_SAMPLES {
+            return None;
+        }
+        let (model_id, path) = self.gpu_load.lock().unwrap().clone()?;
+        info!("The model is still loading on the GPU; transcribing this recording on the CPU too");
+        // The live decode hasn't begun: it waits for the load.
+        self.cancel_stream();
+        let mark = self.engine.cancel_mark();
+        let stop = AsideStop::default();
+        *self.aside.lock().unwrap() = Some(stop.clone());
+        let settled = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel::<(bool, Result<RunOutcome>)>();
+        {
+            let manager = self.clone();
+            let (tx, stop, pcm) = (tx.clone(), stop.clone(), audio.to_vec());
+            thread::spawn(move || {
+                let result = manager.decode_aside(mark, &model_id, &path, &pcm, &stop);
+                let _ = tx.send((false, result));
+            });
+        }
+        {
+            let manager = self.clone();
+            let (settled, pcm) = (Arc::clone(&settled), audio.to_vec());
+            thread::spawn(move || {
+                {
+                    let mut is_loading = manager.is_loading.lock().unwrap();
+                    while *is_loading {
+                        is_loading = manager.loading_condvar.wait(is_loading).unwrap();
+                    }
+                }
+                let result = if settled.load(Ordering::Acquire) {
+                    Err(anyhow::anyhow!("the CPU finished first"))
+                } else {
+                    manager.decode_batch(pcm)
+                };
+                let _ = tx.send((true, result));
+            });
+        }
+        let started = Instant::now();
+        let mut failure = None;
+        for (on_gpu, result) in rx.iter().take(2) {
+            let where_ = if on_gpu { "GPU" } else { "CPU" };
+            match result {
+                Ok(outcome) => {
+                    settled.store(true, Ordering::Release);
+                    stop.stop();
+                    info!(
+                        "The {where_} finished this recording first, in {}ms",
+                        started.elapsed().as_millis()
+                    );
+                    return Some(Ok(outcome));
+                }
+                Err(e)
+                    if e.downcast_ref::<EngineError>()
+                        .is_some_and(|e| matches!(e, EngineError::Cancelled)) =>
+                {
+                    settled.store(true, Ordering::Release);
+                    stop.stop();
+                    return Some(Err(e));
+                }
+                Err(e) => {
+                    warn!("Transcribing on the {where_} while the model loaded failed: {e}");
+                    failure = Some(e);
+                }
+            }
+        }
+        Some(Err(
+            failure.unwrap_or_else(|| anyhow::anyhow!("Transcription failed"))
+        ))
+    }
+
+    /// Transcribe a recording on the CPU with the model at `path`, in a
+    /// worker of its own.
+    fn decode_aside(
+        &self,
+        mark: CancelMark,
+        model_id: &str,
+        path: &Path,
+        audio: &[f32],
+        stop: &AsideStop,
+    ) -> Result<RunOutcome> {
+        let settings = get_settings(&self.app_handle);
+        let language =
+            effective_language_for_model(&settings, self.model_manager.as_ref(), model_id);
+        let mut setup = None;
+        let transcript = self
+            .engine
+            .transcribe_aside(mark, path, audio, stop, |info| {
+                let run = run_setup(info, &settings, &language);
+                let options = run.run_options.clone();
+                setup = Some(run);
+                options
+            })
+            .map_err(engine_error)?;
+        let setup = setup.ok_or_else(|| anyhow::anyhow!("The model didn't load on the CPU"))?;
+        let (text, model_detected_language) = join_chunks(vec![transcript]);
+        Ok(RunOutcome {
+            setup,
+            text,
+            model_detected_language,
+        })
     }
 
     /// The final text of one transcription, from its live result or else a
