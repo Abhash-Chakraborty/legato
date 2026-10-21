@@ -331,7 +331,7 @@ pub fn init(app: &AppHandle) {
 }
 
 /// Whether the window in front fills its monitor (a video, a game, a
-/// slideshow). The desktop and the taskbar don't count.
+/// slideshow). The desktop, the taskbar and the window switcher don't count.
 fn foreground_fills_screen() -> bool {
     use windows::Win32::Foundation::RECT;
     use windows::Win32::Graphics::Gdi::{
@@ -351,9 +351,16 @@ fn foreground_fills_screen() -> bool {
         let mut class = [0u16; 64];
         let n = GetClassNameW(hwnd, &mut class);
         let class = String::from_utf16_lossy(&class[..n.max(0) as usize]);
+        // Alt+Tab and Task View fill the screen too, while you pick a window.
         if matches!(
             class.as_str(),
-            "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd"
+            "Progman"
+                | "WorkerW"
+                | "Shell_TrayWnd"
+                | "Shell_SecondaryTrayWnd"
+                | "XamlExplorerHostIslandWindow"
+                | "MultitaskingViewFrame"
+                | "TaskSwitcherWnd"
         ) {
             return false;
         }
