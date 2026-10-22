@@ -4,7 +4,7 @@
 //! rules (frames, the queue, addresses) are in `inyon_rules.rs`; the
 //! contract is Inyon's companion contract, version 1.
 
-use crate::inyon_rules::{self as rules, Frame, PaneRef, Waiting};
+use crate::inyon_rules::{self as rules, Frame, PaneRef, VoiceAnswer, Waiting};
 use crate::settings::{get_settings, write_settings};
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, info, warn};
@@ -13,7 +13,7 @@ use specta::Type;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, Notify};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
@@ -24,7 +24,21 @@ const CONTRACT_HEADER: &str = "X-Inyon-Contract";
 /// A ping this often keeps the socket alive through NATs and proxies.
 const PING_EVERY: Duration = Duration::from_secs(30);
 
+/// The binding a dictation for an agent runs under; it has no shortcut.
+pub const DICTATE_BINDING: &str = "inyon_dictate";
+
 static WAITING: Mutex<Option<Waiting>> = Mutex::new(None);
+/// Where the dictation running for an agent goes.
+static VOICE: Mutex<Option<VoiceTarget>> = Mutex::new(None);
+
+#[derive(Debug, Clone)]
+struct VoiceTarget {
+    pane: PaneRef,
+    agent: String,
+    /// The question it answers; with no options the words are a message.
+    key: Option<String>,
+    options: Vec<rules::PromptOption>,
+}
 /// Frames for the hub, while connected.
 static OUTBOX: Mutex<Option<mpsc::UnboundedSender<String>>> = Mutex::new(None);
 static CONNECTED: AtomicBool = AtomicBool::new(false);
@@ -373,14 +387,19 @@ pub async fn answer(
     pane: &str,
     option: u32,
     key: Option<String>,
+    text: Option<String>,
 ) -> Result<(), String> {
     let hub = get_settings(app).inyon.hub.ok_or("signedOut")?;
     let token = token().ok_or("signedOut")?;
+    let mut body = serde_json::json!({ "option": option, "key": key });
+    if let Some(text) = text {
+        body["text"] = text.into();
+    }
     let response = client()?
         .post(rules::pane_route(&hub, host, pane, "answer"))
         .header(CONTRACT_HEADER, rules::CONTRACT)
         .bearer_auth(token)
-        .json(&serde_json::json!({ "option": option, "key": key }))
+        .json(&body)
         .send()
         .await
         .map_err(|_| "unreachable".to_string())?;
@@ -406,4 +425,120 @@ pub async fn answer(
         show(app);
     }
     result
+}
+
+/// Types a message into an agent's session. Ok with how far it got
+/// ("delivered", "queued" or "sent"); errors are reason keys.
+pub async fn send_text(app: &AppHandle, pane: &PaneRef, text: &str) -> Result<String, String> {
+    let hub = get_settings(app).inyon.hub.ok_or("signedOut")?;
+    let token = token().ok_or("signedOut")?;
+    // A retry with the same id is never typed twice.
+    let request_id = format!(
+        "legato-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or_default()
+    );
+    let response = client()?
+        .post(rules::pane_route(&hub, &pane.host, &pane.pane, "send"))
+        .header(CONTRACT_HEADER, rules::CONTRACT)
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "text": text, "requestId": request_id }))
+        .send()
+        .await
+        .map_err(|_| "unreachable".to_string())?;
+    if !response.status().is_success() {
+        let reason = refusal(response).await;
+        if reason == "signedOut" {
+            removed(app);
+        }
+        return Err(reason);
+    }
+    let v: serde_json::Value = response.json().await.unwrap_or_default();
+    Ok(v.get("state")
+        .and_then(|s| s.as_str())
+        .unwrap_or("sent")
+        .to_string())
+}
+
+/// The mic on an agent's card: starts a dictation whose words answer its
+/// question, or stops the one running.
+pub fn dictate(app: &AppHandle, host: &str, pane: &str) {
+    let Some(coordinator) =
+        app.try_state::<crate::transcription_coordinator::TranscriptionCoordinator>()
+    else {
+        return;
+    };
+    let recording = app
+        .try_state::<std::sync::Arc<crate::managers::audio::AudioRecordingManager>>()
+        .is_some_and(|a| a.is_recording());
+    {
+        let mut voice = VOICE.lock().unwrap_or_else(|e| e.into_inner());
+        // A target left from a dictation that never started is replaced.
+        if voice.is_none() || !recording {
+            let alert = with_waiting(|w| w.current()).filter(|a| a.host == host && a.pane == pane);
+            *voice = Some(VoiceTarget {
+                pane: PaneRef {
+                    host: host.to_string(),
+                    pane: pane.to_string(),
+                },
+                agent: alert
+                    .as_ref()
+                    .map(|a| a.agent.clone())
+                    .unwrap_or_else(|| "agent".into()),
+                key: alert.as_ref().and_then(|a| a.key.clone()),
+                options: alert.map(|a| a.options).unwrap_or_default(),
+            });
+        }
+    }
+    coordinator.send_external_input(DICTATE_BINDING, "inyon");
+}
+
+/// A dictation for an agent was cancelled.
+pub fn dictation_cancelled() {
+    VOICE.lock().unwrap_or_else(|e| e.into_inner()).take();
+}
+
+/// The words of a dictation for an agent: matched to one of the question's
+/// options and sent as the answer, or typed in as a message when it asked
+/// nothing. The bar says what happened.
+pub fn receive(app: &AppHandle, text: String) {
+    let Some(target) = VOICE.lock().unwrap_or_else(|e| e.into_inner()).take() else {
+        return;
+    };
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let VoiceTarget {
+            pane,
+            agent,
+            key,
+            options,
+        } = target;
+        let result = if options.is_empty() {
+            send_text(&app, &pane, &text).await.map(|_| ())
+        } else {
+            match rules::voice_answer(&text, &options) {
+                Some(VoiceAnswer::Pick(n)) => {
+                    answer(&app, &pane.host, &pane.pane, n, key, None).await
+                }
+                Some(VoiceAnswer::WithText(n, said)) => {
+                    answer(&app, &pane.host, &pane.pane, n, key, Some(said)).await
+                }
+                None => Err("notAnOption".to_string()),
+            }
+        };
+        let notice = match &result {
+            Ok(()) => serde_json::json!({ "kind": "agent_sent", "agent": agent }),
+            Err(reason) => serde_json::json!({ "kind": "agent_failed", "reason": reason }),
+        };
+        if let Err(reason) = &result {
+            info!("Inyon: a spoken answer didn't go through ({reason})");
+        }
+        crate::overlay::show_overlay_notice(&app, &notice);
+    });
 }

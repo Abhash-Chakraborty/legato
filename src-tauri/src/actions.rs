@@ -166,6 +166,8 @@ pub(crate) enum DictationMode {
     Ask,
     /// Into the Scratchpad instead of the app in front.
     Scratchpad,
+    /// An answer to an agent waiting in Inyon, from the mic on its card.
+    Agent,
 }
 
 // Transcribe Action
@@ -293,7 +295,7 @@ fn dictation_transform(
             })
             .cloned()
         }
-        DictationMode::Ask | DictationMode::Scratchpad => None,
+        DictationMode::Ask | DictationMode::Scratchpad | DictationMode::Agent => None,
     }
 }
 
@@ -839,10 +841,15 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             }
 
-                            // The Scratchpad isn't an app with a style.
+                            // The Scratchpad and agents aren't apps with a style.
                             let app_info = started_in
                                 .as_ref()
-                                .filter(|_| mode != DictationMode::Scratchpad)
+                                .filter(|_| {
+                                    !matches!(
+                                        mode,
+                                        DictationMode::Scratchpad | DictationMode::Agent
+                                    )
+                                })
                                 .map(context::resolve);
                             let polishing = post_process
                                 || polishes(
@@ -980,6 +987,9 @@ impl ShortcutAction for TranscribeAction {
                                 }
                                 end_session(&ah, session);
                                 crate::scratchpad::receive(&ah, processed.final_text);
+                            } else if mode == DictationMode::Agent {
+                                end_session(&ah, session);
+                                crate::inyon::receive(&ah, processed.final_text);
                             } else if processed.final_text.is_empty() {
                                 end_session(&ah, session);
                             } else {
@@ -1288,6 +1298,12 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         crate::scratchpad::DICTATE_BINDING.to_string(),
         Arc::new(TranscribeAction {
             mode: DictationMode::Scratchpad,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        crate::inyon::DICTATE_BINDING.to_string(),
+        Arc::new(TranscribeAction {
+            mode: DictationMode::Agent,
         }) as Arc<dyn ShortcutAction>,
     );
     for (id, run) in [

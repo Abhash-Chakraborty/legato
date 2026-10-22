@@ -88,6 +88,8 @@ type OverlayNotice =
   | { kind: "notes_failed"; reason: string }
   | { kind: "call_never"; app: string }
   | { kind: "agent_done"; agent: string; title: string }
+  | { kind: "agent_sent"; agent: string }
+  | { kind: "agent_failed"; reason: string }
   | {
       kind: "transform_failed";
       name: string;
@@ -1031,6 +1033,10 @@ const RecordingOverlay: React.FC = () => {
           agent: agentName(n.agent),
           title: n.title,
         });
+      case "agent_sent":
+        return t("overlay.notice.agent_sent", { agent: agentName(n.agent) });
+      case "agent_failed":
+        return t(`inyon.reason.${n.reason}`, t("inyon.reason.failed"));
       case "transform_failed":
         return t("overlay.notice.transformFailed", {
           name: n.name,
@@ -1145,6 +1151,16 @@ const RecordingOverlay: React.FC = () => {
               {t("overlay.agent.more", { count: card.more })}
             </span>
           )}
+          <button
+            type="button"
+            className="sagent-voice"
+            aria-label={t("overlay.agent.voice")}
+            title={t("overlay.agent.voiceHelp")}
+            disabled={answering !== null}
+            onClick={() => commands.inyonDictate(card.host, card.pane)}
+          >
+            <Mic size={14} aria-hidden="true" />
+          </button>
         </div>
         <div className="sagent-body">
           {card.body.slice(0, 2).map((line, i) => (

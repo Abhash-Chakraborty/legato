@@ -1520,7 +1520,8 @@
       "callNever": "Legato won't offer notes in {{app}}",
       "fromPhone": "From {{name}} · on your clipboard",
       "fromPhoneImage": "Image from {{name}} · on your clipboard",
-      "agent_done": "{{agent}} finished: {{title}}"
+      "agent_done": "{{agent}} finished: {{title}}",
+      "agent_sent": "Answer sent to {{agent}}"
     },
     "working": "{{name}}…",
     "undo": "Undo",
@@ -1583,7 +1584,9 @@
       "asks": "{{agent}} needs you",
       "in": "in {{label}}",
       "more_one": "{{count}} more",
-      "more_other": "{{count}} more"
+      "more_other": "{{count}} more",
+      "voice": "Answer by voice",
+      "voiceHelp": "Say an option, like “yes” or “two”, or what to do instead. Press again to send."
     }
   },
   "titleBar": {
@@ -3541,7 +3544,8 @@
       "notLanded": "Sent, but the hub couldn't confirm it arrived.",
       "noAgent": "No agent runs in that session.",
       "scope": "Legato isn't allowed to do that.",
-      "failed": "That didn't work. Try again."
+      "failed": "That didn't work. Try again.",
+      "notAnOption": "Didn't catch which option. Say its number or its words."
     }
   }
 }

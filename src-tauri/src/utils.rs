@@ -104,6 +104,7 @@ pub fn cancel_current_operation(app: &AppHandle) {
     // A transform waiting for the model won't paste.
     crate::transforms::cancel();
     crate::scratchpad::dictation_cancelled(app);
+    crate::inyon::dictation_cancelled();
     crate::setup::cancelled(app);
 
     // Update tray icon and hide overlay

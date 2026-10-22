@@ -421,6 +421,99 @@ pub fn split_body(lines: &[String]) -> (Vec<String>, Vec<String>, Vec<String>) {
     }
 }
 
+/// What a spoken answer to a question means.
+#[derive(Debug, Clone, PartialEq)]
+pub enum VoiceAnswer {
+    /// One of the options, by its number or its words.
+    Pick(u32),
+    /// The option that takes typed text ("No, and tell Claude what to do
+    /// differently"), with what was said.
+    WithText(u32, String),
+}
+
+/// Reads a spoken answer against a question's options: a number ("two",
+/// "option 2"), an option's words ("yes", "yes and don't ask again"), or
+/// else what was said, for the option that takes text. None when nothing
+/// fits, so nothing is sent on a guess.
+pub fn voice_answer(said: &str, options: &[PromptOption]) -> Option<VoiceAnswer> {
+    let words = |s: &str| -> Vec<String> {
+        s.to_lowercase()
+            .replace("n't", "nt")
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_string)
+            .collect()
+    };
+    let spoken = words(said);
+    let spoken = match spoken.as_slice() {
+        [first, rest @ ..] if first == "option" || first == "number" => rest.to_vec(),
+        _ => spoken,
+    };
+    if spoken.is_empty() {
+        return None;
+    }
+    // A number on its own.
+    const NUMBERS: [&str; 10] = [
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    ];
+    const ORDINALS: [&str; 10] = [
+        "", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth",
+    ];
+    if let [w] = spoken.as_slice() {
+        let n = w.parse::<u32>().ok().or_else(|| {
+            NUMBERS
+                .iter()
+                .chain(ORDINALS.iter())
+                .position(|x| x == w)
+                .map(|i| (i % 10) as u32)
+        });
+        if let Some(n) = n.filter(|n| options.iter().any(|o| o.n == *n)) {
+            return Some(VoiceAnswer::Pick(n));
+        }
+    }
+    // An option's own words, or a short way of saying it.
+    let synonym = |w: &String| -> String {
+        match w.as_str() {
+            "allow" | "approve" | "sure" | "ok" | "okay" | "yeah" | "yep" => "yes".into(),
+            "deny" | "nope" | "dont" => "no".into(),
+            _ => w.clone(),
+        }
+    };
+    let spoken: Vec<String> = spoken.iter().map(synonym).collect();
+    let labels: Vec<(u32, Vec<String>)> = options
+        .iter()
+        .map(|o| (o.n, words(&o.label).iter().map(synonym).collect()))
+        .collect();
+    if let Some((n, _)) = labels.iter().find(|(_, l)| *l == spoken) {
+        return Some(VoiceAnswer::Pick(*n));
+    }
+    // The longest label the words start with, if they say no more than it.
+    if let Some((n, _)) = labels
+        .iter()
+        .filter(|(_, l)| l.len() > 1 && spoken.len() <= l.len() + 1 && spoken.starts_with(l))
+        .max_by_key(|(_, l)| l.len())
+    {
+        return Some(VoiceAnswer::Pick(*n));
+    }
+    // Anything else goes, as said, to the option that takes text.
+    let takes_text = options.iter().find(|o| {
+        let l = o.label.to_lowercase();
+        l.contains("tell ") || l.contains("type") || l.contains("something else")
+    })?;
+    let text = said.trim();
+    // "No, run the tests first" is the instruction, not the "no".
+    let text = ["no,", "no.", "no "]
+        .iter()
+        .find_map(|p| {
+            text.get(..p.len())
+                .filter(|h| h.eq_ignore_ascii_case(p))
+                .map(|_| text[p.len()..].trim())
+        })
+        .filter(|t| !t.is_empty())
+        .unwrap_or(text);
+    Some(VoiceAnswer::WithText(takes_text.n, text.to_string()))
+}
+
 /// How long to wait before reconnecting after `failures` failed tries in a
 /// row: 1 s, doubling to a minute.
 pub fn backoff_secs(failures: u32) -> u64 {
@@ -549,6 +642,53 @@ mod tests {
         assert_eq!(alert.key.as_deref(), Some("BashcommandWritehello-inyon"));
         waiting.answered(&me, alert.key.as_deref());
         assert_eq!(waiting.current(), None);
+    }
+
+    #[test]
+    fn spoken_answers_pick_an_option() {
+        let opts = |v: &[&str]| {
+            v.iter()
+                .enumerate()
+                .map(|(i, l)| PromptOption {
+                    n: i as u32 + 1,
+                    label: l.to_string(),
+                })
+                .collect::<Vec<_>>()
+        };
+        let claude = opts(&[
+            "Yes",
+            "Yes, and don't ask again for rm commands",
+            "No, and tell Claude what to do differently",
+        ]);
+        use VoiceAnswer::*;
+        assert_eq!(voice_answer("Yes.", &claude), Some(Pick(1)));
+        assert_eq!(voice_answer("Allow", &claude), Some(Pick(1)));
+        assert_eq!(voice_answer("Two", &claude), Some(Pick(2)));
+        assert_eq!(voice_answer("option 3", &claude), Some(Pick(3)));
+        assert_eq!(
+            voice_answer("Yes, and don't ask again for rm commands.", &claude),
+            Some(Pick(2))
+        );
+        assert_eq!(
+            voice_answer("No, run the tests first.", &claude),
+            Some(WithText(3, "run the tests first.".into()))
+        );
+        assert_eq!(
+            voice_answer("Use cargo test instead", &claude),
+            Some(WithText(3, "Use cargo test instead".into()))
+        );
+        // The test hub's prompt: plain Yes / No, nothing takes text.
+        let plain = opts(&["Yes", "Yes, and don't ask again for echo commands", "No"]);
+        assert_eq!(voice_answer("no", &plain), Some(Pick(3)));
+        assert_eq!(voice_answer("Deny.", &plain), Some(Pick(3)));
+        assert_eq!(voice_answer("Seven", &plain), None);
+        assert_eq!(voice_answer("maybe later", &plain), None);
+        assert_eq!(voice_answer("", &plain), None);
+        // Codex asking which branch.
+        let branch = opts(&["main", "win-wip", "A new branch"]);
+        assert_eq!(voice_answer("Win wip", &branch), Some(Pick(2)));
+        assert_eq!(voice_answer("A new branch.", &branch), Some(Pick(3)));
+        assert_eq!(voice_answer("the first one", &branch), None);
     }
 
     #[test]

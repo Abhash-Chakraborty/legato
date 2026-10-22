@@ -543,6 +543,7 @@ pub fn is_transcribe_binding(id: &str) -> bool {
         || id == "transcribe_with_post_process"
         || id == "ask"
         || id == crate::scratchpad::DICTATE_BINDING
+        || id == crate::inyon::DICTATE_BINDING
 }
 
 impl TranscriptionCoordinator {

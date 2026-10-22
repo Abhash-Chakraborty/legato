@@ -626,6 +626,12 @@ async inyonAnswer(host: string, pane: string, option: number, key: string | null
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The mic on an agent's card: answer it by voice.
+ */
+async inyonDictate(host: string, pane: string) : Promise<void> {
+    await TAURI_INVOKE("inyon_dictate", { host, pane });
+},
 async calendarList() : Promise<CalendarStatus[]> {
     return await TAURI_INVOKE("calendar_list");
 },

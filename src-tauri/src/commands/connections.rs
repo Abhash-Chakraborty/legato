@@ -52,7 +52,14 @@ pub async fn inyon_answer(
     option: u32,
     key: Option<String>,
 ) -> Result<(), String> {
-    crate::inyon::answer(&app, &host, &pane, option, key).await
+    crate::inyon::answer(&app, &host, &pane, option, key, None).await
+}
+
+/// The mic on an agent's card: answer it by voice.
+#[tauri::command]
+#[specta::specta]
+pub fn inyon_dictate(app: AppHandle, host: String, pane: String) {
+    crate::inyon::dictate(&app, &host, &pane);
 }
 
 #[tauri::command]

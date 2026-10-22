@@ -844,6 +844,7 @@ pub fn run(cli_args: CliArgs) {
             commands::connections::inyon_unpair,
             commands::connections::inyon_set_alerts,
             commands::connections::inyon_answer,
+            commands::connections::inyon_dictate,
             commands::connections::calendar_list,
             commands::connections::calendar_add,
             commands::connections::calendar_remove,
