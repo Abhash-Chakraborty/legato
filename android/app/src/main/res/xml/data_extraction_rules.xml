@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This phone's key and its pairing stay on this phone: a phone set up
+     from it by cable or Quick Switch pairs again instead of posing as it. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="phone/identity.json" />
+        <exclude domain="file" path="phone/pc.json" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="phone/identity.json" />
+        <exclude domain="file" path="phone/pc.json" />
+    </device-transfer>
+</data-extraction-rules>

@@ -69,6 +69,29 @@ pub struct Phone {
     /// Recordings sent to the PC, waiting for their text, by request id.
     waiting: Mutex<HashMap<String, std::sync::mpsc::Sender<Result<String, String>>>>,
     say: Box<dyn Fn(String) + Send + Sync>,
+    /// Cuts the wait before the next try short (the app came to the front,
+    /// the network changed).
+    wake: tokio::sync::Notify,
+}
+
+/// How long to wait before the next try after `failures` failed ones: from
+/// 2 s, doubling, to 5 minutes, give or take a fifth so phones on one
+/// network don't all knock at once. A PC that's off for a weekend costs a
+/// few hundred tries, not fifty thousand.
+pub fn retry_after(failures: u32, jitter: f64) -> Duration {
+    let base = 2u64
+        .saturating_mul(1 << failures.saturating_sub(1).min(16))
+        .min(300) as f64;
+    let jitter = jitter.clamp(0.0, 1.0) * 0.4 - 0.2;
+    Duration::from_secs_f64(base * (1.0 + jitter))
+}
+
+fn jitter() -> f64 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    f64::from(nanos % 1000) / 1000.0
 }
 
 /// How a connection attempt ended, for the reconnect loop.
@@ -155,11 +178,17 @@ impl Phone {
             network_check_ms: std::sync::atomic::AtomicU64::new(30_000),
             waiting: Mutex::new(HashMap::new()),
             say,
+            wake: tokio::sync::Notify::new(),
         })
     }
 
     pub fn is_online(&self) -> bool {
         self.online.load(Ordering::Relaxed)
+    }
+
+    /// Tries the PC again now rather than after the backoff.
+    pub fn wake(&self) {
+        self.wake.notify_waiters();
     }
 
     /// Whether the PC transcribes recordings for this phone (while connected).
@@ -225,14 +254,16 @@ impl Phone {
     }
 
     /// Keeps a connection to the paired PC: connects, and when the link drops
-    /// tries again every 5 seconds until `stop` flips or the pairing is gone.
+    /// tries again, backing off (`retry_after`), until `stop` flips or the
+    /// pairing is gone.
     /// `secret` is the one-time pairing secret for a first connection.
     pub async fn link_loop(
         self: &Arc<Self>,
         sessions: Sessions,
         mut secret: Option<String>,
-        stop: watch::Receiver<bool>,
+        mut stop: watch::Receiver<bool>,
     ) -> LinkEnd {
+        let mut failures = 0u32;
         loop {
             let Some(pc) = self.paired_pc() else {
                 return LinkEnd::Stopped;
@@ -271,10 +302,23 @@ impl Phone {
                     let _ = self.forget_pc();
                     return LinkEnd::Refused(format!("{e:#}"));
                 }
-                Err(e) => self.say(format!(
-                    "Can't reach {}: {e:#}. Trying again in 5 s.",
-                    pc.name
-                )),
+                Err(e) => {
+                    failures += 1;
+                    let wait = retry_after(failures, jitter());
+                    self.say(format!(
+                        "Can't reach {}: {e:#}. Trying again in {} s.",
+                        pc.name,
+                        wait.as_secs().max(1)
+                    ));
+                    tokio::select! {
+                        _ = tokio::time::sleep(wait) => {}
+                        _ = self.wake.notified() => {}
+                        changed = stop.changed() => if changed.is_err() {
+                            return LinkEnd::Stopped;
+                        },
+                    }
+                    continue;
+                }
                 Ok(_) if upgraded.load(Ordering::Relaxed) => {
                     self.say(format!(
                         "{} answers on the network again; moving off Bluetooth.",
@@ -282,9 +326,19 @@ impl Phone {
                     ));
                     continue;
                 }
-                Ok(_) => self.say("Connection closed. Reconnecting in 5 s."),
+                Ok(_) => {
+                    failures = 0;
+                    self.say("Connection closed. Reconnecting in 2 s.");
+                }
             }
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            let wait = retry_after(1, jitter());
+            tokio::select! {
+                _ = tokio::time::sleep(wait) => {}
+                _ = self.wake.notified() => {}
+                changed = stop.changed() => if changed.is_err() {
+                    return LinkEnd::Stopped;
+                },
+            }
         }
     }
 
@@ -631,5 +685,19 @@ impl Host for Phone {
     fn forgotten(&self, _peer: &str) {
         let _ = self.forget_pc();
         self.say("The PC unpaired this phone");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retries_back_off_to_five_minutes_with_jitter() {
+        assert_eq!(retry_after(1, 0.5), Duration::from_secs(2));
+        assert_eq!(retry_after(3, 0.5), Duration::from_secs(8));
+        assert_eq!(retry_after(40, 0.5), Duration::from_secs(300));
+        assert_eq!(retry_after(40, 0.0), Duration::from_secs(240));
+        assert_eq!(retry_after(40, 1.0), Duration::from_secs(360));
     }
 }

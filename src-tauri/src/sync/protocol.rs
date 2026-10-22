@@ -275,9 +275,9 @@ impl PairLink {
         if get("v")? != "1" {
             bail!("this pairing link is from a newer Legato");
         }
-        Ok(Self {
+        let link = Self {
             device_id: get("id")?,
-            name: get("name")?,
+            name: get("name")?.chars().take(60).collect(),
             fingerprint: get("fp")?,
             addrs: get("addr")?
                 .split(',')
@@ -285,8 +285,22 @@ impl PairLink {
                 .map(str::to_string)
                 .collect(),
             secret: get("secret")?,
-        })
+        };
+        if link.addrs.is_empty() || !link.addrs.iter().all(|a| link_addr_ok(a)) {
+            bail!("this pairing link points outside your network, so it isn't from your PC");
+        }
+        Ok(link)
     }
+}
+
+/// An address a PC of yours puts in its link: Bluetooth, or a socket
+/// address on the local network or a VPN. A public one means someone
+/// else made the link, to have the phone sync with them.
+fn link_addr_ok(addr: &str) -> bool {
+    addr.starts_with(BT_PREFIX)
+        || addr
+            .parse::<std::net::SocketAddr>()
+            .is_ok_and(|a| local_peer(a.ip()))
 }
 
 fn encode(value: &str) -> String {
@@ -346,6 +360,21 @@ mod tests {
         assert_eq!(PairLink::parse(&uri).unwrap(), link);
         assert!(PairLink::parse("https://example.com").is_err());
         assert!(PairLink::parse(&uri.replace("v=1", "v=2")).is_err());
+
+        // A link to a public address is someone else's "PC".
+        let public = PairLink {
+            addrs: vec!["203.0.113.5:443".into()],
+            ..link.clone()
+        };
+        assert!(PairLink::parse(&public.to_uri()).is_err());
+        let bluetooth = PairLink {
+            addrs: vec![
+                "bt:AA:BB:CC:DD:EE:FF".into(),
+                "[fd7a:115c:a1e0::5]:47613".into(),
+            ],
+            ..link
+        };
+        assert!(PairLink::parse(&bluetooth.to_uri()).is_ok());
     }
 
     #[test]

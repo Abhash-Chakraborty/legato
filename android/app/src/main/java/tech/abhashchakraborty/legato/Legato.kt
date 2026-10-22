@@ -61,6 +61,16 @@ class Legato(private val context: Context) : CoreListener {
         // Whatever woke this process (the bubble, a memo, a share) may need the
         // PC, and Android restarts it in the background without the app open.
         if (state.value.paired) run { connect() }
+        // A new network (home Wi-Fi again, say) is worth a try at once,
+        // rather than after the reconnect backoff.
+        runCatching {
+            context.getSystemService(android.net.ConnectivityManager::class.java)
+                .registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: android.net.Network) {
+                        if (state.value.paired && !state.value.online) runCatching { core.connect() }
+                    }
+                })
+        }
     }
 
     override fun onLine(line: String) {
@@ -121,8 +131,11 @@ class Legato(private val context: Context) : CoreListener {
     fun clipboardOnFocus() {
         if (!autoClipboard || !state.value.online) return
         val text = runCatching {
-            context.getSystemService(android.content.ClipboardManager::class.java)
-                .primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
+            val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+            // Password managers mark what they copy; that stays on the phone.
+            val extras = clipboard.primaryClipDescription?.extras
+            if (extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true) return
+            clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
         }.getOrNull() ?: return
         scope.launch { if (sendClip(text)) onLine("Sent your clipboard to ${state.value.pcName ?: "the PC"}") }
     }

@@ -32,7 +32,9 @@ legato://pair?v=1&id=<pc device id>&name=<pc name>&fp=<pc fingerprint>
 
 - `addr` lists every address the phone may try: home network first, then Netbird (any
   100.64.0.0/10 address), then the PC's Bluetooth radio as `bt:` and its address, when
-  Bluetooth is on. Older phones skip a `bt:` address because it doesn't connect.
+  Bluetooth is on. Older phones skip a `bt:` address because it doesn't connect. Only private,
+  link-local and 100.64.0.0/10 addresses go in; the phone refuses a link that names any other
+  address, since such a link came from someone else's computer.
 - `secret` is 16 random bytes in unpadded base64url. It works once, for 10 minutes. Five wrong
   tries cancel it.
 - Values are percent-encoded.
@@ -46,6 +48,11 @@ phone's device ID and fingerprint and answers `welcome`. From then on, both side
 each other's stored fingerprint. Until the PC has heard the `hello`, the phone keeps the
 secret and sends it on every retry, so pairing while the PC is briefly out of reach finishes
 once it answers.
+
+The phone never pairs straight from a link. Scanned, pasted or opened from another app, the
+link is shown first: the PC's name, its addresses and, when the phone is paired with another
+PC, which one it replaces. It pairs when you tap Pair. The app's `legato://pair` filter isn't
+BROWSABLE, so a web page can't open it.
 
 The PC also offers the link as text ("Copy link") so the stand-in phone can use it.
 
@@ -198,6 +205,9 @@ phone records the dictation in its history, which syncs as usual.
 - `{"type":"ping"}` every 30 seconds, answered with `{"type":"pong"}`. Close after 90
   seconds of silence.
 - `{"type":"bye","reason":"unpaired"}` means the other side forgot you. Forget it too and close.
+- When the PC can't be reached the phone waits 2 seconds before trying again, doubling each
+  time up to 5 minutes, give or take a fifth so phones on one network don't all try at once.
+  Opening the app or joining a new network tries again at once.
 
 ## Merging
 
@@ -261,6 +271,8 @@ Legato bar settings and API keys.
   `CanUploadToCloudClipboard` set to 0. Password managers set these.
 - Nor anything copied in an app on the "never share" list (KeePassXC, Bitwarden and 1Password
   to start with).
+- The phone never sends a clip Android marks sensitive (`android.content.extra.IS_SENSITIVE`,
+  which password managers set).
 - Clips Legato writes itself, including ones that just arrived, are never sent back.
 - Both sides keep the last 20 clips.
 
@@ -272,3 +284,7 @@ On the phone, Settings › Clipboard › Shared clipboard is Automatic or Manual
   the clip that just came from there.
 - **Manual** moves nothing on its own. Clips from the PC wait in Recent clips; the phone sends
   with Send the clipboard now, or Send to PC in any app's share menu and on selected text.
+
+Send to PC sends at once when it was picked from the system share sheet. Started any other way
+(selected text, or another app starting it directly) it asks first, so no app can put text on the
+PC's clipboard without you seeing it.

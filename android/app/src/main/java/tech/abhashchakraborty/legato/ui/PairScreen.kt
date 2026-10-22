@@ -78,13 +78,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 import tech.abhashchakraborty.legato.BluetoothLink
+import tech.abhashchakraborty.legato.core.PairPreview
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 
 private const val LINK_PREFIX = "legato://pair?"
 
 /**
  * Pairing with the PC: point the camera at the code in Legato › Settings ›
- * Devices, or paste the link from Copy link. A link opened from elsewhere
- * pairs straight away.
+ * Devices, or paste the link from Copy link. Every link, scanned, pasted or
+ * opened from elsewhere, is shown first (the PC's name, its addresses, the
+ * PC it replaces) and pairs only when you say so, since a link from someone
+ * else would sync this phone with their computer.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -130,7 +135,37 @@ fun PairScreen(link: String?, onDone: () -> Unit) {
         }
     }
 
-    LaunchedEffect(link) { if (!link.isNullOrBlank()) pairWith(link) }
+    // The link and what it would pair with, while you decide.
+    var confirm by remember { mutableStateOf<Pair<String, PairPreview>?>(null) }
+
+    fun ask(code: String) {
+        if (busy || waiting != null || confirm != null) return
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { legato.core.inspect(code.trim()) } }
+            r.onSuccess { confirm = code to it; error = null }
+                .onFailure { error = it.message ?: "That link didn't work; copy it again." }
+        }
+    }
+
+    LaunchedEffect(link) { if (!link.isNullOrBlank()) ask(link) }
+
+    confirm?.let { (code, preview) ->
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text("Pair with ${preview.pcName}?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(preview.addresses.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    preview.replaces?.let {
+                        Text("This replaces $it, which stops syncing with this ${legato.device}.", color = MaterialTheme.colorScheme.error)
+                    }
+                    Text("Only pair with a code your own PC shows in Settings › Devices.")
+                }
+            },
+            confirmButton = { TextButton(onClick = { confirm = null; pairWith(code) }) { Text("Pair") } },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancel") } },
+        )
+    }
 
     paired?.let { pc ->
         PairedView(pc, legato.device, onDone)
@@ -163,7 +198,7 @@ fun PairScreen(link: String?, onDone: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 if (cameraOn && !busy) {
-                    QrScanner(onCode = { pairWith(it) }, modifier = Modifier.fillMaxSize())
+                    QrScanner(onCode = { ask(it) }, modifier = Modifier.fillMaxSize())
                     ScanFrame()
                 } else if (busy) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -185,7 +220,7 @@ fun PairScreen(link: String?, onDone: () -> Unit) {
                 placeholder = { Text(LINK_PREFIX + "…") },
             )
             Button(
-                onClick = { pairWith(pasted) },
+                onClick = { ask(pasted) },
                 enabled = pasted.trim().startsWith(LINK_PREFIX) && !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Pair") }

@@ -5,14 +5,18 @@ use std::net::Ipv4Addr;
 
 use super::hub::address_kind;
 
-/// Every usable IPv4 address of an adapter that's up, with its kind
-/// ("lan" or "netbird"), home network first.
+/// Every usable private IPv4 address of an adapter that's up, with its
+/// kind ("lan" or "netbird"), home network first.
 pub fn addresses() -> Vec<(&'static str, Ipv4Addr)> {
     let mut found: Vec<(&'static str, Ipv4Addr)> = adapter_addresses()
         .into_iter()
         .filter_map(|ip| Some((address_kind(ip)?, ip)))
+        // A public address isn't offered: the listener turns away anyone
+        // outside the local network and VPNs, and the phone refuses a link
+        // that names one.
+        .filter(|(kind, ip)| *kind == "netbird" || ip.is_private())
         .collect();
-    found.sort_by_key(|(kind, ip)| (*kind != "lan", !ip.is_private(), *ip));
+    found.sort_by_key(|(kind, ip)| (*kind != "lan", *ip));
     found.dedup();
     found
 }

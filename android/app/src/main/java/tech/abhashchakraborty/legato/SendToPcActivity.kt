@@ -1,6 +1,7 @@
 package tech.abhashchakraborty.legato
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
@@ -11,7 +12,10 @@ import kotlinx.coroutines.withContext
 
 /**
  * "Send to PC" in any app's share menu and on selected text: puts the text
- * on the PC's clipboard. No window of its own; a short toast says how it went.
+ * on the PC's clipboard. Picked from the system share sheet it sends at once;
+ * started any other way it asks first, so another app can't slip text onto
+ * the PC's clipboard (a swapped address, a command) without you knowing. A
+ * short toast says how it went.
  */
 class SendToPcActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -28,6 +32,24 @@ class SendToPcActivity : Activity() {
             finish()
             return
         }
+        val fromShareSheet = referrer?.host in setOf("android", "com.android.intentresolver")
+        if (fromShareSheet) {
+            send(text, pc)
+            finish()
+            return
+        }
+        val preview = if (text.length > 160) text.take(160) + "…" else text
+        AlertDialog.Builder(this)
+            .setTitle("Send to $pc?")
+            .setMessage(preview)
+            .setPositiveButton("Send") { _, _ -> send(text, pc) }
+            .setNegativeButton("Cancel", null)
+            .setOnDismissListener { finish() }
+            .show()
+    }
+
+    private fun send(text: String, pc: String) {
+        val legato = legato
         legato.scope.launch {
             // Not connected yet (the app was closed): connect, and give it a moment.
             if (!legato.state.value.online) {
@@ -40,6 +62,5 @@ class SendToPcActivity : Activity() {
                 Toast.makeText(applicationContext, if (sent) "Sent to $pc" else "Couldn't reach $pc", Toast.LENGTH_SHORT).show()
             }
         }
-        finish()
     }
 }

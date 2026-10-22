@@ -55,6 +55,16 @@ pub struct PhoneState {
     pub last_sync: Option<i64>,
 }
 
+/// What a pairing link would pair with, shown before anything changes.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct PairPreview {
+    pub pc_name: String,
+    /// "192.168.1.20:47613", or "Bluetooth" for a `bt:` address.
+    pub addresses: Vec<String>,
+    /// The PC this one would replace, when it's paired with another.
+    pub replaces: Option<String>,
+}
+
 /// One dictation on Home.
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct HistoryEntry {
@@ -167,6 +177,32 @@ impl Core {
         }
     }
 
+    /// Reads a pairing link without pairing, so the app can ask first. Errs
+    /// on a link that isn't Legato's or points outside the local network.
+    pub fn inspect(&self, link: String) -> Result<PairPreview, CoreError> {
+        let link = PairLink::parse(link.trim())?;
+        let replaces = self
+            .phone
+            .paired_pc()
+            .filter(|pc| pc.device_id != link.device_id)
+            .map(|pc| pc.name);
+        Ok(PairPreview {
+            pc_name: link.name,
+            addresses: link
+                .addrs
+                .iter()
+                .map(|a| {
+                    if a.starts_with(legato_phone::sync::protocol::BT_PREFIX) {
+                        "Bluetooth".to_string()
+                    } else {
+                        a.clone()
+                    }
+                })
+                .collect(),
+            replaces,
+        })
+    }
+
     /// Pairs with the PC whose link this is (scanned or pasted), and connects.
     pub fn pair(&self, link: String) -> Result<(), CoreError> {
         let link = PairLink::parse(link.trim())?;
@@ -188,6 +224,8 @@ impl Core {
             return Err(CoreError::Failed("Not paired with a PC yet".into()));
         }
         if self.stop.lock().unwrap().is_some() {
+            // Already trying: try now instead of after the backoff.
+            self.phone.wake();
             return Ok(());
         }
         self.phone.refresh()?;
