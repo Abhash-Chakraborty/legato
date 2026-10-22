@@ -1065,6 +1065,10 @@ pub fn stop(app: &AppHandle) -> Result<()> {
 /// Starts a meeting with the defaults, or stops the recording: the Start or
 /// stop notes shortcut.
 pub fn toggle(app: &AppHandle) {
+    if !is_recording() && !get_settings(app).notes_enabled {
+        debug!("Notes are off in Settings › Features");
+        return;
+    }
     let result = if is_recording() {
         stop(app)
     } else {

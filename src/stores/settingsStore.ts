@@ -244,6 +244,12 @@ const settingUpdaters: {
   live_caption: (value) =>
     commands.changeLiveCaptionSetting(value as LiveCaption),
   mcp_enabled: (value) => commands.changeMcpEnabledSetting(value as boolean),
+  notes_enabled: (value) =>
+    commands.changeFeatureSetting("notes", value as boolean),
+  scratchpad_enabled: (value) =>
+    commands.changeFeatureSetting("scratchpad", value as boolean),
+  insights_enabled: (value) =>
+    commands.changeFeatureSetting("insights", value as boolean),
   scratchpad_keep_on_top: (value) =>
     commands.changeScratchpadKeepOnTopSetting(value as boolean),
   scratchpad_failed_pastes: (value) =>

@@ -169,6 +169,8 @@ pub fn binding_is_active(settings: &AppSettings, id: &str, binding: &ShortcutBin
     let transforms_on = settings.post_process_enabled;
     match id {
         "transcribe_with_post_process" | "transform_selection" | "view_changes" => transforms_on,
+        "toggle_notes" => settings.notes_enabled,
+        "open_scratchpad" => settings.scratchpad_enabled,
         "ask" => transforms_on && settings.ask_enabled,
         _ => match crate::transform_rules::transform_id_of(id) {
             Some(transform_id) => {
@@ -1136,6 +1138,34 @@ pub fn change_auto_submit_key_setting(app: AppHandle, key: String) -> Result<(),
     };
     settings.auto_submit_key = parsed;
     settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Turns a whole feature on or off (Settings › Features): its shortcuts
+/// come or go at once, and what it shows on screen follows.
+#[tauri::command]
+#[specta::specta]
+pub fn change_feature_setting(
+    app: AppHandle,
+    feature: settings::Feature,
+    enabled: bool,
+) -> Result<(), String> {
+    let before = settings::get_settings(&app);
+    if before.feature(feature) == enabled {
+        return Ok(());
+    }
+    let mut settings = before.clone();
+    settings.set_feature(feature, enabled);
+    settings::write_settings(&app, settings.clone());
+    sync_bindings(&app, &before, &settings);
+    if feature == settings::Feature::Notes && !enabled {
+        // A call card or meeting card offering notes goes with them; notes
+        // already recording carry on until stopped.
+        crate::calls::notes_turned_off(&app);
+    }
+    if feature == settings::Feature::Scratchpad {
+        crate::desktop::set_jump_list(&app);
+    }
     Ok(())
 }
 

@@ -959,9 +959,25 @@ pub struct AppSettings {
     #[serde(default)]
     pub scratchpad_open: ScratchpadOpen,
     /// The desktop bubble: a small Legato dot that stays on screen, with
-    /// Dictate, Notes and the Scratchpad on hover.
+    /// Dictate, Notes and the Scratchpad on hover. New installs follow the
+    /// answer to setup's last question.
     #[serde(default = "default_true")]
     pub bubble_enabled: bool,
+    /// Whole features, switched in Settings › Features. Off hides the page,
+    /// its shortcuts and its buttons. On for settings saved before the
+    /// switches existed; new installs start with them off until setup asks
+    /// "just dictation, or everything".
+    ///
+    /// Notes: memos, meetings, call offers and meeting cards.
+    #[serde(default = "default_true")]
+    pub notes_enabled: bool,
+    /// The Scratchpad page, its shortcut and its buttons. Failed pastes still
+    /// land there, so no dictation is lost.
+    #[serde(default = "default_true")]
+    pub scratchpad_enabled: bool,
+    /// The Insights page.
+    #[serde(default = "default_true")]
+    pub insights_enabled: bool,
     /// A see-through box at the top or bottom of the screen with the words
     /// as you say them, while the bubble shows the dictation.
     #[serde(default)]
@@ -1034,6 +1050,8 @@ pub struct AppSettings {
         deserialize_with = "deserialize_transcribe_gpu_device"
     )]
     pub transcribe_gpu_device: Option<String>,
+    /// How long recording carries on after you let go, so the last word
+    /// isn't cut. 0 for settings saved before new installs got a tail.
     #[serde(default)]
     pub extra_recording_buffer_ms: u64,
     #[serde(default = "default_vad_enabled")]
@@ -1210,6 +1228,37 @@ fn default_notes_ai_timeout_secs() -> u32 {
 
 /// The seconds Notes' AI requests may wait, inclusive.
 pub const NOTES_AI_TIMEOUT_RANGE: (u32, u32) = (15, 600);
+
+/// The recording tail new installs start with: long enough to keep a last
+/// word said as the key comes up.
+pub const NEW_INSTALL_RECORDING_TAIL_MS: u64 = 400;
+
+/// A whole feature, switched in Settings › Features.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum Feature {
+    Notes,
+    Scratchpad,
+    Insights,
+}
+
+impl AppSettings {
+    pub fn feature(&self, feature: Feature) -> bool {
+        match feature {
+            Feature::Notes => self.notes_enabled,
+            Feature::Scratchpad => self.scratchpad_enabled,
+            Feature::Insights => self.insights_enabled,
+        }
+    }
+
+    pub fn set_feature(&mut self, feature: Feature, on: bool) {
+        match feature {
+            Feature::Notes => self.notes_enabled = on,
+            Feature::Scratchpad => self.scratchpad_enabled = on,
+            Feature::Insights => self.insights_enabled = on,
+        }
+    }
+}
 
 fn default_true() -> bool {
     true
@@ -1611,7 +1660,10 @@ pub fn get_default_settings() -> AppSettings {
         calls: CallSettings::default(),
         sync: SyncSettings::default(),
         scratchpad_open: ScratchpadOpen::default(),
-        bubble_enabled: true,
+        bubble_enabled: false,
+        notes_enabled: false,
+        scratchpad_enabled: false,
+        insights_enabled: false,
         live_caption: LiveCaption::default(),
         admin_apps: false,
         bubble_spot: None,
@@ -1636,7 +1688,7 @@ pub fn get_default_settings() -> AppSettings {
         chinese_script: default_chinese_script(),
         transcribe_accelerator: TranscribeAcceleratorSetting::default(),
         transcribe_gpu_device: default_transcribe_gpu_device(),
-        extra_recording_buffer_ms: 0,
+        extra_recording_buffer_ms: NEW_INSTALL_RECORDING_TAIL_MS,
         vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
         long_form_chunking: default_long_form_chunking(),
@@ -2028,6 +2080,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn new_installs_start_with_just_dictation() {
+        let settings = get_default_settings();
+        for feature in [Feature::Notes, Feature::Scratchpad, Feature::Insights] {
+            assert!(!settings.feature(feature), "{feature:?} starts off");
+        }
+        assert!(!settings.bubble_enabled);
+        assert_eq!(settings.bar_look, BarLook::Bar);
+        assert_eq!(
+            settings.extra_recording_buffer_ms,
+            NEW_INSTALL_RECORDING_TAIL_MS
+        );
+        let mut on = settings.clone();
+        on.set_feature(Feature::Notes, true);
+        assert!(on.notes_enabled && !on.scratchpad_enabled);
+    }
+
+    #[test]
     fn stored_binding_returns_the_requested_binding() {
         let settings = get_default_settings();
 
@@ -2186,6 +2255,14 @@ mod tests {
             settings.long_form_chunking,
             "chunking is on for settings saved before it existed"
         );
+        assert!(
+            settings.notes_enabled
+                && settings.scratchpad_enabled
+                && settings.insights_enabled
+                && settings.bubble_enabled,
+            "every feature stays on for settings saved before Settings › Features"
+        );
+        assert_eq!(settings.extra_recording_buffer_ms, 0);
 
         // The 0.1 integer device index is cleared once for transcribe.cpp 0.2.
         // Without an exact device, the retired generic GPU choice becomes Auto.

@@ -153,6 +153,7 @@ Settings are stored using Tauri's store plugin with reactive updates:
 - Keyboard shortcuts (configurable, supports push-to-talk)
 - Audio devices (microphone/output selection)
 - Speech model, plus an optional model per kind of app in Style
+- Features (Settings › Features): Notes, the Scratchpad and Insights switch whole features; off hides the page, its shortcuts (`binding_is_active`) and its buttons. Settings saved before the switches keep everything on; new installs start with just dictation until setup's last step asks
 - The bar: style (none, minimal, live), shape (bar or island), position, and whether the island stays small at rest
 - Style per kind of app: tone, paste keys, Enter after pasting, trailing space
 - Transforms, Ask and your AI provider, with an optional provider and model each for dictation, transforms and Notes; Notes, calls, Scratchpad and learning options

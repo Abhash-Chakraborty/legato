@@ -629,6 +629,10 @@
         "title": "General",
         "subtitle": "Startup and how Legato looks."
       },
+      "features": {
+        "title": "Features",
+        "subtitle": "Turn whole parts of Legato on or off. What's off leaves the sidebar, the shortcuts and the bar."
+      },
       "shortcuts": {
         "title": "Shortcuts",
         "subtitle": "Keys that work in any app, even with this window closed."
@@ -717,7 +721,10 @@
       "clipboard": "Clipboard",
       "calendars": "Meetings",
       "aiApps": "AI apps",
-      "speakers": "Speakers in notes"
+      "speakers": "Speakers in notes",
+      "features": "What Legato does",
+      "featuresOnScreen": "On screen",
+      "featuresOther": "Other apps"
     },
     "requires": {
       "tray": "Needs the tray icon, or there would be no way to open the window.",
@@ -736,7 +743,10 @@
       "clipboardSync": "Turn on Shared clipboard first.",
       "mcp": "Turn on Let AI apps read Legato first.",
       "bubble": "Turn on Bubble on the desktop first.",
-      "islandOff": "The island stands in for the bubble while it's on (Shape, above)."
+      "islandOff": "The island stands in for the bubble while it's on (Shape, above).",
+      "barOn": "Turn the bar on first, in Legato bar › Style.",
+      "notesFeature": "Notes are off in Settings › Features.",
+      "scratchpadFeature": "The Scratchpad is off in Settings › Features."
     },
     "privacy": {
       "rememberApp": {
@@ -1304,6 +1314,28 @@
         "confirm": "Forget the voice",
         "forgotten": "Forgot {{name}}'s voice",
         "forgetFailed": "Couldn't forget the voice"
+      }
+    },
+    "features": {
+      "notes": {
+        "title": "Notes",
+        "help": "Voice memos and meeting notes, with call offers and meeting cards. Off hides the Notes page, its shortcut and its buttons."
+      },
+      "scratchpad": {
+        "title": "Scratchpad",
+        "help": "Notes you dictate or type into a small window. Off hides its page, shortcut and buttons; a paste that fails still lands there, so nothing is lost."
+      },
+      "transforms": {
+        "title": "Transforms and Ask",
+        "help": "Rewrite a selection or your last dictation with your own AI, or ask it something. Needs an AI provider in Settings › AI."
+      },
+      "insights": {
+        "title": "Insights",
+        "help": "How much you dictate, and how often Legato gets a word wrong."
+      },
+      "island": {
+        "title": "The island",
+        "help": "The bar as a dark shape hanging from the top edge, with Dictate, Notes and the Scratchpad on hover. It takes the bubble's place."
       }
     }
   },
@@ -3212,7 +3244,15 @@
         "callsOff": "Off · Legato won't offer notes when a call starts"
       },
       "open": "Open Legato",
-      "modelsNext": "Models opens next, as you asked"
+      "modelsNext": "Models opens next, as you asked",
+      "how": {
+        "title": "How much of Legato do you want?",
+        "dictation": "Just dictation",
+        "dictationDesc": "Dictation, the Dictionary, Snippets and Style.",
+        "all": "Everything",
+        "allDesc": "Also Notes with call offers, the Scratchpad, the bubble on the desktop and Insights.",
+        "later": "You can change this later in Settings › Features."
+      }
     },
     "sceneOf": "{{n}} of 3",
     "skip": "Skip setup",

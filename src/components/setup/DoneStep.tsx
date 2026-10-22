@@ -107,12 +107,32 @@ export const DoneStep: React.FC<StepProps> = ({ go, setFoot, finish }) => {
             [t("setup.done.hold"), t("setup.done.holdWhat")],
             [t("setup.done.tap"), t("setup.done.tapWhat")],
           ];
-  const otherKeys = [
-    ["cancel", t("setup.done.keys.cancel")],
-    ["open_scratchpad", t("setup.done.keys.scratchpad")],
-    ["toggle_notes", t("setup.done.keys.notes")],
-  ]
-    .map(([id, what]) => [bindings[id]?.current_binding ?? "", what])
+  // Just dictation, or everything: Notes, the Scratchpad, the bubble and
+  // Insights go together. New installs start with just dictation.
+  const notesOn = settings?.notes_enabled ?? true;
+  const scratchpadOn = settings?.scratchpad_enabled ?? true;
+  const everything =
+    notesOn &&
+    scratchpadOn &&
+    (settings?.bubble_enabled ?? true) &&
+    (settings?.insights_enabled ?? true);
+  const choose = (all: boolean) => {
+    if (all === everything) return;
+    updateSetting("notes_enabled", all);
+    updateSetting("scratchpad_enabled", all);
+    updateSetting("insights_enabled", all);
+    updateSetting("bubble_enabled", all);
+  };
+
+  const otherKeys = (
+    [
+      ["cancel", t("setup.done.keys.cancel"), true],
+      ["open_scratchpad", t("setup.done.keys.scratchpad"), scratchpadOn],
+      ["toggle_notes", t("setup.done.keys.notes"), notesOn],
+    ] as const
+  )
+    .filter(([, , on]) => on)
+    .map(([id, what]) => [bindings[id]?.current_binding ?? "", what] as const)
     .filter(([keys]) => keys);
 
   const styles = settings?.styles;
@@ -163,15 +183,19 @@ export const DoneStep: React.FC<StepProps> = ({ go, setFoot, finish }) => {
           </span>
         ),
     },
-    {
-      page: "settings",
-      sub: "calls",
-      icon: AudioLines,
-      title: t("setup.done.later.calls"),
-      desc: calls
-        ? t("setup.done.later.callsOn")
-        : t("setup.done.later.callsOff"),
-    },
+    ...(notesOn
+      ? [
+          {
+            page: "settings" as const,
+            sub: "calls",
+            icon: AudioLines,
+            title: t("setup.done.later.calls"),
+            desc: calls
+              ? t("setup.done.later.callsOn")
+              : t("setup.done.later.callsOff"),
+          },
+        ]
+      : []),
   ];
 
   const autostart = getSetting("autostart_enabled") ?? false;
@@ -216,6 +240,42 @@ export const DoneStep: React.FC<StepProps> = ({ go, setFoot, finish }) => {
               </li>
             ))}
           </ul>
+          <fieldset className="mt-5 px-2">
+            <legend className="mb-2 text-[13px] font-medium">
+              {t("setup.done.how.title")}
+            </legend>
+            {[false, true].map((all) => (
+              <label
+                key={String(all)}
+                className={`mb-1.5 flex cursor-pointer items-start gap-2.5 rounded-[var(--r-md)] border px-3 py-2 text-[13px] ${
+                  everything === all
+                    ? "border-teal-600 bg-surface-2"
+                    : "border-line hover:bg-surface-2"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="how-much"
+                  className="mt-0.5 h-4 w-4 accent-[var(--teal-600)]"
+                  checked={everything === all}
+                  onChange={() => choose(all)}
+                />
+                <span>
+                  {t(all ? "setup.done.how.all" : "setup.done.how.dictation")}
+                  <span className="block text-text-3">
+                    {t(
+                      all
+                        ? "setup.done.how.allDesc"
+                        : "setup.done.how.dictationDesc",
+                    )}
+                  </span>
+                </span>
+              </label>
+            ))}
+            <p className="mt-1 text-[12px] text-text-3">
+              {t("setup.done.how.later")}
+            </p>
+          </fieldset>
           <label className="mt-5 flex cursor-pointer items-start gap-2.5 px-2 text-[13px]">
             <input
               type="checkbox"

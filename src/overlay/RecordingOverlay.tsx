@@ -411,6 +411,8 @@ const RecordingOverlay: React.FC = () => {
   // shows then.
   const [islandOpen, setIslandOpen] = useState(false);
   const [dictateKeys, setDictateKeys] = useState("");
+  // Notes and the Scratchpad can be off in Settings › Features.
+  const [features, setFeatures] = useState({ notes: true, scratchpad: true });
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
@@ -454,6 +456,10 @@ const RecordingOverlay: React.FC = () => {
             setDictateKeys(
               settings.data.bindings?.transcribe?.current_binding ?? "",
             );
+            setFeatures({
+              notes: settings.data.notes_enabled ?? true,
+              scratchpad: settings.data.scratchpad_enabled ?? true,
+            });
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
@@ -786,23 +792,27 @@ const RecordingOverlay: React.FC = () => {
             <Mic aria-hidden="true" />
             {t("overlay.island.dictate")}
           </button>
-          <button
-            type="button"
-            className="ibtn"
-            onClick={() => commands.bubbleAction("notes")}
-          >
-            <AudioLines aria-hidden="true" />
-            {t("overlay.island.notes")}
-          </button>
-          <button
-            type="button"
-            className="ibtn icon"
-            aria-label={t("overlay.island.scratchpad")}
-            title={t("overlay.island.scratchpad")}
-            onClick={() => commands.bubbleAction("scratchpad")}
-          >
-            <NotebookPen aria-hidden="true" />
-          </button>
+          {features.notes && (
+            <button
+              type="button"
+              className="ibtn"
+              onClick={() => commands.bubbleAction("notes")}
+            >
+              <AudioLines aria-hidden="true" />
+              {t("overlay.island.notes")}
+            </button>
+          )}
+          {features.scratchpad && (
+            <button
+              type="button"
+              className="ibtn icon"
+              aria-label={t("overlay.island.scratchpad")}
+              title={t("overlay.island.scratchpad")}
+              onClick={() => commands.bubbleAction("scratchpad")}
+            >
+              <NotebookPen aria-hidden="true" />
+            </button>
+          )}
           {dictateKeys && (
             <span className="ikeys">{formatKeyCombination(dictateKeys)}</span>
           )}

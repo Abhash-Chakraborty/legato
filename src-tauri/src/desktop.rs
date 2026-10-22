@@ -79,15 +79,16 @@ pub fn raise_priority() {
     }
 }
 
-/// Writes the jump list's tasks: Dictate, Scratchpad and New note.
+/// Writes the jump list's tasks: Dictate, and Scratchpad and New note
+/// while the Scratchpad is on. Written again when that changes.
 pub fn set_jump_list(app: &AppHandle) {
     let id = app.config().identifier.clone();
     let strings = desktop_strings();
-    let tasks = vec![
-        (strings.jump_dictate, DICTATE_ARG),
-        (strings.jump_scratchpad, SCRATCHPAD_ARG),
-        (strings.jump_new_note, NEW_NOTE_ARG),
-    ];
+    let mut tasks = vec![(strings.jump_dictate, DICTATE_ARG)];
+    if crate::settings::get_settings(app).scratchpad_enabled {
+        tasks.push((strings.jump_scratchpad, SCRATCHPAD_ARG));
+        tasks.push((strings.jump_new_note, NEW_NOTE_ARG));
+    }
     // COM wants its own apartment; the main thread's belongs to the webview.
     std::thread::spawn(move || {
         #[cfg(windows)]

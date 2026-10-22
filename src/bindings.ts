@@ -219,6 +219,18 @@ async changeAutoSubmitKeySetting(key: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Turns a whole feature on or off (Settings › Features): its shortcuts
+ * come or go at once, and what it shows on screen follows.
+ */
+async changeFeatureSetting(feature: Feature, enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_feature_setting", { feature, enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changePostProcessEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_post_process_enabled_setting", { enabled }) };
@@ -3469,9 +3481,28 @@ notes_remember_voices?: boolean;
 ai_task_models?: AiTaskModels; calls?: CallSettings; sync?: SyncSettings; scratchpad_open?: ScratchpadOpen; 
 /**
  * The desktop bubble: a small Legato dot that stays on screen, with
- * Dictate, Notes and the Scratchpad on hover.
+ * Dictate, Notes and the Scratchpad on hover. New installs follow the
+ * answer to setup's last question.
  */
-bubble_enabled?: boolean; /**
+bubble_enabled?: boolean; 
+/**
+ * Whole features, switched in Settings › Features. Off hides the page,
+ * its shortcuts and its buttons. On for settings saved before the
+ * switches existed; new installs start with them off until setup asks
+ * "just dictation, or everything".
+ * 
+ * Notes: memos, meetings, call offers and meeting cards.
+ */
+notes_enabled?: boolean; 
+/**
+ * The Scratchpad page, its shortcut and its buttons. Failed pastes still
+ * land there, so no dictation is lost.
+ */
+scratchpad_enabled?: boolean; 
+/**
+ * The Insights page.
+ */
+insights_enabled?: boolean; /**
  * A see-through box at the top or bottom of the screen with the words
  * as you say them, while the bubble shows the dictation.
  */
@@ -3854,6 +3885,10 @@ export type BarLook = "bar" | "island"
  * top, or go away until there's something.
  */
 export type IslandIdle = "small" | "hide"
+/**
+ * A whole feature, switched in Settings › Features.
+ */
+export type Feature = "notes" | "scratchpad" | "insights"
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v"
 export type PermissionAccess = "allowed" | "denied" | "unknown"

@@ -122,6 +122,13 @@ const Bubble: React.FC = () => {
   });
   const [levels, setLevels] = useState<number[]>(() => Array(BARS).fill(0));
   const [hot, setHot] = useState<Action | null>(null);
+  // Notes and the Scratchpad can be off in Settings › Features; their
+  // buttons go with them. `read` once settings have been read.
+  const [features, setFeatures] = useState({
+    read: false,
+    notes: true,
+    scratchpad: true,
+  });
   const [keys, setKeys] = useState<Record<Action, string>>({
     dictate: "",
     cancel: "",
@@ -217,6 +224,15 @@ const Bubble: React.FC = () => {
       .getNotesSession()
       .then(setNotes)
       .catch(() => {});
+    return () => {
+      subs.forEach((s) => s.then((off) => off()));
+    };
+  }, []);
+
+  // The keys in the tooltips, and which features are on, read again each
+  // time the bubble opens, so a change in Settings shows at once.
+  useEffect(() => {
+    if (!layout.expanded && features.read) return;
     commands
       .getAppSettings()
       .then((r) => {
@@ -229,12 +245,14 @@ const Bubble: React.FC = () => {
           scratchpad: b.open_scratchpad?.current_binding ?? "",
           "stop-notes": b.toggle_notes?.current_binding ?? "",
         });
+        setFeatures({
+          read: true,
+          notes: r.data.notes_enabled ?? true,
+          scratchpad: r.data.scratchpad_enabled ?? true,
+        });
       })
       .catch(() => {});
-    return () => {
-      subs.forEach((s) => s.then((off) => off()));
-    };
-  }, []);
+  }, [layout.expanded]);
 
   // The Notes clock runs while its label shows.
   useEffect(() => {
@@ -337,7 +355,7 @@ const Bubble: React.FC = () => {
             minutes: Math.max(1, Math.round((meeting.start - now) / 60)),
           });
   const upright = layout.edge === "left" || layout.edge === "right";
-  const buttons: {
+  const slots: {
     id: Action;
     dy: number;
     label: string;
@@ -400,6 +418,18 @@ const Bubble: React.FC = () => {
             icon: <NotebookPen aria-hidden="true" />,
           },
   ];
+  // Buttons for features that are off go (notes already recording keep
+  // theirs), and the rest close up around the dot.
+  const kept = slots.filter(
+    (b) =>
+      (b.id !== "notes" || features.notes || notesOn) &&
+      (b.id !== "scratchpad" || features.scratchpad),
+  );
+  const buttons = kept.map((b, i) => ({
+    ...b,
+    dy:
+      kept.length === slots.length ? b.dy : (i - (kept.length - 1) / 2) * STEP,
+  }));
   // At rest: a dictation's meter, else notes recording behind everything
   // (the bar's Notes pill lives here while the bubble is on), else the dot.
   const rest: "rec" | "work" | "notes" | null =

@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Blocks,
   Bug,
   CalendarDays,
   Captions,
@@ -20,6 +21,7 @@ import type { SettingsSection } from "../../stores/navStore";
 import { useModelStore } from "../../stores/modelStore";
 
 import { AdminAppsToggle } from "./AdminAppsToggle";
+import { FeatureToggle, IslandToggle } from "./FeatureSettings";
 import { AutostartToggle } from "./AutostartToggle";
 import { ShowTrayIcon } from "./ShowTrayIcon";
 import { StartHidden } from "./StartHidden";
@@ -307,6 +309,102 @@ export const buildSections = (
     ],
   },
   {
+    id: "features",
+    icon: Blocks,
+    groups: [
+      {
+        id: "features",
+        titleKey: "settings.groups.features",
+        rows: [
+          {
+            id: "feature-notes",
+            searchKeys: [
+              "settings.features.notes.title",
+              "settings.features.notes.help",
+            ],
+            render: () => (
+              <FeatureToggle feature="notes_enabled" name="notes" />
+            ),
+          },
+          {
+            id: "feature-scratchpad",
+            searchKeys: [
+              "settings.features.scratchpad.title",
+              "settings.features.scratchpad.help",
+            ],
+            render: () => (
+              <FeatureToggle feature="scratchpad_enabled" name="scratchpad" />
+            ),
+          },
+          {
+            id: "feature-transforms",
+            searchKeys: [
+              "settings.features.transforms.title",
+              "settings.features.transforms.help",
+            ],
+            render: () => (
+              <FeatureToggle feature="post_process_enabled" name="transforms" />
+            ),
+          },
+          {
+            id: "feature-insights",
+            searchKeys: [
+              "settings.features.insights.title",
+              "settings.features.insights.help",
+            ],
+            render: () => (
+              <FeatureToggle feature="insights_enabled" name="insights" />
+            ),
+          },
+        ],
+      },
+      {
+        id: "features-screen",
+        titleKey: "settings.groups.featuresOnScreen",
+        rows: [
+          {
+            id: "feature-island",
+            searchKeys: [
+              "settings.features.island.title",
+              "settings.features.island.help",
+            ],
+            render: () => <IslandToggle />,
+            requires: ({ settings }) =>
+              settings?.overlay_style === "none"
+                ? { reasonKey: "settings.requires.barOn" }
+                : null,
+          },
+          {
+            id: "feature-bubble",
+            searchKeys: [
+              "settings.bar.bubble.title",
+              "settings.bar.bubble.help",
+            ],
+            render: () => <ShowBubble grouped />,
+            requires: ({ settings }) =>
+              islandOn(settings)
+                ? { reasonKey: "settings.requires.islandOff" }
+                : null,
+          },
+        ],
+      },
+      {
+        id: "features-other",
+        titleKey: "settings.groups.featuresOther",
+        rows: [
+          {
+            id: "feature-mcp",
+            searchKeys: [
+              "settings.connections.mcp.title",
+              "settings.connections.mcp.help",
+            ],
+            render: () => <McpToggle />,
+          },
+        ],
+      },
+    ],
+  },
+  {
     id: "shortcuts",
     icon: Keyboard,
     groups: [
@@ -427,6 +525,10 @@ export const buildSections = (
             render: () => (
               <ShortcutInput shortcutId="open_scratchpad" grouped />
             ),
+            requires: ({ settings }) =>
+              (settings?.scratchpad_enabled ?? true)
+                ? null
+                : { reasonKey: "settings.requires.scratchpadFeature" },
           },
         ],
       },
@@ -441,6 +543,10 @@ export const buildSections = (
               "settings.general.shortcut.bindings.toggle_notes.description",
             ],
             render: () => <ShortcutInput shortcutId="toggle_notes" grouped />,
+            requires: ({ settings }) =>
+              (settings?.notes_enabled ?? true)
+                ? null
+                : { reasonKey: "settings.requires.notesFeature" },
           },
         ],
       },

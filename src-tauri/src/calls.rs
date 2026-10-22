@@ -248,10 +248,19 @@ fn hide_card(app: &AppHandle) {
     show_card(app, None);
 }
 
+/// Notes were switched off in Settings › Features: a card offering them
+/// goes. One about notes already recording stays, so they can be stopped.
+pub fn notes_turned_off(app: &AppHandle) {
+    if !notes::is_recording() {
+        hide_card(app);
+    }
+}
+
 /// Offers to join a meeting on the calendar that's about to start, unless
 /// a card shows or notes already run.
 fn remind_due(app: &AppHandle) {
-    if !get_settings(app).calls.meeting_cards {
+    let settings = get_settings(app);
+    if !settings.calls.meeting_cards || !settings.notes_enabled {
         return;
     }
     let now = chrono::Utc::now().timestamp();
@@ -740,8 +749,9 @@ pub fn init(app: &AppHandle) {
         .spawn(move || {
             let mut watcher = Watcher::open();
             loop {
-                let settings = get_settings(&app).calls;
-                let now = if settings.detect {
+                let all = get_settings(&app);
+                let settings = all.calls;
+                let now = if settings.detect && all.notes_enabled {
                     holding(&settings)
                 } else {
                     Vec::new()

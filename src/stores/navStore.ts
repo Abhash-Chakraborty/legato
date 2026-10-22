@@ -16,6 +16,7 @@ export type Page =
 /** The sections inside Settings, in sidebar order. */
 export type SettingsSection =
   | "general"
+  | "features"
   | "shortcuts"
   | "audio"
   | "transcription"
