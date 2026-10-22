@@ -187,6 +187,7 @@
         "errors": {
           "restore": "Failed to restore original shortcut",
           "set": "Failed to set shortcut: {{error}}",
+          "inUse": "{{name}} already uses these keys. Choose others, or change {{name}} first.",
           "reset": "Failed to reset shortcut to original value"
         },
         "notSet": "Not set"

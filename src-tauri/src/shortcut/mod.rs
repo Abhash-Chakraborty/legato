@@ -185,12 +185,46 @@ pub fn active_bindings(settings: &AppSettings) -> Vec<ShortcutBinding> {
     let defaults = settings::get_default_settings().bindings;
     let ids: std::collections::BTreeSet<&String> =
         defaults.keys().chain(settings.bindings.keys()).collect();
-    ids.into_iter()
-        .filter_map(|id| {
-            let binding = settings.bindings.get(id).or_else(|| defaults.get(id))?;
-            binding_is_active(settings, id, binding).then(|| binding.clone())
-        })
-        .collect()
+    let mut active: Vec<ShortcutBinding> = Vec::new();
+    for id in ids {
+        let Some(binding) = settings.bindings.get(id).or_else(|| defaults.get(id)) else {
+            continue;
+        };
+        if !binding_is_active(settings, id, binding) {
+            continue;
+        }
+        // Two actions on one shortcut would both run on a single press; the
+        // first (by id) keeps it. Settings saved before shortcuts were
+        // checked for this can still hold such a pair.
+        if let Some(first) = active
+            .iter()
+            .find(|b| same_keys(&b.current_binding, &binding.current_binding))
+        {
+            warn!(
+                "'{}' has the same shortcut as '{}' ({}); only '{}' gets it",
+                id, first.id, binding.current_binding, first.id
+            );
+            continue;
+        }
+        active.push(binding.clone());
+    }
+    active
+}
+
+/// Whether two shortcut strings name the same keys, whatever their order
+/// or case ("super+alt+3" and "Alt+Super+3").
+pub fn same_keys(a: &str, b: &str) -> bool {
+    let keys = |s: &str| {
+        let mut keys: Vec<String> = s
+            .split('+')
+            .map(|k| k.trim().to_lowercase())
+            .filter(|k| !k.is_empty())
+            .collect();
+        keys.sort();
+        keys
+    };
+    let a = keys(a);
+    !a.is_empty() && a == keys(b)
 }
 
 /// Brings the registered shortcuts from what `before` wanted to what `after`
@@ -325,6 +359,22 @@ pub fn change_binding(
         warn!("change_binding validation error: {}", e);
         restore(&app);
         return Err(e);
+    }
+
+    // Another action already on these keys would run on the same press.
+    // The interface turns "in-use:<id>" into a message naming it.
+    if let Some(other) = settings
+        .bindings
+        .iter()
+        .find(|(other, b)| **other != id && same_keys(&b.current_binding, &binding))
+        .map(|(other, _)| other.clone())
+    {
+        restore(&app);
+        return Ok(BindingResponse {
+            success: false,
+            binding: None,
+            error: Some(format!("in-use:{other}")),
+        });
     }
 
     // Create an updated binding
@@ -1388,6 +1438,18 @@ pub async fn get_available_accelerators(
 mod tests {
     use handy_keys::Hotkey;
     use tauri_plugin_global_shortcut::Shortcut;
+
+    #[test]
+    fn same_keys_ignores_order_and_case() {
+        assert!(super::same_keys("super+alt+3", "Alt+Super+3"));
+        assert!(super::same_keys(
+            "ctrl_left+super_left",
+            "super_left+ctrl_left"
+        ));
+        assert!(!super::same_keys("ctrl_left+super_left", "ctrl+super"));
+        assert!(!super::same_keys("super+alt+3", "super+alt+4"));
+        assert!(!super::same_keys("", ""));
+    }
 
     #[test]
     fn compound_shortcut_keys_parse_on_both_backends() {

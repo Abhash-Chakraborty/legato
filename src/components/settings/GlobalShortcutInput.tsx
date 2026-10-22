@@ -10,6 +10,7 @@ import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
+import { shortcutErrorText } from "./shortcutError";
 
 interface GlobalShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
@@ -107,11 +108,7 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
             await updateBinding(editingShortcutId, newShortcut);
           } catch (error) {
             console.error("Failed to change binding:", error);
-            toast.error(
-              t("settings.general.shortcut.errors.set", {
-                error: String(error),
-              }),
-            );
+            toast.error(shortcutErrorText(t, error, getSetting("transforms")));
 
             // Reset to original binding on error
             if (originalBinding) {

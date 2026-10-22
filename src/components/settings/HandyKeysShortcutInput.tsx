@@ -7,6 +7,7 @@ import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
+import { shortcutErrorText } from "./shortcutError";
 
 interface HandyKeysShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
@@ -97,11 +98,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
           await updateBinding(shortcutId, keysToCommit);
         } catch (error) {
           console.error("Failed to change binding:", error);
-          toast.error(
-            t("settings.general.shortcut.errors.set", {
-              error: String(error),
-            }),
-          );
+          toast.error(shortcutErrorText(t, error, getSetting("transforms")));
 
           // Reset to original binding on error
           if (originalBinding) {
