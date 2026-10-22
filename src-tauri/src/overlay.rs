@@ -995,7 +995,8 @@ fn island_rests(settings: &AppSettings) -> bool {
 }
 
 /// Settings › Bar changed the look or what the island does at rest: the
-/// resting island appears or goes now; anything else shown keeps going and
+/// resting island appears or goes now, and the bubble, which the island
+/// stands in for, goes or comes back; anything else shown keeps going and
 /// takes the new look next time.
 pub fn look_changed(app_handle: &AppHandle) {
     let shown = SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -1005,6 +1006,7 @@ pub fn look_changed(app_handle: &AppHandle) {
         Some("rest") if !island_rests(&settings) => hide_recording_overlay(app_handle),
         _ => {}
     }
+    crate::bubble::bar_look_changed(app_handle);
     crate::notes::refresh_pill(app_handle);
 }
 

@@ -337,7 +337,7 @@
           }
         },
         "look": {
-          "title": "Look",
+          "title": "Shape",
           "description": "The bar is a card at the top or bottom of the screen. The island hangs from the top edge and grows with what it shows.",
           "options": {
             "bar": "Bar",
@@ -735,7 +735,8 @@
       "autoStart": "Only used when notes start automatically.",
       "clipboardSync": "Turn on Shared clipboard first.",
       "mcp": "Turn on Let AI apps read Legato first.",
-      "bubble": "Turn on Bubble on the desktop first."
+      "bubble": "Turn on Bubble on the desktop first.",
+      "islandOff": "The island stands in for the bubble while it's on (Shape, above)."
     },
     "privacy": {
       "rememberApp": {

@@ -207,6 +207,12 @@ pub fn takes_dictation(app: &AppHandle) -> bool {
         && now_s() >= SNOOZED_UNTIL.load(Ordering::SeqCst)
 }
 
+/// The bar's look changed: the island stands in for the bubble while it's
+/// on, so the bubble goes or comes back.
+pub fn bar_look_changed(app: &AppHandle) {
+    refresh(app);
+}
+
 /// Whether the window in front fills the screen, as last checked.
 pub fn screen_covered() -> bool {
     COVERED.load(Ordering::SeqCst)

@@ -204,6 +204,10 @@ const needsCallDetection = ({ settings }: RowContext): Unmet | null =>
 
 const paired = ({ paired }: RowContext) => paired;
 
+/** The bar has the island's look, which stands in for the bubble. */
+const islandOn = (settings: AppSettings | null) =>
+  settings?.bar_look === "island" && settings.overlay_style !== "none";
+
 const needsClipboardSync = ({ settings }: RowContext): Unmet | null =>
   (settings?.sync?.clipboard ?? true)
     ? null
@@ -1147,6 +1151,10 @@ export const buildSections = (
               "settings.advanced.overlay.style.description",
               "settings.advanced.overlay.position.title",
               "settings.advanced.overlay.position.description",
+              "settings.advanced.overlay.look.title",
+              "settings.advanced.overlay.look.description",
+              "settings.advanced.overlay.idle.title",
+              "settings.advanced.overlay.idle.description",
             ],
             render: () => <ShowOverlay grouped />,
           },
@@ -1157,6 +1165,10 @@ export const buildSections = (
               "settings.bar.bubble.help",
             ],
             render: () => <ShowBubble grouped />,
+            requires: ({ settings }) =>
+              islandOn(settings)
+                ? { reasonKey: "settings.requires.islandOff" }
+                : null,
           },
           {
             id: "live-caption",
@@ -1166,9 +1178,11 @@ export const buildSections = (
             ],
             render: () => <LiveCaptionPlace grouped />,
             requires: ({ settings }) =>
-              settings?.bubble_enabled === false
-                ? { reasonKey: "settings.requires.bubble" }
-                : null,
+              islandOn(settings)
+                ? { reasonKey: "settings.requires.islandOff" }
+                : settings?.bubble_enabled === false
+                  ? { reasonKey: "settings.requires.bubble" }
+                  : null,
           },
         ],
       },
