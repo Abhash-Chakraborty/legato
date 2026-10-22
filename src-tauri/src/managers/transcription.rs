@@ -271,7 +271,14 @@ pub struct TranscriptionManager {
     gpu_load: Arc<Mutex<Option<(String, PathBuf)>>>,
     /// Stops the CPU transcription running beside a GPU load, on a cancel.
     aside: Arc<Mutex<Option<AsideStop>>>,
+    /// The model moved to the CPU after sitting idle on the GPU (see
+    /// [`move_to_cpu`](Self::move_to_cpu)); it goes back when next used.
+    standby: Arc<AtomicBool>,
 }
+
+/// A model waiting on the CPU is unloaded when less memory than this is
+/// free, in MB.
+const STANDBY_MIN_FREE_MB: u64 = 1024;
 
 /// Recordings up to this long (16 kHz samples) are transcribed on the CPU
 /// when they end while the model is still loading on the GPU. Every model
@@ -298,6 +305,7 @@ impl TranscriptionManager {
             active_stream_worker: Arc::new(AtomicU64::new(0)),
             gpu_load: Arc::new(Mutex::new(None)),
             aside: Arc::new(Mutex::new(None)),
+            standby: Arc::new(AtomicBool::new(false)),
         };
 
         // Start the idle watcher
@@ -342,9 +350,16 @@ impl TranscriptionManager {
                         let idle_ms = now_ms.saturating_sub(last);
                         let limit_ms = limit_seconds * 1000;
 
-                        if idle_ms > limit_ms {
-                            // idle -> unload
-                            if manager_cloned.is_model_loaded() {
+                        if idle_ms > limit_ms && manager_cloned.is_model_loaded() {
+                            let short_of_memory = crate::utils::available_memory_mb()
+                                .is_some_and(|free| free < STANDBY_MIN_FREE_MB);
+                            if manager_cloned.on_gpu() == Some(true) && !short_of_memory {
+                                manager_cloned.move_to_cpu(idle_ms / 1000);
+                            } else if manager_cloned.standby.load(Ordering::Acquire)
+                                && !short_of_memory
+                            {
+                                // Waiting on the CPU for the next dictation.
+                            } else {
                                 let unload_start = std::time::Instant::now();
                                 info!(
                                     "Model idle for {}s (limit: {}s), unloading",
@@ -466,6 +481,7 @@ impl TranscriptionManager {
     /// its load is queued behind this unload, so the unload can never affect
     /// it. Only the worker's exit is left to wait for.
     fn begin_unload(&self) -> Unloading {
+        self.standby.store(false, Ordering::Release);
         let unloading = self.engine.unload();
         {
             let mut current_model = self.current_model_id.lock().unwrap();
@@ -514,6 +530,68 @@ impl TranscriptionManager {
 
     pub fn load_model(&self, model_id: &str) -> Result<()> {
         self.load_model_with_device(model_id, None)
+    }
+
+    /// Moves a model that sat idle on the GPU to the CPU: the GPU is freed
+    /// (and a laptop's graphics card can sleep), but the next dictation
+    /// starts at once instead of waiting for a load, which took from one to
+    /// over 20 seconds on a laptop. Used again, it goes back to the GPU
+    /// ([`leave_standby`](Self::leave_standby)).
+    fn move_to_cpu(&self, idle_secs: u64) {
+        let Some(model_id) = self.get_current_model() else {
+            return;
+        };
+        let Ok(path) = self.model_manager.get_model_path(&model_id) else {
+            return;
+        };
+        // A dictation that starts meanwhile waits for this load, as for any.
+        let Some(_loading) = self.try_start_loading() else {
+            return;
+        };
+        let started = Instant::now();
+        let spec = LoadSpec {
+            path,
+            backend: Backend::Cpu,
+            device: DeviceSelector::Auto,
+        };
+        match self.engine.load(spec) {
+            Ok(_) => {
+                self.standby.store(true, Ordering::Release);
+                info!(
+                    "Model idle on the GPU for {}s: moved it to the CPU in {}ms, where it waits for the next dictation",
+                    idle_secs,
+                    started.elapsed().as_millis()
+                );
+            }
+            Err(e) => {
+                warn!("Couldn't move the idle model to the CPU: {e}");
+                self.forget_model_if_engine_dropped(&model_id, &e.to_string());
+            }
+        }
+    }
+
+    /// The model is wanted again after waiting on the CPU: load it back
+    /// onto the GPU beside the CPU copy, which serves until it's ready.
+    fn leave_standby(&self) {
+        if !self.standby.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        let Some(model_id) = self.get_current_model() else {
+            return;
+        };
+        let Ok(path) = self.model_manager.get_model_path(&model_id) else {
+            return;
+        };
+        let (backend, device) = self.device_choice();
+        if backend == Backend::Cpu || !self.engine.has_usable_gpu() {
+            return;
+        }
+        info!("Loading the model back onto the GPU; the CPU copy serves until it's ready");
+        self.engine.warm_up(LoadSpec {
+            path,
+            backend,
+            device,
+        });
     }
 
     /// The backend and device from the accelerator setting.
@@ -576,6 +654,7 @@ impl TranscriptionManager {
     ) -> Result<()> {
         let load_start = std::time::Instant::now();
         debug!("Starting to load model: {}", model_id);
+        self.standby.store(false, Ordering::Release);
 
         // Emit loading started event
         let _ = self.app_handle.emit(
@@ -733,6 +812,7 @@ impl TranscriptionManager {
 
         let reload_pending = self.reload_model_on_next_use.load(Ordering::Acquire);
         if !reload_pending && self.is_model_loaded() {
+            self.leave_standby();
             return;
         }
 

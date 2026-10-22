@@ -137,6 +137,23 @@ pub fn env_flag_enabled(name: &str) -> bool {
     }
 }
 
+/// The memory free on this PC, in MB.
+pub fn available_memory_mb() -> Option<u64> {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+        let mut status = MEMORYSTATUSEX {
+            dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: the call writes only into `status`, sized as it expects.
+        unsafe { GlobalMemoryStatusEx(&mut status) }.ok()?;
+        Some(status.ullAvailPhys >> 20)
+    }
+    #[cfg(not(windows))]
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

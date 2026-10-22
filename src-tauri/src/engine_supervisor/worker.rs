@@ -367,7 +367,6 @@ impl Usage {
         use windows::Win32::System::ProcessStatus::{
             GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
         };
-        use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
         use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
 
         let ms = |t: FILETIME| {
@@ -389,14 +388,8 @@ impl Usage {
             if GetProcessMemoryInfo(process, &mut memory, memory.cb).is_ok() {
                 usage.page_faults = u64::from(memory.PageFaultCount);
             }
-            let mut status = MEMORYSTATUSEX {
-                dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
-                ..Default::default()
-            };
-            if GlobalMemoryStatusEx(&mut status).is_ok() {
-                usage.free_mb = status.ullAvailPhys >> 20;
-            }
         }
+        usage.free_mb = crate::utils::available_memory_mb().unwrap_or(0);
         usage
     }
 

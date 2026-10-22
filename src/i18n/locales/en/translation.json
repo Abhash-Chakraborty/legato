@@ -380,7 +380,7 @@
       },
       "modelUnload": {
         "title": "Unload model after",
-        "description": "Frees memory when you haven't dictated for that long. While the model loads onto your graphics card again, a short dictation is transcribed on the CPU.",
+        "description": "Frees your graphics card when you haven't dictated for that long. The model waits on the processor meanwhile, so your next dictation starts at once. A model that runs on the processor is unloaded instead.",
         "options": {
           "never": "Never",
           "immediately": "Immediately",

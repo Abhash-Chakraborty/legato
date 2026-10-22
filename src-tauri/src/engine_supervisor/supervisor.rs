@@ -244,6 +244,17 @@ enum Command {
     StreamReset {
         id: u64,
     },
+    /// A worker that loaded the model beside the current one, to take its
+    /// place (see [`EngineSupervisor::warm_up`]).
+    Adopt(Box<Adopt>),
+}
+
+struct Adopt {
+    worker: Worker,
+    info: LoadedInfo,
+    spec: LoadSpec,
+    /// [`Shared::generation`] when the warm-up began.
+    generation: u64,
 }
 
 /// State readable without going through the queue.
@@ -273,6 +284,9 @@ struct Shared {
     /// Bumped by every [`EngineSupervisor::unload`] as it is called, so the
     /// model reads as unloaded at once, even while the unload waits its turn.
     unloads_requested: AtomicU64,
+    /// Bumped by every load and unload as it is called, so a worker warmed
+    /// up beside the current one never brings back a model replaced since.
+    generation: AtomicU64,
     next_id: AtomicU64,
 }
 
@@ -435,6 +449,7 @@ impl EngineSupervisor {
             spec: None,
             stream: None,
             unloads_done: 0,
+            adopting: None,
         };
         thread::Builder::new()
             .name("transcribe-engine".into())
@@ -453,6 +468,7 @@ impl EngineSupervisor {
     /// exited before the new one starts, so two models are never held at
     /// once.
     pub fn load(&self, spec: LoadSpec) -> Result<LoadedInfo, EngineError> {
+        self.shared.generation.fetch_add(1, Ordering::SeqCst);
         self.ask(|reply| Command::Load(spec, reply))
             .unwrap_or_else(|| Err(engine_stopped()))
     }
@@ -466,12 +482,63 @@ impl EngineSupervisor {
         {
             let mut loaded = lock(&self.shared.loaded);
             self.shared.unloads_requested.fetch_add(1, Ordering::SeqCst);
+            self.shared.generation.fetch_add(1, Ordering::SeqCst);
             *loaded = None;
             if self.commands.send(Command::Unload(reply)).is_err() {
                 return Unloading(None);
             }
         }
         Unloading(Some(exited))
+    }
+
+    /// Load the current model again per `spec` (on the GPU, say) in a worker
+    /// of its own, on a thread of its own, while the current worker goes on
+    /// serving. Once loaded, it takes the current worker's place as soon as
+    /// no stream is running; if the model was unloaded or replaced
+    /// meanwhile, it is dropped. Unlike [`load`](Self::load), both models
+    /// are held for a moment, so `spec` should use other memory than the
+    /// current one (the GPU's against the CPU's).
+    pub fn warm_up(&self, spec: LoadSpec) {
+        let generation = self.shared.generation.load(Ordering::SeqCst);
+        let shared = Arc::clone(&self.shared);
+        let commands = self.commands.clone();
+        let spawned = thread::Builder::new()
+            .name("transcribe-warm-up".into())
+            .spawn(move || {
+                let started = Instant::now();
+                let cpu_only = spec.cpu_only() || !shared.gpu_allowed;
+                let loaded = shared.hello(cpu_only, !cpu_only).and_then(|mut worker| {
+                    let info = worker.load(&spec)?;
+                    Ok((worker, info))
+                });
+                match loaded {
+                    Ok((worker, info)) => {
+                        debug!(
+                            "Worker (pid {}) loaded the model beside the current one in {}ms",
+                            worker.control.pid,
+                            started.elapsed().as_millis()
+                        );
+                        let _ = commands.send(Command::Adopt(Box::new(Adopt {
+                            worker,
+                            info,
+                            spec,
+                            generation,
+                        })));
+                    }
+                    Err(failure) => {
+                        warn!("Couldn't load the model beside the current one: {failure}");
+                        if failure.worker_lost() && !cpu_only && !spec.pinned() {
+                            shared.mark_gpu_unavailable(format!(
+                                "a worker for '{}' with GPU backends {failure}",
+                                spec.path.display()
+                            ));
+                        }
+                    }
+                }
+            });
+        if let Err(e) = spawned {
+            warn!("Couldn't start loading the model beside the current one: {e}");
+        }
     }
 
     /// An explicit transcribe.cpp accelerator or GPU device change: forget
@@ -777,6 +844,9 @@ struct Owner {
     stream: Option<ActiveStream>,
     /// Unload commands processed, against [`Shared::unloads_requested`].
     unloads_done: u64,
+    /// A warmed-up worker waiting for the stream to end before it takes
+    /// over.
+    adopting: Option<Box<Adopt>>,
 }
 
 impl Owner {
@@ -821,6 +891,12 @@ impl Owner {
                         self.end_stream();
                     }
                 }
+                Command::Adopt(adopt) => self.adopting = Some(adopt),
+            }
+            if self.stream.is_none() {
+                if let Some(adopt) = self.adopting.take() {
+                    self.adopt(*adopt);
+                }
             }
         }
         // Every handle is gone.
@@ -837,9 +913,41 @@ impl Owner {
         result
     }
 
+    /// Put a worker warmed up elsewhere in the slot, unless the model was
+    /// unloaded or replaced since it began.
+    fn adopt(&mut self, adopt: Adopt) {
+        let same_model = self
+            .spec
+            .as_ref()
+            .is_some_and(|spec| spec.path == adopt.spec.path);
+        if !same_model || self.shared.generation.load(Ordering::SeqCst) != adopt.generation {
+            debug!(
+                "Dropped the worker (pid {}) loaded beside the current one: the model changed meanwhile",
+                adopt.worker.control.pid
+            );
+            return;
+        }
+        if let Some(old) = self.worker.take() {
+            let pid = old.control.pid;
+            drop(old);
+            debug!(
+                "Transcription worker (pid {}) stopped: worker (pid {}) took over",
+                pid, adopt.worker.control.pid
+            );
+        }
+        info!(
+            "The transcription model now runs on '{}' ({})",
+            adopt.info.device, adopt.info.backend
+        );
+        self.spec = Some(adopt.spec);
+        self.publish_loaded(&adopt.info);
+        self.worker = Some(adopt.worker);
+    }
+
     fn unload(&mut self) {
         // The worker's exit ends any stream; no need to reset it first.
         self.stream = None;
+        self.adopting = None;
         if let Some(worker) = self.worker.take() {
             let started = Instant::now();
             let pid = worker.control.pid;
@@ -1921,6 +2029,36 @@ mod tests {
             .unwrap();
         assert!(!engine.shared.gpu_unavailable());
         assert!(engine.loaded().unwrap().on_gpu);
+    }
+
+    /// A model waiting on the CPU goes back to the GPU in a worker loaded
+    /// beside it, which takes over only once no stream is running; one
+    /// unloaded meanwhile is not brought back.
+    #[test]
+    #[ignore]
+    fn warmed_up_worker_takes_over_after_the_stream() {
+        set_fault(None, false);
+        let engine = EngineSupervisor::new(true);
+        assert!(!engine.load(spec().cpu()).unwrap().on_gpu);
+        let stream = engine
+            .start_stream(RunOptions::default(), StreamOptions::default(), |_| {})
+            .unwrap();
+        engine.warm_up(spec());
+        // Loaded meanwhile, it waits for the stream.
+        thread::sleep(Duration::from_secs(20));
+        assert!(!engine.loaded().unwrap().on_gpu);
+        stream.feed(test_pcm());
+        stream.finalize(false).unwrap();
+        engine
+            .transcribe(test_pcm(), RunOptions::default())
+            .unwrap();
+        assert!(engine.loaded().unwrap().on_gpu, "needs a GPU");
+
+        assert!(!engine.load(spec().cpu()).unwrap().on_gpu);
+        engine.warm_up(spec());
+        engine.unload().wait();
+        thread::sleep(Duration::from_secs(20));
+        assert!(engine.loaded().is_none());
     }
 
     /// A crash that only happens on the GPU: the dictation succeeds on CPU,
