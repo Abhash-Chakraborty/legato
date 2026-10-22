@@ -1216,7 +1216,11 @@ pub fn change_post_process_base_url_setting(
         ));
     }
 
-    provider.base_url = base_url.trim().to_string();
+    let base_url = base_url.trim().to_string();
+    if !crate::ai_rules::transport_ok(&base_url) {
+        return Err("insecure".into());
+    }
+    provider.base_url = base_url;
     settings::write_settings(&app, settings);
     crate::ai::notify(&app);
     Ok(())

@@ -265,9 +265,15 @@ fn create_client(provider: &PostProcessProvider, api_key: &str) -> Result<reqwes
     if let Some(client) = clients.lock().ok().and_then(|c| c.get(&key).cloned()) {
         return Ok(client);
     }
+    // Keys and transcripts never cross a network in the clear.
+    if !crate::ai_rules::transport_ok(&provider.base_url) {
+        return Err(INSECURE_PROVIDER.to_string());
+    }
     let headers = build_headers(provider, api_key)?;
     let client = reqwest::Client::builder()
         .default_headers(headers)
+        // A redirect would carry the key (x-api-key survives one) elsewhere.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| report_reqwest_error("Failed to build HTTP client", &e))?;
     if let Ok(mut clients) = clients.lock() {
@@ -275,6 +281,10 @@ fn create_client(provider: &PostProcessProvider, api_key: &str) -> Result<reqwes
     }
     Ok(client)
 }
+
+/// Why a provider's plain http address is refused, for the log and the bar.
+pub const INSECURE_PROVIDER: &str =
+    "The AI provider's address is plain http off this PC; use its https address";
 
 /// Opens a connection to the provider ahead of a request, so the request
 /// that follows (a dictation's cleanup, when it stops) skips the handshake.

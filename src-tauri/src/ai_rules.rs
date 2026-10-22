@@ -75,6 +75,30 @@ pub fn is_local_url(base_url: &str) -> bool {
     host == "localhost" || host.ends_with(".localhost") || host == "::1" || host.starts_with("127.")
 }
 
+/// Whether text and keys may go to this provider address: https anywhere;
+/// plain http only to this PC or to a NetBird or Tailscale address typed as
+/// a number, where the tunnel encrypts it. A name over plain http is
+/// refused, since a café network could answer for it.
+pub fn transport_ok(base_url: &str) -> bool {
+    let Ok(url) = url::Url::parse(base_url.trim()) else {
+        return false;
+    };
+    match (url.scheme(), url.host()) {
+        ("https", Some(_)) => true,
+        ("http", Some(url::Host::Domain(d))) => {
+            let d = d.to_ascii_lowercase();
+            d == "localhost" || d.ends_with(".localhost")
+        }
+        ("http", Some(url::Host::Ipv4(v4))) => {
+            crate::inyon_rules::plain_http_ok(std::net::IpAddr::V4(v4))
+        }
+        ("http", Some(url::Host::Ipv6(v6))) => {
+            crate::inyon_rules::plain_http_ok(std::net::IpAddr::V6(v6))
+        }
+        _ => false,
+    }
+}
+
 /// The most Dictionary words one correction request carries.
 pub const CORRECTION_WORD_LIMIT: usize = 300;
 
@@ -331,6 +355,18 @@ fn phrase_pattern(phrase: &str) -> Option<Regex> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_addresses_need_https_off_this_pc() {
+        assert!(transport_ok("https://api.openai.com/v1"));
+        assert!(transport_ok("http://localhost:11434/v1"));
+        assert!(transport_ok("http://127.0.0.1:1234/v1"));
+        assert!(transport_ok("http://100.97.188.112:11434/v1"));
+        assert!(!transport_ok("http://192.168.1.20:11434/v1"));
+        assert!(!transport_ok("http://my-litellm.example.com:4000/v1"));
+        assert!(!transport_ok("ftp://localhost/"));
+        assert!(!transport_ok("not a url"));
+    }
 
     #[test]
     fn errors_name_the_problem() {

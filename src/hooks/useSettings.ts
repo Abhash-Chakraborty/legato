@@ -36,10 +36,11 @@ interface UseSettingsReturn {
 
   // Post-processing helpers
   setPostProcessProvider: (providerId: string) => Promise<void>;
+  /** Resolves to the refusal's reason, or null once saved. */
   updatePostProcessBaseUrl: (
     providerId: string,
     baseUrl: string,
-  ) => Promise<void>;
+  ) => Promise<string | null>;
   updatePostProcessApiFormat: (
     providerId: string,
     apiFormat: PostProcessApiFormat,

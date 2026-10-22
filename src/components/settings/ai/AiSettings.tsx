@@ -608,18 +608,20 @@ const BaseUrlField: React.FC<{ provider: PostProcessProvider }> = ({
   const { t } = useTranslation();
   const { updatePostProcessBaseUrl } = useSettings();
   const [value, setValue] = useState(provider.base_url);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<"invalid" | "insecure" | null>(null);
   useEffect(() => setValue(provider.base_url), [provider.base_url]);
 
   const commit = () => {
     const url = value.trim();
     if (url === provider.base_url) return;
     if (!/^https?:\/\/\S+$/i.test(url)) {
-      setError(true);
+      setError("invalid");
       return;
     }
-    setError(false);
-    void updatePostProcessBaseUrl(provider.id, url);
+    setError(null);
+    void updatePostProcessBaseUrl(provider.id, url).then((refused) => {
+      if (refused === "insecure") setError("insecure");
+    });
   };
 
   return (
@@ -627,7 +629,7 @@ const BaseUrlField: React.FC<{ provider: PostProcessProvider }> = ({
       title={t("settings.ai.baseUrl.title")}
       description={
         error
-          ? t("settings.ai.baseUrl.invalid")
+          ? t(`settings.ai.baseUrl.${error}`)
           : t(
               provider.id === "ollama"
                 ? "settings.ai.baseUrl.ollamaHelp"
@@ -640,13 +642,13 @@ const BaseUrlField: React.FC<{ provider: PostProcessProvider }> = ({
         aria-label={t("settings.ai.baseUrl.label", {
           name: provider.id === "custom" ? t("ai.yourServer") : provider.label,
         })}
-        aria-invalid={error || undefined}
+        aria-invalid={error ? true : undefined}
         spellCheck={false}
         autoComplete="off"
         value={value}
         onChange={(e) => {
           setValue(e.target.value);
-          setError(false);
+          setError(null);
         }}
         onBlur={commit}
         onKeyDown={(e) => {
@@ -654,7 +656,7 @@ const BaseUrlField: React.FC<{ provider: PostProcessProvider }> = ({
           if (e.key === "Escape") {
             e.stopPropagation();
             setValue(provider.base_url);
-            setError(false);
+            setError(null);
           }
         }}
       />

@@ -822,9 +822,10 @@
       "keySaved": "Key saved",
       "baseUrl": {
         "title": "Base URL",
-        "ollamaHelp": "Where Ollama listens. Change it only if Ollama runs on another port or PC.",
+        "ollamaHelp": "Where Ollama listens. On another PC, use its https address or its NetBird or Tailscale IP.",
         "customHelp": "The server's OpenAI-compatible address, ending in /v1.",
         "invalid": "Start the address with http:// or https://.",
+        "insecure": "Plain http works only on this PC or a NetBird or Tailscale IP, so nobody on the network reads your text or key. Use the https address.",
         "label": "Base URL for {{name}}"
       },
       "apiFormat": {

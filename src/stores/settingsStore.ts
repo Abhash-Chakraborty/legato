@@ -61,10 +61,11 @@ interface SettingsStore {
     providerId: string,
     value: string,
   ) => Promise<void>;
+  /** Resolves to the refusal's reason, or null once saved. */
   updatePostProcessBaseUrl: (
     providerId: string,
     baseUrl: string,
-  ) => Promise<void>;
+  ) => Promise<string | null>;
   updatePostProcessApiFormat: (
     providerId: string,
     apiFormat: PostProcessApiFormat,
@@ -595,7 +596,7 @@ export const useSettingsStore = create<SettingsStore>()(
         );
         if (urlResult.status === "error") {
           console.error("Failed to persist base URL:", urlResult.error);
-          return;
+          return urlResult.error;
         }
 
         // Reset the stored model since the previous value is almost certainly
@@ -607,7 +608,7 @@ export const useSettingsStore = create<SettingsStore>()(
         );
         if (modelResult.status === "error") {
           console.error("Failed to reset model setting:", modelResult.error);
-          return;
+          return null;
         }
 
         // Clear cached model options only after both backend writes succeed.
@@ -626,6 +627,7 @@ export const useSettingsStore = create<SettingsStore>()(
       } finally {
         setUpdating(updateKey, false);
       }
+      return null;
     },
 
     updatePostProcessApiFormat: async (providerId, apiFormat) => {
