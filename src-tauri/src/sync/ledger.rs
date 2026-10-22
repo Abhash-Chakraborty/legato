@@ -22,6 +22,9 @@ use super::protocol::Change;
 pub const KEEP_CLIPS: usize = 20;
 /// The most body bytes one `changes` answer carries, well under a frame.
 const BATCH_BYTES: usize = 4 * 1024 * 1024;
+/// The largest item synced: a batch just under `BATCH_BYTES` plus one of
+/// these still fits a frame.
+const MAX_ITEM_BYTES: usize = 8 * 1024 * 1024;
 
 /// One item as a store holds it now.
 #[derive(Clone, Debug, PartialEq)]
@@ -230,6 +233,12 @@ pub fn changes_since(
         }
         upto = seq as u64;
         if origin == skip_origin || !kinds.contains(&kind) {
+            continue;
+        }
+        // One item over the frame limit would fail every batch it's in,
+        // and the link would drop and reconnect forever. It stays here.
+        if body.as_ref().is_some_and(|b| b.len() > MAX_ITEM_BYTES) {
+            log::warn!("Not syncing {kind} item {key}: it's over {MAX_ITEM_BYTES} bytes");
             continue;
         }
         bytes += body.as_ref().map_or(0, String::len);

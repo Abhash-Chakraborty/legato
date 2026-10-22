@@ -1138,6 +1138,7 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::retry_note_lines,
             commands::sync::get_sync_state,
             commands::sync::start_pairing,
+            commands::sync::copy_pairing_link,
             commands::sync::cancel_pairing,
             commands::sync::unpair_phone,
             commands::sync::rename_phone,

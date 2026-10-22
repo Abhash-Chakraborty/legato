@@ -2103,6 +2103,18 @@ async startPairing() : Promise<Result<PairingInfo, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Copies the pairing link without it reaching clipboard history, the cloud
+ * clipboard or a connected phone: it holds the pairing secret.
+ */
+async copyPairingLink(link: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("copy_pairing_link", { link }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async cancelPairing() : Promise<void> {
     await TAURI_INVOKE("cancel_pairing");
 },

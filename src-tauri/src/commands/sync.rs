@@ -26,6 +26,14 @@ pub fn start_pairing(sync: Sync<'_>) -> Result<PairingInfo, String> {
     sync.inner().start_pairing().map_err(err)
 }
 
+/// Copies the pairing link without it reaching clipboard history, the cloud
+/// clipboard or a connected phone: it holds the pairing secret.
+#[tauri::command]
+#[specta::specta]
+pub fn copy_pairing_link(app: AppHandle, link: String) -> Result<(), String> {
+    crate::sync::clipboard::copy_private(&app, &link).map_err(err)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn cancel_pairing(sync: Sync<'_>) {

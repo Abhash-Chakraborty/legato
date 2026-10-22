@@ -169,6 +169,27 @@ pub struct Owner {
     pub pid: u32,
 }
 
+/// Copies text that mustn't linger (a pairing link holds its secret): kept
+/// out of clipboard history and the cloud clipboard, and never sent to a
+/// phone.
+#[cfg(windows)]
+pub fn copy_private(app: &AppHandle, text: &str) -> Result<()> {
+    use tauri::Manager;
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| anyhow!("the main window isn't open"))?;
+    let hwnd = window.hwnd()?;
+    win::write_private_text(hwnd, text).map_err(|e| anyhow!(e))?;
+    WROTE.store(win::sequence(), Ordering::SeqCst);
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn copy_private(app: &AppHandle, text: &str) -> Result<()> {
+    app.clipboard().write_text(text.to_string())?;
+    Ok(())
+}
+
 #[cfg(windows)]
 mod win {
     use super::Owner;
@@ -233,6 +254,80 @@ mod win {
             });
             let _ = CloseClipboard();
             private
+        }
+    }
+
+    /// Puts text on the clipboard marked private, in one go, so clipboard
+    /// history, the cloud clipboard and Legato's own watcher never see it.
+    /// `owner` must be one of this app's windows: with no owner, Windows
+    /// refuses the data after emptying the clipboard.
+    pub fn write_private_text(
+        owner: windows::Win32::Foundation::HWND,
+        text: &str,
+    ) -> Result<(), String> {
+        use windows::Win32::Foundation::GlobalFree;
+        use windows::Win32::System::DataExchange::{EmptyClipboard, SetClipboardData};
+        use windows::Win32::System::Memory::{GlobalAlloc, GMEM_MOVEABLE};
+        use windows::Win32::System::Ole::CF_UNICODETEXT;
+
+        unsafe fn put(format: u32, bytes: &[u8]) -> bool {
+            let Ok(global) = GlobalAlloc(GMEM_MOVEABLE, bytes.len()) else {
+                return false;
+            };
+            let ptr = GlobalLock(global) as *mut u8;
+            if ptr.is_null() {
+                let _ = GlobalFree(Some(global));
+                return false;
+            }
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len());
+            let _ = GlobalUnlock(global);
+            // On success the clipboard owns the memory.
+            if SetClipboardData(format, Some(HANDLE(global.0))).is_err() {
+                let _ = GlobalFree(Some(global));
+                return false;
+            }
+            true
+        }
+
+        // SAFETY: the clipboard is opened, filled and closed on this thread;
+        // each buffer is handed to it or freed.
+        unsafe {
+            let mut opened = false;
+            for _ in 0..10 {
+                if OpenClipboard(Some(owner)).is_ok() {
+                    opened = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            if !opened {
+                return Err("Another app is using the clipboard; try again".into());
+            }
+            let result = (|| {
+                EmptyClipboard().map_err(|e| e.to_string())?;
+                for (name, value) in [
+                    (w!("ExcludeClipboardContentFromMonitorProcessing"), 1u32),
+                    (w!("CanIncludeInClipboardHistory"), 0u32),
+                    (w!("CanUploadToCloudClipboard"), 0u32),
+                ] {
+                    let format = RegisterClipboardFormatW(name);
+                    if format != 0 {
+                        put(format, &value.to_le_bytes());
+                    }
+                }
+                let wide: Vec<u8> = text
+                    .encode_utf16()
+                    .chain(std::iter::once(0))
+                    .flat_map(u16::to_le_bytes)
+                    .collect();
+                if put(CF_UNICODETEXT.0 as u32, &wide) {
+                    Ok(())
+                } else {
+                    Err("Couldn't copy".to_string())
+                }
+            })();
+            let _ = CloseClipboard();
+            result
         }
     }
 

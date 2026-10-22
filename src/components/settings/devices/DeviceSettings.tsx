@@ -117,8 +117,11 @@ const PairDialog: React.FC<{ open: boolean; onClose: () => void }> = ({
 
   const copyLink = async () => {
     if (!info) return;
-    await navigator.clipboard.writeText(info.link);
-    toast.success(t("settings.devices.pair.copied"));
+    // Not navigator.clipboard: the link holds the pairing secret, which
+    // mustn't land in clipboard history or the cloud clipboard.
+    const r = await commands.copyPairingLink(info.link);
+    if (r.status === "error") toast.error(r.error);
+    else toast.success(t("settings.devices.pair.copied"));
   };
 
   return (
