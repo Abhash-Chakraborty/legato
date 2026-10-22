@@ -248,7 +248,7 @@ Access debug features with `Ctrl+Shift+D`.
 Legato targets Windows only, on x64 and ARM64.
 
 - x64 builds use Vulkan GPU acceleration; ARM64 builds are CPU-only (see the per-architecture dependency tables in `src-tauri/Cargo.toml`)
-- Release installers are code-signed through the `signCommand` in `src-tauri/tauri.conf.json`
+- Installers aren't code-signed yet (no `signCommand`; Windows SmartScreen warns on first run). Upstream's Azure signing account was removed; add a `bundle.windows.signCommand` once Legato has its own identity. Updater artifacts are signed with `TAURI_SIGNING_PRIVATE_KEY` in release builds
 - Implicit Vulkan layers (overlays, capture hooks) are disabled for the Legato process via `VK_LOADER_LAYERS_DISABLE=~implicit~` set in `main.rs`; opt out with `LEGATO_KEEP_VULKAN_IMPLICIT_LAYERS=1` or by setting `VK_LOADER_LAYERS_DISABLE` yourself
 
 ## Environment Variables

@@ -4,6 +4,16 @@ Legato is a dictation app for Windows, and its speech recognition runs locally o
 
 Status: in development. Legato is a public fork of Handy with my changes.
 
+## Install
+
+Download `Legato_<version>_x64-setup.exe` (or `arm64` for Windows on Arm) and run it. It installs for your account only and needs no administrator rights. Setup then checks your microphone, picks a speech model for your languages and downloads it (0.5 to 1.6 GB).
+
+The installer isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC". Choose More info, then Run anyway. To check the file first, see [Verify release signatures](#verify-release-signatures).
+
+To use Legato in apps run as administrator (an admin terminal, say), install it for all users with the `.msi` instead, then turn on Settings › General › Work in apps run as administrator.
+
+Uninstalling removes the app. Tick "Delete app data" to also remove your history, notes, settings and the keys Legato saved in Windows Credential Manager. Downloaded models stay in the shared Hugging Face cache (`%USERPROFILE%\.cache\huggingface`), since other tools may use them.
+
 To build it on Windows, see [BUILD.md](BUILD.md).
 
 Legato started as a fork of [Handy](https://github.com/cjpais/Handy) by CJ Pais and its contributors (MIT).
