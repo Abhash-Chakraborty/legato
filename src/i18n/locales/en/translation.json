@@ -2949,7 +2949,9 @@
       "zoom": "Zoom",
       "meet": "Google Meet",
       "slack": "Slack",
-      "discord": "Discord"
+      "discord": "Discord",
+      "whatsapp": "WhatsApp",
+      "telegram": "Telegram"
     },
     "test": {
       "started": "That was a test, so nothing was recorded. In a real call, notes would start now.",

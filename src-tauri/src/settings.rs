@@ -343,6 +343,10 @@ impl Default for CallSettings {
     }
 }
 
+    /// Every app these settings have seen offered, so one added in a later
+    /// version is watched once by default and then left as you set it.
+    #[serde(default = "crate::calls_rules::first_apps")]
+    pub known_apps: Vec<CallApp>,
 /// A call Legato noticed, for Settings › Context & calls.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
 pub struct LastCall {
@@ -379,6 +383,7 @@ pub enum LearnMode {
 }
 
 /// Where the live transcript box shows while the bubble has a dictation.
+            known_apps: CallApp::ALL.to_vec(),
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum LiveCaption {
@@ -1683,6 +1688,11 @@ fn salvage_settings(stored: &serde_json::Value) -> AppSettings {
 
     serde_json::from_value(merged).unwrap_or_else(|e| {
         warn!("Failed to reassemble salvaged settings ({e}); falling back to defaults");
+        // Call apps added since these settings were saved.
+        let calls = &mut settings.calls;
+        if crate::calls_rules::add_new_apps(&mut calls.watched, &mut calls.known_apps) {
+            updated = true;
+        }
         get_default_settings()
     })
 }

@@ -644,10 +644,66 @@ fn offer_due(app: &AppHandle) {
     }
 }
 
+/// What the log last said about the microphone, so it speaks only when
+/// that changes.
+static LAST_HOLDERS: Mutex<String> = Mutex::new(String::new());
+
+/// Logs who holds the microphone when it changes, and what Legato made of
+/// each, so a call that brought no card can be explained afterwards. Only
+/// app names are logged, never window titles.
+fn log_holders(users: &[(String, bool)], found: &[CallApp]) {
+    let described: Vec<String> = users
+        .iter()
+        .map(|(entry, packaged)| {
+            let name = if *packaged {
+                entry.split('_').next().unwrap_or(entry).to_string()
+            } else {
+                rules::exe_of(entry)
+            };
+            let what = match rules::holder_for_entry(entry, *packaged) {
+                Holder::App(call) if found.contains(&call) => "a call app, watched",
+                Holder::App(_) => "a call app, not watched",
+                Holder::Browser(exe) => {
+                    let call = lock()
+                        .call_browser
+                        .as_ref()
+                        .filter(|(b, _)| *b == exe)
+                        .map(|(_, call)| *call);
+                    if call.is_some_and(|c| found.contains(&c)) {
+                        "a browser with a call"
+                    } else {
+                        "a browser, no call tab in front"
+                    }
+                }
+                Holder::Legato => "Legato",
+                Holder::Other => "not a call app",
+            };
+            format!("{name} ({what})")
+        })
+        .collect();
+    let line = if described.is_empty() {
+        "Microphone not in use".to_string()
+    } else {
+        format!("Microphone in use by {}", described.join(", "))
+    };
+    let mut last = LAST_HOLDERS.lock().unwrap_or_else(|e| e.into_inner());
+    if *last != line {
+        info!("{line}");
+        *last = line;
+    }
+}
+
 /// Who holds the microphone now, among the apps watched.
 fn holding(settings: &CallSettings) -> Vec<CallApp> {
+    let users = mic_users();
+    let found = holding_among(settings, &users);
+    log_holders(&users, &found);
+    found
+}
+
+fn holding_among(settings: &CallSettings, users: &[(String, bool)]) -> Vec<CallApp> {
     let mut found = Vec::new();
-    for (entry, packaged) in mic_users() {
+    for (entry, packaged) in users.iter().cloned() {
         match rules::holder_for_entry(&entry, packaged) {
             Holder::App(call) if settings.watched.contains(&call) => found.push(call),
             Holder::Browser(exe) if settings.browser_titles => {

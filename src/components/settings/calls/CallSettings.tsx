@@ -17,6 +17,8 @@ export const CALL_APPS: CallApp[] = [
   "meet",
   "slack",
   "discord",
+  "whatsapp",
+  "telegram",
 ];
 
 const DEFAULTS: Required<Omit<CallSettings, "last">> & {
@@ -24,7 +26,16 @@ const DEFAULTS: Required<Omit<CallSettings, "last">> & {
 } = {
   detect: true,
   browser_titles: true,
-  watched: ["teams", "zoom", "meet", "slack"],
+  watched: ["teams", "zoom", "meet", "slack", "whatsapp", "telegram"],
+  known_apps: [
+    "teams",
+    "zoom",
+    "meet",
+    "slack",
+    "discord",
+    "whatsapp",
+    "telegram",
+  ],
   auto_start: false,
   countdown_secs: 10,
   snooze_minutes: 10,

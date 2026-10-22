@@ -2944,7 +2944,7 @@ export type CallAction = "start" | "not_now" | "never" | "stop_now" | "keep" | "
 /**
  * An app Legato watches for calls.
  */
-export type CallApp = "teams" | "zoom" | "meet" | "slack" | "discord"
+export type CallApp = "teams" | "zoom" | "meet" | "slack" | "discord" | "whatsapp" | "telegram"
 /**
  * Settings › Context & calls: noticing calls and offering notes.
  */
@@ -2988,6 +2988,11 @@ open_note?: boolean;
  * join it, with or without notes.
  */
 meeting_cards?: boolean; 
+/**
+ * Every app these settings have seen offered, so one added in a later
+ * version is watched once by default and then left as you set it.
+ */
+known_apps?: CallApp[]; 
 /**
  * The last call Legato noticed.
  */

@@ -16,15 +16,20 @@ pub enum CallApp {
     Meet,
     Slack,
     Discord,
+    #[serde(rename = "whatsapp")]
+    WhatsApp,
+    Telegram,
 }
 
 impl CallApp {
-    pub const ALL: [CallApp; 5] = [
+    pub const ALL: [CallApp; 7] = [
         CallApp::Teams,
         CallApp::Zoom,
         CallApp::Meet,
         CallApp::Slack,
         CallApp::Discord,
+        CallApp::WhatsApp,
+        CallApp::Telegram,
     ];
 
     /// The name the call card says.
@@ -35,6 +40,18 @@ impl CallApp {
             CallApp::Meet => "Google Meet",
             CallApp::Slack => "Slack",
             CallApp::Discord => "Discord",
+            CallApp::WhatsApp => "WhatsApp",
+            CallApp::Telegram => "Telegram",
+        }
+    }
+
+    /// How long the app has to hold the microphone before it counts as a
+    /// call. WhatsApp and Telegram also take it to record a voice message,
+    /// which rarely runs this long.
+    pub fn start_after_ms(self) -> u64 {
+        match self {
+            CallApp::WhatsApp | CallApp::Telegram => MESSAGING_START_AFTER_MS,
+            _ => START_AFTER_MS,
         }
     }
 
@@ -43,6 +60,30 @@ impl CallApp {
     pub fn watched_by_default(self) -> bool {
         self != CallApp::Discord
     }
+}
+
+/// The apps settings saved before WhatsApp and Telegram were added knew
+/// about.
+pub fn first_apps() -> Vec<CallApp> {
+    CallApp::ALL[..5].to_vec()
+}
+
+/// Brings in apps Legato learned to watch since these settings were saved:
+/// each one is watched when it is by default, and is known from then on, so
+/// turning it off sticks. True when anything changed.
+pub fn add_new_apps(watched: &mut Vec<CallApp>, known: &mut Vec<CallApp>) -> bool {
+    let mut changed = false;
+    for app in CallApp::ALL {
+        if known.contains(&app) {
+            continue;
+        }
+        known.push(app);
+        if app.watched_by_default() && !watched.contains(&app) {
+            watched.push(app);
+        }
+        changed = true;
+    }
+    changed
 }
 
 /// The apps watched when nothing was chosen yet.
@@ -97,6 +138,8 @@ pub fn holder_for_exe(exe: &str) -> Holder {
         "zoom.exe" => Holder::App(CallApp::Zoom),
         "slack.exe" => Holder::App(CallApp::Slack),
         "discord.exe" => Holder::App(CallApp::Discord),
+        "whatsapp.exe" | "whatsapp.root.exe" => Holder::App(CallApp::WhatsApp),
+        "telegram.exe" => Holder::App(CallApp::Telegram),
         "legato.exe" => Holder::Legato,
         e if BROWSERS.contains(&e) => Holder::Browser(exe),
         _ => Holder::Other,
@@ -118,6 +161,10 @@ pub fn holder_for_entry(key: &str, packaged: bool) -> Holder {
         Holder::App(CallApp::Discord)
     } else if family.contains("zoom") {
         Holder::App(CallApp::Zoom)
+    } else if family.contains("whatsappdesktop") {
+        Holder::App(CallApp::WhatsApp)
+    } else if family.contains("telegramdesktop") {
+        Holder::App(CallApp::Telegram)
     } else {
         Holder::Other
     }
@@ -167,6 +214,9 @@ pub fn web_call(title: &str) -> Option<CallApp> {
 /// quick device check doesn't bring up the card.
 pub const START_AFTER_MS: u64 = 2000;
 
+/// The same for apps that also record voice messages.
+pub const MESSAGING_START_AFTER_MS: u64 = 20_000;
+
 /// After the call app lets go of the microphone, notes stop this much
 /// later, unless it takes the microphone again.
 pub const END_GRACE_MS: u64 = 20_000;
@@ -191,7 +241,8 @@ impl Tracker {
         for app in CallApp::ALL {
             if holding.contains(&app) {
                 let since = *self.first_seen.entry(app).or_insert(now_ms);
-                if !self.live.contains(&app) && now_ms.saturating_sub(since) >= START_AFTER_MS {
+                if !self.live.contains(&app) && now_ms.saturating_sub(since) >= app.start_after_ms()
+                {
                     self.live.insert(app);
                     events.push(CallEvent::Started(app));
                 }
@@ -345,7 +396,63 @@ mod tests {
     fn discord_starts_unwatched() {
         assert_eq!(
             default_watched(),
-            vec![CallApp::Teams, CallApp::Zoom, CallApp::Meet, CallApp::Slack]
+            vec![
+                CallApp::Teams,
+                CallApp::Zoom,
+                CallApp::Meet,
+                CallApp::Slack,
+                CallApp::WhatsApp,
+                CallApp::Telegram
+            ]
         );
+    }
+
+    #[test]
+    fn messaging_apps_map_and_wait_longer() {
+        assert_eq!(
+            holder_for_entry("5319275A.WhatsAppDesktop_cv1g1gvanyjgm", true),
+            Holder::App(CallApp::WhatsApp)
+        );
+        assert_eq!(
+            holder_for_entry("TelegramMessengerLLP.TelegramDesktop_t4vj0pshhgkwm", true),
+            Holder::App(CallApp::Telegram)
+        );
+        assert_eq!(
+            holder_for_entry(
+                "C:#Users#me#AppData#Roaming#Telegram Desktop#Telegram.exe",
+                false
+            ),
+            Holder::App(CallApp::Telegram)
+        );
+        // A voice message isn't a call.
+        let mut t = Tracker::default();
+        t.update(0, &[CallApp::WhatsApp]);
+        assert!(t.update(15_000, &[CallApp::WhatsApp]).is_empty());
+        assert!(t.update(16_000, &[]).is_empty());
+        t.update(20_000, &[CallApp::WhatsApp]);
+        assert_eq!(
+            t.update(40_000, &[CallApp::WhatsApp]),
+            vec![CallEvent::Started(CallApp::WhatsApp)]
+        );
+    }
+
+    #[test]
+    fn new_apps_join_old_settings_once() {
+        let mut watched = vec![CallApp::Teams, CallApp::Meet];
+        let mut known = first_apps();
+        assert!(add_new_apps(&mut watched, &mut known));
+        assert_eq!(
+            watched,
+            vec![
+                CallApp::Teams,
+                CallApp::Meet,
+                CallApp::WhatsApp,
+                CallApp::Telegram
+            ]
+        );
+        // Turned off afterwards, it stays off.
+        watched.retain(|a| *a != CallApp::Telegram);
+        assert!(!add_new_apps(&mut watched, &mut known));
+        assert!(!watched.contains(&CallApp::Telegram));
     }
 }

@@ -930,6 +930,8 @@ export const buildSections = (
             searchKeys: [
               "settings.calls.test.title",
               "settings.calls.test.button",
+              "calls.app.whatsapp",
+              "calls.app.telegram",
             ],
             render: () => <TestDetectionRow />,
             requires: needsCallDetection,
