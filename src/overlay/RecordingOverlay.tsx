@@ -1,7 +1,9 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { AudioLines, Mic, NotebookPen } from "lucide-react";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import "./RecordingOverlay.css";
+import "./island.css";
 import { commands, events } from "@/bindings";
 import type {
   StreamPhase,
@@ -32,7 +34,8 @@ type OverlayState =
   | "pick"
   | "notes"
   | "call"
-  | "caption";
+  | "caption"
+  | "rest";
 
 type AiProblemKind =
   | "none"
@@ -259,6 +262,89 @@ const WAVE_BARS = 9;
 // loads can take 40s+.
 const SLOW_MODEL_LOAD_MS = 2000;
 
+/** Slack around the island's shape that still counts as on it, in CSS px. */
+const ISLAND_SLACK = 6;
+/** The pointer rests this long before the resting island opens. */
+const ISLAND_HOVER_IN_MS = 150;
+/** And it closes this long after the pointer leaves. */
+const ISLAND_HOVER_OUT_MS = 300;
+
+/**
+ * The island: a dark shape hanging from the top edge that takes the size of
+ * what it shows. The content is measured and the shape follows it with a
+ * transition (width first when growing, height first when shrinking), so
+ * every state change is one smooth morph. The shape's place goes to the
+ * backend, which lets clicks through everywhere else in the window.
+ */
+const IslandFrame: React.FC<{
+  visible: boolean;
+  contentKey: string;
+  children: React.ReactNode;
+}> = ({ visible, contentKey, children }) => {
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 0, h: 0, growing: true });
+
+  useLayoutEffect(() => {
+    const inner = innerRef.current;
+    if (!inner) return;
+    const measure = () => {
+      const w = visible ? inner.offsetWidth : 0;
+      const h = visible ? inner.offsetHeight : 0;
+      setSize((prev) =>
+        prev.w === w && prev.h === h
+          ? prev
+          : { w, h, growing: w * h >= prev.w * prev.h },
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(inner);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  // Where the shape is going, not where it is mid-morph: a growing island
+  // takes clicks at once, a shrinking one lets them through at once.
+  useEffect(() => {
+    const ratio = window.devicePixelRatio || 1;
+    const w = size.w ? size.w + 2 * ISLAND_SLACK : 0;
+    const h = size.h ? size.h + ISLAND_SLACK : 0;
+    commands
+      .islandShape(
+        ((window.innerWidth - w) / 2) * ratio,
+        0,
+        w * ratio,
+        h * ratio,
+      )
+      .catch(() => {});
+  }, [size.w, size.h]);
+
+  const radius = Math.min(size.h / 2, 22);
+  return (
+    <div className="ov-stage top island">
+      <div
+        className={`isl ${size.growing ? "" : "shrink"} ${
+          visible && size.w ? "" : "gone"
+        }`}
+        style={
+          {
+            width: size.w,
+            height: size.h,
+            "--r": `${radius}px`,
+          } as React.CSSProperties
+        }
+      >
+        <div className="isl-clip">
+          <div className="isl-in" ref={innerRef}>
+            <div className="isl-fade" key={contentKey}>
+              {children}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const RecordingOverlay: React.FC = () => {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
@@ -319,6 +405,13 @@ const RecordingOverlay: React.FC = () => {
   // True once live text overflows the cap. A top overlay fades its top edge only
   // while overflowing, so the resting first line stays crisp flush under the pill.
   const [overflowing, setOverflowing] = useState(false);
+  // The bar takes the island's look (Settings › Bar).
+  const [island, setIsland] = useState(false);
+  // The resting island opened under the pointer, and the dictation keys it
+  // shows then.
+  const [islandOpen, setIslandOpen] = useState(false);
+  const [dictateKeys, setDictateKeys] = useState("");
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
   // Live-text scroll-back: the text region "sticks" to the newest line while the
@@ -357,11 +450,16 @@ const RecordingOverlay: React.FC = () => {
             );
             setMini(settings.data.overlay_style === "minimal");
             setCaptionTop(settings.data.live_caption === "top");
+            setIsland(settings.data.bar_look === "island");
+            setDictateKeys(
+              settings.data.bindings?.transcribe?.current_binding ?? "",
+            );
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
         }
         setState(overlayState);
+        if (overlayState !== "rest") setIslandOpen(false);
         if (overlayState === "transcribing" || overlayState === "processing") {
           setWorkSince((since) => since || Date.now());
         }
@@ -427,6 +525,20 @@ const RecordingOverlay: React.FC = () => {
         setStage(null);
         setWorkSince(0);
       });
+
+      // The backend watches the pointer over the island, since the page
+      // can't see it leave once clicks pass through.
+      const unlistenPointer = await listen<boolean>(
+        "island-pointer",
+        (event) => {
+          clearTimeout(hoverTimerRef.current);
+          const on = event.payload;
+          hoverTimerRef.current = setTimeout(
+            () => setIslandOpen(on),
+            on ? ISLAND_HOVER_IN_MS : ISLAND_HOVER_OUT_MS,
+          );
+        },
+      );
 
       const unlistenReady = await listen("recording-ready", () => {
         setElapsed(0);
@@ -497,6 +609,8 @@ const RecordingOverlay: React.FC = () => {
         unlistenStage();
         unlistenWorkSince();
         unlistenHide();
+        unlistenPointer();
+        clearTimeout(hoverTimerRef.current);
         unlistenReady();
         unlistenLevel();
         unlistenStream();
@@ -558,7 +672,24 @@ const RecordingOverlay: React.FC = () => {
     return () => clearInterval(timer);
   }, [busy, isVisible]);
 
-  if (!isVisible) return null;
+  if (!isVisible && !island) return null;
+
+  // Every card sits in the bar's stage, or in the island when it has the
+  // look. `fade` is off for the Live card, which animates itself.
+  const frame = (card: React.ReactNode, key: string, fade = true) =>
+    island ? (
+      <IslandFrame visible={isVisible} contentKey={key}>
+        {card}
+      </IslandFrame>
+    ) : (
+      <div
+        className={`ov-stage ${position} ${
+          fade ? `ov-fade ${isVisible ? "show" : ""}` : ""
+        }`}
+      >
+        {card}
+      </div>
+    );
 
   // Re-pin when the user is within ~a line of the bottom; unpin otherwise.
   const handleStreamScroll = () => {
@@ -641,6 +772,50 @@ const RecordingOverlay: React.FC = () => {
     </div>
   );
 
+  // ---- The island at rest: a small shape that opens under the pointer
+  // with Dictate, Notes and the Scratchpad.
+  if (state === "rest") {
+    return frame(
+      islandOpen ? (
+        <div className="irest open">
+          <button
+            type="button"
+            className="ibtn"
+            onClick={() => commands.bubbleAction("dictate")}
+          >
+            <Mic aria-hidden="true" />
+            {t("overlay.island.dictate")}
+          </button>
+          <button
+            type="button"
+            className="ibtn"
+            onClick={() => commands.bubbleAction("notes")}
+          >
+            <AudioLines aria-hidden="true" />
+            {t("overlay.island.notes")}
+          </button>
+          <button
+            type="button"
+            className="ibtn icon"
+            aria-label={t("overlay.island.scratchpad")}
+            title={t("overlay.island.scratchpad")}
+            onClick={() => commands.bubbleAction("scratchpad")}
+          >
+            <NotebookPen aria-hidden="true" />
+          </button>
+          {dictateKeys && (
+            <span className="ikeys">{formatKeyCombination(dictateKeys)}</span>
+          )}
+        </div>
+      ) : (
+        <div className="irest" aria-hidden="true">
+          <span className="irest-dot" />
+        </div>
+      ),
+      islandOpen ? "rest-open" : "rest",
+    );
+  }
+
   // ---- Live transcript box: the words as you say them while the bubble has
   // the dictation; clicks go through to what's under it.
   if (state === "caption") {
@@ -689,50 +864,48 @@ const RecordingOverlay: React.FC = () => {
     const open = hasText || loadingNotice || (loadNoticeShown && !working);
     const collapsed = working && !hasText;
 
-    return (
-      <div className={`ov-stage ${position}`}>
-        <div
-          key={session}
-          className={`scard ${open ? "open" : ""} ${collapsed ? "working" : ""} ${
-            isVisible ? "" : "leaving"
-          }`}
-        >
-          <div className="stext">
-            <div className="stext-clip">
-              <div
-                className={`stext-cap ${overflowing ? "overflowing" : ""}`}
-                ref={capRef}
-                onScroll={handleStreamScroll}
-              >
-                <p>
-                  {loadingNotice && (
-                    <span className="sloading">
-                      {t("overlay.loadingModel")}
-                    </span>
-                  )}
-                  <span className="committed">
-                    {streamText.committed ? streamText.committed + " " : ""}
-                  </span>
-                  <span className="tentative">{streamText.tentative}</span>
-                  {/* Drop the blinking caret once finalizing — it's no longer
+    return frame(
+      <div
+        key={session}
+        className={`scard ${open ? "open" : ""} ${collapsed ? "working" : ""} ${
+          isVisible ? "" : "leaving"
+        }`}
+      >
+        <div className="stext">
+          <div className="stext-clip">
+            <div
+              className={`stext-cap ${overflowing ? "overflowing" : ""}`}
+              ref={capRef}
+              onScroll={handleStreamScroll}
+            >
+              <p>
+                {loadingNotice && (
+                  <span className="sloading">{t("overlay.loadingModel")}</span>
+                )}
+                <span className="committed">
+                  {streamText.committed ? streamText.committed + " " : ""}
+                </span>
+                <span className="tentative">{streamText.tentative}</span>
+                {/* Drop the blinking caret once finalizing — it's no longer
                       capturing, and a static spinner conveys the work. */}
-                  {!working && !loadingNotice && <span className="scaret" />}
-                </p>
-              </div>
+                {!working && !loadingNotice && <span className="scaret" />}
+              </p>
             </div>
           </div>
-          {working
-            ? workingRow(
-                stageText(
-                  workKind === "polishing"
-                    ? t("overlay.processing")
-                    : transcribingLabel,
-                ),
-                true,
-              )
-            : listeningRow(open, true)}
         </div>
-      </div>
+        {working
+          ? workingRow(
+              stageText(
+                workKind === "polishing"
+                  ? t("overlay.processing")
+                  : transcribingLabel,
+              ),
+              true,
+            )
+          : listeningRow(open, true)}
+      </div>,
+      "dictation",
+      false,
     );
   }
 
@@ -831,70 +1004,65 @@ const RecordingOverlay: React.FC = () => {
         notice.kind === "pasted_last" ||
         notice.kind === "learned") &&
       ("undo" in notice ? notice.undo : true);
-    return (
-      <div
-        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
-      >
-        <div className="scard notice" role="status">
-          {GOOD_NOTICES.has(kind) ? (
-            <CheckMark />
-          ) : WARN_NOTICES.has(kind) ? (
-            <WarnMark />
-          ) : (
-            <span className="snotice-dot" />
-          )}
-          <span className="snotice-text">
-            {notice ? noticeText(notice) : ""}
-          </span>
-          {canUndo && (
-            <button
-              type="button"
-              className="sbtn ghost"
-              onClick={() => commands.barUndo()}
-            >
-              {t("overlay.undo")}
-            </button>
-          )}
-          {notice?.kind === "call_never" && (
-            <button
-              type="button"
-              className="sbtn ghost"
-              onClick={() => commands.callCardAction("undo_never")}
-            >
-              {t("overlay.undo")}
-            </button>
-          )}
-          {notice?.kind === "saved_to_scratchpad" && (
-            <button
-              type="button"
-              className="sbtn ghost"
-              onClick={() =>
-                commands.openScratchpad(notice.note_id).catch(() => {})
-              }
-            >
-              {t("overlay.open")}
-            </button>
-          )}
-          {notice?.kind === "note_ready" && (
-            <button
-              type="button"
-              className="sbtn ghost"
-              onClick={() => commands.openNote(notice.id)}
-            >
-              {t("overlay.open")}
-            </button>
-          )}
-          {notice?.kind === "spotted" && (
-            <button
-              type="button"
-              className="sbtn ghost"
-              onClick={() => commands.barReview()}
-            >
-              {t("overlay.review")}
-            </button>
-          )}
-        </div>
-      </div>
+    return frame(
+      <div className="scard notice" role="status">
+        {GOOD_NOTICES.has(kind) ? (
+          <CheckMark />
+        ) : WARN_NOTICES.has(kind) ? (
+          <WarnMark />
+        ) : (
+          <span className="snotice-dot" />
+        )}
+        <span className="snotice-text">{notice ? noticeText(notice) : ""}</span>
+        {canUndo && (
+          <button
+            type="button"
+            className="sbtn ghost"
+            onClick={() => commands.barUndo()}
+          >
+            {t("overlay.undo")}
+          </button>
+        )}
+        {notice?.kind === "call_never" && (
+          <button
+            type="button"
+            className="sbtn ghost"
+            onClick={() => commands.callCardAction("undo_never")}
+          >
+            {t("overlay.undo")}
+          </button>
+        )}
+        {notice?.kind === "saved_to_scratchpad" && (
+          <button
+            type="button"
+            className="sbtn ghost"
+            onClick={() =>
+              commands.openScratchpad(notice.note_id).catch(() => {})
+            }
+          >
+            {t("overlay.open")}
+          </button>
+        )}
+        {notice?.kind === "note_ready" && (
+          <button
+            type="button"
+            className="sbtn ghost"
+            onClick={() => commands.openNote(notice.id)}
+          >
+            {t("overlay.open")}
+          </button>
+        )}
+        {notice?.kind === "spotted" && (
+          <button
+            type="button"
+            className="sbtn ghost"
+            onClick={() => commands.barReview()}
+          >
+            {t("overlay.review")}
+          </button>
+        )}
+      </div>,
+      `notice-${kind}`,
     );
   }
 
@@ -908,57 +1076,54 @@ const RecordingOverlay: React.FC = () => {
         : minutes === 0
           ? t("overlay.meeting.now")
           : t("overlay.meeting.started", { count: -minutes });
-    return (
-      <div
-        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
-      >
-        <div className="scard callcard" role="dialog" aria-label={card.title}>
-          <div className="scall-hd">
-            <CalendarGlyph />
-            <div className="scall-text">
-              <div className="scall-title">{card.title}</div>
-              <div className="scall-desc" aria-live="polite">
-                {desc}
-              </div>
+    return frame(
+      <div className="scard callcard" role="dialog" aria-label={card.title}>
+        <div className="scall-hd">
+          <CalendarGlyph />
+          <div className="scall-text">
+            <div className="scall-title">{card.title}</div>
+            <div className="scall-desc" aria-live="polite">
+              {desc}
             </div>
           </div>
-          <div className="spanel-actions">
-            {card.link ? (
-              <>
-                <button
-                  type="button"
-                  className="sbtn primary"
-                  onClick={() => commands.callCardAction("join_notes")}
-                >
-                  {t("overlay.meeting.joinNotes")}
-                </button>
-                <button
-                  type="button"
-                  className="sbtn"
-                  onClick={() => commands.callCardAction("join")}
-                >
-                  {t("overlay.meeting.join")}
-                </button>
-              </>
-            ) : (
+        </div>
+        <div className="spanel-actions">
+          {card.link ? (
+            <>
               <button
                 type="button"
                 className="sbtn primary"
-                onClick={() => commands.callCardAction("start")}
+                onClick={() => commands.callCardAction("join_notes")}
               >
-                {t("overlay.meeting.takeNotes")}
+                {t("overlay.meeting.joinNotes")}
               </button>
-            )}
+              <button
+                type="button"
+                className="sbtn"
+                onClick={() => commands.callCardAction("join")}
+              >
+                {t("overlay.meeting.join")}
+              </button>
+            </>
+          ) : (
             <button
               type="button"
-              className="sbtn quiet"
-              onClick={() => commands.callCardAction("not_now")}
+              className="sbtn primary"
+              onClick={() => commands.callCardAction("start")}
             >
-              {t("overlay.call.notNow")}
+              {t("overlay.meeting.takeNotes")}
             </button>
-          </div>
+          )}
+          <button
+            type="button"
+            className="sbtn quiet"
+            onClick={() => commands.callCardAction("not_now")}
+          >
+            {t("overlay.call.notNow")}
+          </button>
         </div>
-      </div>
+      </div>,
+      "meeting",
     );
   }
 
@@ -983,282 +1148,268 @@ const RecordingOverlay: React.FC = () => {
         : left !== null
           ? t("overlay.call.stopsIn", { count: left, recorded })
           : t("overlay.call.still", { recorded });
-    return (
+    return frame(
       <div
-        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+        className="scard callcard"
+        role="dialog"
+        aria-label={
+          card.kind === "offer"
+            ? t("overlay.call.started", { app: card.name })
+            : t("overlay.call.ended", { app: card.name })
+        }
       >
-        <div
-          className="scard callcard"
-          role="dialog"
-          aria-label={
-            card.kind === "offer"
-              ? t("overlay.call.started", { app: card.name })
-              : t("overlay.call.ended", { app: card.name })
-          }
-        >
-          <div className="scall-hd">
-            <CallIcon path={card.app_path} />
-            <div className="scall-text">
-              <div className="scall-title">
-                {card.kind === "offer"
-                  ? t("overlay.call.started", { app: card.name })
-                  : t("overlay.call.ended", { app: card.name })}
-              </div>
-              <div className="scall-desc" aria-live="polite">
-                {desc}
-              </div>
+        <div className="scall-hd">
+          <CallIcon path={card.app_path} />
+          <div className="scall-text">
+            <div className="scall-title">
+              {card.kind === "offer"
+                ? t("overlay.call.started", { app: card.name })
+                : t("overlay.call.ended", { app: card.name })}
             </div>
-          </div>
-          {total !== null && (
-            <div className="scountdown" aria-hidden="true">
-              <i
-                key={at}
-                style={{
-                  animationDuration: `${total}ms`,
-                }}
-              />
+            <div className="scall-desc" aria-live="polite">
+              {desc}
             </div>
-          )}
-          <div className="spanel-actions">
-            {card.kind === "offer" ? (
-              <>
-                <button
-                  type="button"
-                  className="sbtn primary"
-                  onClick={() => commands.callCardAction("start")}
-                >
-                  {t("overlay.call.start")}
-                </button>
-                <button
-                  type="button"
-                  className="sbtn"
-                  onClick={() => commands.callCardAction("not_now")}
-                >
-                  {t("overlay.call.notNow")}
-                </button>
-                <button
-                  type="button"
-                  className="sbtn quiet"
-                  onClick={() => commands.callCardAction("never")}
-                >
-                  {t("overlay.call.never")}
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="sbtn primary"
-                  onClick={() => commands.callCardAction("stop_now")}
-                >
-                  {left !== null
-                    ? t("overlay.call.stopNow")
-                    : t("overlay.call.stop")}
-                </button>
-                <button
-                  type="button"
-                  className="sbtn"
-                  onClick={() => commands.callCardAction("keep")}
-                >
-                  {t("overlay.call.keep")}
-                </button>
-              </>
-            )}
           </div>
         </div>
-      </div>
+        {total !== null && (
+          <div className="scountdown" aria-hidden="true">
+            <i
+              key={at}
+              style={{
+                animationDuration: `${total}ms`,
+              }}
+            />
+          </div>
+        )}
+        <div className="spanel-actions">
+          {card.kind === "offer" ? (
+            <>
+              <button
+                type="button"
+                className="sbtn primary"
+                onClick={() => commands.callCardAction("start")}
+              >
+                {t("overlay.call.start")}
+              </button>
+              <button
+                type="button"
+                className="sbtn"
+                onClick={() => commands.callCardAction("not_now")}
+              >
+                {t("overlay.call.notNow")}
+              </button>
+              <button
+                type="button"
+                className="sbtn quiet"
+                onClick={() => commands.callCardAction("never")}
+              >
+                {t("overlay.call.never")}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="sbtn primary"
+                onClick={() => commands.callCardAction("stop_now")}
+              >
+                {left !== null
+                  ? t("overlay.call.stopNow")
+                  : t("overlay.call.stop")}
+              </button>
+              <button
+                type="button"
+                className="sbtn"
+                onClick={() => commands.callCardAction("keep")}
+              >
+                {t("overlay.call.keep")}
+              </button>
+            </>
+          )}
+        </div>
+      </div>,
+      "call",
     );
   }
 
   // ---- Notes: a recording runs; its clock, a meter per side, Pause and Stop.
   if (state === "notes") {
     const paused = notesTick?.paused ?? false;
-    return (
+    return frame(
       <div
-        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+        className={`scard notes ${paused ? "" : "glow"} ${mini ? "dark" : ""}`}
+        role="status"
       >
-        <div
-          className={`scard notes ${paused ? "" : "glow"} ${mini ? "dark" : ""}`}
-          role="status"
+        <span className={`snotes-dot ${paused ? "paused" : ""}`} />
+        <button
+          type="button"
+          className="snotes-open"
+          title={t("overlay.notes.open")}
+          onClick={() => commands.showNotesPanel()}
         >
-          <span className={`snotes-dot ${paused ? "paused" : ""}`} />
-          <button
-            type="button"
-            className="snotes-open"
-            title={t("overlay.notes.open")}
-            onClick={() => commands.showNotesPanel()}
-          >
-            <span className="snotes-label">{t("overlay.notes.label")}</span>
-            <span className="snotes-clock">
-              {clock(notesTick?.elapsed_ms ?? 0)}
-            </span>
-          </button>
-          <span className="snotes-meters" aria-hidden="true">
-            <NotesMeter level={paused ? 0 : (notesTick?.you ?? 0)} />
-            {notesTick?.them != null && (
-              <NotesMeter level={paused ? 0 : notesTick.them} />
-            )}
+          <span className="snotes-label">{t("overlay.notes.label")}</span>
+          <span className="snotes-clock">
+            {clock(notesTick?.elapsed_ms ?? 0)}
           </span>
-          <button
-            type="button"
-            className="sx"
-            aria-label={
-              paused ? t("overlay.notes.resume") : t("overlay.notes.pause")
-            }
-            title={
-              paused ? t("overlay.notes.resume") : t("overlay.notes.pause")
-            }
-            onClick={() => commands.pauseNotes(!paused)}
-          >
-            {paused ? (
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="currentColor" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path
-                  d="M5.5 4 V12 M10.5 4 V12"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                />
-              </svg>
-            )}
-          </button>
-          <button
-            type="button"
-            className="sx"
-            aria-label={t("overlay.notes.stop")}
-            title={t("overlay.notes.stop")}
-            onClick={() => commands.stopNotes()}
-          >
+        </button>
+        <span className="snotes-meters" aria-hidden="true">
+          <NotesMeter level={paused ? 0 : (notesTick?.you ?? 0)} />
+          {notesTick?.them != null && (
+            <NotesMeter level={paused ? 0 : notesTick.them} />
+          )}
+        </span>
+        <button
+          type="button"
+          className="sx"
+          aria-label={
+            paused ? t("overlay.notes.resume") : t("overlay.notes.pause")
+          }
+          title={paused ? t("overlay.notes.resume") : t("overlay.notes.pause")}
+          onClick={() => commands.pauseNotes(!paused)}
+        >
+          {paused ? (
             <svg viewBox="0 0 16 16" aria-hidden="true">
-              <rect
-                x="4"
-                y="4"
-                width="8"
-                height="8"
-                rx="1.5"
-                fill="currentColor"
+              <path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="currentColor" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M5.5 4 V12 M10.5 4 V12"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
               />
             </svg>
-          </button>
-        </div>
-      </div>
+          )}
+        </button>
+        <button
+          type="button"
+          className="sx"
+          aria-label={t("overlay.notes.stop")}
+          title={t("overlay.notes.stop")}
+          onClick={() => commands.stopNotes()}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <rect
+              x="4"
+              y="4"
+              width="8"
+              height="8"
+              rx="1.5"
+              fill="currentColor"
+            />
+          </svg>
+        </button>
+      </div>,
+      "notes",
     );
   }
 
   // ---- Changes: the transform's word diff, with Keep and Undo.
   if (state === "changes" && changes) {
     const parts = wordDiff(changes.before, changes.after);
-    return (
-      <div
-        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
-      >
-        <div className="scard panel" role="dialog" aria-label={changes.name}>
-          <div className="spanel-head">
-            <span className="spanel-title">{changes.name}</span>
-            {changes.keys && (
-              <span className="spanel-keys">
-                {t("overlay.changes.again", {
-                  keys: formatKeyCombination(changes.keys),
-                })}
-              </span>
-            )}
-          </div>
-          <div className="sdiff">
-            {parts.map((part, i) =>
-              part.kind === "same" ? (
-                <span key={i}>{part.text}</span>
-              ) : part.kind === "added" ? (
-                <ins key={i}>{part.text}</ins>
-              ) : (
-                <del key={i}>{part.text}</del>
-              ),
-            )}
-          </div>
-          <div className="spanel-actions">
-            <button
-              type="button"
-              className="sbtn primary"
-              onClick={() => commands.barKeep()}
-            >
-              {t("overlay.changes.keep")}
-            </button>
-            <button
-              type="button"
-              className="sbtn"
-              onClick={() => commands.barUndo()}
-            >
-              {t("overlay.undo")}
-            </button>
-          </div>
+    return frame(
+      <div className="scard panel" role="dialog" aria-label={changes.name}>
+        <div className="spanel-head">
+          <span className="spanel-title">{changes.name}</span>
+          {changes.keys && (
+            <span className="spanel-keys">
+              {t("overlay.changes.again", {
+                keys: formatKeyCombination(changes.keys),
+              })}
+            </span>
+          )}
         </div>
-      </div>
+        <div className="sdiff">
+          {parts.map((part, i) =>
+            part.kind === "same" ? (
+              <span key={i}>{part.text}</span>
+            ) : part.kind === "added" ? (
+              <ins key={i}>{part.text}</ins>
+            ) : (
+              <del key={i}>{part.text}</del>
+            ),
+          )}
+        </div>
+        <div className="spanel-actions">
+          <button
+            type="button"
+            className="sbtn primary"
+            onClick={() => commands.barKeep()}
+          >
+            {t("overlay.changes.keep")}
+          </button>
+          <button
+            type="button"
+            className="sbtn"
+            onClick={() => commands.barUndo()}
+          >
+            {t("overlay.undo")}
+          </button>
+        </div>
+      </div>,
+      "changes",
     );
   }
 
   // ---- Pick: which transform to run on the selection.
   if (state === "pick") {
-    return (
+    return frame(
       <div
-        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+        className="scard panel pick"
+        role="dialog"
+        aria-label={t("overlay.pick.title")}
       >
-        <div
-          className="scard panel pick"
-          role="dialog"
-          aria-label={t("overlay.pick.title")}
-        >
-          <div className="spanel-head">
-            <span className="spanel-title">{t("overlay.pick.title")}</span>
-            <button
-              type="button"
-              className="sx"
-              aria-label={t("overlay.pick.close")}
-              onClick={() => commands.barDismiss()}
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path
-                  d="M4 4 L12 12 M12 4 L4 12"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>
-          {picks.length === 0 ? (
-            <p className="spick-empty">{t("overlay.pick.empty")}</p>
-          ) : (
-            <ul className="spick-list">
-              {picks.map((item, i) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    className={`spick-row ${i === pickIndex ? "on" : ""}`}
-                    aria-current={i === pickIndex ? "true" : undefined}
-                    ref={(el) => {
-                      if (i === pickIndex)
-                        el?.scrollIntoView({ block: "nearest" });
-                    }}
-                    onClick={() => commands.barPick(item.id)}
-                  >
-                    <span className="spick-name">{item.name}</span>
-                    {item.keys && (
-                      <span className="spick-keys">
-                        {formatKeyCombination(item.keys)}
-                      </span>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {picks.length > 0 && (
-            <p className="spick-hint">{t("overlay.pick.hint")}</p>
-          )}
+        <div className="spanel-head">
+          <span className="spanel-title">{t("overlay.pick.title")}</span>
+          <button
+            type="button"
+            className="sx"
+            aria-label={t("overlay.pick.close")}
+            onClick={() => commands.barDismiss()}
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M4 4 L12 12 M12 4 L4 12"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
         </div>
-      </div>
+        {picks.length === 0 ? (
+          <p className="spick-empty">{t("overlay.pick.empty")}</p>
+        ) : (
+          <ul className="spick-list">
+            {picks.map((item, i) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  className={`spick-row ${i === pickIndex ? "on" : ""}`}
+                  aria-current={i === pickIndex ? "true" : undefined}
+                  ref={(el) => {
+                    if (i === pickIndex)
+                      el?.scrollIntoView({ block: "nearest" });
+                  }}
+                  onClick={() => commands.barPick(item.id)}
+                >
+                  <span className="spick-name">{item.name}</span>
+                  {item.keys && (
+                    <span className="spick-keys">
+                      {formatKeyCombination(item.keys)}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {picks.length > 0 && (
+          <p className="spick-hint">{t("overlay.pick.hint")}</p>
+        )}
+      </div>,
+      "pick",
     );
   }
 
@@ -1275,76 +1426,70 @@ const RecordingOverlay: React.FC = () => {
   );
 
   if (mini) {
-    return (
-      <div
-        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
-      >
-        <div className={`scard mini ${working ? "mworking" : ""}`}>
+    return frame(
+      <div className={`scard mini ${working ? "mworking" : ""}`}>
+        <button
+          type="button"
+          className="mbtn mx"
+          aria-label={t("overlay.cancel")}
+          title={t("overlay.cancel")}
+          onClick={() => commands.cancelOperation()}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M5 5 L11 11 M11 5 L5 11"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+        {working ? (
+          <>
+            <span className="mdots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="mlabel" role="status">
+              {workLabel}
+            </span>
+          </>
+        ) : (
+          waveform
+        )}
+        {!working && (
           <button
             type="button"
-            className="mbtn mx"
-            aria-label={t("overlay.cancel")}
-            title={t("overlay.cancel")}
-            onClick={() => commands.cancelOperation()}
+            className="mbtn mok"
+            aria-label={t("overlay.finish")}
+            title={t("overlay.finish")}
+            onClick={() => commands.finishDictation()}
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path
-                d="M5 5 L11 11 M11 5 L5 11"
+                d="M4 8.5 L7 11.2 L12 5"
+                fill="none"
                 stroke="currentColor"
-                strokeWidth="1.8"
+                strokeWidth="2"
                 strokeLinecap="round"
+                strokeLinejoin="round"
               />
             </svg>
           </button>
-          {working ? (
-            <>
-              <span className="mdots" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-                <i />
-                <i />
-              </span>
-              <span className="mlabel" role="status">
-                {workLabel}
-              </span>
-            </>
-          ) : (
-            waveform
-          )}
-          {!working && (
-            <button
-              type="button"
-              className="mbtn mok"
-              aria-label={t("overlay.finish")}
-              title={t("overlay.finish")}
-              onClick={() => commands.finishDictation()}
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path
-                  d="M4 8.5 L7 11.2 L12 5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
+        )}
+      </div>,
+      "dictation",
     );
   }
 
-  return (
-    <div className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}>
-      <div
-        className={`scard compact ${working && isVisible ? "cworking" : ""}`}
-      >
-        {working ? workingRow(workLabel, true) : listeningRow(false, true)}
-      </div>
-    </div>
+  return frame(
+    <div className={`scard compact ${working && isVisible ? "cworking" : ""}`}>
+      {working ? workingRow(workLabel, true) : listeningRow(false, true)}
+    </div>,
+    "dictation",
   );
 };
 

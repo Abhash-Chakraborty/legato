@@ -839,6 +839,32 @@ pub fn change_overlay_position_setting(app: AppHandle, position: String) -> Resu
     Ok(())
 }
 
+/// The bar or the island. Takes effect on the next thing the bar shows;
+/// the island's resting shape appears or goes at once.
+#[tauri::command]
+#[specta::specta]
+pub fn change_bar_look_setting(app: AppHandle, look: settings::BarLook) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.bar_look = look;
+    settings::write_settings(&app, settings);
+    crate::overlay::look_changed(&app);
+    Ok(())
+}
+
+/// Whether the island stays small at rest or hides.
+#[tauri::command]
+#[specta::specta]
+pub fn change_island_idle_setting(
+    app: AppHandle,
+    idle: settings::IslandIdle,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.island_idle = idle;
+    settings::write_settings(&app, settings);
+    crate::overlay::look_changed(&app);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_overlay_style_setting(app: AppHandle, style: String) -> Result<(), String> {
@@ -861,6 +887,8 @@ pub fn change_overlay_style_setting(app: AppHandle, style: String) -> Result<(),
 
     // Reposition in case the window needs to re-center for the new style.
     crate::utils::update_overlay_position(&app);
+    // Turning the bar off takes the resting island with it, and back on.
+    crate::overlay::look_changed(&app);
 
     Ok(())
 }

@@ -200,7 +200,16 @@ fn should_show(app: &AppHandle) -> bool {
 /// Whether the bubble is on (and not hidden for an hour), so a dictation
 /// shows on it rather than on the bar.
 pub fn takes_dictation(app: &AppHandle) -> bool {
-    get_settings(app).bubble_enabled && now_s() >= SNOOZED_UNTIL.load(Ordering::SeqCst)
+    let settings = get_settings(app);
+    // The island shows dictations and notes itself.
+    settings.bubble_enabled
+        && !crate::overlay::island_on(&settings)
+        && now_s() >= SNOOZED_UNTIL.load(Ordering::SeqCst)
+}
+
+/// Whether the window in front fills the screen, as last checked.
+pub fn screen_covered() -> bool {
+    COVERED.load(Ordering::SeqCst)
 }
 
 /// A dictation started or ended: over a fullscreen window the bubble comes
@@ -313,6 +322,9 @@ pub fn init(app: &AppHandle) {
         std::thread::sleep(Duration::from_millis(1500));
         let covered = foreground_fills_screen();
         let was = COVERED.swap(covered, Ordering::SeqCst);
+        if was != covered {
+            crate::overlay::island_cover_changed(&app, covered);
+        }
         let snooze = SNOOZED_UNTIL.load(Ordering::SeqCst);
         if was != covered {
             debug!(

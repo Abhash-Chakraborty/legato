@@ -17,6 +17,8 @@ import type {
   LiveCaption,
   ScratchpadOpen,
   VadBackend,
+  BarLook,
+  IslandIdle,
 } from "@/bindings";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
@@ -202,6 +204,8 @@ const settingUpdaters: {
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
+  bar_look: (value) => commands.changeBarLookSetting(value as BarLook),
+  island_idle: (value) => commands.changeIslandIdleSetting(value as IslandIdle),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   long_form_chunking: (value) =>
     commands.changeLongFormChunkingSetting(value as boolean),

@@ -82,6 +82,14 @@ pub async fn bubble_action(app: AppHandle, action: String) -> Result<(), String>
     Ok(())
 }
 
+/// Where the island's shape sits in its window, in physical pixels from the
+/// window's corner, so clicks elsewhere pass through to the app below.
+#[tauri::command]
+#[specta::specta]
+pub fn island_shape(x: f64, y: f64, width: f64, height: f64) {
+    crate::overlay::island_hit::set_shape(x, y, width, height);
+}
+
 /// Opens the Notes side panel on the recording in progress (the bar's
 /// Notes pill). Async for the same reason as `bubble_action`.
 #[tauri::command]

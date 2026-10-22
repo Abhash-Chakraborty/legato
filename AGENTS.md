@@ -89,7 +89,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `cli.rs` - CLI argument definitions (clap derive)
 - `shortcut/` - Global keyboard shortcut handling (handy-keys or Tauri), including the picker's temporary keys
 - `settings.rs` - Application settings management
-- `overlay.rs` - The Legato bar (recording overlay window and its states, including the step a dictation is on after you stop talking, which it also names while the bubble has the dictation), and the live transcript box it shows at the top or bottom of the screen while the bubble has a dictation (Settings › Bar)
+- `overlay.rs` - The Legato bar (recording overlay window and its states, including the step a dictation is on after you stop talking, which it also names while the bubble has the dictation), and the live transcript box it shows at the top or bottom of the screen while the bubble has a dictation (Settings › Bar). With the island look (Settings › Bar › Look) the same window hangs from the top edge at one fixed size, the page morphs a dark shape inside it, and a thread lets clicks through everywhere but the shape; at rest it stays small (or hides), steps aside for fullscreen windows, and takes dictations and the Notes pill from the bubble
 - `bubble.rs` - The desktop bubble: a dot that stays on screen with Dictate, Notes and the Scratchpad on hover; dragged, it settles in the middle of the nearest edge; steps aside for fullscreen windows. While it shows, a dictation's states go to it instead of the bar (`overlay.rs`), on its own `bubble-dictation` event; hovered during one, Dictate becomes Done (then ripples while the words are written up) and Cancel replaces the Scratchpad
 - `tray.rs` - System tray icon and menu
 - `signal_handle.rs` - `send_transcription_input()` reusable function
@@ -153,6 +153,7 @@ Settings are stored using Tauri's store plugin with reactive updates:
 - Keyboard shortcuts (configurable, supports push-to-talk)
 - Audio devices (microphone/output selection)
 - Speech model, plus an optional model per kind of app in Style
+- The bar: style (none, minimal, live), look (bar or island), position, and whether the island stays small at rest
 - Style per kind of app: tone, paste keys, Enter after pasting, trailing space
 - Transforms, Ask and your AI provider, with an optional provider and model each for dictation, transforms and Notes; Notes, calls, Scratchpad and learning options
 - Connections: calendars (their addresses in Credential Manager) and whether AI apps may read Legato over MCP

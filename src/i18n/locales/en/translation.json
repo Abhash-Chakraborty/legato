@@ -336,6 +336,22 @@
             "live": "Live"
           }
         },
+        "look": {
+          "title": "Look",
+          "description": "The bar is a card at the top or bottom of the screen. The island hangs from the top edge and grows with what it shows.",
+          "options": {
+            "bar": "Bar",
+            "island": "Island"
+          }
+        },
+        "idle": {
+          "title": "When idle",
+          "description": "A small island stays at the top with Dictate, Notes and the Scratchpad on hover. Hide shows it only while there's something to show.",
+          "options": {
+            "small": "Small island",
+            "hide": "Hide"
+          }
+        },
         "position": {
           "title": "Position",
           "description": "Where the Legato bar appears while you dictate.",
@@ -1498,6 +1514,11 @@
     "caption": {
       "listening": "Listening…",
       "label": "Live transcript"
+    },
+    "island": {
+      "dictate": "Dictate",
+      "notes": "Notes",
+      "scratchpad": "Scratchpad"
     }
   },
   "titleBar": {

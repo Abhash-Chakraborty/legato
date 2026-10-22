@@ -177,6 +177,27 @@ pub enum OverlayStyle {
     Live,
 }
 
+/// How the bar looks: the bar at the top or bottom of the screen, or the
+/// island, a dark shape hanging from the top edge that grows with what it
+/// shows. Whether either shows at all is `OverlayStyle`.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum BarLook {
+    #[default]
+    Bar,
+    Island,
+}
+
+/// What the island does with nothing to show: stay as a small island at the
+/// top, or go away until there's something.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum IslandIdle {
+    #[default]
+    Small,
+    Hide,
+}
+
 /// What other apps' sound does while you dictate.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
@@ -1030,6 +1051,12 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// The bar or the island (Settings › Bar).
+    #[serde(default)]
+    pub bar_look: BarLook,
+    /// The island at rest: small, or hidden.
+    #[serde(default)]
+    pub island_idle: IslandIdle,
 }
 
 fn default_model() -> String {
@@ -1614,6 +1641,8 @@ pub fn get_default_settings() -> AppSettings {
         vad_backend: VadBackend::default(),
         long_form_chunking: default_long_form_chunking(),
         overlay_style: default_overlay_style(),
+        bar_look: BarLook::Bar,
+        island_idle: IslandIdle::Small,
     }
 }
 

@@ -109,6 +109,28 @@ async changeOverlayPositionSetting(position: string) : Promise<Result<null, stri
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The bar or the island.
+ */
+async changeBarLookSetting(look: BarLook) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_bar_look_setting", { look }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Whether the island stays small at rest or hides.
+ */
+async changeIslandIdleSetting(idle: IslandIdle) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_island_idle_setting", { idle }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeOverlayStyleSetting(style: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_overlay_style_setting", { style }) };
@@ -535,6 +557,13 @@ async bubbleAction(action: string) : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Where the island's shape sits in its window, in physical pixels from the
+ * window's corner, so clicks elsewhere pass through to the app below.
+ */
+async islandShape(x: number, y: number, width: number, height: number) : Promise<void> {
+    await TAURI_INVOKE("island_shape", { x, y, width, height });
 },
 /**
  * Opens the Notes side panel on the recording in progress (the bar's
@@ -3515,7 +3544,15 @@ long_form_chunking?: boolean;
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle }
+overlay_style?: OverlayStyle; 
+/**
+ * The bar or the island (Settings › Bar).
+ */
+bar_look?: BarLook; 
+/**
+ * The island at rest: small, or hidden.
+ */
+island_idle?: IslandIdle }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; gpu_devices: GpuDeviceOption[] }
@@ -3806,6 +3843,17 @@ export type OverlayPosition = "top" | "bottom"
  * streaming mode (that is driven purely by model capability).
  */
 export type OverlayStyle = "none" | "minimal" | "live"
+/**
+ * How the bar looks: the bar card at the top or bottom of the screen, or the
+ * island, a dark shape hanging from the top edge that grows with what it
+ * shows. Whether either shows at all is `OverlayStyle`.
+ */
+export type BarLook = "bar" | "island"
+/**
+ * What the island does with nothing to show: stay as a small island at the
+ * top, or go away until there's something.
+ */
+export type IslandIdle = "small" | "hide"
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v"
 export type PermissionAccess = "allowed" | "denied" | "unknown"

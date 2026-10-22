@@ -1,6 +1,8 @@
 use crate::input;
 use crate::settings;
-use crate::settings::{LiveCaption, OverlayPosition, OverlayStyle};
+use crate::settings::{
+    AppSettings, BarLook, IslandIdle, LiveCaption, OverlayPosition, OverlayStyle,
+};
 use log::debug;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -63,6 +65,12 @@ pub fn set_main_wants_mic_level(enabled: bool) {
     MAIN_WANTS_MIC_LEVEL.store(enabled, Ordering::Relaxed);
 }
 const EMIT_THROTTLE_MS: u64 = 33; // ~30 FPS
+
+/// The island's window: one fixed size, room for its largest state (the
+/// transform picker), so the shape grows and shrinks inside it and the window
+/// never resizes mid-animation. Clicks pass through all of it but the shape.
+const ISLAND_WIDTH: f64 = 520.0;
+const ISLAND_HEIGHT: f64 = 380.0;
 
 const OVERLAY_TOP_OFFSET: f64 = 4.0;
 const OVERLAY_BOTTOM_OFFSET: f64 = 40.0;
@@ -190,15 +198,25 @@ fn place_windows_overlay(
     let monitor = get_monitor_with_cursor(app_handle)
         .ok_or_else(|| "failed to determine the monitor containing the cursor".to_string())?;
     let text_scale = windows_text_scale_factor();
-    let (x, y, width, height) = windows_overlay_bounds(
+    let settings = settings::get_settings(app_handle);
+    let island = island_on(&settings);
+    let (x, mut y, width, height) = windows_overlay_bounds(
         *monitor.position(),
         *monitor.size(),
         monitor.scale_factor(),
         text_scale,
         logical_width,
         logical_height,
-        settings::get_settings(app_handle).overlay_position,
+        if island {
+            OverlayPosition::Top
+        } else {
+            settings.overlay_position
+        },
     );
+    // The island hangs from the very top of the screen.
+    if island {
+        y = monitor.position().y;
+    }
     let hwnd = overlay_window
         .hwnd()
         .map_err(|error| format!("failed to get overlay window handle: {error}"))?;
@@ -264,6 +282,16 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     match builder.build() {
         Ok(_) => {
             debug!("Recording overlay window created successfully (hidden)");
+            // The resting island, once the page is listening.
+            if island_rests(&settings::get_settings(app_handle)) {
+                let handle = app_handle.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(1500));
+                    if SHOWN.lock().unwrap_or_else(|e| e.into_inner()).is_none() {
+                        show_overlay_state(&handle, "rest");
+                    }
+                });
+            }
         }
         Err(e) => {
             debug!("Failed to create recording overlay window: {}", e);
@@ -457,7 +485,16 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
 
 fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
     // Size the overlay for this state (compact vs. streaming), then position it.
-    let (width, height) = overlay_dimensions(state);
+    let island = island_on(&settings::get_settings(app_handle));
+    if island && crate::bubble::screen_covered() && state == "rest" {
+        return;
+    }
+    let (width, height) = if island {
+        (ISLAND_WIDTH, ISLAND_HEIGHT)
+    } else {
+        overlay_dimensions(state)
+    };
+    *SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = Some(state.to_string());
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         // Invalidate any delayed hide still in flight from a previous session
         // (see `hide_recording_overlay`).
@@ -485,6 +522,11 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
 
         // Aggressively re-assert "topmost" in the native Z-order after showing
         force_overlay_topmost(&overlay_window);
+        if island {
+            island_hit::arm(&overlay_window);
+        } else {
+            island_hit::disarm(&overlay_window);
+        }
 
         // Re-assert bounds after show(): the pre-show move crosses the DPI
         // boundary, and tao's WM_DPICHANGED reflow clobbers the first placement.
@@ -623,7 +665,11 @@ fn update_overlay_position_on_main(app_handle: &AppHandle) {
         } else {
             "recording"
         };
-        let (width, height) = overlay_dimensions(state);
+        let (width, height) = if island_on(&settings::get_settings(app_handle)) {
+            (ISLAND_WIDTH, ISLAND_HEIGHT)
+        } else {
+            overlay_dimensions(state)
+        };
         if let Err(error) = place_windows_overlay(app_handle, &overlay_window, width, height) {
             log::error!("Failed to update recording overlay position: {error}");
         }
@@ -726,9 +772,16 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
         show_overlay_state(app_handle, "notes");
         return;
     }
+    // The island goes back to its small resting shape instead of away,
+    // unless a fullscreen window has the screen.
+    if island_rests(&settings::get_settings(app_handle)) && !crate::bubble::screen_covered() {
+        show_overlay_state(app_handle, "rest");
+        return;
+    }
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        *SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = None;
         // Snapshot before doing anything observable, so any show that lands
         // after this point invalidates the delayed hide below.
         let scheduled_at = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
@@ -743,6 +796,7 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
                 log::debug!("Skipping stale overlay hide: a newer session is showing the overlay");
                 return;
             }
+            island_hit::disarm(&window_clone);
             let _ = window_clone.hide();
         });
     }
@@ -923,5 +977,157 @@ mod tests {
         );
         // Top offset rides the DPI scale alone, so the top edge doesn't move.
         assert_eq!(top_y, -195);
+    }
+}
+
+/// What the bar's window shows now (a state name), or None while hidden.
+static SHOWN: Mutex<Option<String>> = Mutex::new(None);
+
+/// Whether the bar takes the island's look: picked in Settings › Bar, and
+/// the bar isn't turned off.
+pub fn island_on(settings: &AppSettings) -> bool {
+    settings.bar_look == BarLook::Island && settings.overlay_style != OverlayStyle::None
+}
+
+/// Whether the island stays on screen, small, with nothing to show.
+fn island_rests(settings: &AppSettings) -> bool {
+    island_on(settings) && settings.island_idle == IslandIdle::Small
+}
+
+/// Settings › Bar changed the look or what the island does at rest: the
+/// resting island appears or goes now; anything else shown keeps going and
+/// takes the new look next time.
+pub fn look_changed(app_handle: &AppHandle) {
+    let shown = SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let settings = settings::get_settings(app_handle);
+    match shown.as_deref() {
+        None if island_rests(&settings) => show_overlay_state(app_handle, "rest"),
+        Some("rest") if !island_rests(&settings) => hide_recording_overlay(app_handle),
+        _ => {}
+    }
+    crate::notes::refresh_pill(app_handle);
+}
+
+/// A window started or stopped filling the screen: the resting island steps
+/// aside for it, as the bubble does. A dictation or a call still shows.
+pub fn island_cover_changed(app_handle: &AppHandle, covered: bool) {
+    let settings = settings::get_settings(app_handle);
+    if !island_rests(&settings) {
+        return;
+    }
+    let shown = SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    match (covered, shown.as_deref()) {
+        (true, Some("rest")) => {
+            if let Some(window) = app_handle.get_webview_window("recording_overlay") {
+                *SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                island_hit::disarm(&window);
+                let _ = window.hide();
+            }
+        }
+        (false, None) => show_overlay_state(app_handle, "rest"),
+        _ => {}
+    }
+}
+
+/// The island's window covers more of the screen than its shape, so clicks
+/// pass through it except over the shape, which the page reports. A thread
+/// checks the cursor against the shape 30 times a second while the island
+/// shows, and sleeps while it doesn't.
+pub mod island_hit {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Condvar, Mutex, Once};
+    use std::time::Duration;
+
+    /// The shape in the window, in physical pixels from its top-left corner:
+    /// x, y, width, height. The page reports it with a little slack around
+    /// the edge so it's easy to hit.
+    static SHAPE: Mutex<(f64, f64, f64, f64)> = Mutex::new((0.0, 0.0, 0.0, 0.0));
+    static ARMED: Mutex<Option<tauri::webview::WebviewWindow>> = Mutex::new(None);
+    static WAKE: Condvar = Condvar::new();
+    static STARTED: Once = Once::new();
+    /// Whether the window takes clicks now.
+    static TAKING: AtomicBool = AtomicBool::new(true);
+
+    /// The page's report of where the shape is.
+    pub fn set_shape(x: f64, y: f64, w: f64, h: f64) {
+        *SHAPE.lock().unwrap_or_else(|e| e.into_inner()) = (x, y, w, h);
+    }
+
+    fn take_clicks(window: &tauri::webview::WebviewWindow, take: bool) {
+        if TAKING.swap(take, Ordering::SeqCst) != take {
+            let _ = window.set_ignore_cursor_events(!take);
+        }
+    }
+
+    /// The island shows: clicks pass through until the cursor is on it.
+    pub fn arm(window: &tauri::webview::WebviewWindow) {
+        STARTED.call_once(|| {
+            if let Err(e) = std::thread::Builder::new()
+                .name("island-hit".into())
+                .spawn(run)
+            {
+                log::warn!("The island's click check didn't start: {e}");
+            }
+        });
+        take_clicks(window, false);
+        *ARMED.lock().unwrap_or_else(|e| e.into_inner()) = Some(window.clone());
+        WAKE.notify_all();
+    }
+
+    /// The island went, or the bar is back: the window takes clicks again
+    /// (the bar's own window is all card) and the thread sleeps.
+    pub fn disarm(window: &tauri::webview::WebviewWindow) {
+        let was = ARMED.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if was.is_some() || !TAKING.load(Ordering::SeqCst) {
+            take_clicks(window, true);
+        }
+    }
+
+    fn run() {
+        loop {
+            let window = {
+                let mut armed = ARMED.lock().unwrap_or_else(|e| e.into_inner());
+                while armed.is_none() {
+                    armed = WAKE.wait(armed).unwrap_or_else(|e| e.into_inner());
+                }
+                armed.clone()
+            };
+            if let Some(window) = window {
+                let inside = cursor_on_shape(&window);
+                // The window may have been disarmed while we looked.
+                if ARMED.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+                    && TAKING.load(Ordering::SeqCst) != inside
+                {
+                    take_clicks(&window, inside);
+                    // The page can't see the pointer leave once clicks pass
+                    // through, so it hears both ways from here.
+                    use tauri::{Emitter, Manager};
+                    let _ =
+                        window
+                            .app_handle()
+                            .emit_to("recording_overlay", "island-pointer", inside);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(33));
+        }
+    }
+
+    fn cursor_on_shape(window: &tauri::webview::WebviewWindow) -> bool {
+        use windows::Win32::Foundation::{POINT, RECT};
+        use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
+        let Ok(hwnd) = window.hwnd() else {
+            return false;
+        };
+        let mut cursor = POINT::default();
+        let mut rect = RECT::default();
+        // SAFETY: plain queries into stack values on our own window.
+        let ok =
+            unsafe { GetCursorPos(&mut cursor).is_ok() && GetWindowRect(hwnd, &mut rect).is_ok() };
+        if !ok {
+            return false;
+        }
+        let (x, y, w, h) = *SHAPE.lock().unwrap_or_else(|e| e.into_inner());
+        let (cx, cy) = ((cursor.x - rect.left) as f64, (cursor.y - rect.top) as f64);
+        cx >= x && cx < x + w && cy >= y && cy < y + h
     }
 }

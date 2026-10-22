@@ -3,7 +3,12 @@ import { useTranslation } from "react-i18next";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
-import type { OverlayPosition, OverlayStyle } from "@/bindings";
+import type {
+  BarLook,
+  IslandIdle,
+  OverlayPosition,
+  OverlayStyle,
+} from "@/bindings";
 
 interface ShowOverlayProps {
   descriptionMode?: "inline" | "tooltip";
@@ -41,6 +46,32 @@ export const ShowOverlay: React.FC<ShowOverlayProps> = React.memo(
       },
     ];
 
+    const lookOptions = [
+      {
+        value: "bar",
+        label: t("settings.advanced.overlay.look.options.bar"),
+      },
+      {
+        value: "island",
+        label: t("settings.advanced.overlay.look.options.island"),
+      },
+    ];
+
+    const idleOptions = [
+      {
+        value: "small",
+        label: t("settings.advanced.overlay.idle.options.small"),
+      },
+      {
+        value: "hide",
+        label: t("settings.advanced.overlay.idle.options.hide"),
+      },
+    ];
+
+    const selectedLook: BarLook =
+      getSetting("bar_look") === "island" ? "island" : "bar";
+    const selectedIdle: IslandIdle =
+      getSetting("island_idle") === "hide" ? "hide" : "small";
     const selectedStyle = (getSetting("overlay_style") ||
       "live") as OverlayStyle;
     // Only "top" and "bottom" are selectable; anything else (empty, or a legacy
@@ -67,6 +98,40 @@ export const ShowOverlay: React.FC<ShowOverlayProps> = React.memo(
         </SettingContainer>
 
         {selectedStyle !== "none" && (
+          <SettingContainer
+            title={t("settings.advanced.overlay.look.title")}
+            description={t("settings.advanced.overlay.look.description")}
+            descriptionMode={descriptionMode}
+            grouped={grouped}
+          >
+            <Dropdown
+              options={lookOptions}
+              selectedValue={selectedLook}
+              onSelect={(value) => updateSetting("bar_look", value as BarLook)}
+              disabled={isUpdating("bar_look")}
+            />
+          </SettingContainer>
+        )}
+
+        {selectedStyle !== "none" && selectedLook === "island" && (
+          <SettingContainer
+            title={t("settings.advanced.overlay.idle.title")}
+            description={t("settings.advanced.overlay.idle.description")}
+            descriptionMode={descriptionMode}
+            grouped={grouped}
+          >
+            <Dropdown
+              options={idleOptions}
+              selectedValue={selectedIdle}
+              onSelect={(value) =>
+                updateSetting("island_idle", value as IslandIdle)
+              }
+              disabled={isUpdating("island_idle")}
+            />
+          </SettingContainer>
+        )}
+
+        {selectedStyle !== "none" && selectedLook === "bar" && (
           <SettingContainer
             title={t("settings.advanced.overlay.position.title")}
             description={t("settings.advanced.overlay.position.description")}

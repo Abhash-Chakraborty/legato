@@ -1,0 +1,228 @@
+/* ============================================================
+   The island (Settings › Bar › Look): a dark shape hanging from the top
+   edge of the screen, with concave shoulders where it meets the edge. It
+   takes the size of the card inside it (measured in RecordingOverlay's
+   IslandFrame) and morphs between sizes: width first when it grows, height
+   first when it shrinks, 320 ms ease-out, no bounce. The cards keep their
+   own layout and lose their own surface; the island is the surface.
+   ============================================================ */
+.ov-stage.island {
+  --isl-ink: #0d0e0d;
+  --isl-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* The cards read the bar's tokens; the island is dark in either theme. */
+  --color-text: #f1f0ec;
+  --s-surface: transparent;
+  --s-accent: #6ec1b6;
+  --s-accent-soft: rgb(110 193 182 / 0.22);
+  --s-muted: #b9b6b0;
+  --s-faint: #85827c;
+  --s-border: rgb(255 255 255 / 0.12);
+  --s-hair: rgb(255 255 255 / 0.1);
+  align-items: flex-start;
+}
+
+.isl {
+  position: relative;
+  flex: none;
+  background: var(--isl-ink);
+  color: var(--color-text);
+  border-radius: 0 0 var(--r, 12px) var(--r, 12px);
+  transition:
+    width 320ms var(--isl-ease),
+    height 320ms var(--isl-ease) 40ms,
+    border-radius 320ms var(--isl-ease),
+    opacity 220ms ease-out,
+    transform 320ms var(--isl-ease);
+}
+.isl.shrink {
+  transition:
+    width 320ms var(--isl-ease) 50ms,
+    height 320ms var(--isl-ease),
+    border-radius 320ms var(--isl-ease),
+    opacity 220ms ease-out,
+    transform 320ms var(--isl-ease);
+}
+/* Going away: it slides back up under the edge. */
+.isl.gone {
+  opacity: 0;
+  transform: translateY(-100%);
+}
+.isl::before,
+.isl::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+.isl::before {
+  left: -10px;
+  background: radial-gradient(
+    circle at 0 100%,
+    transparent 9.5px,
+    var(--isl-ink) 10px
+  );
+}
+.isl::after {
+  right: -10px;
+  background: radial-gradient(
+    circle at 100% 100%,
+    transparent 9.5px,
+    var(--isl-ink) 10px
+  );
+}
+
+/* The content, at its own size, centred under the top edge; the shape
+   clips it while it catches up (the clip is a layer inside, since the
+   shoulders sit outside the shape). */
+.isl-in {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+}
+.isl-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.isl-fade {
+  animation: isl-in 160ms ease-out 100ms both;
+}
+@keyframes isl-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* The cards inside: no surface, border or pop of their own, and they snap
+   to their new size so the shape alone animates. */
+.island .scard {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+  transition: none;
+  max-width: none;
+  color: var(--color-text);
+}
+.island .scard.leaving {
+  opacity: 1;
+  transform: none;
+}
+.island .scard.notes.glow {
+  animation: none;
+  box-shadow: none;
+}
+.island .scard.notes.dark,
+.island .scard.mini {
+  background: transparent;
+  border: 0;
+}
+.island .scard.compact,
+.island .scard.mini {
+  padding: 0 6px;
+}
+.island .sbtn.primary {
+  color: var(--isl-ink);
+}
+.island .sbtn.primary:hover {
+  background: #8ad3c9;
+}
+.island .stext-cap .tentative {
+  color: var(--s-muted);
+}
+
+/* At rest: a small shape with one teal dot; under the pointer it opens to
+   Dictate, Notes, the Scratchpad and the dictation keys. */
+.irest {
+  width: 112px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.irest-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--s-accent);
+  opacity: 0.8;
+}
+.irest.open {
+  width: auto;
+  height: 46px;
+  gap: 8px;
+  padding: 0 14px 0 10px;
+  font-family: var(--s-font);
+}
+.ibtn {
+  height: 30px;
+  min-width: 30px;
+  padding: 0 11px 0 9px;
+  border: 0;
+  border-radius: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text);
+  background: rgb(255 255 255 / 0.08);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 100ms ease-out,
+    transform 100ms ease-out;
+}
+.ibtn:hover {
+  background: rgb(255 255 255 / 0.16);
+  transition-duration: 0ms;
+}
+.ibtn:active {
+  transform: scale(0.96);
+  transition-duration: 0ms;
+}
+.ibtn:focus-visible {
+  outline: 2px solid var(--s-accent);
+  outline-offset: 2px;
+}
+.ibtn.icon {
+  width: 30px;
+  padding: 0;
+}
+.ibtn svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.ikeys {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--s-faint);
+  border: 1px solid var(--s-border);
+  border-radius: 4px;
+  padding: 3px 5px;
+  white-space: nowrap;
+}
+
+/* Reduce motion: every change is a short fade, no morph. */
+@media (prefers-reduced-motion: reduce) {
+  .isl,
+  .isl.shrink {
+    transition: opacity 120ms ease-out;
+  }
+  .isl.gone {
+    transform: none;
+  }
+  .isl-fade {
+    animation-duration: 120ms;
+    animation-delay: 0ms;
+  }
+}
