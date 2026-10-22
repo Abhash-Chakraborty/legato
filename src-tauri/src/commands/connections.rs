@@ -1,4 +1,5 @@
-//! Settings › Connections: calendars, and AI apps reading Legato over MCP.
+//! Settings › Connections: calendars, Inyon, and AI apps reading Legato
+//! over MCP.
 
 use crate::calendar::{self, CalendarStatus, RemovedCalendar};
 use crate::calendar_rules::Meeting;
@@ -8,6 +9,51 @@ use serde_json::{json, Value};
 use specta::Type;
 use std::path::PathBuf;
 use tauri::AppHandle;
+
+#[tauri::command]
+#[specta::specta]
+pub fn inyon_status(app: AppHandle) -> crate::inyon::InyonStatus {
+    crate::inyon::status(&app)
+}
+
+/// Pairs with an Inyon hub from the code its Settings › Paired devices
+/// shows. Errors are keys under `inyon.reason`.
+#[tauri::command]
+#[specta::specta]
+pub async fn inyon_pair(
+    app: AppHandle,
+    hub: String,
+    code: String,
+) -> Result<crate::inyon::InyonStatus, String> {
+    crate::inyon::pair(&app, &hub, &code).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn inyon_unpair(app: AppHandle) {
+    crate::inyon::unpair(&app);
+}
+
+/// Agents waiting for you on the bar or the island, or not.
+#[tauri::command]
+#[specta::specta]
+pub fn inyon_set_alerts(app: AppHandle, on: bool) {
+    crate::inyon::set_alerts(&app, on);
+}
+
+/// Answers the agent on the card with one of its options. Errors are keys
+/// under `inyon.reason`.
+#[tauri::command]
+#[specta::specta]
+pub async fn inyon_answer(
+    app: AppHandle,
+    host: String,
+    pane: String,
+    option: u32,
+    key: Option<String>,
+) -> Result<(), String> {
+    crate::inyon::answer(&app, &host, &pane, option, key).await
+}
 
 #[tauri::command]
 #[specta::specta]

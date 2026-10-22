@@ -22,6 +22,7 @@ import { useModelStore } from "../../stores/modelStore";
 
 import { AdminAppsToggle } from "./AdminAppsToggle";
 import { FeatureToggle, IslandToggle } from "./FeatureSettings";
+import { InyonAlertsRow, InyonCard } from "./connections/InyonSettings";
 import { AutostartToggle } from "./AutostartToggle";
 import { ShowTrayIcon } from "./ShowTrayIcon";
 import { StartHidden } from "./StartHidden";
@@ -1211,6 +1212,30 @@ export const buildSections = (
             ],
             render: () => <MeetingCardsRow />,
             when: ({ settings }) => hasCalendars(settings?.calendars),
+          },
+        ],
+      },
+      {
+        id: "inyon",
+        titleKey: "settings.groups.inyon",
+        rows: [
+          {
+            id: "inyon",
+            searchKeys: [
+              "settings.connections.inyon.title",
+              "settings.connections.inyon.help",
+              "settings.connections.inyon.pair",
+            ],
+            render: () => <InyonCard />,
+          },
+          {
+            id: "inyon-alerts",
+            searchKeys: [
+              "settings.connections.inyon.alerts.title",
+              "settings.connections.inyon.alerts.help",
+            ],
+            render: () => <InyonAlertsRow />,
+            when: ({ settings }) => !!settings?.inyon?.hub,
           },
         ],
       },

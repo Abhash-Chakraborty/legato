@@ -1,0 +1,384 @@
+//! Inyon, the agent hub, with Legato as one of its companion apps: pairing
+//! with a code, a WebSocket to the hub while paired, and the agents waiting
+//! for an answer shown on the bar or the island, with their options. The
+//! rules (frames, the queue, addresses) are in `inyon_rules.rs`; the
+//! contract is docs/companion-contract.md.
+
+use crate::inyon_rules::{self as rules, Frame, PaneRef, Waiting};
+use crate::settings::{get_settings, write_settings};
+use futures_util::{SinkExt, StreamExt};
+use log::{debug, info, warn};
+use serde::Serialize;
+use specta::Type;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
+use std::time::Duration;
+use tauri::{AppHandle, Emitter};
+use tokio::sync::{mpsc, Notify};
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::Message;
+
+/// Where the hub's token lives in Credential Manager ("Legato/inyon-token").
+const TOKEN: &str = "inyon-token";
+const CONTRACT_HEADER: &str = "X-Inyon-Contract";
+/// A ping this often keeps the socket alive through NATs and proxies.
+const PING_EVERY: Duration = Duration::from_secs(30);
+
+static WAITING: Mutex<Option<Waiting>> = Mutex::new(None);
+/// Frames for the hub, while connected.
+static OUTBOX: Mutex<Option<mpsc::UnboundedSender<String>>> = Mutex::new(None);
+static CONNECTED: AtomicBool = AtomicBool::new(false);
+/// Bumped when the pairing or the alerts switch changes: the connection
+/// ends and starts again from the settings.
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+static CHANGED: Notify = Notify::const_new();
+
+fn with_waiting<R>(f: impl FnOnce(&mut Waiting) -> R) -> R {
+    let mut guard = WAITING.lock().unwrap_or_else(|e| e.into_inner());
+    f(guard.get_or_insert_with(Waiting::default))
+}
+
+fn token() -> Option<String> {
+    match crate::secrets::read_secret(TOKEN) {
+        Ok(token) => token.filter(|t| !t.is_empty()),
+        Err(e) => {
+            warn!("Couldn't read Inyon's token from Credential Manager: {e}");
+            None
+        }
+    }
+}
+
+/// Settings › Connections › Inyon, for the page.
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct InyonStatus {
+    pub paired: bool,
+    pub hub: Option<String>,
+    pub hub_name: Option<String>,
+    pub alerts: bool,
+    pub connected: bool,
+    /// Agents waiting for an answer now.
+    pub waiting: u32,
+}
+
+pub fn status(app: &AppHandle) -> InyonStatus {
+    let settings = get_settings(app).inyon;
+    let waiting = with_waiting(|w| w.current().map(|a| a.more + 1).unwrap_or(0));
+    InyonStatus {
+        paired: settings.hub.is_some(),
+        hub: settings.hub,
+        hub_name: settings.hub_name,
+        alerts: settings.alerts,
+        connected: CONNECTED.load(Ordering::SeqCst),
+        waiting,
+    }
+}
+
+fn status_changed(app: &AppHandle) {
+    let _ = app.emit("inyon-status", status(app));
+}
+
+/// Starts the connection for as long as Legato runs; it sleeps while not
+/// paired or with alerts off.
+pub fn init(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move { run(app).await });
+}
+
+/// The pairing or the alerts switch changed: connect again from scratch.
+fn restart() {
+    GENERATION.fetch_add(1, Ordering::SeqCst);
+    CHANGED.notify_waiters();
+}
+
+async fn run(app: AppHandle) {
+    let mut failures = 0u32;
+    loop {
+        let generation = GENERATION.load(Ordering::SeqCst);
+        let settings = get_settings(&app).inyon;
+        let ready = settings
+            .alerts
+            .then_some(())
+            .and(settings.hub.clone())
+            .zip(token());
+        let Some((hub, token)) = ready else {
+            CHANGED.notified().await;
+            continue;
+        };
+        let started = std::time::Instant::now();
+        match connect(&app, &hub, &token, generation).await {
+            // A connection that lasted a while starts the backoff over; one
+            // the hub closed at once (a removed token) doesn't.
+            Ok(()) if started.elapsed() > Duration::from_secs(30) => failures = 0,
+            Ok(()) => failures += 1,
+            Err(e) => {
+                failures += 1;
+                debug!("Inyon: {e}");
+            }
+        }
+        CONNECTED.store(false, Ordering::SeqCst);
+        *OUTBOX.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        with_waiting(|w| w.clear());
+        show(&app);
+        status_changed(&app);
+        if GENERATION.load(Ordering::SeqCst) == generation {
+            let wait = Duration::from_secs(rules::backoff_secs(failures));
+            tokio::select! {
+                _ = tokio::time::sleep(wait) => {}
+                _ = CHANGED.notified() => {}
+            }
+        }
+    }
+}
+
+/// One connection, until it drops or the settings change. Ok when it ran
+/// and ended, Err when it couldn't start.
+async fn connect(app: &AppHandle, hub: &str, token: &str, generation: u64) -> Result<(), String> {
+    let mut request = rules::ws_url(hub)
+        .into_client_request()
+        .map_err(|e| e.to_string())?;
+    let headers = request.headers_mut();
+    headers.insert(
+        "Authorization",
+        format!("Bearer {token}").parse().map_err(|_| "bad token")?,
+    );
+    headers.insert(CONTRACT_HEADER, rules::CONTRACT.into());
+    let (socket, _) = tokio::time::timeout(
+        Duration::from_secs(15),
+        tokio_tungstenite::connect_async(request),
+    )
+    .await
+    .map_err(|_| "the hub didn't answer".to_string())?
+    .map_err(|e| format!("couldn't reach the hub: {e}"))?;
+    info!("Connected to Inyon at {hub}");
+    let (mut sink, mut stream) = socket.split();
+    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+    *OUTBOX.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
+    CONNECTED.store(true, Ordering::SeqCst);
+    status_changed(app);
+    send(r#"{"t":"sub.overview"}"#.to_string());
+
+    let mut ping = tokio::time::interval(PING_EVERY);
+    ping.tick().await;
+    loop {
+        if GENERATION.load(Ordering::SeqCst) != generation {
+            let _ = sink.close().await;
+            return Ok(());
+        }
+        tokio::select! {
+            frame = stream.next() => match frame {
+                Some(Ok(Message::Text(text))) => {
+                    if let Some(frame) = rules::parse_frame(&text) {
+                        handle(app, frame);
+                    }
+                }
+                Some(Ok(Message::Close(close))) => {
+                    let why = close.map(|c| format!("{} {}", c.code, c.reason)).unwrap_or_default();
+                    info!("Inyon closed the connection {why}");
+                    if why.starts_with("4401") || why.starts_with("4403") {
+                        // Removed in Inyon: the token is no good any more.
+                        warn!("Inyon refused Legato; pair again in Settings › Connections");
+                    }
+                    return Ok(());
+                }
+                Some(Ok(_)) => {}
+                Some(Err(e)) => return Err(format!("connection lost: {e}")),
+                None => return Ok(()),
+            },
+            Some(out) = rx.recv() => {
+                sink.send(Message::Text(out)).await.map_err(|e| e.to_string())?;
+            }
+            _ = ping.tick() => {
+                sink.send(Message::Text(r#"{"t":"ping"}"#.into())).await.map_err(|e| e.to_string())?;
+            }
+            _ = CHANGED.notified() => {}
+        }
+    }
+}
+
+fn send(frame: String) {
+    if let Some(tx) = OUTBOX.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        let _ = tx.send(frame);
+    }
+}
+
+fn chat_frame(t: &str, pane: &PaneRef) -> String {
+    serde_json::json!({ "t": t, "host": pane.host, "pane": pane.pane }).to_string()
+}
+
+fn handle(app: &AppHandle, frame: Frame) {
+    match frame {
+        Frame::Overview(panes) => {
+            let (start, stop) = with_waiting(|w| w.overview(panes));
+            for pane in &start {
+                send(chat_frame("sub.chat", pane));
+            }
+            for pane in &stop {
+                send(chat_frame("unsub.chat", pane));
+            }
+            show(app);
+        }
+        Frame::Screen { pane, prompt } => {
+            with_waiting(|w| w.screen(pane, prompt));
+            show(app);
+        }
+        Frame::Notify(n) if n.kind == "done" => {
+            // A short word that an agent finished, unless something else is
+            // on the bar.
+            if with_waiting(|w| w.current().is_none()) {
+                crate::overlay::show_agent_done(app, &n.agent, &n.title);
+            }
+        }
+        Frame::Notify(_) | Frame::Info { .. } | Frame::Pong => {}
+    }
+}
+
+/// Hands the agent waiting longest to the bar, or takes the card away.
+fn show(app: &AppHandle) {
+    let alert = with_waiting(|w| w.current());
+    crate::overlay::set_agent_card(app, alert.as_ref());
+    status_changed(app);
+}
+
+fn client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        // A send waits until the hub knows whether the text landed.
+        .timeout(Duration::from_secs(40))
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+/// The hub's answer as a reason key under `inyon.reason`, for an error.
+async fn refusal(response: reqwest::Response) -> String {
+    let status = response.status().as_u16();
+    let reason = response
+        .json::<serde_json::Value>()
+        .await
+        .ok()
+        .and_then(|v| v.get("reason").and_then(|r| r.as_str()).map(str::to_string));
+    rules::reason_key(status, reason.as_deref()).to_string()
+}
+
+/// Pairs with a hub from the code Inyon shows. Errors are reason keys.
+pub async fn pair(app: &AppHandle, hub: &str, code: &str) -> Result<InyonStatus, String> {
+    let hub = rules::hub_url(hub).ok_or("badAddress")?;
+    let code = rules::pairing_code(code).ok_or("badCode")?;
+    let name = format!(
+        "Legato on {}",
+        std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows".into())
+    );
+    let client = client()?;
+    let response = client
+        .post(format!("{hub}/api/companions/claim"))
+        .header(CONTRACT_HEADER, rules::CONTRACT)
+        .json(&serde_json::json!({ "code": code, "name": name, "app": "Legato for Windows" }))
+        .send()
+        .await
+        .map_err(|e| {
+            debug!("Inyon pairing: {e}");
+            "unreachable".to_string()
+        })?;
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        return Err(match refusal(response).await.as_str() {
+            "signedOut" => "badCode".to_string(),
+            "failed" if status == 429 => "rateLimit".to_string(),
+            "failed" if status == 404 => "notAHub".to_string(),
+            other => other.to_string(),
+        });
+    }
+    let claimed: rules::Claimed = response.json().await.map_err(|_| "notAHub")?;
+    if claimed.contract_version != rules::CONTRACT {
+        return Err("contract".into());
+    }
+    crate::secrets::write_secret(TOKEN, &claimed.token).map_err(|e| {
+        warn!("Couldn't keep Inyon's token in Credential Manager: {e}");
+        "vault".to_string()
+    })?;
+    // The hub's own name, for Settings; the address stands in without it.
+    let hub_name = async {
+        let me: serde_json::Value = client
+            .get(format!("{hub}/api/companions/me"))
+            .header(CONTRACT_HEADER, rules::CONTRACT)
+            .bearer_auth(&claimed.token)
+            .send()
+            .await
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        me.get("hub")?.get("name")?.as_str().map(str::to_string)
+    }
+    .await;
+    let mut settings = get_settings(app);
+    settings.inyon.hub = Some(hub.clone());
+    settings.inyon.hub_id = Some(claimed.hub_id);
+    settings.inyon.hub_name = hub_name;
+    write_settings(app, settings);
+    info!("Paired with Inyon at {hub}");
+    restart();
+    Ok(status(app))
+}
+
+/// Forgets the hub: the token goes from Credential Manager, the connection
+/// ends. Removing Legato in Inyon's Paired devices ends it on that side.
+pub fn unpair(app: &AppHandle) {
+    if let Err(e) = crate::secrets::delete_secret(TOKEN) {
+        warn!("Couldn't remove Inyon's token: {e}");
+    }
+    let mut settings = get_settings(app);
+    settings.inyon.hub = None;
+    settings.inyon.hub_id = None;
+    settings.inyon.hub_name = None;
+    write_settings(app, settings);
+    restart();
+    status_changed(app);
+}
+
+/// Agents on the bar, or not; the pairing stays.
+pub fn set_alerts(app: &AppHandle, on: bool) {
+    let mut settings = get_settings(app);
+    settings.inyon.alerts = on;
+    write_settings(app, settings);
+    restart();
+    status_changed(app);
+}
+
+/// Answers the question on the card with one of its options. Errors are
+/// reason keys; "already answered" takes the card away all the same.
+pub async fn answer(
+    app: &AppHandle,
+    host: &str,
+    pane: &str,
+    option: u32,
+    key: Option<String>,
+) -> Result<(), String> {
+    let hub = get_settings(app).inyon.hub.ok_or("signedOut")?;
+    let token = token().ok_or("signedOut")?;
+    let response = client()?
+        .post(rules::pane_route(&hub, host, pane, "answer"))
+        .header(CONTRACT_HEADER, rules::CONTRACT)
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "option": option, "key": key }))
+        .send()
+        .await
+        .map_err(|_| "unreachable".to_string())?;
+    let pane_ref = PaneRef {
+        host: host.to_string(),
+        pane: pane.to_string(),
+    };
+    let result = if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(refusal(response).await)
+    };
+    let gone = match &result {
+        Ok(()) => true,
+        Err(reason) => reason == "alreadyAnswered" || reason == "paneGone",
+    };
+    if gone {
+        with_waiting(|w| w.answered(&pane_ref, key.as_deref()));
+        show(app);
+    }
+    result
+}

@@ -33,6 +33,9 @@ const OVERLAY_PICK_HEIGHT: f64 = 360.0;
 const OVERLAY_NOTES_WIDTH: f64 = 300.0;
 const OVERLAY_CALL_WIDTH: f64 = 380.0;
 const OVERLAY_CALL_HEIGHT: f64 = 124.0;
+/// An agent's question from Inyon: a few lines and up to five options.
+const OVERLAY_AGENT_WIDTH: f64 = 440.0;
+const OVERLAY_AGENT_HEIGHT: f64 = 320.0;
 
 // Actual is 394x118, just a little extra
 const OVERLAY_STREAM_WIDTH: f64 = 400.0;
@@ -52,6 +55,8 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
         "notes" => (OVERLAY_NOTES_WIDTH, OVERLAY_HEIGHT),
         // The call card: offer notes, or say the call ended.
         "call" => (OVERLAY_CALL_WIDTH, OVERLAY_CALL_HEIGHT),
+        // An agent waiting on Inyon: its question and options.
+        "agent" => (OVERLAY_AGENT_WIDTH, OVERLAY_AGENT_HEIGHT),
         _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
 }
@@ -726,15 +731,67 @@ pub fn set_call_card<T: serde::Serialize>(
     CALL_CARD_HIDDEN_FROM_CAPTURE.store(hide_from_capture, Ordering::Relaxed);
     match value {
         Some(card) => {
-            let dictating = app_handle
-                .try_state::<std::sync::Arc<crate::managers::audio::AudioRecordingManager>>()
-                .is_some_and(|a| a.is_recording());
-            if !dictating {
+            if !dictating(app_handle) {
                 show_bar(app_handle, "call", "bar-call", &card, None);
             }
         }
         None if had.is_some() => hide_recording_overlay(app_handle),
         None => {}
+    }
+}
+
+/// The agent waiting for an answer, from Inyon, while one waits. It shows
+/// whenever no dictation or call card has the bar.
+static AGENT_CARD: Mutex<Option<serde_json::Value>> = Mutex::new(None);
+
+fn agent_card() -> Option<serde_json::Value> {
+    AGENT_CARD.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+fn dictating(app_handle: &AppHandle) -> bool {
+    app_handle
+        .try_state::<std::sync::Arc<crate::managers::audio::AudioRecordingManager>>()
+        .is_some_and(|a| a.is_recording())
+}
+
+/// Shows the agent card, updates it, or takes it away with None. A
+/// dictation or a call card keeps the bar; the agent shows after them.
+pub fn set_agent_card<T: serde::Serialize>(app_handle: &AppHandle, card: Option<&T>) {
+    let value = card.and_then(|c| serde_json::to_value(c).ok());
+    let had = std::mem::replace(
+        &mut *AGENT_CARD.lock().unwrap_or_else(|e| e.into_inner()),
+        value.clone(),
+    );
+    if had == value {
+        return;
+    }
+    let on_bar = SHOWN.lock().unwrap_or_else(|e| e.into_inner()).as_deref() == Some("agent");
+    match value {
+        Some(card) => {
+            let quiet = matches!(
+                SHOWN.lock().unwrap_or_else(|e| e.into_inner()).as_deref(),
+                None | Some("rest") | Some("notes") | Some("agent")
+            );
+            if call_card().is_none() && !dictating(app_handle) && quiet {
+                show_bar(app_handle, "agent", "bar-agent", &card, None);
+            }
+        }
+        None if on_bar => hide_recording_overlay(app_handle),
+        None => {}
+    }
+}
+
+/// A short word that an agent finished, when the bar is free.
+pub fn show_agent_done(app_handle: &AppHandle, agent: &str, title: &str) {
+    let quiet = matches!(
+        SHOWN.lock().unwrap_or_else(|e| e.into_inner()).as_deref(),
+        None | Some("rest")
+    );
+    if quiet && call_card().is_none() && !dictating(app_handle) {
+        show_overlay_notice(
+            app_handle,
+            &serde_json::json!({ "kind": "agent_done", "agent": agent, "title": title }),
+        );
     }
 }
 
@@ -760,12 +817,17 @@ fn exclude_from_capture(overlay_window: &tauri::webview::WebviewWindow, exclude:
     }
 }
 
-/// Hides the bar with its fade-out; while a call card is up it comes back,
-/// and during a Notes recording the bar goes back to its pill. A dictation
+/// Hides the bar with its fade-out; while a call card or an agent's
+/// question is up it comes back, and during a Notes recording the bar goes
+/// back to its pill. A dictation
 /// ends with `end_dictation`, which also frees the bubble.
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
     if let Some(card) = call_card() {
         show_bar(app_handle, "call", "bar-call", &card, None);
+        return;
+    }
+    if let Some(card) = agent_card() {
+        show_bar(app_handle, "agent", "bar-agent", &card, None);
         return;
     }
     if NOTES_PILL.load(Ordering::SeqCst) {

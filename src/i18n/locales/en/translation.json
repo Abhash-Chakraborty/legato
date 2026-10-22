@@ -675,7 +675,7 @@
       },
       "connections": {
         "title": "Connections",
-        "subtitle": "Your calendars, and AI apps that may read Legato."
+        "subtitle": "Your calendars, your Inyon hub, and AI apps that may read Legato."
       },
       "devices": {
         "title": "Devices",
@@ -724,7 +724,8 @@
       "speakers": "Speakers in notes",
       "features": "What Legato does",
       "featuresOnScreen": "On screen",
-      "featuresOther": "Other apps"
+      "featuresOther": "Other apps",
+      "inyon": "Inyon"
     },
     "requires": {
       "tray": "Needs the tray icon, or there would be no way to open the window.",
@@ -1275,6 +1276,29 @@
         "inApp": "In {{name}}",
         "copy": "Copy setup",
         "copied": "Copied"
+      },
+      "inyon": {
+        "title": "Inyon",
+        "help": "Pair with your Inyon hub to see agents that are waiting for you on the bar or the island, and answer them there.",
+        "hub": "Hub address",
+        "hubPlaceholder": "Hub address, like 100.97.188.112:4777",
+        "code": "Pairing code",
+        "codePlaceholder": "Code",
+        "pair": "Pair",
+        "pairing": "Pairing…",
+        "where": "In Inyon, open Settings › Paired devices › Pair a companion app for the code, or run inyon hub companion-code on the hub's computer. The code works once, for 5 minutes.",
+        "paired": "Paired with {{hub}}",
+        "connected": "Connected",
+        "connecting": "Connecting…",
+        "waiting_one": "{{count}} agent waiting",
+        "waiting_other": "{{count}} agents waiting",
+        "alertsOff": "Not listening",
+        "remove": "Remove",
+        "removed": "Inyon removed. Remove Legato in Inyon's Paired devices too.",
+        "alerts": {
+          "title": "Agents on the bar",
+          "help": "An agent waiting for you shows with its question and options, after any dictation or call. Off keeps the pairing but stops listening."
+        }
       }
     },
     "speakers": {
@@ -1494,7 +1518,8 @@
       "notesFailed": "Notes didn't start · {{reason}}",
       "callNever": "Legato won't offer notes in {{app}}",
       "fromPhone": "From {{name}} · on your clipboard",
-      "fromPhoneImage": "Image from {{name}} · on your clipboard"
+      "fromPhoneImage": "Image from {{name}} · on your clipboard",
+      "agent_done": "{{agent}} finished: {{title}}"
     },
     "working": "{{name}}…",
     "undo": "Undo",
@@ -1552,6 +1577,12 @@
       "dictate": "Dictate",
       "notes": "Notes",
       "scratchpad": "Scratchpad"
+    },
+    "agent": {
+      "asks": "{{agent}} needs you",
+      "in": "in {{label}}",
+      "more_one": "{{count}} more",
+      "more_other": "{{count}} more"
     }
   },
   "titleBar": {
@@ -3489,5 +3520,27 @@
     "close": "Close the panel; notes keep recording",
     "closeHint": "Close this and notes keep recording.",
     "minePlaceholder": "Type while you listen"
+  },
+  "inyon": {
+    "reason": {
+      "badAddress": "That doesn't look like a hub address. Try host:port, like 100.97.188.112:4777.",
+      "badCode": "That code didn't work. Codes work once, for 5 minutes; make a new one in Inyon.",
+      "rateLimit": "Too many tries. Wait a minute and try again.",
+      "unreachable": "Couldn't reach the hub. Check the address and that this PC can reach it.",
+      "notAHub": "Something answered at that address, but it isn't an Inyon hub that pairs companion apps (0.20 or later).",
+      "contract": "This hub speaks a different version of the companion contract. Update Inyon or Legato.",
+      "vault": "Windows Credential Manager wouldn't keep the hub's token.",
+      "signedOut": "The hub doesn't know Legato any more. Pair again in Settings › Connections.",
+      "alreadyAnswered": "Already answered.",
+      "paneGone": "That session isn't there any more.",
+      "offline": "That machine is offline.",
+      "badOption": "That option is gone.",
+      "promptOpen": "The agent is asking something; answer it first.",
+      "busy": "The agent can't take text right now.",
+      "notLanded": "Sent, but the hub couldn't confirm it arrived.",
+      "noAgent": "No agent runs in that session.",
+      "scope": "Legato isn't allowed to do that.",
+      "failed": "That didn't work. Try again."
+    }
   }
 }

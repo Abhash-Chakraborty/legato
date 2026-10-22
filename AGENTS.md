@@ -69,7 +69,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
   - `mod.rs` / `clipboard.rs` / `net.rs` - Windows glue: `SyncManager`, the clipboard watcher, this PC's addresses
   - `bluetooth.rs` - The RFCOMM listener and SDP record for a phone that shares no network with the PC
 - `actions.rs` - What each shortcut does; the dictation pipeline from recording to paste
-- `*_rules.rs` - Pure logic kept free of Tauri so it can be unit tested on any OS: `cleanup_rules`, `style_rules`, `snippet_rules`, `transform_rules`, `learn_rules`, `notes_rules`, `calls_rules`, `ai_rules`, `bubble_rules`, `calendar_rules`, `mcp_rules`
+- `*_rules.rs` - Pure logic kept free of Tauri so it can be unit tested on any OS: `cleanup_rules`, `style_rules`, `snippet_rules`, `transform_rules`, `learn_rules`, `notes_rules`, `calls_rules`, `ai_rules`, `bubble_rules`, `calendar_rules`, `mcp_rules`, `inyon_rules`
 - `transforms.rs` - Transforms on the selection or last dictation, the keyboard picker, Ask, the bar's Keep/Undo
 - `clipboard.rs` / `paste_tx/` - Pasting, per-category paste overrides, remembering the last paste
 - `selection.rs` - Copying the selection from another app; Add selection to Dictionary
@@ -80,6 +80,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `notes_panel.rs` - The Notes side panel docked at the right of the screen (live transcript, My notes, Pause, Stop)
 - `calls.rs` - Noticing calls (Teams, Zoom, Slack, Discord, WhatsApp, Telegram, and Meet, Teams or Zoom in a browser tab) and offering notes; logs who holds the microphone when that changes
 - `calendar.rs` - Calendars from secret iCal addresses (Settings › Connections): meetings for the bubble, note titles and MCP, cached in `calendar.json`
+- `inyon.rs` - Inyon as a companion: pairing with a hub by its six-character code (the token in Credential Manager), a WebSocket that watches the hub's agent sessions, the bar's agent card when one asks a question, and answering it
 - `mcp.rs` - `legato --mcp`: a Model Context Protocol server over stdio that lets AI apps read dictations, notes, the Dictionary, the Scratchpad and meetings
 - `context.rs` - Knowing the app in front (name, category, icon) and listing open windows
 - `elevation.rs` - Work in apps run as administrator: the scheduled task that starts Legato elevated, and handing over to it at startup
@@ -157,7 +158,7 @@ Settings are stored using Tauri's store plugin with reactive updates:
 - The bar: style (none, minimal, live), shape (bar or island), position, and whether the island stays small at rest
 - Style per kind of app: tone, paste keys, Enter after pasting, trailing space
 - Transforms, Ask and your AI provider, with an optional provider and model each for dictation, transforms and Notes; Notes, calls, Scratchpad and learning options
-- Connections: calendars (their addresses in Credential Manager) and whether AI apps may read Legato over MCP
+- Connections: calendars (their addresses in Credential Manager), whether AI apps may read Legato over MCP, and the Inyon hub Legato is paired with
 
 ### Single Instance Architecture
 

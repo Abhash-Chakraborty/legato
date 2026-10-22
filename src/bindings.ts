@@ -590,6 +590,42 @@ async showNotesPanel() : Promise<void> {
 async hideNotesPanel() : Promise<void> {
     await TAURI_INVOKE("hide_notes_panel");
 },
+async inyonStatus() : Promise<InyonStatus> {
+    return await TAURI_INVOKE("inyon_status");
+},
+/**
+ * Pairs with an Inyon hub from the code its Settings › Paired devices
+ * shows. Errors are keys under `inyon.reason`.
+ */
+async inyonPair(hub: string, code: string) : Promise<Result<InyonStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("inyon_pair", { hub, code }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async inyonUnpair() : Promise<void> {
+    await TAURI_INVOKE("inyon_unpair");
+},
+/**
+ * Agents waiting for you on the bar or the island, or not.
+ */
+async inyonSetAlerts(on: boolean) : Promise<void> {
+    await TAURI_INVOKE("inyon_set_alerts", { on });
+},
+/**
+ * Answers the agent on the card with one of its options. Errors are keys
+ * under `inyon.reason`.
+ */
+async inyonAnswer(host: string, pane: string, option: number, key: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("inyon_answer", { host, pane, option, key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async calendarList() : Promise<CalendarStatus[]> {
     return await TAURI_INVOKE("calendar_list");
 },
@@ -3520,6 +3556,10 @@ bubble_spot?: BubbleSpot | null; /**
  */
 calendars?: CalendarFeed[]; 
 /**
+ * The Inyon hub Legato is paired with (Settings › Connections).
+ */
+inyon?: InyonSettings; 
+/**
  * AI apps on this PC may read Legato's data through `legato --mcp`.
  */
 mcp_enabled?: boolean; /**
@@ -3885,6 +3925,32 @@ export type BarLook = "bar" | "island"
  * top, or go away until there's something.
  */
 export type IslandIdle = "small" | "hide"
+/**
+ * Settings › Connections › Inyon: the agent hub Legato is paired with as a
+ * companion app. The token is in Credential Manager, never here.
+ */
+export type InyonSettings = { 
+/**
+ * The hub's address, `http(s)://host:port`; None while not paired.
+ */
+hub?: string | null; hub_id?: string | null; 
+/**
+ * What the hub calls itself, for Settings.
+ */
+hub_name?: string | null; 
+/**
+ * Agents waiting for you show on the bar or the island. Off keeps the
+ * pairing but stops listening.
+ */
+alerts?: boolean }
+/**
+ * Settings › Connections › Inyon, for the page.
+ */
+export type InyonStatus = { paired: boolean; hub: string | null; hub_name: string | null; alerts: boolean; connected: boolean; 
+/**
+ * Agents waiting for an answer now.
+ */
+waiting: number }
 /**
  * A whole feature, switched in Settings › Features.
  */

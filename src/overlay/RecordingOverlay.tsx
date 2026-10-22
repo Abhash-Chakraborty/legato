@@ -35,7 +35,8 @@ type OverlayState =
   | "notes"
   | "call"
   | "caption"
-  | "rest";
+  | "rest"
+  | "agent";
 
 type AiProblemKind =
   | "none"
@@ -86,6 +87,7 @@ type OverlayNotice =
   | { kind: "note_empty"; duration_ms: number }
   | { kind: "notes_failed"; reason: string }
   | { kind: "call_never"; app: string }
+  | { kind: "agent_done"; agent: string; title: string }
   | {
       kind: "transform_failed";
       name: string;
@@ -119,6 +121,23 @@ type CallCard =
       starts_at: number;
       link: boolean;
     };
+
+/** An agent on Inyon waiting for an answer (inyon_rules::AgentAlert). */
+interface AgentCard {
+  host: string;
+  pane: string;
+  agent: string;
+  label: string;
+  body: string[];
+  options: { n: number; label: string }[];
+  key: string | null;
+  more: number;
+}
+
+/** An agent's name as people say it. */
+const agentName = (agent: string) =>
+  ({ claude: "Claude", codex: "Codex", gemini: "Gemini" })[agent] ??
+  agent.charAt(0).toUpperCase() + agent.slice(1);
 
 /** A calendar, for a meeting's card. */
 const CalendarGlyph: React.FC = () => (
@@ -359,6 +378,10 @@ const RecordingOverlay: React.FC = () => {
     card: CallCard;
     at: number;
   } | null>(null);
+  const [agentCard, setAgentCard] = useState<AgentCard | null>(null);
+  // Why the last answer didn't go through, shown under the options.
+  const [agentError, setAgentError] = useState<string | null>(null);
+  const [answering, setAnswering] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   // "Polish…" while a transform runs; the default label otherwise.
   const [workingLabel, setWorkingLabel] = useState<string | null>(null);
@@ -492,6 +515,12 @@ const RecordingOverlay: React.FC = () => {
         setCallCard({ card: event.payload, at: Date.now() }),
       );
 
+      const unlistenAgent = await listen<AgentCard>("bar-agent", (event) => {
+        setAgentCard(event.payload);
+        setAgentError(null);
+        setAnswering(null);
+      });
+
       const unlistenNotesTick = await events.notesTick.listen((event) =>
         setNotesTick(event.payload),
       );
@@ -611,6 +640,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenPickFocus();
         unlistenNotesTick();
         unlistenCall();
+        unlistenAgent();
         unlistenLabel();
         unlistenStage();
         unlistenWorkSince();
@@ -994,6 +1024,11 @@ const RecordingOverlay: React.FC = () => {
         return t("overlay.notice.notesFailed", { reason: n.reason });
       case "call_never":
         return t("overlay.notice.callNever", { app: n.app });
+      case "agent_done":
+        return t("overlay.notice.agent_done", {
+          agent: agentName(n.agent),
+          title: n.title,
+        });
       case "transform_failed":
         return t("overlay.notice.transformFailed", {
           name: n.name,
@@ -1073,6 +1108,75 @@ const RecordingOverlay: React.FC = () => {
         )}
       </div>,
       `notice-${kind}`,
+    );
+  }
+
+  // ---- Agent: one on Inyon waits for an answer; its question and options.
+  if (state === "agent" && agentCard) {
+    const card = agentCard;
+    const answer = async (n: number) => {
+      setAnswering(n);
+      setAgentError(null);
+      const r = await commands.inyonAnswer(card.host, card.pane, n, card.key);
+      setAnswering(null);
+      if (r.status === "error" && r.error !== "alreadyAnswered")
+        setAgentError(t(`inyon.reason.${r.error}`, t("inyon.reason.failed")));
+    };
+    return frame(
+      <div
+        className="scard agentcard"
+        role="dialog"
+        aria-label={t("overlay.agent.asks", { agent: agentName(card.agent) })}
+      >
+        <div className="sagent-hd">
+          <span className="sagent-dot" aria-hidden="true" />
+          <span className="sagent-title">
+            {t("overlay.agent.asks", { agent: agentName(card.agent) })}
+          </span>
+          {card.label && (
+            <span className="sagent-where">
+              {t("overlay.agent.in", { label: card.label })}
+            </span>
+          )}
+          {card.more > 0 && (
+            <span className="sagent-more">
+              {t("overlay.agent.more", { count: card.more })}
+            </span>
+          )}
+        </div>
+        {card.body.length > 0 && (
+          <div className="sagent-body">
+            {card.body.slice(0, 4).map((line, i) => (
+              <div key={i} className={i === 1 ? "sagent-cmd" : ""}>
+                {line}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="sagent-opts">
+          {card.options.map((o) => (
+            <button
+              key={o.n}
+              type="button"
+              className={`sagent-opt ${o.n === 1 ? "first" : ""}`}
+              disabled={answering !== null}
+              onClick={() => answer(o.n)}
+            >
+              <span className="sagent-n">{o.n}</span>
+              <span className="sagent-label">{o.label}</span>
+              {answering === o.n && (
+                <span className="sspinner" aria-hidden="true" />
+              )}
+            </button>
+          ))}
+        </div>
+        {agentError && (
+          <p className="sagent-error" role="alert">
+            {agentError}
+          </p>
+        )}
+      </div>,
+      `agent-${card.host}-${card.pane}-${card.key ?? ""}`,
     );
   }
 

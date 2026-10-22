@@ -238,6 +238,35 @@ pub enum PasteMethod {
     CtrlShiftV,
 }
 
+/// Settings › Connections › Inyon: the agent hub Legato is paired with as a
+/// companion app. The token is in Credential Manager, never here.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+pub struct InyonSettings {
+    /// The hub's address, `http(s)://host:port`; None while not paired.
+    #[serde(default)]
+    pub hub: Option<String>,
+    #[serde(default)]
+    pub hub_id: Option<String>,
+    /// What the hub calls itself, for Settings.
+    #[serde(default)]
+    pub hub_name: Option<String>,
+    /// Agents waiting for you show on the bar or the island. Off keeps the
+    /// pairing but stops listening.
+    #[serde(default = "default_true")]
+    pub alerts: bool,
+}
+
+impl Default for InyonSettings {
+    fn default() -> Self {
+        Self {
+            hub: None,
+            hub_id: None,
+            hub_name: None,
+            alerts: true,
+        }
+    }
+}
+
 /// Settings › Devices: what syncs with a paired phone, and the shared
 /// clipboard.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
@@ -992,6 +1021,9 @@ pub struct AppSettings {
     /// Calendars to read meetings from (Settings › Connections).
     #[serde(default)]
     pub calendars: Vec<CalendarFeed>,
+    /// The Inyon hub Legato is paired with (Settings › Connections).
+    #[serde(default)]
+    pub inyon: InyonSettings,
     /// AI apps on this PC may read Legato's data through `legato --mcp`.
     #[serde(default)]
     pub mcp_enabled: bool,
@@ -1668,6 +1700,7 @@ pub fn get_default_settings() -> AppSettings {
         admin_apps: false,
         bubble_spot: None,
         calendars: Vec::new(),
+        inyon: InyonSettings::default(),
         mcp_enabled: false,
         scratchpad_keep_on_top: true,
         scratchpad_failed_pastes: true,

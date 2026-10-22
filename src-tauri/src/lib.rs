@@ -24,6 +24,8 @@ mod elevation;
 pub mod engine_supervisor;
 mod handy_migration;
 mod input;
+mod inyon;
+mod inyon_rules;
 mod learn_rules;
 mod llm_client;
 mod loopback;
@@ -509,6 +511,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // turning it on later needs no restart).
     bubble::init(app_handle);
     notes_panel::init(app_handle);
+    // Agents waiting on Inyon, while paired.
+    inyon::init(app_handle);
 }
 
 #[tauri::command]
@@ -835,6 +839,11 @@ pub fn run(cli_args: CliArgs) {
             commands::bubble::island_shape,
             commands::bubble::show_notes_panel,
             commands::bubble::hide_notes_panel,
+            commands::connections::inyon_status,
+            commands::connections::inyon_pair,
+            commands::connections::inyon_unpair,
+            commands::connections::inyon_set_alerts,
+            commands::connections::inyon_answer,
             commands::connections::calendar_list,
             commands::connections::calendar_add,
             commands::connections::calendar_remove,

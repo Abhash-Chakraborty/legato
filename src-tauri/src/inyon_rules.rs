@@ -1,0 +1,568 @@
+//! Rules for Inyon, the agent hub Legato pairs with as a companion app:
+//! the hub's address, the frames its WebSocket sends, which agents are
+//! waiting for an answer and which one the island shows. Free of Tauri and
+//! the network, so it can be tested anywhere. The contract is version 1
+//! (docs/companion-contract.md).
+
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use std::collections::BTreeMap;
+
+/// The contract version Legato speaks, sent as `X-Inyon-Contract`.
+pub const CONTRACT: u32 = 1;
+
+/// The hub's address as typed: a bare host gets `http://` (a hub on a VPN
+/// or the LAN usually has no certificate), a trailing slash goes.
+pub fn hub_url(input: &str) -> Option<String> {
+    let input = input.trim();
+    let (scheme, rest) = input.split_once("://").unwrap_or(("http", input));
+    let rest = rest.trim_end_matches('/');
+    let ok = matches!(scheme, "http" | "https")
+        && !rest.is_empty()
+        && !rest.contains(char::is_whitespace);
+    ok.then(|| format!("{scheme}://{rest}"))
+}
+
+/// The hub's WebSocket address for an `http(s)://` hub address.
+pub fn ws_url(hub: &str) -> String {
+    let ws = if let Some(rest) = hub.strip_prefix("https://") {
+        format!("wss://{rest}")
+    } else if let Some(rest) = hub.strip_prefix("http://") {
+        format!("ws://{rest}")
+    } else {
+        hub.to_string()
+    };
+    format!("{ws}/ws?contract={CONTRACT}")
+}
+
+/// A pairing code as typed: any case, spaces and dashes dropped.
+pub fn pairing_code(input: &str) -> Option<String> {
+    let code: String = input
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-')
+        .collect::<String>()
+        .to_uppercase();
+    (code.len() == 6 && code.chars().all(|c| c.is_ascii_alphanumeric())).then_some(code)
+}
+
+/// A pane id in a route travels without its `%`.
+pub fn pane_path(pane: &str) -> &str {
+    pane.strip_prefix('%').unwrap_or(pane)
+}
+
+/// The route for answering or sending to a pane.
+pub fn pane_route(hub: &str, host: &str, pane: &str, action: &str) -> String {
+    format!(
+        "{hub}/api/hosts/{}/panes/{}/{action}",
+        encode(host),
+        encode(pane_path(pane))
+    )
+}
+
+/// Percent-encodes a path segment.
+fn encode(segment: &str) -> String {
+    let mut out = String::new();
+    for b in segment.bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// What the claim answers.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Claimed {
+    pub token: String,
+    pub hub_id: String,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    pub contract_version: u32,
+}
+
+/// One of an agent's options.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Type)]
+pub struct PromptOption {
+    pub n: u32,
+    pub label: String,
+}
+
+/// An agent's question as `chat.screen` carries it.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct Prompt {
+    #[serde(default)]
+    pub body: Vec<String>,
+    #[serde(default)]
+    pub options: Vec<PromptOption>,
+    #[serde(default)]
+    pub multi: bool,
+    #[serde(default)]
+    pub key: Option<String>,
+}
+
+/// A pane on the hub: its machine and tmux pane id.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Type)]
+pub struct PaneRef {
+    pub host: String,
+    pub pane: String,
+}
+
+/// The frames Legato reads from the hub; others are ignored.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Frame {
+    /// The panes running an agent, and whether each waits for you.
+    Overview(Vec<AgentPane>),
+    /// A watched pane's screen: its question, or none.
+    Screen {
+        pane: PaneRef,
+        prompt: Option<Prompt>,
+    },
+    /// A pane's details, for its agent's name and title.
+    Info {
+        pane: PaneRef,
+        title: Option<String>,
+    },
+    Notify(Notify),
+    Pong,
+}
+
+/// A pane with an agent, from the overview.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentPane {
+    pub pane: PaneRef,
+    pub agent: String,
+    pub waiting: bool,
+    /// The session or window name, to tell agents apart.
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notify {
+    pub pane: PaneRef,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    pub agent: String,
+}
+
+/// Reads one text frame. None for frames Legato doesn't use or can't read.
+pub fn parse_frame(text: &str) -> Option<Frame> {
+    let v: serde_json::Value = serde_json::from_str(text).ok()?;
+    let s = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_str()).map(str::to_string);
+    match v.get("t")?.as_str()? {
+        "overview" => Some(Frame::Overview(agent_panes(&v))),
+        "chat.screen" => {
+            let pane = frame_pane(&v)?;
+            let prompt = v
+                .get("screen")
+                .and_then(|screen| screen.get("prompt"))
+                .filter(|p| !p.is_null())
+                .and_then(|p| serde_json::from_value::<Prompt>(p.clone()).ok());
+            Some(Frame::Screen { pane, prompt })
+        }
+        "chat.info" => {
+            let pane = frame_pane(&v)?;
+            let info = v.get("info").unwrap_or(&v);
+            Some(Frame::Info {
+                pane,
+                title: s(info, "title").or_else(|| s(info, "name")),
+            })
+        }
+        "notify" => Some(Frame::Notify(Notify {
+            pane: PaneRef {
+                host: s(&v, "host")?,
+                pane: s(&v, "pane")?,
+            },
+            kind: s(&v, "kind")?,
+            title: s(&v, "title").unwrap_or_default(),
+            body: s(&v, "body").unwrap_or_default(),
+            agent: s(&v, "agent").unwrap_or_default(),
+        })),
+        "pong" => Some(Frame::Pong),
+        _ => None,
+    }
+}
+
+/// The pane a chat frame is about: `host` and `pane`, or the `key`
+/// ("box:%3") the hub adds.
+fn frame_pane(v: &serde_json::Value) -> Option<PaneRef> {
+    let s = |k: &str| v.get(k).and_then(|x| x.as_str());
+    if let (Some(host), Some(pane)) = (s("host"), s("pane")) {
+        return Some(PaneRef {
+            host: host.to_string(),
+            pane: pane.to_string(),
+        });
+    }
+    let (host, pane) = s("key")?.rsplit_once(':')?;
+    Some(PaneRef {
+        host: host.to_string(),
+        pane: pane.to_string(),
+    })
+}
+
+/// Every pane running an agent in an overview frame (`hosts` → sessions →
+/// windows → panes), read loosely so an added field never breaks it.
+fn agent_panes(v: &serde_json::Value) -> Vec<AgentPane> {
+    let mut out = Vec::new();
+    let empty = Vec::new();
+    let list = |v: &serde_json::Value, k: &str| -> Vec<serde_json::Value> {
+        v.get(k)
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default()
+    };
+    let hosts = v
+        .get("hosts")
+        .or_else(|| v.get("overview").and_then(|o| o.get("hosts")))
+        .and_then(|h| h.as_array())
+        .unwrap_or(&empty);
+    for host in hosts {
+        // HostState keeps its id in `config`.
+        let Some(host_id) = host
+            .get("config")
+            .and_then(|c| c.get("id"))
+            .or_else(|| host.get("id"))
+            .and_then(|x| x.as_str())
+        else {
+            continue;
+        };
+        for session in list(host, "sessions") {
+            let session_name = session.get("name").and_then(|x| x.as_str()).unwrap_or("");
+            for window in list(&session, "windows") {
+                let window_name = window.get("name").and_then(|x| x.as_str()).unwrap_or("");
+                for pane in list(&window, "panes") {
+                    let (Some(id), Some(agent)) =
+                        (pane.get("id").and_then(|x| x.as_str()), pane.get("agent"))
+                    else {
+                        continue;
+                    };
+                    if agent.is_null() {
+                        continue;
+                    }
+                    let name = agent
+                        .get("kind")
+                        .or_else(|| agent.get("name"))
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("agent");
+                    let state = agent.get("state").and_then(|x| x.as_str()).unwrap_or("");
+                    // The name given to the session in Inyon, else
+                    // session › window.
+                    let given = pane.get("label").and_then(|x| x.as_str()).unwrap_or("");
+                    let label = if !given.is_empty() {
+                        given.to_string()
+                    } else if window_name.is_empty() || window_name == session_name {
+                        session_name.to_string()
+                    } else {
+                        format!("{session_name} › {window_name}")
+                    };
+                    out.push(AgentPane {
+                        pane: PaneRef {
+                            host: host_id.to_string(),
+                            pane: id.to_string(),
+                        },
+                        agent: name.to_string(),
+                        waiting: state == "waiting",
+                        label,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
+/// An agent waiting for you, as the island shows it.
+#[derive(Debug, Clone, Serialize, PartialEq, Type)]
+pub struct AgentAlert {
+    pub host: String,
+    pub pane: String,
+    /// "claude", "codex"…
+    pub agent: String,
+    /// Which session: its name, or session › window.
+    pub label: String,
+    /// The question's lines, the command it wants to run among them.
+    pub body: Vec<String>,
+    pub options: Vec<PromptOption>,
+    /// Ties an answer to this question, so a late tap can't hit the next.
+    pub key: Option<String>,
+    /// How many more agents wait behind this one.
+    pub more: u32,
+}
+
+/// The agents waiting for an answer, in the order they started waiting.
+/// The island shows the first; answering it (here or anywhere) shows the
+/// next.
+#[derive(Debug, Default)]
+pub struct Waiting {
+    /// What the overview says about each agent pane.
+    panes: BTreeMap<PaneRef, AgentPane>,
+    /// Questions seen on watched panes, oldest first.
+    questions: Vec<(PaneRef, Prompt)>,
+}
+
+impl Waiting {
+    /// A new overview: panes that stopped waiting lose their question.
+    /// Returns the panes to watch (waiting, not yet watched) and to stop
+    /// watching.
+    pub fn overview(&mut self, panes: Vec<AgentPane>) -> (Vec<PaneRef>, Vec<PaneRef>) {
+        let before: Vec<PaneRef> = self.watched();
+        self.panes = panes.into_iter().map(|p| (p.pane.clone(), p)).collect();
+        let panes = &self.panes;
+        self.questions
+            .retain(|(pane, _)| panes.get(pane).is_some_and(|p| p.waiting));
+        let after = self.watched();
+        let start = after
+            .iter()
+            .filter(|p| !before.contains(p))
+            .cloned()
+            .collect();
+        let stop = before.into_iter().filter(|p| !after.contains(p)).collect();
+        (start, stop)
+    }
+
+    /// The panes whose screens Legato watches: agents waiting for you.
+    pub fn watched(&self) -> Vec<PaneRef> {
+        self.panes
+            .values()
+            .filter(|p| p.waiting)
+            .map(|p| p.pane.clone())
+            .collect()
+    }
+
+    /// A watched pane's screen: a question joins the queue (or replaces
+    /// that pane's earlier one, keeping its place); no question removes it.
+    pub fn screen(&mut self, pane: PaneRef, prompt: Option<Prompt>) {
+        let at = self.questions.iter().position(|(p, _)| *p == pane);
+        match (
+            prompt.filter(|p| !p.options.is_empty() || !p.body.is_empty()),
+            at,
+        ) {
+            (Some(prompt), Some(i)) => self.questions[i].1 = prompt,
+            (Some(prompt), None) => self.questions.push((pane, prompt)),
+            (None, Some(i)) => {
+                self.questions.remove(i);
+            }
+            (None, None) => {}
+        }
+    }
+
+    /// An answer went through for this question: it leaves at once rather
+    /// than waiting for the hub's next screen.
+    pub fn answered(&mut self, pane: &PaneRef, key: Option<&str>) {
+        self.questions
+            .retain(|(p, q)| !(p == pane && (key.is_none() || q.key.as_deref() == key)));
+    }
+
+    /// What the island shows: the oldest question, and how many wait
+    /// behind it.
+    pub fn current(&self) -> Option<AgentAlert> {
+        let (pane, prompt) = self.questions.first()?;
+        let info = self.panes.get(pane);
+        Some(AgentAlert {
+            host: pane.host.clone(),
+            pane: pane.pane.clone(),
+            agent: info
+                .map(|p| p.agent.clone())
+                .unwrap_or_else(|| "agent".into()),
+            label: info.map(|p| p.label.clone()).unwrap_or_default(),
+            body: prompt.body.clone(),
+            options: prompt.options.clone(),
+            key: prompt.key.clone(),
+            more: self.questions.len().saturating_sub(1) as u32,
+        })
+    }
+
+    /// The hub went away: nothing waits any more.
+    pub fn clear(&mut self) {
+        self.panes.clear();
+        self.questions.clear();
+    }
+}
+
+/// How long to wait before reconnecting after `failures` failed tries in a
+/// row: 1 s, doubling to a minute.
+pub fn backoff_secs(failures: u32) -> u64 {
+    1u64.checked_shl(failures.min(6)).unwrap_or(64).min(60)
+}
+
+/// Why an answer or a send didn't go through, from the hub's `reason`, as a
+/// key under `inyon.reason` in the translations.
+pub fn reason_key(status: u16, reason: Option<&str>) -> &'static str {
+    match (status, reason) {
+        (401, _) => "signedOut",
+        (426, _) => "contract",
+        (_, Some("already-answered")) => "alreadyAnswered",
+        (_, Some("pane-gone")) => "paneGone",
+        (_, Some("offline")) => "offline",
+        (_, Some("bad-option")) => "badOption",
+        (_, Some("prompt-open")) => "promptOpen",
+        (_, Some("busy")) => "busy",
+        (_, Some("not-landed")) => "notLanded",
+        (_, Some("no-agent")) => "noAgent",
+        (_, Some("scope")) => "scope",
+        _ => "failed",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pane(id: &str) -> PaneRef {
+        PaneRef {
+            host: "box".into(),
+            pane: id.into(),
+        }
+    }
+
+    fn agent(id: &str, waiting: bool) -> AgentPane {
+        AgentPane {
+            pane: pane(id),
+            agent: "claude".into(),
+            waiting,
+            label: "legato".into(),
+        }
+    }
+
+    fn prompt(key: &str) -> Prompt {
+        Prompt {
+            body: vec!["Bash command".into(), "rm -rf build".into()],
+            options: vec![
+                PromptOption {
+                    n: 1,
+                    label: "Yes".into(),
+                },
+                PromptOption {
+                    n: 2,
+                    label: "No".into(),
+                },
+            ],
+            multi: false,
+            key: Some(key.into()),
+        }
+    }
+
+    #[test]
+    fn hub_addresses_are_tidied() {
+        assert_eq!(
+            hub_url("100.97.188.112:4777/").as_deref(),
+            Some("http://100.97.188.112:4777")
+        );
+        assert_eq!(
+            hub_url(" https://hub.example.com ").as_deref(),
+            Some("https://hub.example.com")
+        );
+        assert_eq!(hub_url(""), None);
+        assert_eq!(hub_url("ftp://x"), None);
+        assert_eq!(hub_url("http://"), None);
+        assert_eq!(hub_url("two words"), None);
+        assert_eq!(ws_url("http://h:4777"), "ws://h:4777/ws?contract=1");
+        assert_eq!(ws_url("https://h"), "wss://h/ws?contract=1");
+    }
+
+    #[test]
+    fn codes_and_routes() {
+        assert_eq!(pairing_code("k7m-2qx").as_deref(), Some("K7M2QX"));
+        assert_eq!(pairing_code("K7M 2QX").as_deref(), Some("K7M2QX"));
+        assert_eq!(pairing_code("K7M2Q"), None);
+        assert_eq!(
+            pane_route("http://h", "my box", "%3", "answer"),
+            "http://h/api/hosts/my%20box/panes/3/answer"
+        );
+    }
+
+    #[test]
+    fn frames_are_read() {
+        let screen = r#"{"t":"chat.screen","key":"box:%3","screen":{"working":false,"prompt":{"body":["Bash command","rm -rf build"],"options":[{"n":1,"label":"Yes","selected":true},{"n":2,"label":"No","selected":false}],"multi":false,"key":"k1"}}}"#;
+        let Some(Frame::Screen {
+            pane: p,
+            prompt: Some(q),
+        }) = parse_frame(screen)
+        else {
+            panic!("chat.screen with a prompt");
+        };
+        assert_eq!(p, pane("%3"));
+        assert_eq!(q.options.len(), 2);
+        assert_eq!(q.key.as_deref(), Some("k1"));
+
+        let idle = r#"{"t":"chat.screen","key":"box:%3","screen":{"working":true,"prompt":null}}"#;
+        assert_eq!(
+            parse_frame(idle),
+            Some(Frame::Screen {
+                pane: pane("%3"),
+                prompt: None
+            })
+        );
+
+        let notify = r#"{"t":"notify","host":"box","pane":"%3","kind":"waiting","title":"Claude needs you","body":"Bash: rm -rf build","agent":"claude"}"#;
+        assert!(matches!(parse_frame(notify), Some(Frame::Notify(n)) if n.kind == "waiting"));
+
+        let overview = r#"{"t":"overview","hosts":[{"config":{"id":"box","name":"Box"},"sessions":[{"name":"legato","windows":[{"name":"legato","panes":[{"id":"%3","agent":{"kind":"claude","state":"waiting"}},{"id":"%4","agent":null},{"id":"%5"}]}]}]}]}"#;
+        assert_eq!(
+            parse_frame(overview),
+            Some(Frame::Overview(vec![agent("%3", true)]))
+        );
+
+        assert_eq!(parse_frame(r#"{"t":"pong"}"#), Some(Frame::Pong));
+        assert_eq!(parse_frame(r#"{"t":"something.new"}"#), None);
+        assert_eq!(parse_frame("not json"), None);
+    }
+
+    #[test]
+    fn the_oldest_question_shows_and_answers_move_on() {
+        let mut w = Waiting::default();
+        let (start, stop) = w.overview(vec![
+            agent("%3", true),
+            agent("%4", true),
+            agent("%5", false),
+        ]);
+        assert_eq!(start, vec![pane("%3"), pane("%4")]);
+        assert!(stop.is_empty());
+
+        w.screen(pane("%4"), Some(prompt("k4")));
+        w.screen(pane("%3"), Some(prompt("k3")));
+        let first = w.current().expect("a question shows");
+        assert_eq!((first.pane.as_str(), first.more), ("%4", 1));
+
+        // A new screen for the same pane keeps its place.
+        w.screen(pane("%4"), Some(prompt("k4b")));
+        assert_eq!(w.current().unwrap().key.as_deref(), Some("k4b"));
+
+        // A stale key doesn't remove the newer question.
+        w.answered(&pane("%4"), Some("k4"));
+        assert_eq!(w.current().unwrap().pane, "%4");
+        w.answered(&pane("%4"), Some("k4b"));
+        assert_eq!(w.current().unwrap().pane, "%3");
+
+        // Answered in the terminal: the overview stops waiting, the card goes.
+        let (_, stop) = w.overview(vec![agent("%3", false), agent("%4", false)]);
+        assert_eq!(stop, vec![pane("%3"), pane("%4")]);
+        assert_eq!(w.current(), None);
+    }
+
+    #[test]
+    fn a_screen_without_a_question_clears_it() {
+        let mut w = Waiting::default();
+        w.overview(vec![agent("%3", true)]);
+        w.screen(pane("%3"), Some(prompt("k")));
+        w.screen(pane("%3"), None);
+        assert_eq!(w.current(), None);
+    }
+
+    #[test]
+    fn reconnects_back_off_to_a_minute() {
+        assert_eq!(backoff_secs(0), 1);
+        assert_eq!(backoff_secs(3), 8);
+        assert_eq!(backoff_secs(10), 60);
+    }
+
+    #[test]
+    fn reasons_have_messages() {
+        assert_eq!(reason_key(409, Some("already-answered")), "alreadyAnswered");
+        assert_eq!(reason_key(401, None), "signedOut");
+        assert_eq!(reason_key(500, None), "failed");
+    }
+}

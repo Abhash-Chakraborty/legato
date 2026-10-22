@@ -992,3 +992,126 @@
 .caption-wait {
   opacity: 0.6;
 }
+
+/* An agent on Inyon waiting for you (OVERLAY_AGENT_* in overlay.rs): who
+   asks and where, the question with its command, and the options. Amber
+   marks "needs you", the one status colour it uses. */
+.scard.agentcard {
+  width: 420px;
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text);
+}
+.sagent-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sagent-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn, #c98a1a);
+}
+.sagent-title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sagent-where {
+  min-width: 0;
+  color: var(--s-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sagent-more {
+  margin-left: auto;
+  flex: none;
+  font-size: 11.5px;
+  color: var(--s-muted);
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--s-hair);
+}
+.sagent-body {
+  color: var(--s-muted);
+  line-height: 1.4;
+}
+.sagent-body > div {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sagent-cmd {
+  margin: 4px 0;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--s-border);
+  background: var(--s-hair);
+  color: var(--color-text);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12.5px;
+}
+.sagent-opts {
+  display: grid;
+  gap: 4px;
+}
+.sagent-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--color-text);
+  background: var(--s-hair);
+  cursor: pointer;
+  transition: background-color 100ms ease-out;
+}
+.sagent-opt:hover:not(:disabled) {
+  background: var(--s-accent-soft);
+  transition-duration: 0ms;
+}
+.sagent-opt:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.sagent-opt:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.sagent-opt:focus-visible {
+  outline: 2px solid var(--s-accent);
+  outline-offset: 2px;
+}
+.sagent-n {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  border: 1px solid var(--s-border);
+  font-size: 11px;
+  color: var(--s-muted);
+}
+.sagent-label {
+  min-width: 0;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sagent-error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--warn, #c98a1a);
+}
