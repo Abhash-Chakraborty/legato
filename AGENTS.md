@@ -80,7 +80,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `notes_panel.rs` - The Notes side panel docked at the right of the screen (live transcript, My notes, Pause, Stop)
 - `calls.rs` - Noticing calls (Teams, Zoom, Slack, Discord, WhatsApp, Telegram, and Meet, Teams or Zoom in a browser tab) and offering notes; logs who holds the microphone when that changes
 - `calendar.rs` - Calendars from secret iCal addresses (Settings › Connections): meetings for the bubble, note titles and MCP, cached in `calendar.json`
-- `inyon.rs` - Inyon as a companion: pairing with a hub by its six-character code (the token in Credential Manager), a WebSocket that watches the hub's agent sessions, the bar's agent card when one asks a question, and answering it
+- `inyon.rs` - Inyon as a companion: pairing with a hub by its six-character code (the token in Credential Manager), a WebSocket that watches the hub's agent sessions, the bar's agent card when one asks a question, and answering it with a click or by voice (a dictation in `DictationMode::Agent`, matched to an option)
 - `mcp.rs` - `legato --mcp`: a Model Context Protocol server over stdio that lets AI apps read dictations, notes, the Dictionary, the Scratchpad and meetings
 - `context.rs` - Knowing the app in front (name, category, icon) and listing open windows
 - `elevation.rs` - Work in apps run as administrator: the scheduled task that starts Legato elevated, and handing over to it at startup
