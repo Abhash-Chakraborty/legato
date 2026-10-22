@@ -5,6 +5,7 @@ import { commands, type Voice } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useSpeakerModel } from "../../../hooks/useSpeakerModel";
 import { Button } from "../../ui/Button";
+import { Dropdown } from "../../ui/Dropdown";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { ToggleSwitch } from "../../ui/ToggleSwitch";
 
@@ -151,6 +152,33 @@ export const RememberVoicesRow: React.FC = () => {
       descriptionMode="inline"
       grouped
     />
+  );
+};
+
+const KEEP_DAYS = [0, 365, 90, 30, 7];
+
+/** How long notes keep their audio; the transcript stays either way. */
+export const KeepAudioRow: React.FC = () => {
+  const { t } = useTranslation();
+  const { settings, updateSetting } = useSettings();
+  const label = t("settings.calls.keepAudio.title");
+  return (
+    <SettingContainer
+      title={label}
+      description={t("settings.calls.keepAudio.help")}
+      grouped
+    >
+      <Dropdown
+        className="w-[200px]"
+        ariaLabel={label}
+        selectedValue={String(settings?.notes_audio_keep_days ?? 0)}
+        options={KEEP_DAYS.map((d) => ({
+          value: String(d),
+          label: t(`settings.calls.keepAudio.options.${d}`),
+        }))}
+        onSelect={(v) => updateSetting("notes_audio_keep_days", Number(v))}
+      />
+    </SettingContainer>
   );
 };
 

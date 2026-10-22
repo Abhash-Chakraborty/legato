@@ -238,6 +238,8 @@ const settingUpdaters: {
     commands.changeNotesSpeakersSetting(value as boolean),
   notes_remember_voices: (value) =>
     commands.changeNotesRememberVoicesSetting(value as boolean),
+  notes_audio_keep_days: (value) =>
+    commands.changeNotesAudioKeepDaysSetting(value as number),
   scratchpad_open: (value) =>
     commands.changeScratchpadOpenSetting(value as ScratchpadOpen),
   bubble_enabled: (value) =>

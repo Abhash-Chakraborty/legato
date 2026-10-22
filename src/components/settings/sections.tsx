@@ -83,6 +83,7 @@ import {
   WatchedAppsRow,
 } from "./calls/CallSettings";
 import {
+  KeepAudioRow,
   RememberVoicesRow,
   SavedVoicesRow,
   SpeakerModelRow,
@@ -1173,6 +1174,20 @@ export const buildSections = (
               "settings.speakers.voices.help",
             ],
             render: () => <SavedVoicesRow />,
+          },
+        ],
+      },
+      {
+        id: "recordings",
+        titleKey: "settings.groups.recordings",
+        rows: [
+          {
+            id: "keep-audio",
+            searchKeys: [
+              "settings.calls.keepAudio.title",
+              "settings.calls.keepAudio.help",
+            ],
+            render: () => <KeepAudioRow />,
           },
         ],
       },

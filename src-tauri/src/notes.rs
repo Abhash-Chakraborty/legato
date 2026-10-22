@@ -212,6 +212,53 @@ impl NotesManager {
             }
         }
         self.sweep_orphaned_audio();
+        self.expire_audio();
+    }
+
+    /// Deletes the audio of notes older than Settings › Notes › Keep note
+    /// audio, with any tracks left beside it. The transcript, summary and
+    /// the rest of the note stay.
+    pub fn expire_audio(&self) {
+        let days = get_settings(&self.app).notes_audio_keep_days;
+        if days == 0 {
+            return;
+        }
+        let before = chrono::Utc::now().timestamp() - i64::from(days) * 86_400;
+        let Ok(conn) = self.conn() else {
+            return;
+        };
+        let old = match store::audio_started_before(&conn, before) {
+            Ok(old) => old,
+            Err(e) => {
+                warn!("Couldn't look for old Notes audio: {e}");
+                return;
+            }
+        };
+        let mut removed = 0;
+        for (id, file) in old {
+            // A bare file name in the recordings folder, never a path.
+            let path = Path::new(&file);
+            if path.file_name() != Some(path.as_os_str()) {
+                continue;
+            }
+            let gone = |p: &Path| match std::fs::remove_file(p) {
+                Ok(()) => true,
+                Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+            };
+            if !gone(&self.dir.join(path)) {
+                debug!("Couldn't remove the audio of note {id}");
+                continue;
+            }
+            gone(&self.track_path(id, Speaker::You));
+            gone(&self.track_path(id, Speaker::Them));
+            if store::clear_audio(&conn, id).is_ok() {
+                removed += 1;
+            }
+        }
+        if removed > 0 {
+            info!("Removed the audio of {removed} notes older than {days} days");
+            self.changed();
+        }
     }
 
     /// Removes audio whose note is gone: a note deleted just before Legato
@@ -1633,6 +1680,7 @@ fn finish(app: &AppHandle, session: Session) {
         error!("Couldn't finish the note: {e}");
     }
     info!("Notes ready: {saved} lines, {failed} failed, {duration_ms} ms");
+    m.expire_audio();
     m.changed();
     tauri::async_runtime::block_on(summarise(app, note_id));
     crate::overlay::show_overlay_notice_for(

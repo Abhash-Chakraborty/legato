@@ -1119,6 +1119,7 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::list_voices,
             commands::notes::forget_voice,
             commands::notes::change_notes_remember_voices_setting,
+            commands::notes::change_notes_audio_keep_days_setting,
             commands::notes::save_note_my_notes,
             commands::notes::add_note_tag,
             commands::notes::remove_note_tag,

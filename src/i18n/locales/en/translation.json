@@ -724,6 +724,7 @@
       "calendars": "Meetings",
       "aiApps": "AI apps",
       "speakers": "Speakers in notes",
+      "recordings": "Recordings",
       "features": "What Legato does",
       "featuresOnScreen": "On screen",
       "featuresOther": "Other apps",
@@ -1032,6 +1033,17 @@
         "hours_one": "{{count}} hour",
         "hours_other": "{{count}} hours",
         "none": "No limit"
+      },
+      "keepAudio": {
+        "title": "Keep note audio",
+        "help": "Audio older than this is deleted, now and as notes age. The transcript, summary and tags stay, but you can't play those notes back or name their speakers.",
+        "options": {
+          "0": "Forever",
+          "365": "1 year",
+          "90": "3 months",
+          "30": "1 month",
+          "7": "1 week"
+        }
       },
       "openNote": {
         "title": "Open the note when it's ready",

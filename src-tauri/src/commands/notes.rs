@@ -323,6 +323,22 @@ pub fn change_notes_remember_voices_setting(app: AppHandle, enabled: bool) -> Re
     Ok(())
 }
 
+/// How many days notes keep their audio; 0 keeps it for good. Shortening
+/// it removes older audio at once.
+#[tauri::command]
+#[specta::specta]
+pub fn change_notes_audio_keep_days_setting(
+    app: AppHandle,
+    notes: Notes<'_>,
+    days: u32,
+) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings.notes_audio_keep_days = days;
+    write_settings(&app, settings);
+    notes.expire_audio();
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_notes_speakers_setting(app: AppHandle, enabled: bool) -> Result<(), String> {

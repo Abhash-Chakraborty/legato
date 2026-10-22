@@ -2285,6 +2285,14 @@ async changeNotesRememberVoicesSetting(enabled: boolean) : Promise<Result<null, 
     else return { status: "error", error: e  as any };
 }
 },
+async changeNotesAudioKeepDaysSetting(days: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_notes_audio_keep_days_setting", { days }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeNotesSpeakersSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_notes_speakers_setting", { enabled }) };
@@ -3553,6 +3561,12 @@ notes_speakers?: boolean;
  * meetings recognise them.
  */
 notes_remember_voices?: boolean; 
+/**
+ * Days a note keeps its audio; 0 keeps it for good. The transcript,
+ * summary and the rest stay either way. Settings saved before this
+ * existed keep audio for good, so an update deletes nothing unasked.
+ */
+notes_audio_keep_days?: number; 
 /**
  * Models for kinds of AI work that shouldn't use the main one.
  */

@@ -978,6 +978,11 @@ pub struct AppSettings {
     /// meetings recognise them.
     #[serde(default = "default_true")]
     pub notes_remember_voices: bool,
+    /// Days a note keeps its audio; 0 keeps it for good. The transcript,
+    /// summary and the rest stay either way. Settings saved before this
+    /// existed keep audio for good, so an update deletes nothing unasked.
+    #[serde(default)]
+    pub notes_audio_keep_days: u32,
     /// Models for kinds of AI work that shouldn't use the main one.
     #[serde(default)]
     pub ai_task_models: AiTaskModels,
@@ -1688,6 +1693,7 @@ pub fn get_default_settings() -> AppSettings {
         notes_reminder: true,
         notes_speakers: true,
         notes_remember_voices: true,
+        notes_audio_keep_days: 90,
         ai_task_models: AiTaskModels::default(),
         calls: CallSettings::default(),
         sync: SyncSettings::default(),

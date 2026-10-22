@@ -929,6 +929,25 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
     Ok(())
 }
 
+/// Finished notes started before `before` (Unix seconds) that still have
+/// audio, with its file name.
+pub fn audio_started_before(conn: &Connection, before: i64) -> Result<Vec<(i64, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, audio_file FROM note
+         WHERE audio_file IS NOT NULL AND status = 'ready' AND started_at < ?1",
+    )?;
+    let rows = stmt
+        .query_map([before], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
+/// Forgets a note's audio file; the transcript and the rest stay.
+pub fn clear_audio(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("UPDATE note SET audio_file = NULL WHERE id = ?1", [id])?;
+    Ok(())
+}
+
 /// Notes left in Recording or Transcribing by a crash or a quit: they keep
 /// what was transcribed and become ready.
 pub fn recover_unfinished(conn: &Connection) -> Result<Vec<i64>> {
@@ -1143,6 +1162,30 @@ mod tests {
             get(&conn, note.id).unwrap().unwrap().status,
             NoteStatus::Ready
         );
+    }
+
+    #[test]
+    fn old_audio_is_found_and_forgotten() {
+        let conn = db();
+        let note = meeting(&conn);
+        finish_recording(&conn, note.id, 60_000, Some("note-1.wav"), 0).unwrap();
+        // Still recording counts as unfinished, so it isn't offered yet.
+        assert!(audio_started_before(&conn, note.started_at + 1)
+            .unwrap()
+            .is_empty());
+        recover_unfinished(&conn).unwrap();
+        assert!(audio_started_before(&conn, note.started_at)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            audio_started_before(&conn, note.started_at + 1).unwrap(),
+            vec![(note.id, "note-1.wav".to_string())]
+        );
+        clear_audio(&conn, note.id).unwrap();
+        let kept = get(&conn, note.id).unwrap().unwrap();
+        assert_eq!(kept.audio_file, None);
+        assert_eq!(kept.title, "Infra sync");
+        assert!(audio_started_before(&conn, i64::MAX).unwrap().is_empty());
     }
 
     #[test]
