@@ -188,6 +188,8 @@ fn duration(v: &str) -> Option<Duration> {
     let v = v.strip_prefix('P')?;
     let mut total = 0i64;
     let mut number = String::new();
+    // Checked throughout: a hostile feed's "PT9223372036854775807S" must
+    // not take the calendar down.
     for c in v.chars() {
         match c {
             '0'..='9' => number.push(c),
@@ -195,7 +197,7 @@ fn duration(v: &str) -> Option<Duration> {
             unit => {
                 let n: i64 = number.parse().ok()?;
                 number.clear();
-                total += n * match unit {
+                let unit = match unit {
                     'W' => 7 * 86_400,
                     'D' => 86_400,
                     'H' => 3_600,
@@ -203,10 +205,11 @@ fn duration(v: &str) -> Option<Duration> {
                     'S' => 1,
                     _ => return None,
                 };
+                total = total.checked_add(n.checked_mul(unit)?)?;
             }
         }
     }
-    Some(Duration::seconds(sign * total))
+    Duration::try_seconds(sign * total)
 }
 
 fn weekday(code: &str) -> Option<Weekday> {
@@ -252,8 +255,8 @@ fn rule(value: &str) -> Option<Rule> {
                 for d in v.split(',') {
                     let d = d.trim();
                     let split = d.len().checked_sub(2)?;
-                    let n = d[..split].parse::<i32>().ok();
-                    r.by_day.push((n, weekday(&d[split..])?));
+                    let n = d.get(..split)?.parse::<i32>().ok();
+                    r.by_day.push((n, weekday(d.get(split..)?)?));
                 }
             }
             "BYMONTHDAY" => r.by_month_day = v.split(',').filter_map(|d| d.parse().ok()).collect(),
@@ -515,14 +518,32 @@ fn starts(
     out
 }
 
-const LINK_HOSTS: &[&str] = &[
-    "meet.google.com/",
-    "zoom.us/j/",
-    "zoom.us/my/",
-    "teams.microsoft.com/l/meetup-join/",
-    "teams.live.com/meet/",
-    "webex.com/",
+/// Meeting services by host (a subdomain counts) and path.
+const LINK_HOSTS: &[(&str, &str)] = &[
+    ("meet.google.com", "/"),
+    ("zoom.us", "/j/"),
+    ("zoom.us", "/my/"),
+    ("teams.microsoft.com", "/l/meetup-join/"),
+    ("teams.live.com", "/meet/"),
+    ("webex.com", "/"),
 ];
+
+/// Whether an address is a meeting service's: its host, not text anywhere
+/// in it, so `https://evil.example/?zoom.us/j/1` doesn't pass.
+fn is_meeting_link(url: &str) -> bool {
+    let Ok(url) = url::Url::parse(url) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && LINK_HOSTS.iter().any(|(h, path)| {
+            (host == *h || host.ends_with(&format!(".{h}"))) && url.path().starts_with(path)
+        })
+}
 
 /// The first meeting link in these texts.
 pub fn meeting_link(texts: &[&str]) -> Option<String> {
@@ -533,7 +554,7 @@ pub fn meeting_link(texts: &[&str]) -> Option<String> {
                 .take_while(|c| !c.is_whitespace() && !matches!(c, '<' | '>' | '"' | '\'' | ')'))
                 .collect();
             let url = url.trim_end_matches(['.', ',', ';']).to_string();
-            if LINK_HOSTS.iter().any(|h| url.contains(h)) {
+            if is_meeting_link(&url) {
                 return Some(url);
             }
         }
@@ -647,7 +668,7 @@ pub fn to_remind<'a>(
 }
 
 /// Accepts a pasted address: webcal:// becomes https://; anything that isn't
-/// http(s) is refused.
+/// https is refused.
 pub fn feed_url(input: &str) -> Option<String> {
     let s = input.trim();
     let s = if let Some(rest) = s.strip_prefix("webcal://") {
@@ -655,9 +676,13 @@ pub fn feed_url(input: &str) -> Option<String> {
     } else {
         s.to_string()
     };
-    (s.starts_with("https://") || s.starts_with("http://"))
-        .then_some(s)
-        .filter(|s| s.len() > 12 && !s.contains(char::is_whitespace))
+    // https only: the address is the calendar's password, and over plain
+    // http anyone on the network could read it and change the meetings.
+    let url = url::Url::parse(&s).ok()?;
+    let ok = url.scheme() == "https"
+        && url.host_str().is_some_and(|h| h.contains('.'))
+        && !s.contains(char::is_whitespace);
+    ok.then_some(s)
 }
 
 /// Whether text looks like a calendar file.
@@ -916,6 +941,24 @@ END:VCALENDAR\r
     }
 
     #[test]
+    fn a_hostile_feed_cant_crash_or_plant_a_link() {
+        assert_eq!(duration("PT9223372036854775807S"), None);
+        assert_eq!(duration("P99999999999999W"), None);
+        assert_eq!(duration("PT1H30M"), Some(Duration::minutes(90)));
+        assert!(rule("FREQ=WEEKLY;BYDAY=€").is_none());
+        assert_eq!(meeting_link(&["https://evil.example/?x=zoom.us/j/1"]), None);
+        assert_eq!(meeting_link(&["https://zoom.us.evil.example/j/1"]), None);
+        assert_eq!(
+            meeting_link(&["https://meet.google.com@evil.example/"]),
+            None
+        );
+        assert_eq!(
+            meeting_link(&["Join: https://us02web.zoom.us/j/88?pwd=x."]).as_deref(),
+            Some("https://us02web.zoom.us/j/88?pwd=x")
+        );
+    }
+
+    #[test]
     fn pasted_addresses() {
         assert_eq!(
             feed_url(" webcal://calendar.google.com/calendar/ical/x/private-y/basic.ics ")
@@ -924,6 +967,8 @@ END:VCALENDAR\r
         );
         assert_eq!(feed_url("file:///etc/passwd"), None);
         assert_eq!(feed_url("https://a b"), None);
+        assert_eq!(feed_url("http://example.com/basic.ics"), None);
+        assert_eq!(feed_url("https://localhost/basic.ics"), None);
         assert!(is_calendar("\u{feff}BEGIN:VCALENDAR\r\n"));
         assert!(!is_calendar("<html>"));
     }

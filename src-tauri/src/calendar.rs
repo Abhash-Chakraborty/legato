@@ -129,14 +129,32 @@ fn secret_name(id: &str) -> String {
     format!("calendar-{id}")
 }
 
-/// Fetches one address and reads its meetings.
+/// The largest calendar file read; a busy work calendar is a few MB.
+const MAX_FEED: usize = 16 * 1024 * 1024;
+
+/// Fetches one address and reads its meetings. The address is the
+/// calendar's password, so no error carries it (reqwest's do, which is why
+/// they're never shown as they are).
 async fn fetch(url: &str, name: &str) -> Result<Vec<Meeting>, String> {
+    if rules::feed_url(url).is_none() {
+        return Err("Calendars need an https address; add it again".into());
+    }
     let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(25))
         .user_agent(concat!("Legato/", env!("CARGO_PKG_VERSION")))
+        // A redirect would otherwise tell the next host the address.
+        .referer(false)
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.url().scheme() == "https" && attempt.previous().len() < 5 {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
         .build()
-        .map_err(|e| e.to_string())?;
-    let response = client.get(url).send().await.map_err(|e| {
+        .map_err(|_| "Couldn't start the calendar fetch".to_string())?;
+    let mut response = client.get(url).send().await.map_err(|e| {
         if e.is_timeout() {
             "The calendar took too long to answer".to_string()
         } else {
@@ -147,10 +165,33 @@ async fn fetch(url: &str, name: &str) -> Result<Vec<Meeting>, String> {
     if status == reqwest::StatusCode::NOT_FOUND || status == reqwest::StatusCode::FORBIDDEN {
         return Err("The address doesn't work any more; copy it again".into());
     }
+    if status.is_redirection() {
+        return Err("The calendar sent Legato somewhere else; copy the address again".into());
+    }
     if !status.is_success() {
         return Err(format!("The calendar answered {}", status.as_u16()));
     }
-    let text = response.text().await.map_err(|e| e.to_string())?;
+    let too_big = || "The calendar is too big to read".to_string();
+    if response
+        .content_length()
+        .is_some_and(|n| n > MAX_FEED as u64)
+    {
+        return Err(too_big());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| {
+        if e.is_timeout() {
+            "The calendar took too long to answer".to_string()
+        } else {
+            "The calendar's answer was cut off".to_string()
+        }
+    })? {
+        if body.len() + chunk.len() > MAX_FEED {
+            return Err(too_big());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let text = String::from_utf8_lossy(&body);
     if !rules::is_calendar(&text) {
         return Err("That address isn't a calendar; copy the iCal address".into());
     }
