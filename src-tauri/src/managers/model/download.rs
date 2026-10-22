@@ -49,6 +49,35 @@ enum HttpDownloadEvent<'a> {
 }
 
 impl ModelManager {
+    /// The resumable downloader for a file outside the model catalog (the
+    /// speaker model): resumes `partial_path`, checks size and hash, and
+    /// reports the bytes so far. Ok(true) once complete and verified (still
+    /// at `partial_path`), Ok(false) when cancelled with the partial kept.
+    pub(crate) async fn fetch_resumable(
+        url: &str,
+        partial_path: &Path,
+        size: u64,
+        sha256: &str,
+        cancel_token: &CancellationToken,
+        progress: &(dyn Fn(u64) + Send + Sync),
+    ) -> Result<bool> {
+        let outcome = Self::download_http_resumable_with_events(
+            "speaker-model",
+            url,
+            partial_path,
+            Some(size),
+            Some(sha256),
+            cancel_token,
+            &|event| {
+                if let HttpDownloadEvent::Progress(p) = event {
+                    progress(p.downloaded);
+                }
+            },
+        )
+        .await?;
+        Ok(matches!(outcome, HttpDownloadOutcome::Completed))
+    }
+
     /// Verifies the SHA256 of `path` against `expected_sha256` (if provided).
     /// On mismatch or read error the partial file is deleted and an error is returned,
     /// so the next download attempt always starts from a clean state.

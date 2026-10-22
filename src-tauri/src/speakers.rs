@@ -12,12 +12,9 @@ use crate::managers::transcription::TranscriptionManager;
 use crate::notes_rules::{self, Turn, RATE};
 use crate::settings::get_settings;
 use anyhow::{anyhow, Result};
-use futures_util::StreamExt;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use specta::Type;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -133,6 +130,11 @@ pub async fn download(app: &AppHandle) -> Result<(), String> {
     }
 }
 
+/// Stops the download in flight, keeping what arrived for next time.
+static CANCEL_TOKEN: Mutex<Option<hf_hub::api::tokio::CancellationToken>> = Mutex::new(None);
+
+/// Fetches the model, resuming what an earlier try left (a dropped
+/// connection used to start all 139 MB again), checked by size and hash.
 async fn fetch(app: &AppHandle) -> Result<()> {
     let path = model_path(app)?;
     if let Some(dir) = path.parent() {
@@ -140,55 +142,48 @@ async fn fetch(app: &AppHandle) -> Result<()> {
     }
     let partial = path.with_extension("gguf.partial");
     let url = format!("https://huggingface.co/{REPO}/resolve/{REVISION}/{FILE}");
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(20))
-        // A stalled transfer fails instead of hanging forever.
-        .read_timeout(Duration::from_secs(60))
-        .build()?;
-    let response = client.get(&url).send().await?.error_for_status()?;
-    let mut file = std::fs::File::create(&partial)?;
-    let mut hasher = Sha256::new();
-    let mut done = 0u64;
-    let mut told = Instant::now();
-    let mut stream = response.bytes_stream();
-    let result: Result<()> = async {
-        while let Some(chunk) = stream.next().await {
-            if CANCEL.load(Ordering::Relaxed) {
-                return Err(anyhow!("Cancelled"));
-            }
-            let chunk = chunk?;
-            file.write_all(&chunk)?;
-            hasher.update(&chunk);
-            done += chunk.len() as u64;
+    let token = hf_hub::api::tokio::CancellationToken::new();
+    *CANCEL_TOKEN.lock().unwrap_or_else(|e| e.into_inner()) = Some(token.clone());
+    let told = Mutex::new(Instant::now());
+    let result = crate::managers::model::ModelManager::fetch_resumable(
+        &url,
+        &partial,
+        SIZE,
+        SHA256,
+        &token,
+        &|done| {
+            let mut told = told.lock().unwrap_or_else(|e| e.into_inner());
             if told.elapsed() >= Duration::from_millis(250) {
                 lock().done = done;
                 announce(app);
-                told = Instant::now();
+                *told = Instant::now();
             }
-        }
-        file.flush()?;
-        let hash = format!("{:x}", hasher.finalize_reset());
-        if done != SIZE || hash != SHA256 {
-            return Err(anyhow!("The download arrived damaged; try again"));
-        }
-        Ok(())
-    }
+        },
+    )
     .await;
-    drop(file);
+    CANCEL_TOKEN
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
     match result {
-        Ok(()) => {
+        Ok(true) => {
             std::fs::rename(&partial, &path)?;
             Ok(())
         }
-        Err(e) => {
-            let _ = std::fs::remove_file(&partial);
-            Err(e)
-        }
+        Ok(false) => Err(anyhow!("Cancelled")),
+        Err(e) => Err(e),
     }
 }
 
 pub fn cancel() {
     CANCEL.store(true, Ordering::Relaxed);
+    if let Some(token) = CANCEL_TOKEN
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
+        token.cancel();
+    }
 }
 
 pub fn delete(app: &AppHandle) -> Result<()> {
