@@ -538,7 +538,7 @@ fn spoken_addresses(mut toks: Vec<Tok>) -> Vec<Tok> {
     let mut i = 1;
     while i + 1 < toks.len() {
         let hit = word_at(&toks, i).is_some_and(|w| w == "at")
-            && word_at(&toks, i - 1).is_some_and(&plain)
+            && word_at(&toks, i - 1).is_some_and(plain)
             && word_at(&toks, i + 1).is_some_and(|w| {
                 let c = strip_trailing_punct(w);
                 is_address(&c) && !c.contains('/')

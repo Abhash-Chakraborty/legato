@@ -350,12 +350,69 @@ fn read_ahead(path: &Path) {
         });
 }
 
+/// What this process has used so far and the memory free on the system.
+/// A slow load that used little CPU was waiting (on memory, the disk or the
+/// GPU driver); one that used as much CPU as it took was computing slowly.
+#[derive(Clone, Copy, Default)]
+struct Usage {
+    cpu_ms: u64,
+    page_faults: u64,
+    free_mb: u64,
+}
+
+impl Usage {
+    #[cfg(windows)]
+    fn now() -> Self {
+        use windows::Win32::Foundation::FILETIME;
+        use windows::Win32::System::ProcessStatus::{
+            GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+        };
+        use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+        use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+
+        let ms = |t: FILETIME| {
+            ((u64::from(t.dwHighDateTime) << 32) | u64::from(t.dwLowDateTime)) / 10_000
+        };
+        let mut usage = Self::default();
+        // SAFETY: each call writes only into the local it is given, sized
+        // as the API expects; the current-process handle needs no closing.
+        unsafe {
+            let process = GetCurrentProcess();
+            let (mut created, mut exited, mut kernel, mut user) = Default::default();
+            if GetProcessTimes(process, &mut created, &mut exited, &mut kernel, &mut user).is_ok() {
+                usage.cpu_ms = ms(kernel) + ms(user);
+            }
+            let mut memory = PROCESS_MEMORY_COUNTERS {
+                cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+                ..Default::default()
+            };
+            if GetProcessMemoryInfo(process, &mut memory, memory.cb).is_ok() {
+                usage.page_faults = u64::from(memory.PageFaultCount);
+            }
+            let mut status = MEMORYSTATUSEX {
+                dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+                ..Default::default()
+            };
+            if GlobalMemoryStatusEx(&mut status).is_ok() {
+                usage.free_mb = status.ullAvailPhys >> 20;
+            }
+        }
+        usage
+    }
+
+    #[cfg(not(windows))]
+    fn now() -> Self {
+        Self::default()
+    }
+}
+
 fn load(
     path: &Path,
     backend: Backend,
     selector: DeviceSelector,
 ) -> Result<(Session, LoadedInfo), String> {
     let started = std::time::Instant::now();
+    let before = Usage::now();
     read_ahead(path);
     let device = resolve_device(selector)?;
     let device_at = started.elapsed();
@@ -366,12 +423,18 @@ fn load(
     let session = model
         .session()
         .map_err(|e| format!("Failed to create session: {e}"))?;
+    let after = Usage::now();
     debug!(
-        "Model load took {}ms: finding the device {}ms, the model {}ms, its session {}ms",
+        "Model load took {}ms: finding the device {}ms, the model {}ms, its session {}ms; \
+         it used {}ms of CPU and {} page faults, with {} MB of memory free before and {} MB after",
         started.elapsed().as_millis(),
         device_at.as_millis(),
         (model_at - device_at).as_millis(),
-        (started.elapsed() - model_at).as_millis()
+        (started.elapsed() - model_at).as_millis(),
+        after.cpu_ms.saturating_sub(before.cpu_ms),
+        after.page_faults.saturating_sub(before.page_faults),
+        before.free_mb,
+        after.free_mb
     );
     let bound = model.device().ok().map(|d| DeviceInfo::from_device(&d));
     let backend_name = model.backend();
