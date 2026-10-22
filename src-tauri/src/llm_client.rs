@@ -244,13 +244,60 @@ fn build_headers(provider: &PostProcessProvider, api_key: &str) -> Result<Header
     Ok(headers)
 }
 
-/// Create an HTTP client with provider-specific headers
+/// The HTTP client for a provider and key, with their headers. One is kept
+/// per provider and key, so each dictation reuses the connection the last
+/// request opened: a new TLS handshake for every request cost about half a
+/// second to OpenAI from India.
 fn create_client(provider: &PostProcessProvider, api_key: &str) -> Result<reqwest::Client, String> {
+    use std::collections::HashMap;
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    static CLIENTS: OnceLock<Mutex<HashMap<u64, reqwest::Client>>> = OnceLock::new();
+
+    let mut hasher = DefaultHasher::new();
+    (
+        &provider.base_url,
+        provider.api_format == PostProcessApiFormat::Anthropic,
+        api_key,
+    )
+        .hash(&mut hasher);
+    let key = hasher.finish();
+    let clients = CLIENTS.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(client) = clients.lock().ok().and_then(|c| c.get(&key).cloned()) {
+        return Ok(client);
+    }
     let headers = build_headers(provider, api_key)?;
-    reqwest::Client::builder()
+    let client = reqwest::Client::builder()
         .default_headers(headers)
         .build()
-        .map_err(|e| report_reqwest_error("Failed to build HTTP client", &e))
+        .map_err(|e| report_reqwest_error("Failed to build HTTP client", &e))?;
+    if let Ok(mut clients) = clients.lock() {
+        clients.insert(key, client.clone());
+    }
+    Ok(client)
+}
+
+/// Opens a connection to the provider ahead of a request, so the request
+/// that follows (a dictation's cleanup, when it stops) skips the handshake.
+/// Sends no prompt and costs no tokens; any answer will do.
+pub async fn warm_connection(provider: &PostProcessProvider, api_key: &str) {
+    let Ok(client) = create_client(provider, api_key) else {
+        return;
+    };
+    let url = provider.base_url.trim_end_matches('/');
+    let started = std::time::Instant::now();
+    match client
+        .head(url)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+    {
+        Ok(_) => debug!(
+            "Opened a connection to {} in {:?}",
+            sanitized_url_for_log(url),
+            started.elapsed()
+        ),
+        Err(e) => debug!("Couldn't open a connection ahead of time: {e}"),
+    }
 }
 
 /// Format a bounded error source chain.

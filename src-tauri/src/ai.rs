@@ -683,6 +683,25 @@ pub struct AiTestResult {
 /// first request may have to load the model.
 const TEST_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// When a dictation starts that will go to the AI, opens the connection to
+/// the provider while you speak, so the request when you stop skips the
+/// handshake.
+pub fn warm_up(app: &AppHandle) {
+    let settings = settings::get_settings(app);
+    let uses_ai = settings.cleanup_level == crate::cleanup_rules::CleanupLevel::Medium
+        || settings.ai_correction_enabled
+        || settings.post_process_enabled;
+    if !uses_ai {
+        return;
+    }
+    let Some(config) = AiConfig::from_settings(&settings) else {
+        return;
+    };
+    tauri::async_runtime::spawn(async move {
+        llm_client::warm_connection(&config.provider, &config.api_key).await;
+    });
+}
+
 /// Fetches the model list and sends one short request, then records the
 /// round trip for the status line.
 pub async fn test_connection(app: &AppHandle) -> AiTestResult {
