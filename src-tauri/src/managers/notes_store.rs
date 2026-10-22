@@ -1072,6 +1072,7 @@ mod tests {
                 summary: "Dokploy moves to the ARM box.".into(),
                 decisions: vec!["Consolidate on the ARM box".into()],
                 actions: vec![("Samir".into(), "Move Dokploy".into())],
+                ..Default::default()
             },
             "Ollama · qwen2.5:7b",
             1_760_703_000,

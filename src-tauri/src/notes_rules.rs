@@ -453,18 +453,30 @@ pub fn transcript_parts(lines: &[PromptLine<'_>]) -> Vec<String> {
 
 pub const SUMMARY_SYSTEM: &str = "You summarise one recorded conversation for the person who recorded it. Lines marked You are that person; every other line is someone else, from the call or the room, marked Them or with their name or a speaker number. Use only what the transcript says. Write in the transcript's language. Answer with JSON only.";
 
-/// The request for one transcript, or one part of a long one.
-pub fn summary_request(transcript: &str, json_hint: bool) -> String {
+/// At most this many tags are suggested for a note.
+pub const TAG_MAX: usize = 3;
+
+/// The request for one transcript, or one part of a long one. `tags_in_use`
+/// are the tags on other notes, offered first so the same topic keeps one
+/// name.
+pub fn summary_request(transcript: &str, json_hint: bool, tags_in_use: &[String]) -> String {
     let mut request = String::from(
         "Summarise this transcript.\n\n\
+         title: a short name for the conversation, three to six words, in sentence case, naming its main topic; no date, no quotes.\n\
+         tags: one to three short topic tags, lowercase, one or two words each.\n\
          summary: two or three plain sentences on what was discussed and concluded.\n\
          decisions: what was agreed, one short line each; empty when nothing was.\n\
          actions: tasks someone took on, each with its owner: \"You\" for the person who recorded, a name when the transcript gives one, else \"Them\".\n",
     );
+    if !tags_in_use.is_empty() {
+        request.push_str("Tags already in use, to pick from when one fits: ");
+        request.push_str(&tags_in_use.join(", "));
+        request.push('\n');
+    }
     if json_hint {
         request.push_str(
             "\nAnswer exactly like this, with no other text:\n\
-             {\"summary\": \"…\", \"decisions\": [\"…\"], \"actions\": [{\"owner\": \"You\", \"text\": \"…\"}]}\n",
+             {\"title\": \"…\", \"tags\": [\"…\"], \"summary\": \"…\", \"decisions\": [\"…\"], \"actions\": [{\"owner\": \"You\", \"text\": \"…\"}]}\n",
         );
     }
     request.push_str("\nTranscript:\n");
@@ -473,7 +485,7 @@ pub fn summary_request(transcript: &str, json_hint: bool) -> String {
 }
 
 /// The request that combines the summaries of a long transcript's parts.
-pub fn combine_request(parts: &[NotesSummary], json_hint: bool) -> String {
+pub fn combine_request(parts: &[NotesSummary], json_hint: bool, tags_in_use: &[String]) -> String {
     let mut text = String::new();
     for (i, part) in parts.iter().enumerate() {
         text.push_str(&format!("Part {}: {}\n", i + 1, part.summary));
@@ -484,7 +496,7 @@ pub fn combine_request(parts: &[NotesSummary], json_hint: bool) -> String {
             text.push_str(&format!("Action ({owner}): {task}\n"));
         }
     }
-    summary_request(&text, json_hint).replace(
+    summary_request(&text, json_hint, tags_in_use).replace(
         "Summarise this transcript.",
         "These are summaries of consecutive parts of one long conversation. Combine them into one summary, removing repeats.",
     )
@@ -494,6 +506,8 @@ pub fn summary_schema() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "properties": {
+            "title": { "type": "string" },
+            "tags": { "type": "array", "items": { "type": "string" } },
             "summary": { "type": "string" },
             "decisions": { "type": "array", "items": { "type": "string" } },
             "actions": {
@@ -509,14 +523,17 @@ pub fn summary_schema() -> serde_json::Value {
                 }
             }
         },
-        "required": ["summary", "decisions", "actions"],
+        "required": ["title", "tags", "summary", "decisions", "actions"],
         "additionalProperties": false
     })
 }
 
-/// What a summary found: the overview, decisions, and (owner, task) pairs.
+/// What a summary found: a suggested title and tags, the overview,
+/// decisions, and (owner, task) pairs.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NotesSummary {
+    pub title: String,
+    pub tags: Vec<String>,
     pub summary: String,
     pub decisions: Vec<String>,
     pub actions: Vec<(String, String)>,
@@ -560,11 +577,86 @@ pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
                 .collect()
         })
         .unwrap_or_default();
+    let title = value
+        .get("title")
+        .and_then(|t| t.as_str())
+        .map(clean_title)
+        .unwrap_or_default();
+    let tags = clean_tags(&strings("tags"));
     (!summary.is_empty()).then_some(NotesSummary {
+        title,
+        tags,
         summary,
         decisions,
         actions,
     })
+}
+
+/// The longest suggested title kept; longer ones are dropped, not cut.
+const TITLE_MAX_CHARS: usize = 70;
+
+/// A suggested title without quotes or a closing period, or empty when it
+/// is too long to be a title.
+fn clean_title(title: &str) -> String {
+    let t = title
+        .trim()
+        .trim_matches(|c: char| matches!(c, '"' | '\'' | '“' | '”' | '‘' | '’'))
+        .trim_end_matches('.')
+        .trim();
+    if t.chars().count() > TITLE_MAX_CHARS || t.contains('\n') {
+        return String::new();
+    }
+    t.to_string()
+}
+
+/// The longest tag kept.
+const TAG_MAX_CHARS: usize = 24;
+
+/// Suggested tags without a leading "#", repeats or ones too long, at most
+/// [`TAG_MAX`].
+fn clean_tags(tags: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for tag in tags {
+        let tag = tag.trim().trim_start_matches('#').trim();
+        if tag.is_empty() || tag.chars().count() > TAG_MAX_CHARS {
+            continue;
+        }
+        if out.iter().any(|t| t.eq_ignore_ascii_case(tag)) {
+            continue;
+        }
+        out.push(tag.to_string());
+        if out.len() == TAG_MAX {
+            break;
+        }
+    }
+    out
+}
+
+/// Whether a note still has the name Legato gave it when it began, such as
+/// "Meeting · Oct 22, 2:29 PM", so a suggested title may replace it. A
+/// title you typed, or a meeting's name from your calendar, stays.
+pub fn is_default_title(title: &str) -> bool {
+    let Some((kind, when)) = title.split_once(" · ") else {
+        return false;
+    };
+    matches!(kind, "Meeting" | "Voice memo")
+        && when.chars().any(|c| c.is_ascii_digit())
+        && (when.ends_with(" AM") || when.ends_with(" PM"))
+}
+
+/// The suggested tags written the way an existing tag is, so "Backend"
+/// joins "backend" rather than starting a second one.
+pub fn match_existing_tags(suggested: &[String], in_use: &[String]) -> Vec<String> {
+    suggested
+        .iter()
+        .map(|tag| {
+            in_use
+                .iter()
+                .find(|t| t.eq_ignore_ascii_case(tag))
+                .cloned()
+                .unwrap_or_else(|| tag.clone())
+        })
+        .collect()
 }
 
 pub const FIX_SYSTEM: &str = "You proofread a speech-to-text transcript of one conversation. Speech models mishear names, product names, jargon and acronyms, writing words that sound alike, such as \"cube cuddle\" for \"kubectl\". Find the words that are clearly misheard, judging from the rest of the conversation, its title and the person's own word list, and give the word that was meant. Fix only misheard words: never rephrase, fix grammar or style, change punctuation, or translate. When unsure, leave the word alone. Answer with JSON only.";
@@ -956,6 +1048,49 @@ mod tests {
         );
         assert!(parse_summary("I can't help with that.").is_none());
         assert!(parse_summary("{\"summary\": \"\"}").is_none());
+    }
+
+    #[test]
+    fn summaries_bring_a_title_and_tags() {
+        let answer = r##"{"title": "\"AIPS backend not working.\"", "tags": ["#backend", "Backend", "deployment", "a tag far too long to be a tag at all", "api", "extra"], "summary": "The server is slow.", "decisions": [], "actions": []}"##;
+        let s = parse_summary(answer).unwrap();
+        assert_eq!(s.title, "AIPS backend not working");
+        assert_eq!(s.tags, vec!["backend", "deployment", "api"]);
+        // An answer without them still parses.
+        let s = parse_summary("{\"summary\": \"Short.\"}").unwrap();
+        assert!(s.title.is_empty() && s.tags.is_empty());
+        // A paragraph is not a title.
+        let long = format!(
+            "{{\"title\": \"{}\", \"summary\": \"x\"}}",
+            "word ".repeat(20)
+        );
+        assert!(parse_summary(&long).unwrap().title.is_empty());
+    }
+
+    #[test]
+    fn only_default_titles_are_replaced() {
+        assert!(is_default_title("Meeting · Oct 22, 2:29 PM"));
+        assert!(is_default_title("Voice memo · Jan 3, 11:05 AM"));
+        assert!(!is_default_title("AIPS backend not working"));
+        assert!(!is_default_title("Meeting with Sahil"));
+        assert!(!is_default_title("Meeting · design review"));
+    }
+
+    #[test]
+    fn suggested_tags_take_the_existing_spelling() {
+        let in_use = vec!["Backend".to_string(), "clients".to_string()];
+        assert_eq!(
+            match_existing_tags(&["backend".into(), "api".into()], &in_use),
+            vec!["Backend", "api"]
+        );
+    }
+
+    #[test]
+    fn the_summary_request_offers_tags_in_use() {
+        let r = summary_request("You: hi", false, &["backend".into(), "clients".into()]);
+        assert!(r.contains("Tags already in use, to pick from when one fits: backend, clients"));
+        assert!(!summary_request("You: hi", false, &[]).contains("already in use"));
+        assert!(summary_request("You: hi", true, &[]).contains("\"title\""));
     }
 
     #[test]

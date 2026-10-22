@@ -1779,7 +1779,8 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
     );
     m.changed();
     let started = Instant::now();
-    match crate::ai::summarise_note(app, &config, &prompt).await {
+    let tags_in_use = m.tags().unwrap_or_default();
+    match crate::ai::summarise_note(app, &config, &prompt, &tags_in_use).await {
         Ok(summary) => {
             let local = if crate::ai::is_local(&config.provider) {
                 "local"
@@ -1793,6 +1794,7 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
                     .and_then(|mut c| store::set_summary(&mut c, note_id, &summary, &model, at)),
             );
             info!("Note summarised in {:?}", started.elapsed());
+            name_from_summary(&m, note_id, &summary, &tags_in_use);
         }
         Err(problem) => {
             warn!("No summary for the note: {:?}", problem.kind);
@@ -1811,6 +1813,34 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
 }
 
 /// Writes the summary again, with the AI as it is set up now.
+/// Gives the note the summary's title while it still has the one Legato
+/// gave it, and the summary's tags while it has none. A title or tags you
+/// set are never changed, and either can be edited afterwards.
+fn name_from_summary(
+    m: &NotesManager,
+    note_id: i64,
+    summary: &notes_rules::NotesSummary,
+    tags_in_use: &[String],
+) {
+    let Ok(Some(note)) = m.get(note_id) else {
+        return;
+    };
+    let result = m.conn().and_then(|c| {
+        if !summary.title.is_empty() && notes_rules::is_default_title(&note.title) {
+            store::rename(&c, note_id, &summary.title)?;
+        }
+        if note.tags.is_empty() {
+            for tag in notes_rules::match_existing_tags(&summary.tags, tags_in_use) {
+                store::add_tag(&c, note_id, &tag)?;
+            }
+        }
+        Ok(())
+    });
+    if let Err(e) = result {
+        error!("Couldn't name the note from its summary: {e}");
+    }
+}
+
 pub async fn resummarise(app: &AppHandle, note_id: i64) -> Result<(), String> {
     notes_ai(app)?;
     if current_note() == Some(note_id) {
@@ -1919,6 +1949,7 @@ pub async fn follow_up(app: &AppHandle, note_id: i64) -> Result<(), String> {
             .map(|a| (a.owner.clone(), a.text.clone()))
             .collect(),
     };
+        ..Default::default()
     let request = notes_rules::follow_up_request(&note.title, &summary, &note.my_notes);
     let email = crate::ai::follow_up(app, &config, request)
         .await

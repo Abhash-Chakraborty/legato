@@ -75,7 +75,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `selection.rs` - Copying the selection from another app; Add selection to Dictionary
 - `edit_reader.rs` - Learn from my edits (UI Automation read after a paste)
 - `scratchpad.rs` - The Scratchpad window, failed pastes, Send to
-- `notes.rs` / `loopback.rs` - Notes: voice memos and meetings (per-app loopback capture), the live preview of the line being spoken, line corrections with Undo, and the AI's misheard-word fixes and follow-up drafts
+- `notes.rs` / `loopback.rs` - Notes: voice memos and meetings (per-app loopback capture), the live preview of the line being spoken, line corrections with Undo, and the AI's summaries (which also name and tag a note still under its default title and without tags), misheard-word fixes and follow-up drafts
 - `speakers.rs` - Telling voices apart in Notes: the speaker model (downloaded on request), passes during and after a recording, and voices saved when you name someone, recognised in later meetings
 - `notes_panel.rs` - The Notes side panel docked at the right of the screen (live transcript, My notes, Pause, Stop)
 - `calls.rs` - Noticing calls (Teams, Zoom, Slack, Discord, WhatsApp, Telegram, and Meet, Teams or Zoom in a browser tab) and offering notes; logs who holds the microphone when that changes

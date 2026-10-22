@@ -402,14 +402,25 @@ pub async fn summarise_note(
     let parts = notes_rules::transcript_parts(lines);
     if parts.len() <= 1 {
         let transcript = parts.into_iter().next().unwrap_or_default();
-        return one(notes_rules::summary_request(&transcript, json_hint)).await;
+    tags_in_use: &[String],
+        return one(notes_rules::summary_request(
+            &transcript,
+            json_hint,
+            tags_in_use,
+        ))
+        .await;
     }
     debug!("Summarising a long note in {} parts", parts.len());
     let mut summaries = Vec::new();
     for part in &parts {
-        summaries.push(one(notes_rules::summary_request(part, json_hint)).await?);
+        summaries.push(one(notes_rules::summary_request(part, json_hint, tags_in_use)).await?);
     }
-    one(notes_rules::combine_request(&summaries, json_hint)).await
+    one(notes_rules::combine_request(
+        &summaries,
+        json_hint,
+        tags_in_use,
+    ))
+    .await
 }
 
 /// Answers a question from a note's transcript, citing line times.
