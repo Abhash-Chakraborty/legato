@@ -3140,6 +3140,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-tungstenite",
  "transcribe-cpp",
+ "url",
  "webview2-com",
  "whatlang",
  "windows 0.61.3",

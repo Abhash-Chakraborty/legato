@@ -12,26 +12,43 @@ use std::net::IpAddr;
 /// The contract version Legato speaks, sent as `X-Inyon-Contract`.
 pub const CONTRACT: u32 = 1;
 
-/// The hub's address as typed, a trailing slash dropped. A bare address
-/// gets `http://` when the token may go in the clear there (this PC, or a
-/// NetBird or Tailscale address), else `https://`.
+/// The hub's address as typed, tidied to its origin. A bare address gets
+/// `http://` when the token may go in the clear there (this PC, or a
+/// NetBird or Tailscale address), else `https://`. A user name, a path, a
+/// query or a fragment is refused: a hub lives at the root of its address,
+/// and `https://hub.example.com@evil.example` must not slip past.
 pub fn hub_url(input: &str) -> Option<String> {
     let input = input.trim();
-    let (scheme, rest) = match input.split_once("://") {
-        Some(parts) => parts,
-        None => {
-            let host = host_port(&format!("http://{input}")).map(|(h, _)| h);
-            let local = host.as_deref().is_some_and(|h| {
-                h.eq_ignore_ascii_case("localhost") || h.parse::<IpAddr>().is_ok_and(plain_http_ok)
-            });
-            (if local { "http" } else { "https" }, input)
+    let url = if input.contains("://") {
+        parse_hub(input)?
+    } else {
+        let url = parse_hub(&format!("http://{input}"))?;
+        let local = match url.host()? {
+            url::Host::Domain(d) => d.eq_ignore_ascii_case("localhost"),
+            url::Host::Ipv4(v4) => plain_http_ok(IpAddr::V4(v4)),
+            url::Host::Ipv6(v6) => plain_http_ok(IpAddr::V6(v6)),
+        };
+        if local {
+            url
+        } else {
+            parse_hub(&format!("https://{input}"))?
         }
     };
-    let rest = rest.trim_end_matches('/');
-    let ok = matches!(scheme, "http" | "https")
-        && !rest.is_empty()
-        && !rest.contains(char::is_whitespace);
-    ok.then(|| format!("{scheme}://{rest}"))
+    Some(url.origin().ascii_serialization())
+}
+
+/// A hub address the client will talk to: http or https, a host, and
+/// nothing after it but a slash.
+fn parse_hub(hub: &str) -> Option<url::Url> {
+    let url = url::Url::parse(hub).ok()?;
+    let ok = matches!(url.scheme(), "http" | "https")
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.path() == "/"
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.host_str().is_some_and(|h| !h.is_empty());
+    ok.then_some(url)
 }
 
 /// Whether the bearer token may travel over plain http to this address:
@@ -57,28 +74,13 @@ pub fn plain_http_ok(ip: IpAddr) -> bool {
 
 /// The host (without brackets) and port of an `http(s)://` hub address.
 pub fn host_port(hub: &str) -> Option<(String, u16)> {
-    let (scheme, rest) = hub.split_once("://")?;
-    let default = match scheme {
-        "http" => 80,
-        "https" => 443,
-        _ => return None,
+    let url = parse_hub(hub)?;
+    let host = match url.host()? {
+        url::Host::Domain(d) => d.to_string(),
+        url::Host::Ipv4(v4) => v4.to_string(),
+        url::Host::Ipv6(v6) => v6.to_string(),
     };
-    let authority = rest.split(['/', '?', '#']).next()?;
-    let authority = authority.rsplit_once('@').map_or(authority, |(_, a)| a);
-    let (host, port) = if let Some(v6) = authority.strip_prefix('[') {
-        let (host, after) = v6.split_once(']')?;
-        (host, after.strip_prefix(':'))
-    } else {
-        match authority.rsplit_once(':') {
-            Some((h, p)) => (h, Some(p)),
-            None => (authority, None),
-        }
-    };
-    let port = match port {
-        Some(p) => p.parse().ok()?,
-        None => default,
-    };
-    (!host.is_empty()).then(|| (host.to_string(), port))
+    Some((host, url.port_or_known_default()?))
 }
 
 /// The hub's WebSocket address for an `http(s)://` hub address.
@@ -159,6 +161,50 @@ pub struct Prompt {
     pub multi: bool,
     #[serde(default)]
     pub key: Option<String>,
+    /// The option an answer may carry text with ("No, and tell Claude
+    /// what to do differently"); none when the question takes no text.
+    #[serde(default, rename = "freeTextOption")]
+    pub free_text: Option<u32>,
+}
+
+/// The most questions the queue holds, and how much of each it keeps.
+const MAX_QUESTIONS: usize = 50;
+const MAX_LINES: usize = 40;
+const MAX_OPTIONS: usize = 20;
+const MAX_LINE_CHARS: usize = 500;
+
+fn clip(text: &mut String, max: usize) {
+    if let Some((at, _)) = text.char_indices().nth(max) {
+        text.truncate(at);
+    }
+}
+
+impl Prompt {
+    fn trimmed(mut self) -> Self {
+        self.body.truncate(MAX_LINES);
+        self.options.truncate(MAX_OPTIONS);
+        for line in &mut self.body {
+            clip(line, MAX_LINE_CHARS);
+        }
+        for option in &mut self.options {
+            clip(&mut option.label, MAX_LINE_CHARS);
+        }
+        if let Some(key) = &mut self.key {
+            clip(key, MAX_LINE_CHARS);
+        }
+        self
+    }
+}
+
+/// Text for an agent's terminal with control characters taken out (an
+/// escape could reach the terminal itself), keeping new lines and tabs;
+/// Windows line ends become plain new lines.
+pub fn terminal_text(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+        .collect()
 }
 
 /// A pane on the hub: its machine and tmux pane id.
@@ -351,6 +397,8 @@ pub struct AgentAlert {
     pub options: Vec<PromptOption>,
     /// Ties an answer to this question, so a late tap can't hit the next.
     pub key: Option<String>,
+    /// The option a spoken answer's words go with, if any.
+    pub free_text: Option<u32>,
     /// How many more agents wait behind this one.
     pub more: u32,
 }
@@ -397,10 +445,20 @@ impl Waiting {
 
     /// A watched pane's screen: a question joins the queue (or replaces
     /// that pane's earlier one, keeping its place); no question removes it.
+    /// A pane Legato isn't watching is ignored, and a question is trimmed
+    /// to what a card can show, so a hub can't flood the island.
     pub fn screen(&mut self, pane: PaneRef, prompt: Option<Prompt>) {
+        if !self.panes.get(&pane).is_some_and(|p| p.waiting) {
+            return;
+        }
         let at = self.questions.iter().position(|(p, _)| *p == pane);
+        if at.is_none() && self.questions.len() >= MAX_QUESTIONS {
+            return;
+        }
         match (
-            prompt.filter(|p| !p.options.is_empty() || !p.body.is_empty()),
+            prompt
+                .map(Prompt::trimmed)
+                .filter(|p| !p.options.is_empty() || !p.body.is_empty()),
             at,
         ) {
             (Some(prompt), Some(i)) => self.questions[i].1 = prompt,
@@ -437,6 +495,7 @@ impl Waiting {
             ask,
             options: prompt.options.clone(),
             key: prompt.key.clone(),
+            free_text: prompt.free_text,
             more: self.questions.len().saturating_sub(1) as u32,
         })
     }
@@ -498,7 +557,11 @@ pub enum VoiceAnswer {
 /// "option 2"), an option's words ("yes", "yes and don't ask again"), or
 /// else what was said, for the option that takes text. None when nothing
 /// fits, so nothing is sent on a guess.
-pub fn voice_answer(said: &str, options: &[PromptOption]) -> Option<VoiceAnswer> {
+pub fn voice_answer(
+    said: &str,
+    options: &[PromptOption],
+    free_text: Option<u32>,
+) -> Option<VoiceAnswer> {
     let words = |s: &str| -> Vec<String> {
         s.to_lowercase()
             .replace("n't", "nt")
@@ -558,11 +621,8 @@ pub fn voice_answer(said: &str, options: &[PromptOption]) -> Option<VoiceAnswer>
     {
         return Some(VoiceAnswer::Pick(*n));
     }
-    // Anything else goes, as said, to the option that takes text.
-    let takes_text = options.iter().find(|o| {
-        let l = o.label.to_lowercase();
-        l.contains("tell ") || l.contains("type") || l.contains("something else")
-    })?;
+    // Anything else goes, as said, to the option the hub says takes text.
+    let takes_text = options.iter().find(|o| Some(o.n) == free_text)?;
     let text = said.trim();
     // "No, run the tests first" is the instruction, not the "no".
     let text = ["no,", "no.", "no "]
@@ -637,6 +697,7 @@ mod tests {
             ],
             multi: false,
             key: Some(key.into()),
+            free_text: None,
         }
     }
 
@@ -724,34 +785,38 @@ mod tests {
             "No, and tell Claude what to do differently",
         ]);
         use VoiceAnswer::*;
-        assert_eq!(voice_answer("Yes.", &claude), Some(Pick(1)));
-        assert_eq!(voice_answer("Allow", &claude), Some(Pick(1)));
-        assert_eq!(voice_answer("Two", &claude), Some(Pick(2)));
-        assert_eq!(voice_answer("option 3", &claude), Some(Pick(3)));
+        assert_eq!(voice_answer("Yes.", &claude, Some(3)), Some(Pick(1)));
+        assert_eq!(voice_answer("Allow", &claude, Some(3)), Some(Pick(1)));
+        assert_eq!(voice_answer("Two", &claude, Some(3)), Some(Pick(2)));
+        assert_eq!(voice_answer("option 3", &claude, Some(3)), Some(Pick(3)));
         assert_eq!(
-            voice_answer("Yes, and don't ask again for rm commands.", &claude),
+            voice_answer(
+                "Yes, and don't ask again for rm commands.",
+                &claude,
+                Some(3)
+            ),
             Some(Pick(2))
         );
         assert_eq!(
-            voice_answer("No, run the tests first.", &claude),
+            voice_answer("No, run the tests first.", &claude, Some(3)),
             Some(WithText(3, "run the tests first.".into()))
         );
         assert_eq!(
-            voice_answer("Use cargo test instead", &claude),
+            voice_answer("Use cargo test instead", &claude, Some(3)),
             Some(WithText(3, "Use cargo test instead".into()))
         );
         // The test hub's prompt: plain Yes / No, nothing takes text.
         let plain = opts(&["Yes", "Yes, and don't ask again for echo commands", "No"]);
-        assert_eq!(voice_answer("no", &plain), Some(Pick(3)));
-        assert_eq!(voice_answer("Deny.", &plain), Some(Pick(3)));
-        assert_eq!(voice_answer("Seven", &plain), None);
-        assert_eq!(voice_answer("maybe later", &plain), None);
-        assert_eq!(voice_answer("", &plain), None);
+        assert_eq!(voice_answer("no", &plain, None), Some(Pick(3)));
+        assert_eq!(voice_answer("Deny.", &plain, None), Some(Pick(3)));
+        assert_eq!(voice_answer("Seven", &plain, None), None);
+        assert_eq!(voice_answer("maybe later", &plain, None), None);
+        assert_eq!(voice_answer("", &plain, None), None);
         // Codex asking which branch.
         let branch = opts(&["main", "win-wip", "A new branch"]);
-        assert_eq!(voice_answer("Win wip", &branch), Some(Pick(2)));
-        assert_eq!(voice_answer("A new branch.", &branch), Some(Pick(3)));
-        assert_eq!(voice_answer("the first one", &branch), None);
+        assert_eq!(voice_answer("Win wip", &branch, None), Some(Pick(2)));
+        assert_eq!(voice_answer("A new branch.", &branch, None), Some(Pick(3)));
+        assert_eq!(voice_answer("the first one", &branch, None), None);
     }
 
     #[test]
@@ -764,14 +829,15 @@ mod tests {
         assert!(!ok("192.168.1.20") && !ok("10.0.0.5") && !ok("8.8.8.8"));
         assert!(!ok("fd7a:115c:a1e1::1") && !ok("fe80::1"));
         assert_eq!(
-            host_port("http://[fd7a:115c:a1e0::5]:4777/x"),
+            host_port("http://[fd7a:115c:a1e0::5]:4777/"),
             Some(("fd7a:115c:a1e0::5".into(), 4777))
         );
         assert_eq!(
             host_port("https://hub.example.com"),
             Some(("hub.example.com".into(), 443))
         );
-        assert_eq!(host_port("http://u:p@h:81"), Some(("h".into(), 81)));
+        assert_eq!(host_port("http://h:81"), Some(("h".into(), 81)));
+        assert_eq!(host_port("http://u:p@h:81"), None);
         assert_eq!(host_port("http://:80"), None);
         assert_eq!(host_port("http://h:notaport"), None);
     }
@@ -803,6 +869,21 @@ mod tests {
         assert_eq!(hub_url("ftp://x"), None);
         assert_eq!(hub_url("http://"), None);
         assert_eq!(hub_url("two words"), None);
+        // Nothing may hide another host or a path in the address.
+        assert_eq!(hub_url("https://hub.example.com@evil.example"), None);
+        assert_eq!(hub_url("100.97.188.112:4777@evil.example"), None);
+        assert_eq!(hub_url("http://evil.example\\@100.97.188.112"), None);
+        assert_eq!(hub_url("https://hub.example.com/x"), None);
+        assert_eq!(hub_url("https://hub.example.com/?a=1"), None);
+        assert_eq!(hub_url("https://hub.example.com/#/hosts"), None);
+        assert_eq!(
+            hub_url("HTTPS://Hub.Example.com:443/").as_deref(),
+            Some("https://hub.example.com")
+        );
+        assert_eq!(
+            hub_url("[fd7a:115c:a1e0::5]:4777").as_deref(),
+            Some("http://[fd7a:115c:a1e0::5]:4777")
+        );
         assert_eq!(ws_url("http://h:4777"), "ws://h:4777/ws?contract=1");
         assert_eq!(ws_url("https://h"), "wss://h/ws?contract=1");
     }
@@ -894,6 +975,46 @@ mod tests {
         w.screen(pane("%3"), Some(prompt("k")));
         w.screen(pane("%3"), None);
         assert_eq!(w.current(), None);
+    }
+
+    #[test]
+    fn only_watched_panes_queue_and_questions_are_trimmed() {
+        let mut w = Waiting::default();
+        w.overview(vec![agent("%3", true), agent("%5", false)]);
+        w.screen(pane("%9"), Some(prompt("k")));
+        w.screen(pane("%5"), Some(prompt("k")));
+        assert_eq!(w.current(), None);
+
+        let mut long = prompt("k");
+        long.body = vec!["x".repeat(2000); 100];
+        long.options = (0..50)
+            .map(|n| PromptOption {
+                n,
+                label: "é".repeat(900),
+            })
+            .collect();
+        w.screen(pane("%3"), Some(long));
+        let alert = w.current().unwrap();
+        assert!(alert.options.len() <= MAX_OPTIONS);
+        assert!(alert.options[0].label.chars().count() == MAX_LINE_CHARS);
+        assert!(alert.body.len() + alert.command.len() + alert.ask.len() <= MAX_LINES);
+    }
+
+    #[test]
+    fn the_hub_names_the_option_that_takes_text() {
+        let frame = r#"{"t":"chat.screen","key":"box:%3","screen":{"prompt":{"body":["Edit file"],"options":[{"n":1,"label":"Yes"},{"n":3,"label":"No, and tell Claude what to do differently"}],"key":"k","freeTextOption":3}}}"#;
+        let Some(Frame::Screen { prompt, .. }) = parse_frame(frame) else {
+            panic!("chat.screen");
+        };
+        assert_eq!(prompt.and_then(|p| p.free_text), Some(3));
+    }
+
+    #[test]
+    fn terminal_text_drops_control_characters() {
+        assert_eq!(
+            terminal_text("a\u{1b}[201~b\r\nc\rd\te\u{7f}\u{9b}f\n"),
+            "a[201~b\nc\nd\tef\n"
+        );
     }
 
     #[test]

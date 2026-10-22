@@ -1132,6 +1132,10 @@ pub fn run(cli_args: CliArgs) {
         .plugin(
             LogBuilder::new()
                 .level(log::LevelFilter::Trace) // Set to most verbose level globally
+                // At trace these print whole frames and handshakes, Inyon's
+                // token among them.
+                .level_for("tungstenite", log::LevelFilter::Debug)
+                .level_for("tokio_tungstenite", log::LevelFilter::Debug)
                 .max_file_size(500_000)
                 .rotation_strategy(RotationStrategy::KeepOne)
                 .clear_targets()

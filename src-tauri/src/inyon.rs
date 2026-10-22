@@ -8,15 +8,19 @@ use crate::inyon_rules::{self as rules, Frame, PaneRef, VoiceAnswer, Waiting};
 use crate::settings::{get_settings, write_settings};
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, info, warn};
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use specta::Type;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, Notify};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::MaybeTlsStream;
 
 /// Where the hub's token lives in Credential Manager ("Legato/inyon-token").
 const TOKEN: &str = "inyon-token";
@@ -38,6 +42,7 @@ struct VoiceTarget {
     /// The question it answers; with no options the words are a message.
     key: Option<String>,
     options: Vec<rules::PromptOption>,
+    free_text: Option<u32>,
 }
 /// Frames for the hub, while connected.
 static OUTBOX: Mutex<Option<mpsc::UnboundedSender<String>>> = Mutex::new(None);
@@ -130,8 +135,9 @@ async fn run(app: AppHandle) {
             CHANGED.notified().await;
             continue;
         };
-        if let Err(reason) = transport_ok(&hub).await {
-            if reason == "insecure" {
+        let route = match route(&hub).await {
+            Ok(route) => route,
+            Err(reason) if reason == "insecure" => {
                 if !INSECURE.swap(true, Ordering::SeqCst) {
                     warn!("Inyon: not sending the token over plain http to {hub}");
                     status_changed(&app);
@@ -139,10 +145,20 @@ async fn run(app: AppHandle) {
                 CHANGED.notified().await;
                 continue;
             }
-        }
+            // The name didn't resolve: try again later, never unchecked.
+            Err(_) => {
+                failures += 1;
+                let wait = Duration::from_secs(rules::backoff_secs(failures));
+                tokio::select! {
+                    _ = tokio::time::sleep(wait) => {}
+                    _ = CHANGED.notified() => {}
+                }
+                continue;
+            }
+        };
         INSECURE.store(false, Ordering::SeqCst);
         let started = std::time::Instant::now();
-        match connect(&app, &hub, &token, generation).await {
+        match connect(&app, &route, &token, generation).await {
             // A connection that lasted a while starts the backoff over; one
             // the hub closed at once (a removed token) doesn't.
             Ok(()) if started.elapsed() > Duration::from_secs(30) => failures = 0,
@@ -169,7 +185,13 @@ async fn run(app: AppHandle) {
 
 /// One connection, until it drops or the settings change. Ok when it ran
 /// and ended, Err when it couldn't start.
-async fn connect(app: &AppHandle, hub: &str, token: &str, generation: u64) -> Result<(), String> {
+async fn connect(
+    app: &AppHandle,
+    route: &Route,
+    token: &str,
+    generation: u64,
+) -> Result<(), String> {
+    let hub = route.hub.as_str();
     let mut request = rules::ws_url(hub)
         .into_client_request()
         .map_err(|e| e.to_string())?;
@@ -179,20 +201,37 @@ async fn connect(app: &AppHandle, hub: &str, token: &str, generation: u64) -> Re
         format!("Bearer {token}").parse().map_err(|_| "bad token")?,
     );
     headers.insert(CONTRACT_HEADER, rules::CONTRACT.into());
-    let (socket, _) = tokio::time::timeout(
-        Duration::from_secs(15),
-        tokio_tungstenite::connect_async(request),
-    )
-    .await
-    .map_err(|_| "the hub didn't answer".to_string())?
-    .map_err(|e| {
-        if let tokio_tungstenite::tungstenite::Error::Http(response) = &e {
-            if response.status() == 401 {
-                removed(app);
-            }
+    // Nothing the hub sends comes near a megabyte.
+    let config = WebSocketConfig {
+        max_message_size: Some(MAX_BODY * 4),
+        max_frame_size: Some(MAX_BODY * 4),
+        ..Default::default()
+    };
+    let handshake = async {
+        if route.addrs.is_empty() {
+            tokio_tungstenite::connect_async_with_config(request, Some(config), false).await
+        } else {
+            // Plain http goes only to the addresses that were checked.
+            let tcp = tokio::net::TcpStream::connect(&route.addrs[..]).await?;
+            tokio_tungstenite::client_async_with_config(
+                request,
+                MaybeTlsStream::Plain(tcp),
+                Some(config),
+            )
+            .await
         }
-        format!("couldn't reach the hub: {e}")
-    })?;
+    };
+    let (socket, _) = tokio::time::timeout(Duration::from_secs(15), handshake)
+        .await
+        .map_err(|_| "the hub didn't answer".to_string())?
+        .map_err(|e| {
+            if let tokio_tungstenite::tungstenite::Error::Http(response) = &e {
+                if response.status() == 401 {
+                    removed(app);
+                }
+            }
+            format!("couldn't reach the hub: {e}")
+        })?;
     info!("Connected to Inyon at {hub}");
     let (mut sink, mut stream) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
@@ -290,43 +329,79 @@ fn show(app: &AppHandle) {
     status_changed(app);
 }
 
+/// Where a hub's requests go: its address, and for plain http the
+/// checked addresses to connect to.
+struct Route {
+    hub: String,
+    host: String,
+    addrs: Vec<SocketAddr>,
+}
+
 /// Refuses a hub address that would send the token in the clear. https
 /// passes (Windows checks the certificate); plain http only when every
-/// address the host resolves to is this PC or a NetBird or Tailscale one.
-async fn transport_ok(hub: &str) -> Result<(), String> {
-    if hub.starts_with("https://") {
-        return Ok(());
-    }
+/// address the host resolves to is this PC or a NetBird or Tailscale one,
+/// and then connections go to those addresses alone, so a second lookup
+/// can't send the token somewhere else.
+async fn route(hub: &str) -> Result<Route, String> {
     let (host, port) = rules::host_port(hub).ok_or("badAddress")?;
-    let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
+    let mut route = Route {
+        hub: hub.to_string(),
+        host,
+        addrs: Vec::new(),
+    };
+    if hub.starts_with("https://") {
+        return Ok(route);
+    }
+    route.addrs = tokio::net::lookup_host((route.host.as_str(), port))
         .await
         .map_err(|_| "unreachable")?
         .collect();
-    if !addrs.is_empty() && addrs.iter().all(|a| rules::plain_http_ok(a.ip())) {
-        Ok(())
+    if !route.addrs.is_empty() && route.addrs.iter().all(|a| rules::plain_http_ok(a.ip())) {
+        Ok(route)
     } else {
         Err("insecure".into())
     }
 }
 
-fn client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+fn client(route: &Route) -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder()
         // A redirect could carry the token somewhere else.
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(10))
         // A send waits until the hub knows whether the text landed.
-        .timeout(Duration::from_secs(40))
-        .build()
-        .map_err(|e| e.to_string())
+        .timeout(Duration::from_secs(40));
+    if !route.addrs.is_empty() {
+        builder = builder.resolve_to_addrs(&route.host, &route.addrs);
+    }
+    builder.build().map_err(|e| e.to_string())
+}
+
+/// The largest answer read from the hub; the contract's are far smaller.
+const MAX_BODY: usize = 256 * 1024;
+
+/// A hub's JSON answer, read only up to `MAX_BODY`.
+async fn read_json<T: DeserializeOwned>(mut response: reqwest::Response) -> Option<T> {
+    if response
+        .content_length()
+        .is_some_and(|n| n > MAX_BODY as u64)
+    {
+        return None;
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        if body.len() + chunk.len() > MAX_BODY {
+            return None;
+        }
+        body.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&body).ok()
 }
 
 /// The hub's answer as a reason key under `inyon.reason`, for an error.
 async fn refusal(response: reqwest::Response) -> String {
     let status = response.status().as_u16();
-    let reason = response
-        .json::<serde_json::Value>()
+    let reason = read_json::<serde_json::Value>(response)
         .await
-        .ok()
         .and_then(|v| v.get("reason").and_then(|r| r.as_str()).map(str::to_string));
     rules::reason_key(status, reason.as_deref()).to_string()
 }
@@ -334,13 +409,13 @@ async fn refusal(response: reqwest::Response) -> String {
 /// Pairs with a hub from the code Inyon shows. Errors are reason keys.
 pub async fn pair(app: &AppHandle, hub: &str, code: &str) -> Result<InyonStatus, String> {
     let hub = rules::hub_url(hub).ok_or("badAddress")?;
-    transport_ok(&hub).await?;
+    let route = route(&hub).await?;
     let code = rules::pairing_code(code).ok_or("badCode")?;
     let name = format!(
         "Legato on {}",
         std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows".into())
     );
-    let client = client()?;
+    let client = client(&route)?;
     let response = client
         .post(format!("{hub}/api/companions/claim"))
         .header(CONTRACT_HEADER, rules::CONTRACT)
@@ -360,7 +435,7 @@ pub async fn pair(app: &AppHandle, hub: &str, code: &str) -> Result<InyonStatus,
             other => other.to_string(),
         });
     }
-    let claimed: rules::Claimed = response.json().await.map_err(|_| "notAHub")?;
+    let claimed: rules::Claimed = read_json(response).await.ok_or("notAHub")?;
     if claimed.contract_version != rules::CONTRACT {
         return Err("contract".into());
     }
@@ -370,16 +445,14 @@ pub async fn pair(app: &AppHandle, hub: &str, code: &str) -> Result<InyonStatus,
     })?;
     // The hub's own name, for Settings; the address stands in without it.
     let hub_name = async {
-        let me: serde_json::Value = client
+        let response = client
             .get(format!("{hub}/api/companions/me"))
             .header(CONTRACT_HEADER, rules::CONTRACT)
             .bearer_auth(&claimed.token)
             .send()
             .await
-            .ok()?
-            .json()
-            .await
             .ok()?;
+        let me: serde_json::Value = read_json(response).await?;
         me.get("hub")?.get("name")?.as_str().map(str::to_string)
     }
     .await;
@@ -432,13 +505,13 @@ pub async fn answer(
     text: Option<String>,
 ) -> Result<(), String> {
     let hub = get_settings(app).inyon.hub.ok_or("signedOut")?;
-    transport_ok(&hub).await?;
+    let route = route(&hub).await?;
     let token = token().ok_or("signedOut")?;
     let mut body = serde_json::json!({ "option": option, "key": key });
     if let Some(text) = text {
-        body["text"] = text.into();
+        body["text"] = rules::terminal_text(&text).into();
     }
-    let response = client()?
+    let response = client(&route)?
         .post(rules::pane_route(&hub, host, pane, "answer"))
         .header(CONTRACT_HEADER, rules::CONTRACT)
         .bearer_auth(token)
@@ -503,8 +576,9 @@ pub fn agents() -> Vec<InyonAgent> {
 /// ("delivered", "queued" or "sent"); errors are reason keys.
 pub async fn send_text(app: &AppHandle, pane: &PaneRef, text: &str) -> Result<String, String> {
     let hub = get_settings(app).inyon.hub.ok_or("signedOut")?;
-    transport_ok(&hub).await?;
+    let route = route(&hub).await?;
     let token = token().ok_or("signedOut")?;
+    let text = rules::terminal_text(text);
     // A retry with the same id is never typed twice.
     let request_id = format!(
         "legato-{}",
@@ -513,7 +587,7 @@ pub async fn send_text(app: &AppHandle, pane: &PaneRef, text: &str) -> Result<St
             .map(|d| d.as_millis())
             .unwrap_or_default()
     );
-    let response = client()?
+    let response = client(&route)?
         .post(rules::pane_route(&hub, &pane.host, &pane.pane, "send"))
         .header(CONTRACT_HEADER, rules::CONTRACT)
         .bearer_auth(token)
@@ -528,7 +602,7 @@ pub async fn send_text(app: &AppHandle, pane: &PaneRef, text: &str) -> Result<St
         }
         return Err(reason);
     }
-    let v: serde_json::Value = response.json().await.unwrap_or_default();
+    let v: serde_json::Value = read_json(response).await.unwrap_or_default();
     Ok(v.get("state")
         .and_then(|s| s.as_str())
         .unwrap_or("sent")
@@ -561,6 +635,7 @@ pub fn dictate(app: &AppHandle, host: &str, pane: &str) {
                     .map(|a| a.agent.clone())
                     .unwrap_or_else(|| "agent".into()),
                 key: alert.as_ref().and_then(|a| a.key.clone()),
+                free_text: alert.as_ref().and_then(|a| a.free_text),
                 options: alert.map(|a| a.options).unwrap_or_default(),
             });
         }
@@ -591,11 +666,12 @@ pub fn receive(app: &AppHandle, text: String) {
             agent,
             key,
             options,
+            free_text,
         } = target;
         let result = if options.is_empty() {
             send_text(&app, &pane, &text).await.map(|_| ())
         } else {
-            match rules::voice_answer(&text, &options) {
+            match rules::voice_answer(&text, &options, free_text) {
                 Some(VoiceAnswer::Pick(n)) => {
                     answer(&app, &pane.host, &pane.pane, n, key, None).await
                 }
