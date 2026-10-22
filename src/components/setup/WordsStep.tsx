@@ -49,6 +49,7 @@ export const WordsStep: React.FC<StepProps> = ({ go, setFoot }) => {
       ),
     [results, t],
   );
+  const anyHeard = terms.some((term) => term.heard);
 
   const loadEntries = useCallback(() => {
     commands
@@ -196,18 +197,28 @@ export const WordsStep: React.FC<StepProps> = ({ go, setFoot }) => {
               return (
                 <div
                   key={term.key}
-                  className="grid min-h-14 grid-cols-[minmax(0,96px)_14px_minmax(0,140px)_minmax(0,1fr)_auto] items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0"
+                  className={`grid min-h-14 ${anyHeard ? "grid-cols-[minmax(0,96px)_14px_minmax(0,140px)_minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,140px)_minmax(0,1fr)_auto]"} items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0`}
                 >
-                  <span
-                    className="truncate text-[13px] text-text-3"
-                    title={term.heard ?? term.term}
-                  >
-                    {term.heard ? (same ? term.heard : quote(term.heard)) : "—"}
-                  </span>
-                  <ArrowRight
-                    className="h-3.5 w-3.5 text-text-4"
-                    aria-hidden="true"
-                  />
+                  {/* What the practice heard; with practice skipped there is
+                      nothing to show, so the column goes. */}
+                  {anyHeard && (
+                    <>
+                      <span
+                        className="truncate text-[13px] text-text-3"
+                        title={term.heard ?? term.term}
+                      >
+                        {term.heard
+                          ? same
+                            ? term.heard
+                            : quote(term.heard)
+                          : "—"}
+                      </span>
+                      <ArrowRight
+                        className="h-3.5 w-3.5 text-text-4"
+                        aria-hidden="true"
+                      />
+                    </>
+                  )}
                   {state === "pending" ? (
                     <input
                       className={`input compact w-full ${invalid === term.key ? "invalid" : ""}`}

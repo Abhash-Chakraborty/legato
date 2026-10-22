@@ -2591,7 +2591,7 @@
       "closeTip": "Close",
       "listening": "Listening · click to stop",
       "dictate": "Dictate here",
-      "sendTo": "Send to {{app}}",
+      "sendTo": "Send to",
       "send": "Send",
       "sendTip": "Paste into {{app}} (Ctrl+Enter)",
       "noTarget": "Click into the app you want the text in, then open the Scratchpad",

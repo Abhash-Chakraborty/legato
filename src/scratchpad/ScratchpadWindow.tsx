@@ -1245,11 +1245,19 @@ export const ScratchpadWindow: React.FC = () => {
                     ) : (
                       <Send className="h-4 w-4" aria-hidden="true" />
                     )}
-                    <span className="truncate">
-                      {target
-                        ? t("scratchpad.window.sendTo", { app: target.name })
-                        : t("scratchpad.window.send")}
-                    </span>
+                    {/* "Send to" stays whole; only the app's name shortens. */}
+                    {target ? (
+                      <span className="flex min-w-0 gap-[0.3em]">
+                        <span className="flex-none">
+                          {t("scratchpad.window.sendTo")}
+                        </span>
+                        <span className="truncate">{target.name}</span>
+                      </span>
+                    ) : (
+                      <span className="truncate">
+                        {t("scratchpad.window.send")}
+                      </span>
+                    )}
                   </button>
                   <button
                     type="button"
