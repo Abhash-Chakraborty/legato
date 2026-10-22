@@ -159,7 +159,7 @@ impl AiConfig {
     fn disable_reasoning(&self) -> bool {
         matches!(
             self.provider.id.as_str(),
-            "ollama" | "custom" | "openrouter"
+            "ollama" | "custom" | "openrouter" | "openai"
         )
     }
 }

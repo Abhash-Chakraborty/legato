@@ -57,9 +57,16 @@ impl ReasoningParams {
 /// Pick the reasoning-disable request fields an endpoint understands.
 /// Unknown endpoints get the common OpenAI-style field; if they reject it,
 /// the request is retried without it (see `send_chat_completion_with_schema`).
-fn reasoning_disable_params(provider: &PostProcessProvider) -> ReasoningParams {
+fn reasoning_disable_params(provider: &PostProcessProvider, model: &str) -> ReasoningParams {
     let base_url = provider.base_url.to_lowercase();
-    if base_url.contains("api.deepseek.com") {
+    if base_url.contains("api.openai.com") {
+        // OpenAI's models each take their own lowest effort, and the ones
+        // that don't reason reject the field.
+        ReasoningParams {
+            reasoning_effort: openai_lowest_effort(model).map(str::to_string),
+            ..Default::default()
+        }
+    } else if base_url.contains("api.deepseek.com") {
         // DeepSeek rejects reasoning_effort "none" and uses its own field:
         // https://api-docs.deepseek.com/guides/thinking_mode
         ReasoningParams {
@@ -81,6 +88,28 @@ fn reasoning_disable_params(provider: &PostProcessProvider) -> ReasoningParams {
             reasoning_effort: Some("none".to_string()),
             ..Default::default()
         }
+    }
+}
+
+/// The lowest reasoning effort an OpenAI model accepts: GPT-5.1 and later
+/// take "none", the first GPT-5 models "minimal" and the o-series "low".
+/// Without it a GPT-5 model reasons first, which took a one-word answer
+/// from under a second to two or three. GPT-4 models don't reason.
+fn openai_lowest_effort(model: &str) -> Option<&'static str> {
+    let model = model.to_lowercase();
+    let model = model.rsplit('/').next().unwrap_or(&model);
+    if let Some(rest) = model.strip_prefix("gpt-5") {
+        if rest.contains("chat") {
+            None
+        } else if rest.starts_with('.') {
+            Some("none")
+        } else {
+            Some("minimal")
+        }
+    } else if model.starts_with('o') && model[1..].starts_with(|c: char| c.is_ascii_digit()) {
+        Some("low")
+    } else {
+        None
     }
 }
 
@@ -421,7 +450,7 @@ pub async fn send_chat_completion_with_schema(
 
     let key = endpoint_key(provider, model);
     let reasoning = if disable_reasoning && !is_known_rejected(&key) {
-        reasoning_disable_params(provider)
+        reasoning_disable_params(provider, model)
     } else {
         ReasoningParams::default()
     };
@@ -810,7 +839,8 @@ mod tests {
 
     #[test]
     fn custom_provider_uses_top_level_reasoning_effort() {
-        let params = reasoning_disable_params(&provider("custom", "http://localhost:11434/v1"));
+        let params =
+            reasoning_disable_params(&provider("custom", "http://localhost:11434/v1"), "qwen3");
         let json = request_json(params);
         assert_eq!(json["reasoning_effort"], "none");
         assert!(json.get("reasoning").is_none());
@@ -820,7 +850,7 @@ mod tests {
     #[test]
     fn openrouter_uses_nested_reasoning_object() {
         let params =
-            reasoning_disable_params(&provider("openrouter", "https://openrouter.ai/api/v1"));
+            reasoning_disable_params(&provider("openrouter", "https://openrouter.ai/api/v1"), "x");
         let json = request_json(params);
         assert!(json.get("reasoning_effort").is_none());
         assert_eq!(json["reasoning"]["effort"], "none");
@@ -829,8 +859,29 @@ mod tests {
     }
 
     #[test]
+    fn openai_models_get_their_lowest_effort() {
+        let openai = provider("openai", "https://api.openai.com/v1");
+        let effort = |model: &str| {
+            request_json(reasoning_disable_params(&openai, model))
+                .get("reasoning_effort")
+                .and_then(|v| v.as_str().map(str::to_string))
+        };
+        assert_eq!(effort("gpt-5.4-mini").as_deref(), Some("none"));
+        assert_eq!(effort("gpt-5.4-nano-2026-03-17").as_deref(), Some("none"));
+        assert_eq!(effort("gpt-5-nano").as_deref(), Some("minimal"));
+        assert_eq!(effort("gpt-5-mini-2025-08-07").as_deref(), Some("minimal"));
+        assert_eq!(effort("o4-mini").as_deref(), Some("low"));
+        assert_eq!(effort("gpt-5.2-chat-latest"), None);
+        assert_eq!(effort("gpt-4.1-nano"), None);
+        assert_eq!(effort("gpt-4o-mini"), None);
+    }
+
+    #[test]
     fn deepseek_base_url_uses_thinking_disabled() {
-        let params = reasoning_disable_params(&provider("custom", "https://api.deepseek.com"));
+        let params = reasoning_disable_params(
+            &provider("custom", "https://api.deepseek.com"),
+            "deepseek-chat",
+        );
         let json = request_json(params);
         assert!(json.get("reasoning_effort").is_none());
         assert!(json.get("reasoning").is_none());
