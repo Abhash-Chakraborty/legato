@@ -513,8 +513,10 @@ fn spoken_addresses(mut toks: Vec<Tok>) -> Vec<Tok> {
         let joined = trailing_punct(l).is_empty() && trailing_punct(m).is_empty();
         let lead = &l[..l.len() - l.trim_start_matches(|c: char| !c.is_alphanumeric()).len()];
         let merged = match mc.as_str() {
+            // "the dot com bubble" is a word, not an address.
             "dot"
                 if joined
+                    && !BREAK_NOUN_BEFORE.contains(&lc.as_str())
                     && (plain(&lc) || is_address(&lc))
                     && DOT_ENDINGS.contains(&rc.as_str()) =>
             {
@@ -1226,10 +1228,10 @@ fn pair_numbers(mut toks: Vec<Tok>) -> Vec<Tok> {
 // ---- Repeated words -------------------------------------------------------
 
 /// Words people double on purpose: "bye bye", "very very", "C plus plus".
-const MEANT_TWICE: &[&str] = &[
+pub(crate) const MEANT_TWICE: &[&str] = &[
     "had", "that", "very", "really", "so", "bye", "okay", "ok", "yeah", "yes", "no", "plus", "ha",
     "haha", "hey", "oh", "wow", "please", "more", "far", "much", "many", "knock", "blah", "la",
-    "go", "now", "again", "little", "tick", "ding", "night", "well", "hip", "chop",
+    "go", "now", "again", "little", "tick", "ding", "night", "well", "hip", "chop", "win",
 ];
 
 /// "the the" → "the". Words in [`MEANT_TWICE`] stay doubled.
@@ -1707,6 +1709,7 @@ mod tests {
         assert_eq!(all("open readme dot md"), "open readme.md");
         assert_eq!(all("I write C plus plus and C sharp"), "I write C++ and C#");
         assert_eq!(all("a polka dot dress"), "a polka dot dress");
+        assert_eq!(all("the dot com bubble"), "the dot com bubble");
         assert_eq!(all("we meet at noon"), "we meet at noon");
     }
 
@@ -1714,6 +1717,7 @@ mod tests {
     fn meant_repeats_and_discourse_stay() {
         assert_eq!(all("bye bye, see you"), "bye bye, see you");
         assert_eq!(all("it's very very important"), "it's very very important");
+        assert_eq!(all("it's a win win"), "it's a win win");
         assert_eq!(
             all("So, first of all, thank you. Second, the budget is tight."),
             "So, first of all, thank you. Second, the budget is tight."

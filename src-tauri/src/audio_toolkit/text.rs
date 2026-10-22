@@ -572,7 +572,9 @@ fn gated_filler_words_for_language(lang: &str) -> &'static [&'static str] {
 static MULTI_SPACE_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s{2,}").unwrap());
 
 /// Collapses repeated words (3+ repetitions) to a single instance.
-/// E.g., "wh wh wh wh" -> "wh", "I I I I" -> "I"
+/// E.g., "wh wh wh wh" -> "wh", "I I I I" -> "I". Words people repeat on
+/// purpose stay when said three times ("no no no", "blah blah blah"); more
+/// is the speech model looping.
 fn collapse_stutters(text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.is_empty() {
@@ -593,8 +595,9 @@ fn collapse_stutters(text: &str) -> String {
                 count += 1;
             }
 
+            let meant = crate::cleanup_rules::MEANT_TWICE.contains(&word_lower.as_str());
             // If 3+ repetitions, collapse to single instance
-            if count >= 3 {
+            if count >= 3 && !(meant && count == 3) {
                 result.push(word);
                 i += count;
             } else {
@@ -938,6 +941,13 @@ mod tests {
         let text = "no no is fine";
         let result = filter_transcription_output(text, "en", &None);
         assert_eq!(result, "no no is fine");
+    }
+
+    #[test]
+    fn test_filter_stutter_keeps_words_repeated_on_purpose() {
+        let text = "I said no no no and blah blah blah";
+        let result = filter_transcription_output(text, "en", &None);
+        assert_eq!(result, "I said no no no and blah blah blah");
     }
 
     #[test]
