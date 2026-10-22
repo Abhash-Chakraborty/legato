@@ -45,6 +45,9 @@ static CONNECTED: AtomicBool = AtomicBool::new(false);
 /// Legato was removed in Inyon's Paired devices (close code 4001 or a 401):
 /// the token is dead, so no reconnecting until it's paired again.
 static REMOVED: AtomicBool = AtomicBool::new(false);
+/// The saved address would send the token in the clear: no connecting
+/// until it's paired again over https or a VPN address.
+static INSECURE: AtomicBool = AtomicBool::new(false);
 /// Bumped when the pairing or the alerts switch changes: the connection
 /// ends and starts again from the settings.
 static GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -77,6 +80,9 @@ pub struct InyonStatus {
     pub waiting: u32,
     /// Removed in Inyon: pair again with a new code.
     pub removed: bool,
+    /// The hub's address is plain http off this PC and off a VPN, so Legato
+    /// won't send its token there.
+    pub insecure: bool,
 }
 
 pub fn status(app: &AppHandle) -> InyonStatus {
@@ -90,6 +96,7 @@ pub fn status(app: &AppHandle) -> InyonStatus {
         connected: CONNECTED.load(Ordering::SeqCst),
         waiting,
         removed: REMOVED.load(Ordering::SeqCst),
+        insecure: INSECURE.load(Ordering::SeqCst),
     }
 }
 
@@ -123,6 +130,17 @@ async fn run(app: AppHandle) {
             CHANGED.notified().await;
             continue;
         };
+        if let Err(reason) = transport_ok(&hub).await {
+            if reason == "insecure" {
+                if !INSECURE.swap(true, Ordering::SeqCst) {
+                    warn!("Inyon: not sending the token over plain http to {hub}");
+                    status_changed(&app);
+                }
+                CHANGED.notified().await;
+                continue;
+            }
+        }
+        INSECURE.store(false, Ordering::SeqCst);
         let started = std::time::Instant::now();
         match connect(&app, &hub, &token, generation).await {
             // A connection that lasted a while starts the backoff over; one
@@ -272,8 +290,29 @@ fn show(app: &AppHandle) {
     status_changed(app);
 }
 
+/// Refuses a hub address that would send the token in the clear. https
+/// passes (Windows checks the certificate); plain http only when every
+/// address the host resolves to is this PC or a NetBird or Tailscale one.
+async fn transport_ok(hub: &str) -> Result<(), String> {
+    if hub.starts_with("https://") {
+        return Ok(());
+    }
+    let (host, port) = rules::host_port(hub).ok_or("badAddress")?;
+    let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
+        .await
+        .map_err(|_| "unreachable")?
+        .collect();
+    if !addrs.is_empty() && addrs.iter().all(|a| rules::plain_http_ok(a.ip())) {
+        Ok(())
+    } else {
+        Err("insecure".into())
+    }
+}
+
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
+        // A redirect could carry the token somewhere else.
+        .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(10))
         // A send waits until the hub knows whether the text landed.
         .timeout(Duration::from_secs(40))
@@ -295,6 +334,7 @@ async fn refusal(response: reqwest::Response) -> String {
 /// Pairs with a hub from the code Inyon shows. Errors are reason keys.
 pub async fn pair(app: &AppHandle, hub: &str, code: &str) -> Result<InyonStatus, String> {
     let hub = rules::hub_url(hub).ok_or("badAddress")?;
+    transport_ok(&hub).await?;
     let code = rules::pairing_code(code).ok_or("badCode")?;
     let name = format!(
         "Legato on {}",
@@ -350,6 +390,7 @@ pub async fn pair(app: &AppHandle, hub: &str, code: &str) -> Result<InyonStatus,
     write_settings(app, settings);
     info!("Paired with Inyon at {hub}");
     REMOVED.store(false, Ordering::SeqCst);
+    INSECURE.store(false, Ordering::SeqCst);
     restart();
     Ok(status(app))
 }
@@ -366,6 +407,7 @@ pub fn unpair(app: &AppHandle) {
     settings.inyon.hub_name = None;
     write_settings(app, settings);
     REMOVED.store(false, Ordering::SeqCst);
+    INSECURE.store(false, Ordering::SeqCst);
     restart();
     status_changed(app);
 }
@@ -390,6 +432,7 @@ pub async fn answer(
     text: Option<String>,
 ) -> Result<(), String> {
     let hub = get_settings(app).inyon.hub.ok_or("signedOut")?;
+    transport_ok(&hub).await?;
     let token = token().ok_or("signedOut")?;
     let mut body = serde_json::json!({ "option": option, "key": key });
     if let Some(text) = text {
@@ -460,6 +503,7 @@ pub fn agents() -> Vec<InyonAgent> {
 /// ("delivered", "queued" or "sent"); errors are reason keys.
 pub async fn send_text(app: &AppHandle, pane: &PaneRef, text: &str) -> Result<String, String> {
     let hub = get_settings(app).inyon.hub.ok_or("signedOut")?;
+    transport_ok(&hub).await?;
     let token = token().ok_or("signedOut")?;
     // A retry with the same id is never typed twice.
     let request_id = format!(

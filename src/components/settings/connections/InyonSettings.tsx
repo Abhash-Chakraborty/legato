@@ -56,13 +56,15 @@ export const InyonCard: React.FC = () => {
   };
 
   if (status?.paired && !status.removed) {
-    const state = !status.alerts
-      ? t("settings.connections.inyon.alertsOff")
-      : status.connected
-        ? status.waiting
-          ? t("settings.connections.inyon.waiting", { count: status.waiting })
-          : t("settings.connections.inyon.connected")
-        : t("settings.connections.inyon.connecting");
+    const state = status.insecure
+      ? t("settings.connections.inyon.insecure")
+      : !status.alerts
+        ? t("settings.connections.inyon.alertsOff")
+        : status.connected
+          ? status.waiting
+            ? t("settings.connections.inyon.waiting", { count: status.waiting })
+            : t("settings.connections.inyon.connected")
+          : t("settings.connections.inyon.connecting");
     return (
       <SettingContainer
         title={status.hub_name ?? t("settings.connections.inyon.title")}

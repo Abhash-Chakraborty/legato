@@ -1281,7 +1281,7 @@
         "title": "Inyon",
         "help": "Pair with your Inyon hub to see agents that are waiting for you on the bar or the island, and answer them there.",
         "hub": "Hub address",
-        "hubPlaceholder": "Hub address, like 192.168.1.20:4777",
+        "hubPlaceholder": "Hub address, like https://hub.example.com",
         "code": "Pairing code",
         "codePlaceholder": "Code",
         "pair": "Pair",
@@ -1299,7 +1299,8 @@
           "title": "Agents on the bar",
           "help": "An agent waiting for you shows with its question and options, after any dictation or call. Off keeps the pairing but stops listening."
         },
-        "removedThere": "Inyon removed Legato. Pair again with a new code."
+        "removedThere": "Inyon removed Legato. Pair again with a new code.",
+        "insecure": "Not connected: this address is plain http, so Legato won't send its token there. Remove it and pair over https or a NetBird or Tailscale address."
       }
     },
     "speakers": {
@@ -3531,7 +3532,7 @@
   },
   "inyon": {
     "reason": {
-      "badAddress": "That doesn't look like a hub address. Try host:port, like 192.168.1.20:4777.",
+      "badAddress": "That doesn't look like a hub address. Try https://hub.example.com, or host:port.",
       "badCode": "That code didn't work. Codes work once, for 5 minutes; make a new one in Inyon.",
       "rateLimit": "Too many tries. Wait a minute and try again.",
       "unreachable": "Couldn't reach the hub. Check the address and that this PC can reach it.",
@@ -3549,7 +3550,8 @@
       "noAgent": "No agent runs in that session.",
       "scope": "Legato isn't allowed to do that.",
       "failed": "That didn't work. Try again.",
-      "notAnOption": "Didn't catch which option. Say its number or its words."
+      "notAnOption": "Didn't catch which option. Say its number or its words.",
+      "insecure": "Legato pairs over https, or over plain http only on this PC or a NetBird or Tailscale address, so nobody on the network can read the hub's token. Use the hub's https address."
     }
   }
 }

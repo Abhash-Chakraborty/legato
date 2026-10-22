@@ -3989,7 +3989,12 @@ waiting: number;
 /**
  * Removed in Inyon: pair again with a new code.
  */
-removed: boolean }
+removed: boolean; 
+/**
+ * The hub's address is plain http off this PC and off a VPN, so Legato
+ * won't send its token there.
+ */
+insecure: boolean }
 /**
  * A whole feature, switched in Settings › Features.
  */

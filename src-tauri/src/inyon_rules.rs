@@ -7,20 +7,78 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::BTreeMap;
+use std::net::IpAddr;
 
 /// The contract version Legato speaks, sent as `X-Inyon-Contract`.
 pub const CONTRACT: u32 = 1;
 
-/// The hub's address as typed: a bare host gets `http://` (a hub on a VPN
-/// or the LAN usually has no certificate), a trailing slash goes.
+/// The hub's address as typed, a trailing slash dropped. A bare address
+/// gets `http://` when the token may go in the clear there (this PC, or a
+/// NetBird or Tailscale address), else `https://`.
 pub fn hub_url(input: &str) -> Option<String> {
     let input = input.trim();
-    let (scheme, rest) = input.split_once("://").unwrap_or(("http", input));
+    let (scheme, rest) = match input.split_once("://") {
+        Some(parts) => parts,
+        None => {
+            let host = host_port(&format!("http://{input}")).map(|(h, _)| h);
+            let local = host.as_deref().is_some_and(|h| {
+                h.eq_ignore_ascii_case("localhost") || h.parse::<IpAddr>().is_ok_and(plain_http_ok)
+            });
+            (if local { "http" } else { "https" }, input)
+        }
+    };
     let rest = rest.trim_end_matches('/');
     let ok = matches!(scheme, "http" | "https")
         && !rest.is_empty()
         && !rest.contains(char::is_whitespace);
     ok.then(|| format!("{scheme}://{rest}"))
+}
+
+/// Whether the bearer token may travel over plain http to this address:
+/// this PC, or a WireGuard VPN, where the tunnel encrypts it (NetBird and
+/// Tailscale's 100.64.0.0/10, Tailscale's fd7a:115c:a1e0::/48). Anywhere
+/// else, a home Wi-Fi included, anyone on the network could read it.
+pub fn plain_http_ok(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            v4.is_loopback() || (o[0] == 100 && (o[1] & 0xc0) == 64)
+        }
+        IpAddr::V6(v6) => {
+            let s = v6.segments();
+            v6.is_loopback()
+                || (s[0] == 0xfd7a && s[1] == 0x115c && s[2] == 0xa1e0)
+                || v6
+                    .to_ipv4_mapped()
+                    .is_some_and(|v4| plain_http_ok(IpAddr::V4(v4)))
+        }
+    }
+}
+
+/// The host (without brackets) and port of an `http(s)://` hub address.
+pub fn host_port(hub: &str) -> Option<(String, u16)> {
+    let (scheme, rest) = hub.split_once("://")?;
+    let default = match scheme {
+        "http" => 80,
+        "https" => 443,
+        _ => return None,
+    };
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let authority = authority.rsplit_once('@').map_or(authority, |(_, a)| a);
+    let (host, port) = if let Some(v6) = authority.strip_prefix('[') {
+        let (host, after) = v6.split_once(']')?;
+        (host, after.strip_prefix(':'))
+    } else {
+        match authority.rsplit_once(':') {
+            Some((h, p)) => (h, Some(p)),
+            None => (authority, None),
+        }
+    };
+    let port = match port {
+        Some(p) => p.parse().ok()?,
+        None => default,
+    };
+    (!host.is_empty()).then(|| (host.to_string(), port))
 }
 
 /// The hub's WebSocket address for an `http(s)://` hub address.
@@ -697,10 +755,45 @@ mod tests {
     }
 
     #[test]
+    fn plain_http_only_on_this_pc_or_a_vpn() {
+        let ok = |s: &str| plain_http_ok(s.parse().unwrap());
+        assert!(ok("127.0.0.1") && ok("::1"));
+        assert!(ok("100.64.0.1") && ok("100.97.188.112") && ok("100.127.255.254"));
+        assert!(ok("fd7a:115c:a1e0::1234") && ok("::ffff:100.97.1.2"));
+        assert!(!ok("100.63.255.255") && !ok("100.128.0.1"));
+        assert!(!ok("192.168.1.20") && !ok("10.0.0.5") && !ok("8.8.8.8"));
+        assert!(!ok("fd7a:115c:a1e1::1") && !ok("fe80::1"));
+        assert_eq!(
+            host_port("http://[fd7a:115c:a1e0::5]:4777/x"),
+            Some(("fd7a:115c:a1e0::5".into(), 4777))
+        );
+        assert_eq!(
+            host_port("https://hub.example.com"),
+            Some(("hub.example.com".into(), 443))
+        );
+        assert_eq!(host_port("http://u:p@h:81"), Some(("h".into(), 81)));
+        assert_eq!(host_port("http://:80"), None);
+        assert_eq!(host_port("http://h:notaport"), None);
+    }
+
+    #[test]
     fn hub_addresses_are_tidied() {
+        // A bare address is https unless it's this PC or a VPN address.
         assert_eq!(
             hub_url("192.168.1.20:4777/").as_deref(),
-            Some("http://192.168.1.20:4777")
+            Some("https://192.168.1.20:4777")
+        );
+        assert_eq!(
+            hub_url("100.97.188.112:4777").as_deref(),
+            Some("http://100.97.188.112:4777")
+        );
+        assert_eq!(
+            hub_url("localhost:4777").as_deref(),
+            Some("http://localhost:4777")
+        );
+        assert_eq!(
+            hub_url("hub.example.com").as_deref(),
+            Some("https://hub.example.com")
         );
         assert_eq!(
             hub_url(" https://hub.example.com ").as_deref(),
