@@ -139,7 +139,8 @@
 /* column-reverse stacks the control pill above the text region. Only the Live
    panel flows like that: a notice is one row (flipping it left the check alone
    in view with the words clipped above it), and panels read top to bottom. */
-.ov-stage.top .scard:not(.notice, .notes, .panel, .callcard, .mini) {
+.ov-stage.top
+  .scard:not(.notice, .notes, .panel, .callcard, .agentcard, .mini) {
   flex-direction: column-reverse;
 }
 .ov-stage.top .stext-cap {

@@ -1353,7 +1353,6 @@ export const ScratchpadWindow: React.FC = () => {
                               ...agents.map((a) => ({
                                 id: `agent-${a.host}-${a.pane}`,
                                 label: agentLabel(a),
-                                icon: Bot,
                                 checked:
                                   agentTarget?.host === a.host &&
                                   agentTarget?.pane === a.pane,
