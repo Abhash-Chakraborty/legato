@@ -55,7 +55,7 @@ export const InyonCard: React.FC = () => {
     );
   };
 
-  if (status?.paired) {
+  if (status?.paired && !status.removed) {
     const state = !status.alerts
       ? t("settings.connections.inyon.alertsOff")
       : status.connected
@@ -135,9 +135,9 @@ export const InyonCard: React.FC = () => {
               : t("settings.connections.inyon.pair")}
           </Button>
         </form>
-        {error ? (
+        {error || status?.removed ? (
           <p className="mt-1.5 text-[12.5px] text-warn" role="alert">
-            {error}
+            {error ?? t("settings.connections.inyon.removedThere")}
           </p>
         ) : (
           <p className="mt-1.5 max-w-[560px] text-[12.5px] leading-[1.45] text-text-3">

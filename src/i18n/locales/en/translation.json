@@ -1281,7 +1281,7 @@
         "title": "Inyon",
         "help": "Pair with your Inyon hub to see agents that are waiting for you on the bar or the island, and answer them there.",
         "hub": "Hub address",
-        "hubPlaceholder": "Hub address, like 100.97.188.112:4777",
+        "hubPlaceholder": "Hub address, like 192.168.1.20:4777",
         "code": "Pairing code",
         "codePlaceholder": "Code",
         "pair": "Pair",
@@ -1298,7 +1298,8 @@
         "alerts": {
           "title": "Agents on the bar",
           "help": "An agent waiting for you shows with its question and options, after any dictation or call. Off keeps the pairing but stops listening."
-        }
+        },
+        "removedThere": "Inyon removed Legato. Pair again with a new code."
       }
     },
     "speakers": {
@@ -3523,7 +3524,7 @@
   },
   "inyon": {
     "reason": {
-      "badAddress": "That doesn't look like a hub address. Try host:port, like 100.97.188.112:4777.",
+      "badAddress": "That doesn't look like a hub address. Try host:port, like 192.168.1.20:4777.",
       "badCode": "That code didn't work. Codes work once, for 5 minutes; make a new one in Inyon.",
       "rateLimit": "Too many tries. Wait a minute and try again.",
       "unreachable": "Couldn't reach the hub. Check the address and that this PC can reach it.",

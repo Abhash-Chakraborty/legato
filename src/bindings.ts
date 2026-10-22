@@ -3950,7 +3950,11 @@ export type InyonStatus = { paired: boolean; hub: string | null; hub_name: strin
 /**
  * Agents waiting for an answer now.
  */
-waiting: number }
+waiting: number; 
+/**
+ * Removed in Inyon: pair again with a new code.
+ */
+removed: boolean }
 /**
  * A whole feature, switched in Settings › Features.
  */

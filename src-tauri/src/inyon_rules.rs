@@ -448,8 +448,8 @@ mod tests {
     #[test]
     fn hub_addresses_are_tidied() {
         assert_eq!(
-            hub_url("100.97.188.112:4777/").as_deref(),
-            Some("http://100.97.188.112:4777")
+            hub_url("192.168.1.20:4777/").as_deref(),
+            Some("http://192.168.1.20:4777")
         );
         assert_eq!(
             hub_url(" https://hub.example.com ").as_deref(),

@@ -2,7 +2,7 @@
 //! with a code, a WebSocket to the hub while paired, and the agents waiting
 //! for an answer shown on the bar or the island, with their options. The
 //! rules (frames, the queue, addresses) are in `inyon_rules.rs`; the
-//! contract is docs/companion-contract.md.
+//! contract is Inyon's companion contract, version 1.
 
 use crate::inyon_rules::{self as rules, Frame, PaneRef, Waiting};
 use crate::settings::{get_settings, write_settings};
@@ -28,6 +28,9 @@ static WAITING: Mutex<Option<Waiting>> = Mutex::new(None);
 /// Frames for the hub, while connected.
 static OUTBOX: Mutex<Option<mpsc::UnboundedSender<String>>> = Mutex::new(None);
 static CONNECTED: AtomicBool = AtomicBool::new(false);
+/// Legato was removed in Inyon's Paired devices (close code 4001 or a 401):
+/// the token is dead, so no reconnecting until it's paired again.
+static REMOVED: AtomicBool = AtomicBool::new(false);
 /// Bumped when the pairing or the alerts switch changes: the connection
 /// ends and starts again from the settings.
 static GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -58,6 +61,8 @@ pub struct InyonStatus {
     pub connected: bool,
     /// Agents waiting for an answer now.
     pub waiting: u32,
+    /// Removed in Inyon: pair again with a new code.
+    pub removed: bool,
 }
 
 pub fn status(app: &AppHandle) -> InyonStatus {
@@ -70,6 +75,7 @@ pub fn status(app: &AppHandle) -> InyonStatus {
         alerts: settings.alerts,
         connected: CONNECTED.load(Ordering::SeqCst),
         waiting,
+        removed: REMOVED.load(Ordering::SeqCst),
     }
 }
 
@@ -95,8 +101,7 @@ async fn run(app: AppHandle) {
     loop {
         let generation = GENERATION.load(Ordering::SeqCst);
         let settings = get_settings(&app).inyon;
-        let ready = settings
-            .alerts
+        let ready = (settings.alerts && !REMOVED.load(Ordering::SeqCst))
             .then_some(())
             .and(settings.hub.clone())
             .zip(token());
@@ -148,7 +153,14 @@ async fn connect(app: &AppHandle, hub: &str, token: &str, generation: u64) -> Re
     )
     .await
     .map_err(|_| "the hub didn't answer".to_string())?
-    .map_err(|e| format!("couldn't reach the hub: {e}"))?;
+    .map_err(|e| {
+        if let tokio_tungstenite::tungstenite::Error::Http(response) = &e {
+            if response.status() == 401 {
+                removed(app);
+            }
+        }
+        format!("couldn't reach the hub: {e}")
+    })?;
     info!("Connected to Inyon at {hub}");
     let (mut sink, mut stream) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
@@ -174,9 +186,9 @@ async fn connect(app: &AppHandle, hub: &str, token: &str, generation: u64) -> Re
                 Some(Ok(Message::Close(close))) => {
                     let why = close.map(|c| format!("{} {}", c.code, c.reason)).unwrap_or_default();
                     info!("Inyon closed the connection {why}");
-                    if why.starts_with("4401") || why.starts_with("4403") {
-                        // Removed in Inyon: the token is no good any more.
-                        warn!("Inyon refused Legato; pair again in Settings › Connections");
+                    // 4001: removed in Inyon, so the token is no good any more.
+                    if why.starts_with("4001 ") {
+                        removed(app);
                     }
                     return Ok(());
                 }
@@ -192,6 +204,13 @@ async fn connect(app: &AppHandle, hub: &str, token: &str, generation: u64) -> Re
             }
             _ = CHANGED.notified() => {}
         }
+    }
+}
+
+fn removed(app: &AppHandle) {
+    if !REMOVED.swap(true, Ordering::SeqCst) {
+        warn!("Inyon removed Legato; pair again in Settings › Connections");
+        status_changed(app);
     }
 }
 
@@ -316,6 +335,7 @@ pub async fn pair(app: &AppHandle, hub: &str, code: &str) -> Result<InyonStatus,
     settings.inyon.hub_name = hub_name;
     write_settings(app, settings);
     info!("Paired with Inyon at {hub}");
+    REMOVED.store(false, Ordering::SeqCst);
     restart();
     Ok(status(app))
 }
@@ -331,6 +351,7 @@ pub fn unpair(app: &AppHandle) {
     settings.inyon.hub_id = None;
     settings.inyon.hub_name = None;
     write_settings(app, settings);
+    REMOVED.store(false, Ordering::SeqCst);
     restart();
     status_changed(app);
 }
@@ -372,9 +393,13 @@ pub async fn answer(
     } else {
         Err(refusal(response).await)
     };
+    if matches!(&result, Err(reason) if reason == "signedOut") {
+        removed(app);
+    }
+    // Answered, here or elsewhere, or its session or machine went away.
     let gone = match &result {
         Ok(()) => true,
-        Err(reason) => reason == "alreadyAnswered" || reason == "paneGone",
+        Err(reason) => matches!(reason.as_str(), "alreadyAnswered" | "paneGone" | "offline"),
     };
     if gone {
         with_waiting(|w| w.answered(&pane_ref, key.as_deref()));
