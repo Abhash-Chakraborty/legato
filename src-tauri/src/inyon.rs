@@ -427,6 +427,35 @@ pub async fn answer(
     result
 }
 
+/// An agent session the Scratchpad can send to.
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct InyonAgent {
+    pub host: String,
+    pub pane: String,
+    /// "claude", "codex"…
+    pub agent: String,
+    pub label: String,
+    /// It's asking something, so text would be refused until it's answered.
+    pub waiting: bool,
+}
+
+/// The agent sessions on the hub, while connected.
+pub fn agents() -> Vec<InyonAgent> {
+    if !CONNECTED.load(Ordering::SeqCst) {
+        return Vec::new();
+    }
+    with_waiting(|w| w.agents())
+        .into_iter()
+        .map(|a| InyonAgent {
+            host: a.pane.host,
+            pane: a.pane.pane,
+            agent: a.agent,
+            label: a.label,
+            waiting: a.waiting,
+        })
+        .collect()
+}
+
 /// Types a message into an agent's session. Ok with how far it got
 /// ("delivered", "queued" or "sent"); errors are reason keys.
 pub async fn send_text(app: &AppHandle, pane: &PaneRef, text: &str) -> Result<String, String> {

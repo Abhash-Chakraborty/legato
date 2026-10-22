@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Bold,
+  Bot,
   ChevronDown,
   Code,
   Copy,
@@ -42,12 +43,13 @@ import {
 import {
   commands,
   events,
+  type InyonAgent,
   type ScratchNote,
   type SendTarget,
   type Transform,
 } from "@/bindings";
 import { AppToaster } from "@/components/shell/AppToaster";
-import { ActionMenu } from "@/components/ui/ActionMenu";
+import { ActionMenu, type ActionMenuItem } from "@/components/ui/ActionMenu";
 import { AppIcon } from "@/components/pages/home/AppIcon";
 import { copyToClipboard } from "@/components/pages/home/clipboard";
 import { FailedPasteBanner } from "@/components/scratchpad/FailedPasteBanner";
@@ -69,6 +71,7 @@ import { useScratchStore, watchScratch } from "@/stores/scratchStore";
 import { useAiStore, watchAi } from "@/stores/aiStore";
 import { providerFor } from "@/components/pages/transforms/model";
 import { useProblemText } from "@/components/pages/transforms/TryIt";
+import { agentName } from "@/lib/utils/agents";
 
 type Mode = "write" | "preview";
 
@@ -111,6 +114,9 @@ export const ScratchpadWindow: React.FC = () => {
   const [versionsOf, setVersionsOf] = useState<ScratchNote | null>(null);
   const [sending, setSending] = useState(false);
   const [targets, setTargets] = useState<SendTarget[] | null>(null);
+  // Agent sessions in Inyon, when paired; one picked replaces the window.
+  const [agents, setAgents] = useState<InyonAgent[]>([]);
+  const [agentTarget, setAgentTarget] = useState<InyonAgent | null>(null);
   const [transforms, setTransforms] = useState<Transform[] | null>(null);
   const [tfMenu, setTfMenu] = useState(false);
   const [transforming, setTransforming] = useState<string | null>(null);
@@ -499,10 +505,40 @@ export const ScratchpadWindow: React.FC = () => {
 
   const openTargets = async () => {
     setTargets([]);
-    setTargets(await commands.getSendTargets().catch(() => []));
+    const [windows, sessions] = await Promise.all([
+      commands.getSendTargets().catch(() => []),
+      commands.inyonAgents().catch(() => []),
+    ]);
+    setAgents(sessions);
+    setTargets(windows);
+  };
+
+  const agentLabel = (a: InyonAgent) =>
+    t("scratchpad.window.agentLabel", {
+      agent: agentName(a.agent),
+      label: a.label,
+    });
+
+  const sendToAgent = async (a: InyonAgent) => {
+    setSending(true);
+    await draft.flush();
+    const result = await commands.inyonSend(a.host, a.pane, draft.text);
+    setSending(false);
+    if (result.status === "error")
+      toast.error(t(`inyon.reason.${result.error}`, t("inyon.reason.failed")));
+    else
+      toast.success(
+        t(`scratchpad.toast.agent_${result.data}`, {
+          agent: agentName(a.agent),
+          defaultValue: t("scratchpad.toast.agent_sent", {
+            agent: agentName(a.agent),
+          }),
+        }),
+      );
   };
 
   const pickTarget = async (x: SendTarget) => {
+    setAgentTarget(null);
     const result = await commands.setSendTarget(x.handle);
     if (result.status === "error")
       toast.error(t("scratchpad.window.targetGone", { app: x.name }));
@@ -510,7 +546,9 @@ export const ScratchpadWindow: React.FC = () => {
   };
 
   const send = async () => {
-    if (!active || !target || !draft.text.trim() || sending) return;
+    if (!active || !draft.text.trim() || sending) return;
+    if (agentTarget) return sendToAgent(agentTarget);
+    if (!target) return;
     setSending(true);
     await draft.flush();
     const result = await commands.sendScratchNote(draft.text);
@@ -1232,26 +1270,36 @@ export const ScratchpadWindow: React.FC = () => {
                   <button
                     type="button"
                     onClick={send}
-                    disabled={!target || !draft.text.trim() || sending}
+                    disabled={
+                      !(target || agentTarget) || !draft.text.trim() || sending
+                    }
                     title={
-                      target
-                        ? t("scratchpad.window.sendTip", { app: target.name })
-                        : t("scratchpad.window.noTarget")
+                      agentTarget
+                        ? t("scratchpad.window.sendTip", {
+                            app: agentLabel(agentTarget),
+                          })
+                        : target
+                          ? t("scratchpad.window.sendTip", { app: target.name })
+                          : t("scratchpad.window.noTarget")
                     }
                     className="inline-flex h-9 min-w-0 max-w-[200px] items-center gap-[7px] rounded-s-full bg-teal-fill pe-3 ps-3.5 text-[13px] font-medium text-white transition-colors duration-[var(--dur-1)] hover:bg-teal-fill-hover hover:duration-0 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-teal-fill"
                   >
-                    {target ? (
+                    {agentTarget ? (
+                      <Bot className="h-4 w-4" aria-hidden="true" />
+                    ) : target ? (
                       <AppIcon path={target.path} className="h-4 w-4" />
                     ) : (
                       <Send className="h-4 w-4" aria-hidden="true" />
                     )}
                     {/* "Send to" stays whole; only the app's name shortens. */}
-                    {target ? (
+                    {agentTarget || target ? (
                       <span className="flex min-w-0 gap-[0.3em]">
                         <span className="flex-none">
                           {t("scratchpad.window.sendTo")}
                         </span>
-                        <span className="truncate">{target.name}</span>
+                        <span className="truncate">
+                          {agentTarget ? agentLabel(agentTarget) : target?.name}
+                        </span>
                       </span>
                     ) : (
                       <span className="truncate">
@@ -1275,7 +1323,7 @@ export const ScratchpadWindow: React.FC = () => {
                       label={t("scratchpad.window.pickTarget")}
                       onClose={() => setTargets(null)}
                       className="bottom-full end-0 mb-1 w-72"
-                      items={
+                      items={([] as ActionMenuItem[]).concat(
                         targets.length === 0
                           ? [
                               {
@@ -1295,10 +1343,24 @@ export const ScratchpadWindow: React.FC = () => {
                                     app: x.name,
                                     title: x.title,
                                   }),
-                              checked: x.current,
+                              checked: x.current && !agentTarget,
                               onSelect: () => pickTarget(x),
-                            }))
-                      }
+                            })),
+                        agents.length === 0
+                          ? []
+                          : [
+                              "separator" as const,
+                              ...agents.map((a) => ({
+                                id: `agent-${a.host}-${a.pane}`,
+                                label: agentLabel(a),
+                                icon: Bot,
+                                checked:
+                                  agentTarget?.host === a.host &&
+                                  agentTarget?.pane === a.pane,
+                                onSelect: () => setAgentTarget(a),
+                              })),
+                            ],
+                      )}
                     />
                   )}
                 </div>

@@ -383,6 +383,11 @@ impl Waiting {
         })
     }
 
+    /// Every pane running an agent, for Send to.
+    pub fn agents(&self) -> Vec<AgentPane> {
+        self.panes.values().cloned().collect()
+    }
+
     /// The hub went away: nothing waits any more.
     pub fn clear(&mut self) {
         self.panes.clear();

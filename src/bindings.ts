@@ -627,6 +627,23 @@ async inyonAnswer(host: string, pane: string, option: number, key: string | null
 }
 },
 /**
+ * Agent sessions on the paired hub, for the Scratchpad's Send to.
+ */
+async inyonAgents() : Promise<InyonAgent[]> {
+    return await TAURI_INVOKE("inyon_agents");
+},
+/**
+ * Sends a Scratchpad note to an agent's session; Ok with how far it got.
+ */
+async inyonSend(host: string, pane: string, text: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("inyon_send", { host, pane, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The mic on an agent's card: answer it by voice.
  */
 async inyonDictate(host: string, pane: string) : Promise<void> {
@@ -3952,6 +3969,18 @@ alerts?: boolean }
 /**
  * Settings › Connections › Inyon, for the page.
  */
+/**
+ * An agent session the Scratchpad can send to.
+ */
+export type InyonAgent = { host: string; pane: string; 
+/**
+ * "claude", "codex"…
+ */
+agent: string; label: string; 
+/**
+ * It's asking something, so text would be refused until it's answered.
+ */
+waiting: boolean }
 export type InyonStatus = { paired: boolean; hub: string | null; hub_name: string | null; alerts: boolean; connected: boolean; 
 /**
  * Agents waiting for an answer now.

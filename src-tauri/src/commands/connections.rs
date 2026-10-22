@@ -55,6 +55,26 @@ pub async fn inyon_answer(
     crate::inyon::answer(&app, &host, &pane, option, key, None).await
 }
 
+/// Agent sessions on the paired hub, for the Scratchpad's Send to.
+#[tauri::command]
+#[specta::specta]
+pub fn inyon_agents() -> Vec<crate::inyon::InyonAgent> {
+    crate::inyon::agents()
+}
+
+/// Sends a Scratchpad note to an agent's session; Ok with how far it got.
+#[tauri::command]
+#[specta::specta]
+pub async fn inyon_send(
+    app: AppHandle,
+    host: String,
+    pane: String,
+    text: String,
+) -> Result<String, String> {
+    let pane = crate::inyon_rules::PaneRef { host, pane };
+    crate::inyon::send_text(&app, &pane, &text).await
+}
+
 /// The mic on an agent's card: answer it by voice.
 #[tauri::command]
 #[specta::specta]

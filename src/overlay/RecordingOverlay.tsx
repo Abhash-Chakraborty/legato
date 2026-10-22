@@ -1,5 +1,6 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { AudioLines, Mic, NotebookPen } from "lucide-react";
+import { agentName } from "@/lib/utils/agents";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import "./RecordingOverlay.css";
@@ -137,11 +138,6 @@ interface AgentCard {
   key: string | null;
   more: number;
 }
-
-/** An agent's name as people say it. */
-const agentName = (agent: string) =>
-  ({ claude: "Claude", codex: "Codex", gemini: "Gemini" })[agent] ??
-  agent.charAt(0).toUpperCase() + agent.slice(1);
 
 /** A calendar, for a meeting's card. */
 const CalendarGlyph: React.FC = () => (

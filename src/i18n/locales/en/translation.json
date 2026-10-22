@@ -2675,7 +2675,10 @@
       "deleteFailed": "Couldn't delete the note",
       "newFailed": "Couldn't start a note",
       "sendFailed": "Couldn't send the note",
-      "openFailed": "Couldn't open the Scratchpad"
+      "openFailed": "Couldn't open the Scratchpad",
+      "agent_delivered": "Sent to {{agent}}",
+      "agent_queued": "Queued for {{agent}}, after what it's doing now",
+      "agent_sent": "Typed into {{agent}}'s session"
     },
     "keepOnTop": {
       "short": "Keep on top",
@@ -2720,7 +2723,8 @@
       "expand": "Expand",
       "restore": "Restore size",
       "toDictate": "to dictate, or start typing",
-      "dictateTip": "Dictate here (Ctrl+Space)"
+      "dictateTip": "Dictate here (Ctrl+Space)",
+      "agentLabel": "{{agent}} in {{label}}"
     },
     "settings": {
       "title": "Window",
