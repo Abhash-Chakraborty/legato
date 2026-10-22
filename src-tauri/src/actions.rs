@@ -746,7 +746,7 @@ impl ShortcutAction for TranscribeAction {
                     // 16 kHz mono; with voice detection on, silence is
                     // already gone, so this is speaking time.
                     let speech_ms = (sample_count / 16) as i64;
-                    let file_name = format!("legato-{}.wav", chrono::Utc::now().timestamp());
+                    let file_name = format!("legato-{}.wav", chrono::Utc::now().timestamp_millis());
                     let wav_path = hm.recordings_dir().join(&file_name);
                     let wav_path_for_verify = wav_path.clone();
                     let samples_for_wav = samples.clone();

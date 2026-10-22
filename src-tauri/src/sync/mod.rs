@@ -415,7 +415,7 @@ impl SyncManager {
         found
     }
 
-    fn any_online(&self) -> bool {
+    pub(crate) fn any_online(&self) -> bool {
         !self
             .online
             .lock()

@@ -211,6 +211,36 @@ impl NotesManager {
                 Err(e) => warn!("The unfinished note's audio couldn't be kept: {e}"),
             }
         }
+        self.sweep_orphaned_audio();
+    }
+
+    /// Removes audio whose note is gone: a note deleted just before Legato
+    /// quit keeps its file otherwise, since that delete waits for Undo.
+    fn sweep_orphaned_audio(&self) {
+        let Ok(conn) = self.conn() else {
+            return;
+        };
+        let Ok(entries) = std::fs::read_dir(&self.dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            // "note-12.wav" or a track, "note-12-you.wav".
+            let Some(id) = name
+                .strip_prefix("note-")
+                .and_then(|rest| rest.strip_suffix(".wav"))
+                .and_then(|rest| rest.split('-').next())
+                .and_then(|id| id.parse::<i64>().ok())
+            else {
+                continue;
+            };
+            if matches!(store::get(&conn, id), Ok(None)) {
+                match std::fs::remove_file(entry.path()) {
+                    Ok(()) => info!("Removed audio left by deleted note {id}"),
+                    Err(e) => debug!("Couldn't remove {name}: {e}"),
+                }
+            }
+        }
     }
 
     fn track_path(&self, id: i64, who: Speaker) -> PathBuf {

@@ -280,6 +280,17 @@ pub struct TranscriptionManager {
 /// free, in MB.
 const STANDBY_MIN_FREE_MB: u64 = 1024;
 
+/// How long a model waits on the CPU past the unload setting before it's
+/// unloaded after all (or the setting's own length, if longer): standby
+/// spares the next dictation a GPU load, but it shouldn't hold a gigabyte
+/// or two of memory all day.
+const STANDBY_KEEP_MS: u64 = 30 * 60 * 1000;
+
+/// A dictation still recording after this long is finished as if its
+/// shortcut were pressed again: a toggle left on by mistake otherwise
+/// grows its buffer by about 230 MB an hour. Notes have their own limit.
+const MAX_DICTATION: Duration = Duration::from_secs(20 * 60);
+
 /// Recordings up to this long (16 kHz samples) are transcribed on the CPU
 /// when they end while the model is still loading on the GPU. Every model
 /// takes this much in one run, and the CPU gets through it in a few
@@ -315,12 +326,35 @@ impl TranscriptionManager {
             let shutdown_signal = manager.shutdown_signal.clone();
             let handle = thread::spawn(move || {
                 debug!("Idle watcher thread started");
+                let mut dictating_since: Option<std::time::Instant> = None;
                 while !shutdown_signal.load(Ordering::Relaxed) {
                     thread::sleep(Duration::from_secs(10)); // Check every 10 seconds
 
                     // Check shutdown signal again after sleep
                     if shutdown_signal.load(Ordering::Relaxed) {
                         break;
+                    }
+
+                    let dictating = app_handle_cloned
+                        .try_state::<Arc<AudioRecordingManager>>()
+                        .is_some_and(|a| a.is_recording());
+                    let since = match (dictating, dictating_since) {
+                        (true, Some(since)) => Some(since),
+                        (true, None) => Some(std::time::Instant::now()),
+                        (false, _) => None,
+                    };
+                    dictating_since = since;
+                    if since.is_some_and(|s| s.elapsed() > MAX_DICTATION) {
+                        warn!(
+                            "Dictation still recording after {} minutes; finishing it",
+                            MAX_DICTATION.as_secs() / 60
+                        );
+                        if let Some(c) =
+                            app_handle_cloned.try_state::<crate::TranscriptionCoordinator>()
+                        {
+                            c.finish();
+                        }
+                        dictating_since = None;
                     }
 
                     let settings = get_settings(&app_handle_cloned);
@@ -357,6 +391,7 @@ impl TranscriptionManager {
                                 manager_cloned.move_to_cpu(idle_ms / 1000);
                             } else if manager_cloned.standby.load(Ordering::Acquire)
                                 && !short_of_memory
+                                && idle_ms <= limit_ms + STANDBY_KEEP_MS.max(limit_ms)
                             {
                                 // Waiting on the CPU for the next dictation.
                             } else {

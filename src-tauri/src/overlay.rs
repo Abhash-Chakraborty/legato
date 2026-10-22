@@ -1156,8 +1156,10 @@ pub mod island_hit {
                 }
                 armed.clone()
             };
+            let mut near = true;
             if let Some(window) = window {
-                let inside = cursor_on_shape(&window);
+                let (inside, close) = cursor_on_shape(&window);
+                near = close;
                 // The window may have been disarmed while we looked.
                 if ARMED.lock().unwrap_or_else(|e| e.into_inner()).is_some()
                     && TAKING.load(Ordering::SeqCst) != inside
@@ -1172,15 +1174,19 @@ pub mod island_hit {
                             .emit_to("recording_overlay", "island-pointer", inside);
                 }
             }
-            std::thread::sleep(Duration::from_millis(33));
+            // Quick only while the pointer is near: from across the screen
+            // it can't reach the island before the next look.
+            std::thread::sleep(Duration::from_millis(if near { 33 } else { 120 }));
         }
     }
 
-    fn cursor_on_shape(window: &tauri::webview::WebviewWindow) -> bool {
+    /// Whether the cursor is on the island's shape, and whether it's within
+    /// a short reach of its window.
+    fn cursor_on_shape(window: &tauri::webview::WebviewWindow) -> (bool, bool) {
         use windows::Win32::Foundation::{POINT, RECT};
         use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
         let Ok(hwnd) = window.hwnd() else {
-            return false;
+            return (false, false);
         };
         let mut cursor = POINT::default();
         let mut rect = RECT::default();
@@ -1188,10 +1194,15 @@ pub mod island_hit {
         let ok =
             unsafe { GetCursorPos(&mut cursor).is_ok() && GetWindowRect(hwnd, &mut rect).is_ok() };
         if !ok {
-            return false;
+            return (false, true);
         }
+        const REACH: i32 = 200;
+        let near = cursor.x > rect.left - REACH
+            && cursor.x < rect.right + REACH
+            && cursor.y > rect.top - REACH
+            && cursor.y < rect.bottom + REACH;
         let (x, y, w, h) = *SHAPE.lock().unwrap_or_else(|e| e.into_inner());
         let (cx, cy) = ((cursor.x - rect.left) as f64, (cursor.y - rect.top) as f64);
-        cx >= x && cx < x + w && cy >= y && cy < y + h
+        (cx >= x && cx < x + w && cy >= y && cy < y + h, near)
     }
 }

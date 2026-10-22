@@ -24,6 +24,8 @@ pub const LATE_MS: u64 = 2 * 60 * 1000;
 /// Text longer than this isn't shared.
 const MAX_TEXT_BYTES: usize = 4 * 1024 * 1024;
 const POLL: Duration = Duration::from_millis(400);
+/// With no phone connected nothing is sent, so the watcher only glances.
+const IDLE_POLL: Duration = Duration::from_secs(5);
 
 /// The clipboard sequence number right after Legato wrote a phone's clip,
 /// so the watcher doesn't send it back.
@@ -43,7 +45,10 @@ pub fn watch(app: AppHandle) {
     std::thread::spawn(move || {
         let mut last = win::sequence();
         loop {
-            std::thread::sleep(POLL);
+            let online = app
+                .try_state::<Arc<SyncManager>>()
+                .is_some_and(|s| s.any_online());
+            std::thread::sleep(if online { POLL } else { IDLE_POLL });
             let seq = win::sequence();
             if seq == last {
                 continue;

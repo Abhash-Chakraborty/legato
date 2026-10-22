@@ -321,16 +321,33 @@ impl HistoryManager {
             return Ok(0);
         }
 
-        let conn = self.get_connection()?;
+        let mut conn = self.get_connection()?;
+        // One transaction: a row at a time each cost a sync to disk.
+        let tx = conn.transaction()?;
         let mut deleted_count = 0;
 
-        for (id, file_name) in entries {
-            // Delete database entry
-            conn.execute(
+        for (id, _) in entries {
+            tx.execute(
                 "DELETE FROM transcription_history WHERE id = ?1",
                 params![id],
             )?;
+            // The sync ledger's copy of its text goes too: retention said the
+            // dictation is gone. Not a tombstone, so phones keep theirs. A key
+            // that matches a kept row by its id alone is put back, unchanged,
+            // on the next sync refresh. No ledger yet (never paired) is fine.
+            let _ = tx.execute(
+                "DELETE FROM sync_item WHERE kind = 'history' AND (key LIKE '%:' || ?1
+                    OR key IN (SELECT key FROM sync_local WHERE kind = 'history' AND local_id = ?1))",
+                params![id],
+            );
+            let _ = tx.execute(
+                "DELETE FROM sync_local WHERE kind = 'history' AND local_id = ?1",
+                params![id],
+            );
+        }
+        tx.commit()?;
 
+        for (_, file_name) in entries {
             // Delete WAV file. Entries synced from the phone have none, and an
             // empty name would point at the recordings folder itself.
             if file_name.is_empty() {

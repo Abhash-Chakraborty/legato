@@ -363,6 +363,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(model_manager.clone());
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
+    // Retention otherwise runs only when a dictation is saved, so old
+    // recordings stayed for someone who stopped dictating.
+    {
+        let history = history_manager.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = history.cleanup_old_entries() {
+                log::warn!("Couldn't apply recording retention at startup: {e}");
+            }
+        });
+    }
     app_handle.manage(dictionary_manager);
     app_handle.manage(snippet_manager);
     app_handle.manage(scratchpad_manager);
