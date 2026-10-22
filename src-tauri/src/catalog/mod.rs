@@ -137,6 +137,19 @@ pub struct MirrorFile {
 /// are configured. `model_id` is the registry id (`"{repo_id}/{filename}"`).
 /// (The mirror may only host default quants; a miss there just 404s and the
 /// caller reports it, so listing every quant here costs nothing.)
+/// The catalog's sha256 for a model's file, when the catalog pins the
+/// revision it was taken from (otherwise the file on Hugging Face may have
+/// changed since, and a mismatch would prove nothing).
+pub fn pinned_sha256(model_id: &str) -> Option<String> {
+    ROOT.models.iter().find_map(|m| {
+        m.revision.as_ref()?;
+        m.files
+            .iter()
+            .find(|f| format!("{}/{}", m.id, f.filename) == model_id)
+            .and_then(|f| f.sha256.clone())
+    })
+}
+
 pub fn mirror_fallbacks(model_id: &str) -> Vec<MirrorFile> {
     let Some((m, file)) = ROOT.models.iter().find_map(|m| {
         m.files

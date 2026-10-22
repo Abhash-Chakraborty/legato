@@ -20,6 +20,11 @@ fn main() {
         std::process::exit(legato_app_lib::engine_supervisor::run_worker());
     }
 
+    // The uninstaller tidying up before it deletes the exe.
+    if let Some(code) = legato_app_lib::uninstall_cleanup_invocation() {
+        std::process::exit(code);
+    }
+
     // `legato --mcp`: an AI app on this PC asking Legato's data over stdio.
     // Its own process too, so it never starts or reaches the running app.
     if legato_app_lib::mcp::is_invocation() {

@@ -76,6 +76,30 @@ mod vault {
             Err(e) => Err(e.message()),
         }
     }
+
+    /// The names of every credential matching `filter` ("Legato/*").
+    pub fn list(filter: &str) -> Vec<String> {
+        use windows::Win32::Security::Credentials::CredEnumerateW;
+        let filter = HSTRING::from(filter);
+        let mut count = 0u32;
+        let mut list: *mut *mut CREDENTIALW = std::ptr::null_mut();
+        let mut names = Vec::new();
+        // SAFETY: on success Windows hands back `count` credential pointers
+        // in one allocation, read here and freed once.
+        unsafe {
+            if CredEnumerateW(&filter, None, &mut count, &mut list).is_err() {
+                return names;
+            }
+            for i in 0..count as usize {
+                let c = &**list.add(i);
+                if let Ok(name) = c.TargetName.to_string() {
+                    names.push(name);
+                }
+            }
+            CredFree(list as *const _);
+        }
+        names
+    }
 }
 
 /// Legato only ships on Windows; this keeps other builds compiling.
@@ -105,6 +129,29 @@ mod vault {
         }
         Ok(())
     }
+
+    pub fn list(filter: &str) -> Vec<String> {
+        let prefix = filter.trim_end_matches('*');
+        KEYS.lock()
+            .ok()
+            .and_then(|k| k.as_ref().map(|k| k.keys().cloned().collect::<Vec<_>>()))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|k| k.starts_with(prefix))
+            .collect()
+    }
+}
+
+/// Removes every "Legato/…" credential: API keys, the Inyon token, calendar
+/// addresses, the phone sync identity. For uninstalling with its data.
+pub fn delete_all() -> usize {
+    let mut removed = 0;
+    for name in vault::list("Legato/*") {
+        if vault::delete(&name).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
 }
 
 /// Something other than an API key kept in Credential Manager, such as the

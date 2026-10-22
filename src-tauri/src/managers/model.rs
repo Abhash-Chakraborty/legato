@@ -315,6 +315,47 @@ fn hf_caches() -> Vec<Cache> {
     caches
 }
 
+/// Refuses a download the disk can't hold, before any of it arrives: a full
+/// disk otherwise shows up as a write error gigabytes in, with the partial
+/// file still holding the space. `need_mb` gets a tenth on top for headroom.
+fn ensure_free_space(dir: &Path, need_mb: u64) -> Result<()> {
+    #[cfg(windows)]
+    {
+        use windows::core::HSTRING;
+        use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+        // The folder may not exist yet; its nearest existing parent is on
+        // the same disk.
+        let mut probe = dir.to_path_buf();
+        while !probe.exists() {
+            if !probe.pop() {
+                return Ok(());
+            }
+        }
+        let mut free = 0u64;
+        // SAFETY: the out-parameter lives on the stack for the call.
+        let asked = unsafe {
+            GetDiskFreeSpaceExW(
+                &HSTRING::from(probe.as_path()),
+                Some(&mut free as *mut u64),
+                None,
+                None,
+            )
+        };
+        let need = need_mb.saturating_mul(11) / 10;
+        if asked.is_ok() && free / (1024 * 1024) < need {
+            return Err(anyhow::anyhow!(
+                "Not enough disk space: the model needs about {} MB and {} has {} MB free",
+                need,
+                probe.display(),
+                free / (1024 * 1024)
+            ));
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (dir, need_mb);
+    Ok(())
+}
+
 fn hf_cached_path(repo_id: &str, revision: &str, filename: &str) -> Option<PathBuf> {
     hf_cached_path_in(&hf_caches(), repo_id, revision, filename)
 }
@@ -1573,6 +1614,9 @@ impl ModelManager {
             return Ok(());
         }
 
+        let cache_dir = Cache::from_env().path().clone();
+        ensure_free_space(&cache_dir, model_info.size_mb)?;
+
         // Mark downloading; the guard resets the flag on any error path.
         {
             let mut models = self.available_models.lock().unwrap();
@@ -1805,6 +1849,36 @@ impl ModelManager {
             }
         }
 
+        // hf-hub doesn't check what it fetched; the catalog's hash, pinned
+        // to this revision, does. A bad file is deleted so the next try
+        // starts clean.
+        if let (Some(expected), Some(path)) = (
+            crate::catalog::pinned_sha256(&model_id),
+            hf_cached_path(&repo_id, &revision, &filename),
+        ) {
+            let _ = self
+                .app_handle
+                .emit("model-verification-started", &model_id);
+            let actual = tokio::task::spawn_blocking(move || Self::compute_sha256(&path))
+                .await
+                .map_err(|e| anyhow::anyhow!("SHA256 task panicked: {}", e))??;
+            if actual != expected {
+                warn!(
+                    "SHA256 mismatch for HF model {}: expected {}, got {}",
+                    model_id, expected, actual
+                );
+                Self::delete_hf_cache_file(&repo_id, &revision, &filename);
+                return Err(anyhow::anyhow!(
+                    "Download verification failed for model {}: file is corrupt. Please retry.",
+                    model_id
+                ));
+            }
+            info!("SHA256 verified for HF model {}", model_id);
+            let _ = self
+                .app_handle
+                .emit("model-verification-completed", &model_id);
+        }
+
         cleanup.disarmed = true;
         self.update_download_status()?;
         self.cancel_flags.lock().unwrap().remove(&model_id);
@@ -1888,6 +1962,14 @@ impl ModelManager {
             self.update_download_status()?;
             return Ok(());
         }
+
+        let partial_mb = fs::metadata(&partial_path)
+            .map(|m| m.len() / (1024 * 1024))
+            .unwrap_or(0);
+        ensure_free_space(
+            &self.models_dir,
+            model_info.size_mb.saturating_sub(partial_mb),
+        )?;
 
         // Mark as downloading
         {

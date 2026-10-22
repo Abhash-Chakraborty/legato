@@ -756,9 +756,75 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     0
 }
 
+/// `legato --uninstall-cleanup [--with-secrets]`, run by the uninstaller
+/// while the exe still exists: removes what Legato keeps outside its
+/// folders. The run-as-administrator task always goes (it would start a
+/// missing exe); Credential Manager entries go only with "Delete app data",
+/// since a reinstall over kept data needs them. Best effort: the uninstall
+/// carries on either way.
+pub fn uninstall_cleanup_invocation() -> Option<i32> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if !args.iter().any(|a| a == "--uninstall-cleanup") {
+        return None;
+    }
+    #[cfg(windows)]
+    elevation::delete_task();
+    if args.iter().any(|a| a == "--with-secrets") {
+        secrets::delete_all();
+    }
+    Some(0)
+}
+
+/// Where the logs are, without an AppHandle: the portable folder's, or
+/// Tauri's log folder for this app's identifier.
+fn log_dir_for_errors() -> std::path::PathBuf {
+    if let Some(dir) = portable::data_dir() {
+        return dir.join("logs");
+    }
+    std::env::var_os("LOCALAPPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default()
+        .join("io.github.abhash-chakraborty.legato")
+        .join("logs")
+}
+
+/// A panic on the main thread ends Legato, and with no console a person
+/// would see it vanish. This logs every panic and, for that one, says what
+/// happened and where the log is before the process goes.
+fn install_panic_hook() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        let name = thread.name().unwrap_or("unnamed");
+        log::error!("Panic on thread {name}: {info}");
+        if name == "main" {
+            #[cfg(windows)]
+            {
+                use windows::core::HSTRING;
+                use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+                let text = format!(
+                    "Legato hit a problem and has to close.\n\n{info}\n\nThe log is in {}",
+                    log_dir_for_errors().display()
+                );
+                // SAFETY: both strings live until the box closes.
+                unsafe {
+                    MessageBoxW(
+                        None,
+                        &HSTRING::from(text),
+                        &HSTRING::from("Legato"),
+                        MB_OK | MB_ICONERROR,
+                    );
+                }
+            }
+        }
+        default(info);
+    }));
+}
+
 pub fn run(cli_args: CliArgs) {
     // Detect portable mode before anything else
     portable::init();
+    install_panic_hook();
 
     // Parse console logging directives from RUST_LOG, falling back to info-level logging
     // when the variable is unset
@@ -1137,7 +1203,7 @@ pub fn run(cli_args: CliArgs) {
                 // token among them.
                 .level_for("tungstenite", log::LevelFilter::Debug)
                 .level_for("tokio_tungstenite", log::LevelFilter::Debug)
-                .max_file_size(500_000)
+                .max_file_size(2_000_000)
                 .rotation_strategy(RotationStrategy::KeepOne)
                 .clear_targets()
                 .targets([

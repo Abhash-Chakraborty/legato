@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AudioLines,
@@ -33,6 +33,18 @@ export const DoneStep: React.FC<StepProps> = ({ go, setFoot, finish }) => {
   const openModels = useSetupStore((s) => s.openModels);
   const ai = useAiStore((s) => s.status);
   useEffect(watchAi, []);
+
+  // Launch at login starts checked: without it, the shortcut does nothing
+  // after a restart until Legato is opened. Once, on arriving here; the box
+  // below turns it off.
+  const autostartOffered = useRef(false);
+  useEffect(() => {
+    if (autostartOffered.current || !settings) return;
+    autostartOffered.current = true;
+    if (!settings.autostart_enabled) {
+      void updateSetting("autostart_enabled", true);
+    }
+  }, [settings, updateSetting]);
 
   useEffect(() => {
     setFoot({

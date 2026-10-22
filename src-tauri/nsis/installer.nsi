@@ -883,6 +883,18 @@ Section Uninstall
 
   !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
 
+  ; What Legato keeps outside its folders, while the exe is still here: the
+  ; run-as-administrator task, and with "Delete app data" its Credential
+  ; Manager entries (API keys, the Inyon token, calendar addresses).
+  ${If} $UpdateMode <> 1
+    ${If} $DeleteAppDataCheckboxState = 1
+      nsExec::Exec '"$INSTDIR\${MAINBINARYNAME}.exe" --uninstall-cleanup --with-secrets'
+    ${Else}
+      nsExec::Exec '"$INSTDIR\${MAINBINARYNAME}.exe" --uninstall-cleanup'
+    ${EndIf}
+    Pop $0
+  ${EndIf}
+
   ; Delete the app directory and its content from disk
   ; Copy main executable
   Delete "$INSTDIR\${MAINBINARYNAME}.exe"
