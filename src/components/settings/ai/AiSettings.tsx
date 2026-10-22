@@ -1035,7 +1035,7 @@ export const TaskModelRow: React.FC<{ task: AiTask }> = ({ task }) => {
       description={t(`settings.ai.tasks.${task}.help`)}
     >
       <Dropdown
-        className="w-[180px]"
+        className="w-[220px]"
         ariaLabel={t("settings.ai.tasks.provider", { task: label })}
         selectedValue={providerId}
         options={[
