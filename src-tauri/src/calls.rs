@@ -695,7 +695,7 @@ fn log_holders(users: &[(String, bool)], found: &[CallApp]) {
 
 /// Who holds the microphone now, among the apps watched.
 fn holding(settings: &CallSettings) -> Vec<CallApp> {
-    let users = mic_users();
+    let users = rules::merge_users(mic_users(), &capturing_exes());
     let found = holding_among(settings, &users);
     log_holders(&users, &found);
     found
@@ -764,10 +764,15 @@ pub fn init(app: &AppHandle) {
 }
 
 #[cfg(windows)]
-use win::{browser_call, mic_users, Watcher};
+use win::{browser_call, capturing_exes, mic_users, Watcher};
 
 #[cfg(not(windows))]
 fn mic_users() -> Vec<(String, bool)> {
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+fn capturing_exes() -> Vec<String> {
     Vec::new()
 }
 
@@ -793,8 +798,15 @@ impl Watcher {
 mod win {
     use super::rules::{self, CallApp};
     use std::time::Duration;
-    use windows::core::{w, BOOL, PCWSTR, PWSTR};
+    use windows::core::{w, Interface, BOOL, PCWSTR, PWSTR};
     use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM};
+    use windows::Win32::Media::Audio::{
+        eCapture, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionManager2,
+        IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
+    };
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
+    };
     use windows::Win32::System::Registry::{
         RegCloseKey, RegEnumKeyExW, RegNotifyChangeKeyValue, RegOpenKeyExW, RegQueryValueExW, HKEY,
         HKEY_CURRENT_USER, KEY_NOTIFY, KEY_READ, REG_NOTIFY_CHANGE_LAST_SET,
@@ -912,6 +924,57 @@ mod win {
             let _ = RegCloseKey(root);
         }
         users
+    }
+
+    /// The executables with an active recording session on any microphone.
+    /// Unlike the privacy records, which Windows may only write when a
+    /// stream stops, these show a call while it is going.
+    pub fn capturing_exes() -> Vec<String> {
+        // SAFETY: COM calls on this thread, which initialises COM first.
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            let Ok(enumerator) =
+                CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
+            else {
+                return Vec::new();
+            };
+            let Ok(devices) = enumerator.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE) else {
+                return Vec::new();
+            };
+            let mut exes = Vec::new();
+            for d in 0..devices.GetCount().unwrap_or(0) {
+                let Ok(device) = devices.Item(d) else {
+                    continue;
+                };
+                let Ok(manager) = device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else {
+                    continue;
+                };
+                let Ok(sessions) = manager.GetSessionEnumerator() else {
+                    continue;
+                };
+                for i in 0..sessions.GetCount().unwrap_or(0) {
+                    let Ok(control) = sessions.GetSession(i) else {
+                        continue;
+                    };
+                    if !control
+                        .GetState()
+                        .is_ok_and(|s| s == AudioSessionStateActive)
+                    {
+                        continue;
+                    }
+                    let Ok(control) = control.cast::<IAudioSessionControl2>() else {
+                        continue;
+                    };
+                    let Some(exe) = control.GetProcessId().ok().and_then(exe_of_process) else {
+                        continue;
+                    };
+                    if !exes.contains(&exe) {
+                        exes.push(exe);
+                    }
+                }
+            }
+            exes
+        }
     }
 
     fn exe_of_process(pid: u32) -> Option<String> {

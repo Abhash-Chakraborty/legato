@@ -170,6 +170,26 @@ pub fn holder_for_entry(key: &str, packaged: bool) -> Holder {
     }
 }
 
+/// Adds the apps recording from a microphone right now, by executable, to
+/// the entries Windows' privacy records show in use. Those records can lag
+/// behind a call, so either is enough; an app both name is listed once.
+pub fn merge_users(mut users: Vec<(String, bool)>, capturing: &[String]) -> Vec<(String, bool)> {
+    for exe in capturing {
+        let holder = holder_for_exe(exe);
+        let known = users.iter().any(|(entry, packaged)| {
+            let seen = holder_for_entry(entry, *packaged);
+            match holder {
+                Holder::App(_) => seen == holder,
+                _ => !*packaged && exe_of(entry) == exe_of(exe),
+            }
+        });
+        if !known {
+            users.push((exe_of(exe), false));
+        }
+    }
+    users
+}
+
 /// Windows keeps when each app last started and stopped using the
 /// microphone; it is in use when it started after it last stopped.
 pub fn in_use(started: u64, stopped: u64) -> bool {
@@ -346,6 +366,30 @@ mod tests {
         assert_eq!(
             holder_for_exe("C:#Program Files#Zen Browser#zen.exe"),
             Holder::Browser("zen.exe".into())
+        );
+    }
+
+    #[test]
+    fn merge_users_adds_capturing_apps_once() {
+        let registry = vec![
+            ("MSTeams_8wekyb3d8bbwe".to_string(), true),
+            (
+                "C:#Program Files#Google#Chrome#Application#chrome.exe".to_string(),
+                false,
+            ),
+        ];
+        let capturing = vec![
+            "ms-teams.exe".to_string(),
+            "chrome.exe".to_string(),
+            "WhatsApp.Root.exe".to_string(),
+            "whatsapp.root.exe".to_string(),
+        ];
+        let merged = merge_users(registry, &capturing);
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[2], ("whatsapp.root.exe".to_string(), false));
+        assert_eq!(
+            merge_users(Vec::new(), &["Zoom.exe".to_string()]),
+            vec![("zoom.exe".to_string(), false)]
         );
     }
 
