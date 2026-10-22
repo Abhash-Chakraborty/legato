@@ -2292,11 +2292,11 @@
       },
       "numbers": {
         "title": "Numbers as digits",
-        "help": "“twenty five percent” becomes 25%, “two hundred” becomes 200."
+        "help": "“twenty five percent” becomes 25%, “two point five million” becomes 2.5 million, “twenty first” becomes 21st. “A million” and numbers under ten stay words."
       },
       "punctuation": {
         "title": "Spoken punctuation",
-        "help": "Say “comma”, “period”, “question mark” or “new line” to type them."
+        "help": "Say “comma”, “period”, “question mark” or “new line” to type them, and “github dot com” for github.com."
       },
       "corrections": {
         "title": "Self-corrections",

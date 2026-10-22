@@ -91,7 +91,19 @@ fn capitalize_sentences(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     for (k, &c) in chars.iter().enumerate() {
         if c.is_alphabetic() {
-            if upper_next {
+            // Addresses keep their case: "github.com", "abhash@gmail.com".
+            let word: String = chars[k..]
+                .iter()
+                .take_while(|c| !c.is_whitespace())
+                .collect();
+            let stripped = word.trim_end_matches(|c: char| !c.is_alphanumeric());
+            let address = stripped.contains('@')
+                || stripped.split_once('.').is_some_and(|(name, rest)| {
+                    !name.is_empty()
+                        && rest.len() >= 2
+                        && rest.starts_with(|c: char| c.is_alphanumeric())
+                });
+            if upper_next && !address {
                 out.extend(c.to_uppercase());
             } else {
                 out.push(c);
@@ -100,6 +112,10 @@ fn capitalize_sentences(text: &str) -> String {
             continue;
         }
         out.push(c);
+        // "10 out of 10": a sentence that opens with a number is under way.
+        if c.is_ascii_digit() {
+            upper_next = false;
+        }
         match c {
             '\n' => upper_next = true,
             '.' | '?' | '!' => {
@@ -166,6 +182,23 @@ const GREETINGS: &[&str] = &[
     "good evening",
 ];
 
+/// Words that address people together after a greeting.
+const GROUP_NAMES: &[&str] = &[
+    "team",
+    "all",
+    "everyone",
+    "everybody",
+    "guys",
+    "folks",
+    "there",
+    "both",
+    "friends",
+    "y'all",
+];
+
+/// Titles before a name, with their period.
+const TITLES: &[&str] = &["mr.", "mrs.", "ms.", "dr.", "prof."];
+
 /// The opening greeting and the name after it ("Hi Robert"), and where the
 /// rest of the text starts.
 fn greeting(text: &str) -> Option<(String, &str)> {
@@ -187,7 +220,15 @@ fn greeting(text: &str) -> Option<(String, &str)> {
             end += part.len();
             continue;
         }
-        let starts_upper = w.chars().next().is_some_and(char::is_uppercase);
+        let bare = w.trim_end_matches([',', '.', '!']).to_lowercase();
+        // "Hi team", "Hi all": people addressed together.
+        let group = name_words == 0 && GROUP_NAMES.contains(&bare.as_str());
+        // "Dear Mr. Sharma": the title's period doesn't end the name.
+        if name_words < 2 && TITLES.contains(&w.to_lowercase().as_str()) {
+            end += part.len();
+            continue;
+        }
+        let starts_upper = group || w.chars().next().is_some_and(char::is_uppercase);
         // "Hi Karol I looked…": the pronoun starts the sentence, it's no name.
         let pronoun = matches!(
             w.trim_end_matches([',', '.', '!']),
@@ -395,7 +436,9 @@ fn formal_email(text: &str) -> String {
             .join("\n\n"),
     );
     if let Some((phrase, name)) = closing {
-        out.push_str("\n\n");
+        if !out.is_empty() {
+            out.push_str("\n\n");
+        }
         out.push_str(&phrase);
         out.push(',');
         if !name.is_empty() {
@@ -487,6 +530,42 @@ mod tests {
         );
         // Casual mail is still one paragraph.
         assert!(!apply(text, "email", Tone::Casual).contains("\n\n"));
+    }
+
+    #[test]
+    fn greetings_to_groups_and_titles_stay_whole() {
+        assert_eq!(
+            apply(
+                "Hi team, quick update, the release is Friday.",
+                "email",
+                Tone::Formal
+            ),
+            "Hi team,\n\nQuick update, the release is Friday."
+        );
+        assert_eq!(
+            apply(
+                "Dear Mr. Sharma, thank you for your email.",
+                "email",
+                Tone::Formal
+            ),
+            "Dear Mr. Sharma,\n\nThank you for your email."
+        );
+        assert_eq!(
+            apply("Best regards, Abhash.", "email", Tone::Formal),
+            "Best regards,\nAbhash"
+        );
+    }
+
+    #[test]
+    fn numbers_and_addresses_keep_their_case() {
+        assert_eq!(
+            apply("10 out of 10 would recommend", "work", Tone::Formal),
+            "10 out of 10 would recommend."
+        );
+        assert_eq!(
+            apply("github.com/abhash has it", "work", Tone::Formal),
+            "github.com/abhash has it."
+        );
     }
 
     #[test]
