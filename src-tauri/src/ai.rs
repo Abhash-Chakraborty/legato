@@ -548,15 +548,8 @@ pub async fn medium_pass(
     let input = crate::snippet_rules::to_ai(text);
     let request = ai_rules::cleanup_request(&words, &input);
     let started = Instant::now();
-    let answer = match ask(
-        &config,
-        ai_rules::CLEANUP_SYSTEM_PROMPT,
-        request,
-        None,
-        config.timeout,
-    )
-    .await
-    {
+    let system = ai_rules::cleanup_system_prompt(placeholders);
+    let answer = match ask(&config, &system, request, None, config.timeout).await {
         Ok(answer) => answer,
         Err(kind) => {
             warn!(

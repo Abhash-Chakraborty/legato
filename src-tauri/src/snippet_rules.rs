@@ -225,12 +225,15 @@ pub fn to_ai(text: &str) -> String {
 }
 
 /// The model's answer with its placeholders turned back, or None when it
-/// dropped, changed or repeated one; then the AI step is skipped.
+/// dropped, changed, repeated or made one up; then the AI step is skipped.
 pub fn from_ai(answer: &str, count: usize) -> Option<String> {
     for n in 0..count {
         if answer.matches(&format!("[[{n}]]")).count() != 1 {
             return None;
         }
+    }
+    if answer.matches("[[").count() != count {
+        return None;
     }
     let mut out = answer.to_string();
     for n in 0..count {
@@ -369,6 +372,9 @@ mod tests {
         );
         assert!(from_ai("Ping me at my email.", 1).is_none());
         assert!(from_ai("[[0]] and [[0]]", 1).is_none());
+        // A marker the dictation never had, such as a time turned into one.
+        assert!(from_ai("Move the stand-up to [[1]].", 0).is_none());
+        assert!(from_ai("[[0]] at [[1]]", 1).is_none());
         assert!(ends_with_placeholder(
             &mark("my email", &[rule(9, "my email", true)]).text
         ));
