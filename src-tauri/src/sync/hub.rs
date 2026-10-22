@@ -223,6 +223,11 @@ impl Host for Hub {
         kinds: &[String],
         limit: usize,
     ) -> Result<(Vec<Change>, u64, bool)> {
+        // A device unpaired mid-session gets nothing more; the error ends
+        // its session.
+        if self.peer(peer)?.is_none() {
+            return Err(anyhow::anyhow!("{peer} isn't paired"));
+        }
         self.engine
             .changes(peer, after, kinds, &self.config().kinds, limit)
     }

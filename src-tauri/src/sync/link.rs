@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -19,6 +20,31 @@ use super::identity::{fingerprint, server_name, Identity};
 use super::protocol::{self, Change, Clip, Hello, Message, Refusal, Welcome, PROTOCOL};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Connections allowed to be in their handshake at once; more are dropped
+/// until one is admitted or gives up, so a flood can't pile up.
+const MAX_PENDING: usize = 8;
+static PENDING: AtomicUsize = AtomicUsize::new(0);
+
+/// One connection still in its handshake, counted against `MAX_PENDING`.
+pub struct Pending;
+
+impl Pending {
+    /// None when `MAX_PENDING` connections are already in their handshake.
+    pub fn start() -> Option<Self> {
+        if PENDING.fetch_add(1, Ordering::SeqCst) < MAX_PENDING {
+            Some(Pending)
+        } else {
+            PENDING.fetch_sub(1, Ordering::SeqCst);
+            None
+        }
+    }
+}
+
+impl Drop for Pending {
+    fn drop(&mut self) {
+        PENDING.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 /// How long the phone waits for any network address before Bluetooth.
 const NET_TIMEOUT: Duration = Duration::from_secs(4);
 
@@ -161,9 +187,8 @@ impl Sessions {
         self.lock().1.clear();
     }
 
-    /// Ends this device's session here, without a goodbye: the link drops
-    /// and the other side sees it close.
-    #[allow(dead_code)] // Used by the phone (phone/core), not the app.
+    /// Ends this device's session here: commands already queued (a
+    /// goodbye) still go, then the link drops.
     pub fn close(&self, device_id: &str) {
         self.lock().1.remove(device_id);
     }
@@ -210,8 +235,25 @@ pub async fn serve(
     let acceptor = TlsAcceptor::from(identity.server_config()?);
     loop {
         let (tcp, addr) = tokio::select! {
-            accepted = listener.accept() => accepted?,
+            accepted = listener.accept() => match accepted {
+                Ok(accepted) => accepted,
+                // A connection reset before it was accepted, or the system
+                // short of sockets: keep listening.
+                Err(e) => {
+                    log::debug!("Phone sync accept failed: {e}");
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+            },
             _ = stop.changed() => return Ok(()),
+        };
+        if !protocol::local_peer(addr.ip()) {
+            log::debug!("Phone sync: dropped a connection from {addr}, not a local or VPN address");
+            continue;
+        }
+        let Some(pending) = Pending::start() else {
+            log::debug!("Phone sync: dropped a connection from {addr}, too many handshakes");
+            continue;
         };
         let (acceptor, host, sessions, stop) = (
             acceptor.clone(),
@@ -221,7 +263,8 @@ pub async fn serve(
         );
         tokio::spawn(async move {
             let _ = tcp.set_nodelay(true);
-            if let Err(e) = welcome_phone(tcp, Via::Net(addr), acceptor, host, sessions, stop).await
+            if let Err(e) =
+                welcome_phone(tcp, Via::Net(addr), acceptor, host, sessions, stop, pending).await
             {
                 // A port probe or a phone that just dropped the socket isn't
                 // worth a line at info level.
@@ -245,12 +288,13 @@ pub async fn serve_stream<S>(
     host: Arc<dyn Host>,
     sessions: Sessions,
     stop: watch::Receiver<bool>,
+    pending: Pending,
 ) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let acceptor = TlsAcceptor::from(identity.server_config()?);
-    welcome_phone(stream, via, acceptor, host, sessions, stop).await
+    welcome_phone(stream, via, acceptor, host, sessions, stop, pending).await
 }
 
 async fn welcome_phone<S>(
@@ -260,6 +304,7 @@ async fn welcome_phone<S>(
     host: Arc<dyn Host>,
     sessions: Sessions,
     stop: watch::Receiver<bool>,
+    pending: Pending,
 ) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -274,9 +319,11 @@ where
         .and_then(|certs| certs.first())
         .map(fingerprint)
         .ok_or_else(|| anyhow!("no client certificate"))?;
-    let hello = match tokio::time::timeout(HANDSHAKE_TIMEOUT, protocol::read(&mut tls)).await {
+    let first = protocol::read_limited(&mut tls, protocol::MAX_HELLO);
+    let hello = match tokio::time::timeout(HANDSHAKE_TIMEOUT, first).await {
         Ok(Ok(Message::Hello(hello))) => hello,
-        Ok(Ok(other)) => bail!("expected hello, got {other:?}"),
+        // Not the frame itself: a stranger chooses what's in it.
+        Ok(Ok(_)) => bail!("expected hello first"),
         Ok(Err(e)) => return Err(e),
         Err(_) => bail!("no hello"),
     };
@@ -287,8 +334,10 @@ where
     };
     if let Err(reason) = verdict {
         protocol::write(&mut tls, &Message::Refused { reason }).await?;
-        bail!("refused {} ({reason:?})", hello.name);
+        let name: String = hello.name.chars().take(40).collect();
+        bail!("refused {name:?} ({reason:?})");
     }
+    drop(pending);
     protocol::write(&mut tls, &Message::Welcome(host.describe())).await?;
     let session = sessions.insert(&hello.device_id);
     host.online(&hello.device_id, Some(via));

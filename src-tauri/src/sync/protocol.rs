@@ -12,6 +12,9 @@ pub const PROTOCOL: u32 = 1;
 pub const PORT: u16 = 47613;
 pub const PORT_TRIES: u16 = 10;
 pub const MAX_FRAME: usize = 16 * 1024 * 1024;
+/// The largest first frame from a peer not yet admitted: a hello is a few
+/// hundred bytes, and a stranger mustn't make the PC set aside 16 MiB.
+pub const MAX_HELLO: usize = 8 * 1024;
 pub const PING_EVERY: Duration = Duration::from_secs(30);
 pub const SILENCE_LIMIT: Duration = Duration::from_secs(90);
 /// How many items one `changes` answer carries at most.
@@ -167,15 +170,49 @@ pub async fn write<W: AsyncWrite + Unpin>(w: &mut W, message: &Message) -> Resul
 }
 
 pub async fn read<R: AsyncRead + Unpin>(r: &mut R) -> Result<Message> {
+    read_limited(r, MAX_FRAME).await
+}
+
+/// Reads one frame of at most `max` bytes. Memory grows with the bytes that
+/// actually arrive, not with the length the peer claims.
+pub async fn read_limited<R: AsyncRead + Unpin>(r: &mut R, max: usize) -> Result<Message> {
     let mut len = [0u8; 4];
     r.read_exact(&mut len).await?;
     let len = u32::from_be_bytes(len) as usize;
-    if len > MAX_FRAME {
+    if len > max {
         bail!("frame too large ({len} bytes)");
     }
-    let mut bytes = vec![0u8; len];
-    r.read_exact(&mut bytes).await?;
+    let mut bytes = Vec::with_capacity(len.min(64 * 1024));
+    (&mut *r).take(len as u64).read_to_end(&mut bytes).await?;
+    if bytes.len() != len {
+        bail!("frame cut short");
+    }
     Ok(serde_json::from_slice(&bytes)?)
+}
+
+/// Whether a phone may connect from this address: this PC, the LAN, a
+/// link-local address, or a NetBird or Tailscale one. Anyone else is
+/// dropped before TLS, so a stranger on the internet gets nothing.
+pub fn local_peer(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || (o[0] == 100 && (o[1] & 0xc0) == 64)
+        }
+        IpAddr::V6(v6) => {
+            let first = v6.segments()[0];
+            v6.is_loopback()
+                // Unique local (fc00::/7, Tailscale's fd7a:… among them) and
+                // link-local (fe80::/10).
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80
+                || v6.to_ipv4_mapped().is_some_and(|v4| local_peer(IpAddr::V4(v4)))
+        }
+    }
 }
 
 /// Samples (-1..1, 16 kHz mono) as `transcribe` carries them.
@@ -348,5 +385,48 @@ mod tests {
             .await
             .unwrap();
         assert!(read(&mut b).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_first_frame_over_the_hello_limit_is_refused() {
+        let (mut a, mut b) = tokio::io::duplex(1024);
+        a.write_all(&(MAX_HELLO as u32 + 1).to_be_bytes())
+            .await
+            .unwrap();
+        assert!(read_limited(&mut b, MAX_HELLO).await.is_err());
+        // A frame cut short is an error, not a hang or a short message.
+        let (mut a, mut b) = tokio::io::duplex(1024);
+        a.write_all(&100u32.to_be_bytes()).await.unwrap();
+        a.write_all(b"{}").await.unwrap();
+        drop(a);
+        assert!(read_limited(&mut b, MAX_HELLO).await.is_err());
+    }
+
+    #[test]
+    fn only_local_and_vpn_peers_may_connect() {
+        let ok = |s: &str| local_peer(s.parse().unwrap());
+        for addr in [
+            "127.0.0.1",
+            "192.168.1.20",
+            "10.1.2.3",
+            "172.16.0.9",
+            "169.254.3.4",
+            "100.97.188.40",
+            "::1",
+            "fd7a:115c:a1e0::9",
+            "fe80::1",
+            "::ffff:192.168.0.2",
+        ] {
+            assert!(ok(addr), "{addr}");
+        }
+        for addr in [
+            "8.8.8.8",
+            "100.128.0.1",
+            "203.0.113.5",
+            "2001:db8::1",
+            "::ffff:1.1.1.1",
+        ] {
+            assert!(!ok(addr), "{addr}");
+        }
     }
 }

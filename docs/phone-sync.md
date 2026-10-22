@@ -62,6 +62,10 @@ first.
   checks its fingerprint against the paired phones or the pairing secret.
 - The PC listens only while pairing is open or a phone is paired. The first time, Windows asks
   whether to allow Legato on private networks.
+- The PC drops a TCP connection before TLS unless it comes from this PC, the LAN (10/8,
+  172.16/12, 192.168/16, fc00::/7), a link-local address, or a NetBird or Tailscale address
+  (100.64/10). At most 8 connections, over TCP and Bluetooth together, may be in their
+  handshake at once; more are dropped until one is admitted or gives up.
 
 ### Bluetooth
 
@@ -80,6 +84,7 @@ carries it, so the core's connection code stays the same for both wires.
 
 Each message is a 4-byte big-endian length followed by that many bytes of UTF-8 JSON. Every
 message is an object with a `type`. Frames over 16 MiB are an error and close the connection.
+Before a phone is admitted, its first frame (the `hello`) may be at most 8 KiB.
 A receiver ignores types it doesn't know, except during the handshake.
 
 ## Messages

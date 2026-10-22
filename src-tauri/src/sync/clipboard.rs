@@ -125,6 +125,9 @@ pub fn read(app: &AppHandle, seen: Instant) -> Result<Option<Clip>> {
     }))
 }
 
+/// The widest or tallest image a clip from the phone may unpack to.
+const MAX_SIDE: u32 = 8192;
+
 /// Puts a clip on the clipboard, without sending it back.
 pub fn write(app: &AppHandle, clip: &Clip) -> Result<()> {
     let clipboard = app.clipboard();
@@ -132,8 +135,15 @@ pub fn write(app: &AppHandle, clip: &Clip) -> Result<()> {
         ClipKind::Text => clipboard.write_text(clip.text.clone().unwrap_or_default())?,
         ClipKind::Image => {
             let png = STANDARD.decode(clip.png.as_deref().unwrap_or_default())?;
-            let rgba =
-                image::load_from_memory_with_format(&png, image::ImageFormat::Png)?.to_rgba8();
+            // A small PNG can unpack to gigabytes; cap what decoding may use.
+            let mut reader =
+                image::ImageReader::with_format(Cursor::new(&png), image::ImageFormat::Png);
+            let mut limits = image::Limits::default();
+            limits.max_image_width = Some(MAX_SIDE);
+            limits.max_image_height = Some(MAX_SIDE);
+            limits.max_alloc = Some(256 * 1024 * 1024);
+            reader.limits(limits);
+            let rgba = reader.decode()?.to_rgba8();
             let (w, h) = rgba.dimensions();
             clipboard.write_image(&tauri::image::Image::new_owned(rgba.into_raw(), w, h))?;
         }

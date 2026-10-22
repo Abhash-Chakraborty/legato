@@ -432,10 +432,20 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
                     sessions.clone(),
                     stop.clone(),
                 );
+                let Some(pending) = link::Pending::start() else {
+                    continue;
+                };
                 tokio::spawn(async move {
-                    let _ =
-                        link::serve_stream(stream, Via::Bluetooth, &identity, host, sessions, stop)
-                            .await;
+                    let _ = link::serve_stream(
+                        stream,
+                        Via::Bluetooth,
+                        &identity,
+                        host,
+                        sessions,
+                        stop,
+                        pending,
+                    )
+                    .await;
                 });
             }
         });

@@ -346,6 +346,13 @@ impl SyncManager {
                     return;
                 }
             };
+            // Counted before the bridge's two threads start, so a flood of
+            // Bluetooth connections can't pile them up.
+            let Some(pending) = link::Pending::start() else {
+                log::debug!("Phone sync: dropped a Bluetooth connection, too many handshakes");
+                drop(conn);
+                continue;
+            };
             let stream = bluetooth::bridge(conn);
             let (identity, host, sessions, stop): (_, Arc<dyn Host>, _, _) = (
                 this.identity.clone(),
@@ -354,9 +361,16 @@ impl SyncManager {
                 stop.clone(),
             );
             tauri::async_runtime::spawn(async move {
-                if let Err(e) =
-                    link::serve_stream(stream, Via::Bluetooth, &identity, host, sessions, stop)
-                        .await
+                if let Err(e) = link::serve_stream(
+                    stream,
+                    Via::Bluetooth,
+                    &identity,
+                    host,
+                    sessions,
+                    stop,
+                    pending,
+                )
+                .await
                 {
                     log::info!("Phone connection over Bluetooth ended: {e:#}");
                 }
@@ -551,6 +565,8 @@ impl SyncManager {
     pub fn unpair(self: &Arc<Self>, device_id: &str) -> Result<()> {
         self.sessions
             .send(device_id, Command::Bye("unpaired".into()));
+        // Even if the goodbye didn't fit in its queue, the session ends.
+        self.sessions.close(device_id);
         ledger::remove_peer(&self.hub.engine.conn()?, device_id)?;
         self.online
             .lock()
@@ -661,7 +677,14 @@ impl SyncManager {
     fn keep_clip(&self, clip: &Clip, peer: &str, incoming: bool, late: bool) {
         let (image, bytes) = match (&clip.kind, &clip.png) {
             (ClipKind::Image, Some(png)) => {
-                let file = format!("{}.png", clip.id);
+                // The id comes from the other device: as a file name only
+                // when it's a plain id, so it can't point outside the folder.
+                let id = if safe_clip_name(&clip.id) {
+                    clip.id.clone()
+                } else {
+                    identity::uuid()
+                };
+                let file = format!("{id}.png");
                 let decoded = STANDARD.decode(png).unwrap_or_default();
                 let saved = std::fs::create_dir_all(&self.clips_dir)
                     .and_then(|_| std::fs::write(self.clips_dir.join(&file), &decoded));
@@ -695,12 +718,21 @@ impl SyncManager {
         {
             Ok(dropped) => {
                 for file in dropped {
-                    let _ = std::fs::remove_file(self.clips_dir.join(file));
+                    if let Some(path) = self.clip_path(&file) {
+                        let _ = std::fs::remove_file(path);
+                    }
                 }
             }
             Err(e) => log::warn!("Couldn't keep a clip: {e:#}"),
         }
         self.changed();
+    }
+
+    /// A clip's image file in the clips folder; None for a name that could
+    /// reach outside it.
+    fn clip_path(&self, file: &str) -> Option<PathBuf> {
+        let id = file.strip_suffix(".png")?;
+        safe_clip_name(id).then(|| self.clips_dir.join(file))
     }
 
     /// A clip from the phone: onto the clipboard, unless it came too late.
@@ -709,8 +741,12 @@ impl SyncManager {
         if !settings.clipboard || settings.clipboard_paused(now_s()) {
             return;
         }
-        if clip.kind == ClipKind::Image && settings.clipboard_images_mb == 0 {
-            return;
+        if clip.kind == ClipKind::Image {
+            // Base64 is a third larger than the image it carries.
+            let bytes = clip.png.as_ref().map_or(0, |p| p.len() as u64 / 4 * 3);
+            if bytes > settings.clipboard_images_mb as u64 * 1024 * 1024 {
+                return;
+            }
         }
         let late = clip.age_ms > clipboard::LATE_MS;
         if !late {
@@ -735,7 +771,9 @@ impl SyncManager {
 
     pub fn clear_clips(&self) -> Result<()> {
         for file in ledger::clear_clips(&self.hub.engine.conn()?)? {
-            let _ = std::fs::remove_file(self.clips_dir.join(file));
+            if let Some(path) = self.clip_path(&file) {
+                let _ = std::fs::remove_file(path);
+            }
         }
         self.changed();
         Ok(())
@@ -757,7 +795,12 @@ impl SyncManager {
             },
             text: row.text,
             png: match row.image {
-                Some(file) => Some(STANDARD.encode(std::fs::read(self.clips_dir.join(file))?)),
+                Some(file) => {
+                    let path = self
+                        .clip_path(&file)
+                        .ok_or_else(|| anyhow!("bad clip file"))?;
+                    Some(STANDARD.encode(std::fs::read(path)?))
+                }
                 None => None,
             },
             age_ms: 0,
@@ -774,7 +817,10 @@ impl SyncManager {
             .find(|c| c.id == id)
             .and_then(|c| c.image)
             .ok_or_else(|| anyhow!("That clip has no image"))?;
-        let png = std::fs::read(self.clips_dir.join(file))?;
+        let png = std::fs::read(
+            self.clip_path(&file)
+                .ok_or_else(|| anyhow!("bad clip file"))?,
+        )?;
         Ok(format!("data:image/png;base64,{}", STANDARD.encode(png)))
     }
 
@@ -852,9 +898,16 @@ impl hub::Events for AppEvents {
         if let Some(sync) = self.sync() {
             let mut online = sync.online.lock().unwrap_or_else(|e| e.into_inner());
             match via {
-                Some(via) => online.insert(device_id.to_string(), via),
-                None => online.remove(device_id),
-            };
+                Some(via) => {
+                    online.insert(device_id.to_string(), via);
+                }
+                // An old session ending after the phone already came back
+                // mustn't mark the new one offline.
+                None if sync.sessions.connected(device_id) => {}
+                None => {
+                    online.remove(device_id);
+                }
+            }
         }
         let _ = SyncChanged.emit(&self.0);
     }
@@ -868,9 +921,24 @@ impl hub::Events for AppEvents {
 
     fn clip(&self, peer: &Peer, clip: Clip) {
         if let Some(sync) = self.sync() {
-            let peer = peer.clone();
-            // The clipboard can block for a moment; keep it off the session.
-            std::thread::spawn(move || sync.take_clip(&peer, clip));
+            // The clipboard can block for a moment, so clips go to one
+            // thread of their own, a few at a time; a burst beyond that is
+            // dropped rather than piling up threads and memory.
+            static QUEUE: std::sync::OnceLock<
+                std::sync::mpsc::SyncSender<(Arc<SyncManager>, Peer, Clip)>,
+            > = std::sync::OnceLock::new();
+            let queue = QUEUE.get_or_init(|| {
+                let (tx, rx) = std::sync::mpsc::sync_channel::<(Arc<SyncManager>, Peer, Clip)>(4);
+                std::thread::spawn(move || {
+                    for (sync, peer, clip) in rx {
+                        sync.take_clip(&peer, clip);
+                    }
+                });
+                tx
+            });
+            if queue.try_send((sync, peer.clone(), clip)).is_err() {
+                log::debug!("Phone sync: dropped a clip, too many waiting");
+            }
         }
     }
 
@@ -1050,4 +1118,10 @@ impl Extra for SettingsKinds {
             .emit("settings-changed", json!({ "setting": "transforms" }));
         Ok(())
     }
+}
+
+/// Whether a clip id is safe as a file name: letters, digits and dashes
+/// only, as the ids Legato makes are.
+fn safe_clip_name(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
