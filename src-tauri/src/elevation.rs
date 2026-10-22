@@ -3,6 +3,12 @@
 //! setting on, Legato runs elevated too: a scheduled task set to run with
 //! the highest privileges starts it, which Windows asks about once, when
 //! the task is made.
+//!
+//! The task skips that question every later time, so it must not become
+//! a way for other programs to get administrator rights: it's offered
+//! only when Legato is installed where a normal program can't change its
+//! files (Program Files, as the .msi installs it), and Legato checks the
+//! task still starts this very exe before handing over to it.
 
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
@@ -43,6 +49,84 @@ pub fn is_elevated() -> bool {
     }
 }
 
+/// Whether this account can be an administrator after a Windows question
+/// (an admin with UAC), or already is. A standard user would register the
+/// task under the admin who typed the password, so it's not offered there.
+fn can_elevate() -> bool {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows::Win32::Security::{
+        GetTokenInformation, TokenElevationType, TokenElevationTypeLimited, TOKEN_ELEVATION_TYPE,
+        TOKEN_QUERY,
+    };
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    if is_elevated() {
+        return true;
+    }
+    // SAFETY: a query on this process's own token, closed before returning.
+    unsafe {
+        let mut token = HANDLE::default();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
+            return false;
+        }
+        let mut kind = TOKEN_ELEVATION_TYPE::default();
+        let mut len = 0u32;
+        let ok = GetTokenInformation(
+            token,
+            TokenElevationType,
+            Some(&mut kind as *mut _ as *mut _),
+            std::mem::size_of::<TOKEN_ELEVATION_TYPE>() as u32,
+            &mut len,
+        )
+        .is_ok();
+        let _ = CloseHandle(token);
+        ok && kind == TokenElevationTypeLimited
+    }
+}
+
+/// The Program Files folders, from Windows rather than the environment.
+fn program_files() -> Vec<PathBuf> {
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::Shell::{
+        FOLDERID_ProgramFiles, FOLDERID_ProgramFilesX86, SHGetKnownFolderPath, KF_FLAG_DEFAULT,
+    };
+    [FOLDERID_ProgramFiles, FOLDERID_ProgramFilesX86]
+        .iter()
+        .filter_map(|id| {
+            // SAFETY: Windows allocates the path; it's copied, then freed.
+            unsafe {
+                let path = SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, None).ok()?;
+                let text = path.to_string().ok();
+                CoTaskMemFree(Some(path.0 as *const _));
+                text.map(PathBuf::from)
+            }
+        })
+        .collect()
+}
+
+/// Whether this exe sits under Program Files, where only an administrator
+/// can replace it or plant a DLL beside it.
+fn installed_for_all_users() -> bool {
+    let Ok(exe) = exe().and_then(|e| e.canonicalize().map_err(|e| e.to_string())) else {
+        return false;
+    };
+    program_files().iter().any(|dir| {
+        dir.canonicalize()
+            .is_ok_and(|dir| exe.starts_with(&dir) && exe != dir)
+    })
+}
+
+/// Why the setting can't be turned on here, as a key under
+/// `settings.advanced.adminApps`, or None when it can.
+pub fn unavailable() -> Option<&'static str> {
+    if !can_elevate() {
+        Some("notAdmin")
+    } else if !installed_for_all_users() {
+        Some("notAllUsers")
+    } else {
+        None
+    }
+}
+
 fn schtasks(args: &[&str]) -> bool {
     Command::new("schtasks.exe")
         .args(args)
@@ -55,49 +139,50 @@ pub fn task_exists() -> bool {
     schtasks(&["/Query", "/TN", TASK])
 }
 
+/// The exe the task starts, read back from Task Scheduler.
+fn task_command() -> Option<String> {
+    let out = Command::new("schtasks.exe")
+        .args(["/Query", "/TN", TASK, "/XML"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    // schtasks prints the XML in the console's code page or UTF-16.
+    let text = if out.stdout.starts_with(&[0xFF, 0xFE]) {
+        let units: Vec<u16> = out.stdout[2..]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
+            .collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let start = text.find("<Command>")? + "<Command>".len();
+    let end = start + text[start..].find("</Command>")?;
+    Some(xml_unescape(text[start..end].trim().trim_matches('"')))
+}
+
+/// Whether the task starts this exe, and this exe can't be swapped by a
+/// normal program; anything else is a task not to hand over to.
+fn task_is_ours() -> bool {
+    let (Some(command), Ok(exe)) = (task_command(), exe()) else {
+        return false;
+    };
+    command.eq_ignore_ascii_case(&exe.to_string_lossy()) && installed_for_all_users()
+}
+
 fn exe() -> Result<PathBuf, String> {
     std::env::current_exe().map_err(|e| e.to_string())
 }
 
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
-/// The task, as Task Scheduler XML: no trigger, started on demand, at
-/// normal priority (tasks default to below normal) and without a time limit.
-fn task_xml(exe: &str) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo>
-    <Description>Starts Legato as administrator so it can type into apps run as administrator.</Description>
-  </RegistrationInfo>
-  <Principals>
-    <Principal id="Author">
-      <LogonType>InteractiveToken</LogonType>
-      <RunLevel>HighestAvailable</RunLevel>
-    </Principal>
-  </Principals>
-  <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowStartOnDemand>true</AllowStartOnDemand>
-    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-    <Priority>4</Priority>
-  </Settings>
-  <Actions Context="Author">
-    <Exec>
-      <Command>{}</Command>
-    </Exec>
-  </Actions>
-</Task>
-"#,
-        xml_escape(exe)
-    )
+fn xml_unescape(s: &str) -> String {
+    s.replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
 }
 
 /// Runs `program` elevated and waits for it; Windows asks first. Err when
@@ -142,29 +227,48 @@ fn run_as_admin(program: &str, params: &str) -> Result<(), String> {
 }
 
 /// Makes the task, asking Windows first unless Legato already runs elevated.
+/// The definition travels inside the command line, never through a file a
+/// normal program could swap while Windows waits for the answer.
 pub fn create_task() -> Result<(), String> {
-    let exe = exe()?;
-    let xml = task_xml(&exe.to_string_lossy());
-    let path = std::env::temp_dir().join("legato-admin-task.xml");
-    // Task Scheduler reads UTF-16 with a byte order mark.
-    let mut bytes = vec![0xFF, 0xFE];
-    bytes.extend(xml.encode_utf16().flat_map(u16::to_le_bytes));
-    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
-    let path_text = path.to_string_lossy().to_string();
-    let result = if is_elevated() {
-        if schtasks(&["/Create", "/TN", TASK, "/XML", &path_text, "/F"]) {
+    use base64::Engine;
+    if let Some(reason) = unavailable() {
+        return Err(reason.into());
+    }
+    let exe = exe()?.to_string_lossy().replace('\'', "''");
+    let (path, name) = TASK.rsplit_once('\\').unwrap_or(("", TASK));
+    // No trigger, started on demand, at normal priority (tasks default to
+    // below normal) and without a time limit.
+    let script = format!(
+        "$ErrorActionPreference='Stop'\n\
+         try {{\n\
+         $a=New-ScheduledTaskAction -Execute '{exe}'\n\
+         $p=New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Highest\n\
+         $s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0 -Priority 4 -MultipleInstances IgnoreNew\n\
+         Register-ScheduledTask -TaskPath '\\{path}\\' -TaskName '{name}' -Action $a -Principal $p -Settings $s -Description 'Starts Legato as administrator.' -Force | Out-Null\n\
+         }} catch {{ exit 1 }}\n"
+    );
+    let encoded = base64::engine::general_purpose::STANDARD.encode(
+        script
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<u8>>(),
+    );
+    let params =
+        format!("-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand {encoded}");
+    if is_elevated() {
+        let ok = Command::new("powershell.exe")
+            .raw_arg(&params)
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .is_ok_and(|s| s.success());
+        if ok {
             Ok(())
         } else {
             Err("Couldn't set up starting as administrator.".into())
         }
     } else {
-        run_as_admin(
-            "schtasks.exe",
-            &format!("/Create /TN \"{TASK}\" /XML \"{path_text}\" /F"),
-        )
-    };
-    let _ = std::fs::remove_file(&path);
-    result
+        run_as_admin("powershell.exe", &params)
+    }
 }
 
 pub fn delete_task() {
@@ -178,12 +282,28 @@ pub fn delete_task() {
 /// (not elevated, even from an elevated Legato).
 fn relaunch_after_exit(elevated: bool) -> Result<(), String> {
     let then = if elevated {
-        format!("schtasks /Run /TN \"{TASK}\"")
+        format!("schtasks.exe /Run /TN '{TASK}'")
     } else {
-        format!("explorer.exe \"{}\"", exe()?.to_string_lossy())
+        format!(
+            "explorer.exe '{}'",
+            exe()?.to_string_lossy().replace('\'', "''")
+        )
     };
-    Command::new("cmd.exe")
-        .raw_arg(format!("/c ping -n 3 127.0.0.1 >nul & {then}"))
+    // Waits for this Legato to be gone (however long saving takes), so the
+    // next one isn't turned away as a second copy.
+    let script = format!(
+        "Wait-Process -Id {} -Timeout 30 -ErrorAction SilentlyContinue; {then}",
+        std::process::id()
+    );
+    Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+        ])
+        .arg(script)
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map(|_| ())
@@ -228,8 +348,10 @@ pub fn hand_over_at_startup(app: &AppHandle, hidden: bool) -> bool {
     if !settings.admin_apps || is_elevated() {
         return false;
     }
-    if !task_exists() {
-        // Removed from outside; work as a normal app again.
+    if !task_is_ours() {
+        // Removed from outside, or it starts another exe (Legato moved, or
+        // the task was changed): work as a normal app again.
+        log::warn!("The run-as-administrator task doesn't start this Legato; not using it");
         settings.admin_apps = false;
         crate::settings::write_settings(app, settings);
         return false;

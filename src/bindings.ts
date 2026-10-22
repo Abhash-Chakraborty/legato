@@ -726,6 +726,13 @@ async changeAdminAppsSetting(enabled: boolean) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Why Work in apps run as administrator can't be turned on here (a key
+ * under `settings.advanced.adminApps`), or null when it can.
+ */
+async adminAppsUnavailable() : Promise<string | null> {
+    return await TAURI_INVOKE("admin_apps_unavailable");
+},
+/**
  * Whether Legato runs as administrator now.
  */
 async isElevated() : Promise<boolean> {

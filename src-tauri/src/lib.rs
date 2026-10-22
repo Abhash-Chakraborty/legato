@@ -832,6 +832,7 @@ pub fn run(cli_args: CliArgs) {
             commands::bubble::change_live_caption_setting,
             commands::change_admin_apps_setting,
             commands::is_elevated,
+            commands::admin_apps_unavailable,
             commands::bubble::bubble_layout,
             commands::bubble::bubble_expand,
             commands::bubble::bubble_press,

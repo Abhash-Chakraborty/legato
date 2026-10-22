@@ -60,6 +60,14 @@ pub async fn change_admin_apps_setting(app: AppHandle, enabled: bool) -> Result<
     Ok(())
 }
 
+/// Why Work in apps run as administrator can't be turned on here (a key
+/// under `settings.advanced.adminApps`), or null when it can.
+#[tauri::command]
+#[specta::specta]
+pub fn admin_apps_unavailable() -> Option<String> {
+    crate::elevation::unavailable().map(str::to_string)
+}
+
 /// Whether Legato runs as administrator now.
 #[tauri::command]
 #[specta::specta]

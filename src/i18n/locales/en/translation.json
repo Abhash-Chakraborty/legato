@@ -316,7 +316,9 @@
       },
       "adminApps": {
         "label": "Work in apps run as administrator",
-        "description": "Legato restarts as administrator so dictation and shortcuts reach admin apps like an admin terminal; Windows asks once."
+        "description": "Legato restarts as administrator so dictation and shortcuts reach admin apps like an admin terminal; Windows asks once.",
+        "notAllUsers": "Needs Legato installed for all users, with the .msi installer, so no other program can change the Legato that runs as administrator.",
+        "notAdmin": "Needs a Windows account that's an administrator."
       },
       "autostart": {
         "label": "Launch at login",
