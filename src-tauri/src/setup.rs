@@ -15,7 +15,6 @@ use log::{debug, warn};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -131,27 +130,19 @@ pub fn status(app: &AppHandle, phase: PracticePhase) {
     }
 }
 
-static HINTED: AtomicBool = AtomicBool::new(false);
-
 /// On a setup step without a scene, a dictation start only shows the hint;
-/// true when it did, and the matching stop is then skipped.
+/// true when it did. No recording begins, so the coordinator stays idle and
+/// sends no stop for it.
 pub fn intercept_start(app: &AppHandle) -> bool {
     if !hint_only() {
         return false;
     }
-    HINTED.store(true, Ordering::SeqCst);
     let _ = PracticeHint.emit(app);
     true
 }
 
-/// Whether the stop belongs to a start that only showed the hint.
-pub fn take_hinted() -> bool {
-    HINTED.swap(false, Ordering::SeqCst)
-}
-
 /// The cancel key stopped whatever practice dictation was running.
 pub fn cancelled(app: &AppHandle) {
-    HINTED.store(false, Ordering::SeqCst);
     status(app, PracticePhase::Cancelled);
 }
 
@@ -368,7 +359,6 @@ mod tests {
     fn only_scenes_have_a_target() {
         set_mode(PracticeMode::Hint);
         assert!(hint_only());
-        assert!(!take_hinted());
         assert!(scene_target().is_none());
         set_mode(PracticeMode::Email);
         assert_eq!(scene_target().map(|t| t.category), Some(AppCategory::Email));
