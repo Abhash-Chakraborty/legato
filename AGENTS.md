@@ -154,7 +154,7 @@ Settings are stored using Tauri's store plugin with reactive updates:
 - Audio devices (microphone/output selection)
 - Speech model, plus an optional model per kind of app in Style
 - Style per kind of app: tone, paste keys, Enter after pasting, trailing space
-- Transforms, Ask and your AI provider; Notes, calls, Scratchpad and learning options
+- Transforms, Ask and your AI provider, with an optional provider and model each for dictation, transforms and Notes; Notes, calls, Scratchpad and learning options
 - Connections: calendars (their addresses in Credential Manager) and whether AI apps may read Legato over MCP
 
 ### Single Instance Architecture

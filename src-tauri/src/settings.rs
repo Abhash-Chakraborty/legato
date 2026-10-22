@@ -282,6 +282,55 @@ impl SyncSettings {
     }
 }
 
+/// The kinds of AI work that can have a model of their own, in Settings ›
+/// AI. Without one, a task uses the provider and model chosen above.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum AiTask {
+    /// Cleanup at Medium and the correction pass: a fast model pays off.
+    Dictation,
+    /// Transforms without a model of their own, and Ask.
+    Transforms,
+    /// Notes summaries, titles and tags, questions, fixes and follow-ups.
+    Notes,
+}
+
+/// A provider and model picked for one [`AiTask`].
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct TaskModel {
+    pub provider_id: String,
+    pub model: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, Type)]
+pub struct AiTaskModels {
+    #[serde(default)]
+    pub dictation: Option<TaskModel>,
+    #[serde(default)]
+    pub transforms: Option<TaskModel>,
+    #[serde(default)]
+    pub notes: Option<TaskModel>,
+}
+
+impl AiTaskModels {
+    pub fn get(&self, task: AiTask) -> Option<&TaskModel> {
+        match task {
+            AiTask::Dictation => self.dictation.as_ref(),
+            AiTask::Transforms => self.transforms.as_ref(),
+            AiTask::Notes => self.notes.as_ref(),
+        }
+    }
+
+    pub fn set(&mut self, task: AiTask, choice: Option<TaskModel>) {
+        let slot = match task {
+            AiTask::Dictation => &mut self.dictation,
+            AiTask::Transforms => &mut self.transforms,
+            AiTask::Notes => &mut self.notes,
+        };
+        *slot = choice;
+    }
+}
+
 /// Settings › Context & calls: noticing calls and offering notes.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
 pub struct CallSettings {
@@ -294,6 +343,10 @@ pub struct CallSettings {
     pub browser_titles: bool,
     #[serde(default = "crate::calls_rules::default_watched")]
     pub watched: Vec<CallApp>,
+    /// Every app these settings have seen offered, so one added in a later
+    /// version is watched once by default and then left as you set it.
+    #[serde(default = "crate::calls_rules::first_apps")]
+    pub known_apps: Vec<CallApp>,
     /// Starts notes after a countdown instead of asking.
     #[serde(default)]
     pub auto_start: bool,
@@ -330,6 +383,7 @@ impl Default for CallSettings {
             detect: true,
             browser_titles: true,
             watched: crate::calls_rules::default_watched(),
+            known_apps: CallApp::ALL.to_vec(),
             auto_start: false,
             countdown_secs: default_call_countdown(),
             snooze_minutes: default_call_snooze(),
@@ -343,10 +397,6 @@ impl Default for CallSettings {
     }
 }
 
-    /// Every app these settings have seen offered, so one added in a later
-    /// version is watched once by default and then left as you set it.
-    #[serde(default = "crate::calls_rules::first_apps")]
-    pub known_apps: Vec<CallApp>,
 /// A call Legato noticed, for Settings › Context & calls.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
 pub struct LastCall {
@@ -383,7 +433,6 @@ pub enum LearnMode {
 }
 
 /// Where the live transcript box shows while the bubble has a dictation.
-            known_apps: CallApp::ALL.to_vec(),
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum LiveCaption {
@@ -879,6 +928,9 @@ pub struct AppSettings {
     /// meetings recognise them.
     #[serde(default = "default_true")]
     pub notes_remember_voices: bool,
+    /// Models for kinds of AI work that shouldn't use the main one.
+    #[serde(default)]
+    pub ai_task_models: AiTaskModels,
     #[serde(default)]
     pub calls: CallSettings,
     #[serde(default)]
@@ -1528,6 +1580,7 @@ pub fn get_default_settings() -> AppSettings {
         notes_reminder: true,
         notes_speakers: true,
         notes_remember_voices: true,
+        ai_task_models: AiTaskModels::default(),
         calls: CallSettings::default(),
         sync: SyncSettings::default(),
         scratchpad_open: ScratchpadOpen::default(),
@@ -1635,6 +1688,11 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         if ensure_transform_bindings(&mut settings) {
             updated = true;
         }
+        // Call apps added since these settings were saved.
+        let calls = &mut settings.calls;
+        if crate::calls_rules::add_new_apps(&mut calls.watched, &mut calls.known_apps) {
+            updated = true;
+        }
 
         if updated {
             store.set("settings", serde_json::to_value(&settings).unwrap());
@@ -1688,11 +1746,6 @@ fn salvage_settings(stored: &serde_json::Value) -> AppSettings {
 
     serde_json::from_value(merged).unwrap_or_else(|e| {
         warn!("Failed to reassemble salvaged settings ({e}); falling back to defaults");
-        // Call apps added since these settings were saved.
-        let calls = &mut settings.calls;
-        if crate::calls_rules::add_new_apps(&mut calls.watched, &mut calls.known_apps) {
-            updated = true;
-        }
         get_default_settings()
     })
 }

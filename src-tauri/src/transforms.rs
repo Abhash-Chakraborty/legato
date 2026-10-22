@@ -735,7 +735,7 @@ fn run_ask(app: &AppHandle, instruction: String) {
         return;
     }
     let settings = get_settings(app);
-    let Some(config) = AiConfig::from_settings(&settings) else {
+    let Some(config) = AiConfig::for_task(&settings, crate::settings::AiTask::Transforms) else {
         let problem = AiProblem::not_set_up(&settings, None);
         overlay::show_overlay_notice_for(app, &problem_notice("Ask", &problem), PROBLEM_MS);
         return;

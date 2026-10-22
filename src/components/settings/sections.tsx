@@ -62,6 +62,7 @@ import {
   NotesTimeoutRow,
   TransformsUseRow,
   NotesSummaryRow,
+  TaskModelRow,
 } from "./ai/AiSettings";
 import {
   AutoStartRow,
@@ -837,6 +838,19 @@ export const buildSections = (
         ],
       },
       {
+        id: "ai-tasks",
+        titleKey: "settings.ai.tasks.title",
+        rows: (["dictation", "transforms", "notes"] as const).map((task) => ({
+          id: `ai-task-${task}`,
+          searchKeys: [
+            `settings.ai.tasks.${task}.title`,
+            `settings.ai.tasks.${task}.help`,
+          ],
+          render: () => <TaskModelRow task={task} />,
+          requires: needsAiModel,
+        })),
+      },
+      {
         id: "ai-limits",
         titleKey: "settings.ai.limits.title",
         rows: [
@@ -916,6 +930,8 @@ export const buildSections = (
               "calls.app.meet",
               "calls.app.slack",
               "calls.app.discord",
+              "calls.app.whatsapp",
+              "calls.app.telegram",
             ],
             render: () => <WatchedAppsRow />,
             requires: needsCallDetection,
@@ -930,8 +946,6 @@ export const buildSections = (
             searchKeys: [
               "settings.calls.test.title",
               "settings.calls.test.button",
-              "calls.app.whatsapp",
-              "calls.app.telegram",
             ],
             render: () => <TestDetectionRow />,
             requires: needsCallDetection,

@@ -237,6 +237,18 @@ async changePostProcessApiKeySetting(providerId: string, apiKey: string) : Promi
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Gives one kind of AI work its own provider and model, or with `None`
+ * sends it back to the main ones.
+ */
+async changeAiTaskModelSetting(task: AiTask, choice: TaskModel | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_ai_task_model_setting", { task, choice }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changePostProcessModelSetting(providerId: string, model: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_post_process_model_setting", { providerId, model }) };
@@ -2347,6 +2359,24 @@ at: number; latency_ms: number }
 /**
  * What the status line shows, on every screen that uses the AI.
  */
+/**
+ * The kinds of AI work that can have a model of their own, in Settings ›
+ * AI. Without one, a task uses the provider and model chosen above.
+ */
+export type AiTask = 
+/**
+ * Cleanup at Medium and the correction pass: a fast model pays off.
+ */
+"dictation" | 
+/**
+ * Transforms without a model of their own, and Ask.
+ */
+"transforms" | 
+/**
+ * Notes summaries, titles and tags, questions, fixes and follow-ups.
+ */
+"notes"
+export type AiTaskModels = { dictation?: TaskModel | null; transforms?: TaskModel | null; notes?: TaskModel | null }
 export type AiStatus = { kind: AiStatusKind; provider_id: string; provider_label: string; model: string; base_url: string; local: boolean; needs_key: boolean; has_key: boolean; 
 /**
  * The last successful Test connection for this provider and model.
@@ -2959,6 +2989,11 @@ detect?: boolean;
  */
 browser_titles?: boolean; watched?: CallApp[]; 
 /**
+ * Every app these settings have seen offered, so one added in a later
+ * version is watched once by default and then left as you set it.
+ */
+known_apps?: CallApp[]; 
+/**
  * Starts notes after a countdown instead of asking.
  */
 auto_start?: boolean; countdown_secs?: number; 
@@ -2988,11 +3023,6 @@ open_note?: boolean;
  * join it, with or without notes.
  */
 meeting_cards?: boolean; 
-/**
- * Every app these settings have seen offered, so one added in a later
- * version is watched once by default and then left as you set it.
- */
-known_apps?: CallApp[]; 
 /**
  * The last call Legato noticed.
  */
@@ -3403,7 +3433,11 @@ notes_speakers?: boolean;
  * Naming a speaker saves a short clip of their voice, so later
  * meetings recognise them.
  */
-notes_remember_voices?: boolean; calls?: CallSettings; sync?: SyncSettings; scratchpad_open?: ScratchpadOpen; 
+notes_remember_voices?: boolean; 
+/**
+ * Models for kinds of AI work that shouldn't use the main one.
+ */
+ai_task_models?: AiTaskModels; calls?: CallSettings; sync?: SyncSettings; scratchpad_open?: ScratchpadOpen; 
 /**
  * The desktop bubble: a small Legato dot that stays on screen, with
  * Dictate, Notes and the Scratchpad on hover.
@@ -3788,6 +3822,10 @@ export type PostProcessApiFormat =
  * Anthropic Messages (`/messages`)
  */
 "anthropic"
+/**
+ * A provider and model picked for one [`AiTask`].
+ */
+export type TaskModel = { provider_id: string; model: string }
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean; api_format?: PostProcessApiFormat }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 /**

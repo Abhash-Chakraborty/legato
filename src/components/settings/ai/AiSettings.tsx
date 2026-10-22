@@ -16,8 +16,10 @@ import {
 import {
   commands,
   type AiStatus,
+  type AiTask,
   type PostProcessApiFormat,
   type PostProcessProvider,
+  type TaskModel,
 } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useSettingsStore } from "../../../stores/settingsStore";
@@ -966,6 +968,100 @@ export const NotesSummaryRow: React.FC = () => {
         busy={isUpdating("ai_notes_enabled")}
         onChange={(on) => updateSetting("ai_notes_enabled", on)}
       />
+    </SettingContainer>
+  );
+};
+
+/* -------------------------------------------------------- task models */
+
+/** One kind of AI work with its own provider and model, or the main ones.
+ *  Only providers that can answer (a key saved, or none needed) are
+ *  offered. Picking one saves it with that provider's main model, if it
+ *  has one, which the model box then changes. */
+export const TaskModelRow: React.FC<{ task: AiTask }> = ({ task }) => {
+  const { t } = useTranslation();
+  const { settings, postProcessModelOptions, refreshSettings } = useSettings();
+  const { listed, selected } = useProviders();
+  const keyHints = useAiStore((s) => s.keyHints);
+  const saved = settings?.ai_task_models?.[task] ?? null;
+  // A provider picked whose model isn't typed yet; nothing is saved until
+  // it is.
+  const [draft, setDraft] = useState<string | null>(null);
+  const providerId = draft ?? saved?.provider_id ?? "main";
+  const usable = listed.filter(
+    (p) => KEYLESS.includes(p.id) || !!keyHints[p.id],
+  );
+  const mainModel = selected
+    ? settings?.post_process_models?.[selected.id]?.trim()
+    : "";
+  const options = postProcessModelOptions[providerId] ?? [];
+
+  useEffect(() => {
+    if (providerId === "main" || options.length > 0) return;
+    void commands
+      .fetchPostProcessModels(providerId)
+      .then((r) => {
+        if (r.status === "ok")
+          useSettingsStore
+            .getState()
+            .setPostProcessModelOptions(providerId, r.data);
+      })
+      .catch(() => {});
+  }, [providerId]);
+
+  const save = async (choice: TaskModel | null) => {
+    const result = await commands.changeAiTaskModelSetting(task, choice);
+    if (result.status === "error") return;
+    setDraft(null);
+    await refreshSettings();
+    useSettingsStore.setState({ savedAt: Date.now() });
+  };
+
+  const choose = (id: string) => {
+    if (id === "main") {
+      setDraft(null);
+      if (saved) void save(null);
+      return;
+    }
+    const model = settings?.post_process_models?.[id]?.trim() ?? "";
+    if (model) void save({ provider_id: id, model });
+    else setDraft(id);
+  };
+
+  const label = t(`settings.ai.tasks.${task}.title`);
+  return (
+    <SettingContainer
+      title={label}
+      description={t(`settings.ai.tasks.${task}.help`)}
+    >
+      <Dropdown
+        className="w-[180px]"
+        ariaLabel={t("settings.ai.tasks.provider", { task: label })}
+        selectedValue={providerId}
+        options={[
+          {
+            value: "main",
+            label: t("settings.ai.tasks.main"),
+            description:
+              selected && mainModel
+                ? `${selected.label} · ${mainModel}`
+                : undefined,
+          },
+          ...usable.map((p) => ({ value: p.id, label: p.label })),
+        ]}
+        onSelect={choose}
+      />
+      {providerId !== "main" && (
+        <ModelCombo
+          value={saved?.provider_id === providerId ? saved.model : ""}
+          options={options}
+          label={t("settings.ai.tasks.model", { task: label })}
+          onCommit={(model) => {
+            if (model.trim())
+              void save({ provider_id: providerId, model: model.trim() });
+          }}
+        />
+      )}
     </SettingContainer>
   );
 };

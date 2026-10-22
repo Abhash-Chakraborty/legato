@@ -305,7 +305,7 @@ fn polishes(
     mode: DictationMode,
     category: Option<&str>,
 ) -> bool {
-    let ai = ai::AiConfig::from_settings(settings).is_some();
+    let ai = ai::AiConfig::for_task(settings, crate::settings::AiTask::Dictation).is_some();
     let words = text.split_whitespace().count() as u32;
     (ai && settings.cleanup_level == CleanupLevel::Medium)
         || (ai && settings.ai_correction_enabled && words >= settings.ai_min_words)
@@ -328,11 +328,11 @@ pub(crate) async fn process_transcription_output(
     // With Cleanup at Medium the correction pass rides along in its request,
     // so a dictation waits for one round trip, not two.
     let medium = settings.cleanup_level == CleanupLevel::Medium
-        && ai::AiConfig::from_settings(&settings).is_some();
+        && ai::AiConfig::for_task(&settings, crate::settings::AiTask::Dictation).is_some();
     if !medium {
         if settings.ai_correction_enabled
             && text.split_whitespace().count() as u32 >= settings.ai_min_words
-            && ai::AiConfig::from_settings(&settings).is_some()
+            && ai::AiConfig::for_task(&settings, crate::settings::AiTask::Dictation).is_some()
         {
             stage(Stage::Fixing);
         }

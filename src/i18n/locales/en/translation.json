@@ -850,6 +850,24 @@
           "help": "After a recording, sends its transcript for a summary, decisions and action items, and answers questions about it."
         }
       },
+      "tasks": {
+        "title": "Model for each task",
+        "main": "Same as above",
+        "provider": "Provider for {{task}}",
+        "model": "Model for {{task}}",
+        "dictation": {
+          "title": "Dictation",
+          "help": "Cleanup and the correction pass. A small, fast model keeps dictation quick."
+        },
+        "transforms": {
+          "title": "Transforms and Ask",
+          "help": "Transforms without a model of their own, and the Ask shortcut."
+        },
+        "notes": {
+          "title": "Notes",
+          "help": "Summaries, titles and tags, questions and follow-ups. A larger model writes better summaries, and a meeting can wait a few seconds for one."
+        }
+      },
       "limits": {
         "title": "Limits",
         "minWords": {

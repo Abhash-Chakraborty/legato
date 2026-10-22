@@ -8,7 +8,9 @@ use crate::llm_client;
 use crate::managers::dictionary::DictionaryManager;
 use crate::notes_rules;
 use crate::secrets;
-use crate::settings::{self, AiLastTest, AppSettings, PostProcessApiFormat, PostProcessProvider};
+use crate::settings::{
+    self, AiLastTest, AiTask, AppSettings, PostProcessApiFormat, PostProcessProvider,
+};
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -128,19 +130,38 @@ impl AiConfig {
         })
     }
 
+    /// The provider and model picked for `task` in Settings › AI, otherwise
+    /// the active ones. A pick that can't be used any more (its provider
+    /// gone, or its key removed) falls back to the active ones too.
+    pub fn for_task(settings: &AppSettings, task: AiTask) -> Option<Self> {
+        let Some(choice) = settings.ai_task_models.get(task) else {
+            return Self::from_settings(settings);
+        };
+        Self::with_model(settings, &choice.provider_id, &choice.model).or_else(|| {
+            warn!("The model picked for {task:?} can't be used; using the main one");
+            Self::from_settings(settings)
+        })
+    }
+
     /// A transform's own provider and model when it has them, otherwise the
-    /// active ones.
+    /// model for transforms.
     pub fn for_transform(
         settings: &AppSettings,
         transform: &crate::settings::Transform,
     ) -> Option<Self> {
         let (Some(provider_id), Some(model)) = (&transform.provider_id, &transform.model) else {
-            return Self::from_settings(settings);
+            return Self::for_task(settings, AiTask::Transforms);
         };
+        Self::with_model(settings, provider_id, model)
+    }
+
+    /// This provider and model, or None when either is missing or the
+    /// provider needs a key it hasn't got.
+    fn with_model(settings: &AppSettings, provider_id: &str, model: &str) -> Option<Self> {
         let provider = settings
             .post_process_providers
             .iter()
-            .find(|p| &p.id == provider_id)?
+            .find(|p| p.id == provider_id)?
             .clone();
         let model = model.trim().to_string();
         let api_key = secrets::api_key(settings, &provider.id);
@@ -381,6 +402,7 @@ pub async fn summarise_note(
     app: &AppHandle,
     config: &AiConfig,
     lines: &[notes_rules::PromptLine<'_>],
+    tags_in_use: &[String],
 ) -> Result<notes_rules::NotesSummary, AiProblem> {
     let json_hint = !config.provider.supports_structured_output
         || config.provider.api_format == PostProcessApiFormat::Anthropic;
@@ -402,7 +424,6 @@ pub async fn summarise_note(
     let parts = notes_rules::transcript_parts(lines);
     if parts.len() <= 1 {
         let transcript = parts.into_iter().next().unwrap_or_default();
-    tags_in_use: &[String],
         return one(notes_rules::summary_request(
             &transcript,
             json_hint,
@@ -536,7 +557,7 @@ pub async fn medium_pass(
         debug!("Cleanup at Medium skipped: dictation is shorter than the minimum");
         return Ok(None);
     }
-    let Some(config) = AiConfig::from_settings(settings) else {
+    let Some(config) = AiConfig::for_task(settings, AiTask::Dictation) else {
         return Ok(None);
     };
     let entries = if settings.ai_correction_enabled {
@@ -608,7 +629,7 @@ pub async fn correction_pass(
         debug!("Correction pass skipped: dictation is shorter than the minimum");
         return Ok(None);
     }
-    let Some(config) = AiConfig::from_settings(settings) else {
+    let Some(config) = AiConfig::for_task(settings, AiTask::Dictation) else {
         return Ok(None);
     };
     let Some(dictionary) = app.try_state::<Arc<DictionaryManager>>() else {
@@ -698,7 +719,7 @@ pub fn warm_up(app: &AppHandle) {
     if !uses_ai {
         return;
     }
-    let Some(config) = AiConfig::from_settings(&settings) else {
+    let Some(config) = AiConfig::for_task(&settings, AiTask::Dictation) else {
         return;
     };
     tauri::async_runtime::spawn(async move {

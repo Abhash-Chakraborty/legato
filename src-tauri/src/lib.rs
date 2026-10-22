@@ -792,6 +792,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_post_process_api_format_setting,
             shortcut::change_post_process_api_key_setting,
             shortcut::change_post_process_model_setting,
+            shortcut::change_ai_task_model_setting,
             shortcut::set_post_process_provider,
             shortcut::fetch_post_process_models,
             shortcut::suspend_all_bindings,

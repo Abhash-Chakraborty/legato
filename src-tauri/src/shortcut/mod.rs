@@ -1234,6 +1234,36 @@ pub fn change_post_process_model_setting(
     Ok(())
 }
 
+/// Gives one kind of AI work its own provider and model, or with `None`
+/// sends it back to the main ones.
+#[tauri::command]
+#[specta::specta]
+pub fn change_ai_task_model_setting(
+    app: AppHandle,
+    task: settings::AiTask,
+    choice: Option<settings::TaskModel>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    let choice = match choice {
+        Some(c) => {
+            validate_provider_exists(&settings, &c.provider_id)?;
+            let model = c.model.trim().to_string();
+            if model.is_empty() {
+                return Err("A model name is needed".to_string());
+            }
+            Some(settings::TaskModel {
+                provider_id: c.provider_id,
+                model,
+            })
+        }
+        None => None,
+    };
+    settings.ai_task_models.set(task, choice);
+    settings::write_settings(&app, settings);
+    crate::ai::notify(&app);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn set_post_process_provider(app: AppHandle, provider_id: String) -> Result<(), String> {
