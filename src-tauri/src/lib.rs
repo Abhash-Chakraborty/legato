@@ -325,6 +325,18 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Manager before anything reads them.
     secrets::move_keys_out_of_settings(app_handle);
 
+    // The pages may play recordings through the asset protocol, and nothing
+    // else: its scope is empty in tauri.conf.json, so a page can't read
+    // other files that way. Added here since portable data lives anywhere.
+    if let Ok(dir) = portable::app_data_dir(app_handle) {
+        if let Err(e) = app_handle
+            .asset_protocol_scope()
+            .allow_directory(dir.join("recordings"), true)
+        {
+            log::warn!("Couldn't let the pages play recordings: {e}");
+        }
+    }
+
     // Note: Enigo (keyboard/mouse simulation) is NOT initialized here.
     // The frontend is responsible for calling the `initialize_enigo` command
     // after onboarding completes.

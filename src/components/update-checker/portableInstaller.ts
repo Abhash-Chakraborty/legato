@@ -11,6 +11,12 @@
 export const PORTABLE_RELEASES_URL =
   "https://github.com/Abhash-Chakraborty/legato/releases/latest";
 
+/** Where a release's own files live. The browser download skips the
+ *  updater's signature check, so a manifest pointing anywhere else (a
+ *  tampered latest.json) gets the releases page instead. */
+const RELEASE_DOWNLOADS =
+  "https://github.com/Abhash-Chakraborty/legato/releases/download/";
+
 /**
  * Pick the NSIS installer URL for the running architecture out of the update
  * manifest. Falls back to the generic releases page whenever there is no
@@ -32,5 +38,9 @@ export function resolvePortableInstallerUrl(
   if (!entry || typeof entry !== "object") return PORTABLE_RELEASES_URL;
 
   const url = (entry as Record<string, unknown>).url;
-  return typeof url === "string" ? url : PORTABLE_RELEASES_URL;
+  return typeof url === "string" &&
+    url.startsWith(RELEASE_DOWNLOADS) &&
+    !url.includes("..")
+    ? url
+    : PORTABLE_RELEASES_URL;
 }

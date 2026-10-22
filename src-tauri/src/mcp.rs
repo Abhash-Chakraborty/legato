@@ -302,6 +302,11 @@ impl Tools for Legato {
             }
             "add_scratchpad_note" => {
                 let text = arg_str(args, "text").ok_or("Give the note's text.")?;
+                // A note is something to read and send on, not a dump.
+                const MAX_NOTE_BYTES: usize = 100 * 1024;
+                if text.len() > MAX_NOTE_BYTES {
+                    return Err("That's too long for a Scratchpad note (100 KB at most).".into());
+                }
                 let mut conn = self.open(true)?;
                 let now = chrono::Utc::now().timestamp();
                 let note = scratch_store::create(

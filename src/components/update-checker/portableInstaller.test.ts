@@ -48,3 +48,16 @@ assert.equal(
 );
 
 console.log("portableInstaller: all assertions passed");
+
+// a manifest pointing anywhere but this repo's release downloads -> releases page
+assert.equal(
+  resolvePortableInstallerUrl(
+    {
+      platforms: {
+        "windows-x86_64-nsis": { url: "https://evil.example/Legato-setup.exe" },
+      },
+    },
+    "x86_64",
+  ),
+  PORTABLE_RELEASES_URL,
+);
