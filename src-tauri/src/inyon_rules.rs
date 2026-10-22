@@ -283,8 +283,13 @@ pub struct AgentAlert {
     pub agent: String,
     /// Which session: its name, or session › window.
     pub label: String,
-    /// The question's lines, the command it wants to run among them.
+    /// What the agent says before the command, like "Bash command" and
+    /// what it's for.
     pub body: Vec<String>,
+    /// The command it wants to run, when the question has one.
+    pub command: Vec<String>,
+    /// What it asks, after the command ("Do you want to proceed?").
+    pub ask: Vec<String>,
     pub options: Vec<PromptOption>,
     /// Ties an answer to this question, so a late tap can't hit the next.
     pub key: Option<String>,
@@ -361,6 +366,7 @@ impl Waiting {
     pub fn current(&self) -> Option<AgentAlert> {
         let (pane, prompt) = self.questions.first()?;
         let info = self.panes.get(pane);
+        let (body, command, ask) = split_body(&prompt.body);
         Some(AgentAlert {
             host: pane.host.clone(),
             pane: pane.pane.clone(),
@@ -368,7 +374,9 @@ impl Waiting {
                 .map(|p| p.agent.clone())
                 .unwrap_or_else(|| "agent".into()),
             label: info.map(|p| p.label.clone()).unwrap_or_default(),
-            body: prompt.body.clone(),
+            body,
+            command,
+            ask,
             options: prompt.options.clone(),
             key: prompt.key.clone(),
             more: self.questions.len().saturating_sub(1) as u32,
@@ -379,6 +387,37 @@ impl Waiting {
     pub fn clear(&mut self) {
         self.panes.clear();
         self.questions.clear();
+    }
+}
+
+/// Splits a question's lines into what comes before the command, the
+/// command and the question after it. The hub sets the command off with
+/// lines of "╌"; without them, a first line like "Bash command" means the
+/// next line is the command.
+pub fn split_body(lines: &[String]) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let rule = |l: &str| {
+        let l = l.trim();
+        !l.is_empty() && l.chars().all(|c| matches!(c, '╌' | '─' | '┄' | '-' | '—'))
+    };
+    let parts: Vec<Vec<String>> = lines
+        .split(|l| rule(l))
+        .map(|part| {
+            part.iter()
+                .map(|l| l.trim_end().to_string())
+                .filter(|l| !l.trim().is_empty())
+                .collect()
+        })
+        .collect();
+    match parts.as_slice() {
+        [head, command, rest @ ..] if !command.is_empty() => {
+            (head.clone(), command.clone(), rest.concat())
+        }
+        [only] if only.len() >= 3 && only[0].ends_with(" command") => (
+            vec![only[0].clone()],
+            vec![only[1].clone()],
+            only[2..].to_vec(),
+        ),
+        _ => (parts.concat(), Vec::new(), Vec::new()),
     }
 }
 
@@ -443,6 +482,73 @@ mod tests {
             multi: false,
             key: Some(key.into()),
         }
+    }
+
+    #[test]
+    fn splits_the_command_out_of_a_question() {
+        let lines = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // As the hub sends it.
+        let (body, command, ask) = split_body(&lines(&[
+            "Bash command",
+            "Write hello-inyon to out.txt",
+            "╌",
+            "echo hello-inyon > out.txt",
+            "╌",
+            "Do you want to proceed?",
+        ]));
+        assert_eq!(
+            body,
+            lines(&["Bash command", "Write hello-inyon to out.txt"])
+        );
+        assert_eq!(command, lines(&["echo hello-inyon > out.txt"]));
+        assert_eq!(ask, lines(&["Do you want to proceed?"]));
+        // Without the rules.
+        let (body, command, ask) = split_body(&lines(&[
+            "Bash command",
+            "rm -rf build",
+            "Do you want to proceed?",
+        ]));
+        assert_eq!(
+            (body.len(), command, ask.len()),
+            (1, lines(&["rm -rf build"]), 1)
+        );
+        // A question with no command.
+        let (body, command, _) = split_body(&lines(&["Which approach?", "Pick one"]));
+        assert_eq!((body.len(), command.len()), (2, 0));
+    }
+
+    #[test]
+    fn a_real_hubs_frames() {
+        // Captured from Inyon's companion test hub, trimmed.
+        let overview = r#"{"t":"overview","hosts":[{"config":{"id":"local","name":"abhash-arm","kind":"local"},"status":"ok","sessions":[{"id":"$0","name":"legato-test","attached":0,"windows":[{"id":"@0","index":0,"name":"legato-test","active":true,"activity":0,"panes":[{"id":"%1","index":0,"active":true,"command":"claude","cwd":"/x","title":"","width":110,"height":30,"dead":false,"agent":{"kind":"claude","pid":4132496,"state":"waiting","mode":"manual","waitingFor":"Write hello-inyon to out.txt: echo hello-inyon > out.txt","options":[{"n":1,"label":"Yes"},{"n":3,"label":"No"}],"ultracode":false}}]}]},{"id":"$1","name":"work","attached":0,"windows":[{"id":"@1","index":0,"name":"work","active":true,"activity":0,"panes":[{"id":"%0","index":0,"active":true,"command":"bash","cwd":"/x","title":"","width":80,"height":24,"dead":false}]}]}]}]}"#;
+        let empty = r#"{"t":"chat.screen","key":"local:%1","screen":{"working":false,"width":0}}"#;
+        let asking = r#"{"t":"chat.screen","key":"local:%1","screen":{"prompt":{"body":["Bash command","Write hello-inyon to out.txt","╌","echo hello-inyon > out.txt","╌","Do you want to proceed?"],"wholeLines":true,"options":[{"n":1,"label":"Yes","selected":true},{"n":2,"label":"Yes, and don't ask again for echo commands in this project","selected":false},{"n":3,"label":"No","selected":false}],"footer":"Esc to cancel · Tab to amend","multi":false,"key":"BashcommandWritehello-inyon"},"working":false,"width":110}}"#;
+        let mut waiting = Waiting::default();
+        let Some(Frame::Overview(panes)) = parse_frame(overview) else {
+            panic!("overview");
+        };
+        let me = PaneRef {
+            host: "local".into(),
+            pane: "%1".into(),
+        };
+        assert_eq!(waiting.overview(panes), (vec![me.clone()], vec![]));
+        for frame in [empty, asking] {
+            let Some(Frame::Screen { pane, prompt }) = parse_frame(frame) else {
+                panic!("chat.screen");
+            };
+            waiting.screen(pane, prompt);
+        }
+        let alert = waiting.current().expect("a question");
+        assert_eq!((alert.host.as_str(), alert.pane.as_str()), ("local", "%1"));
+        assert_eq!(alert.label, "legato-test");
+        assert_eq!(
+            alert.command,
+            vec!["echo hello-inyon > out.txt".to_string()]
+        );
+        assert_eq!(alert.options.len(), 3);
+        assert_eq!(alert.key.as_deref(), Some("BashcommandWritehello-inyon"));
+        waiting.answered(&me, alert.key.as_deref());
+        assert_eq!(waiting.current(), None);
     }
 
     #[test]

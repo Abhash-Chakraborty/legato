@@ -1047,6 +1047,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* A command keeps its line breaks, up to three lines. */
+.sagent-body > .sagent-cmd {
+  white-space: pre;
+}
 .sagent-cmd {
   margin: 4px 0;
   padding: 6px 9px;

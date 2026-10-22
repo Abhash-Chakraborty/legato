@@ -129,6 +129,8 @@ interface AgentCard {
   agent: string;
   label: string;
   body: string[];
+  command: string[];
+  ask: string[];
   options: { n: number; label: string }[];
   key: string | null;
   more: number;
@@ -1144,15 +1146,19 @@ const RecordingOverlay: React.FC = () => {
             </span>
           )}
         </div>
-        {card.body.length > 0 && (
-          <div className="sagent-body">
-            {card.body.slice(0, 4).map((line, i) => (
-              <div key={i} className={i === 1 ? "sagent-cmd" : ""}>
-                {line}
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="sagent-body">
+          {card.body.slice(0, 2).map((line, i) => (
+            <div key={`b${i}`}>{line}</div>
+          ))}
+          {card.command.length > 0 && (
+            <div className="sagent-cmd">
+              {card.command.slice(0, 3).join("\n")}
+            </div>
+          )}
+          {card.ask.slice(0, 2).map((line, i) => (
+            <div key={`a${i}`}>{line}</div>
+          ))}
+        </div>
         <div className="sagent-opts">
           {card.options.map((o) => (
             <button
