@@ -298,8 +298,14 @@ pub fn clean_answer(answer: &str, input: &str) -> String {
     static FENCE: Lazy<Regex> =
         Lazy::new(|| Regex::new(r"(?s)^```[\w+-]*\n(.*?)\n?```$").expect("valid regex"));
     let answer = THINK.replace(answer, "");
+    // Two spaces before a line break are a Markdown break, junk in a text
+    // field.
     let mut out = answer
         .replace(['\u{200B}', '\u{200C}', '\u{200D}', '\u{FEFF}'], "")
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
         .trim()
         .to_string();
     if !input.contains("```") {
@@ -476,6 +482,7 @@ mod tests {
         assert_eq!(clean_answer("\"Hi\"", "\"hi\""), "\"Hi\"");
         assert_eq!(clean_answer("\u{201c}Hi\u{201d}", "hi"), "Hi");
         assert_eq!(clean_answer("a\u{200B}b", "ab"), "ab");
+        assert_eq!(clean_answer("- one  \n- two", "one two"), "- one\n- two");
     }
 
     #[test]

@@ -37,4 +37,14 @@ assert.deepEqual(
   ["same"],
 );
 
+// Punctuation added after a word is the only change shown.
+assert.deepEqual(wordDiff("on Windows 11", "on Windows 11."), [
+  { kind: "same", text: "on Windows 11" },
+  { kind: "added", text: "." },
+]);
+assert.deepEqual(changeCount(wordDiff("before Friday", "before Friday.")), {
+  added: 0,
+  removed: 0,
+});
+
 console.log("diff: ok");

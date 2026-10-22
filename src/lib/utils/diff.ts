@@ -8,8 +8,14 @@ export interface DiffPart {
  *  the whole text as replaced, so a long rewrite never stalls the UI. */
 const MAX_WORDS = 1500;
 
-/** Words with the space after each one, so the parts join back to the text. */
-const split = (text: string): string[] => text.match(/\S+\s*|\s+/g) ?? [];
+/** Words with the space after each one, so the parts join back to the text.
+ *  Punctuation at the end of a word is a piece of its own, so a full stop
+ *  added after "11" shows as just the full stop. */
+const split = (text: string): string[] =>
+  (text.match(/\S+\s*|\s+/g) ?? []).flatMap((piece) => {
+    const [, word, mark] = piece.match(/^(.*?[^.,!?;:])([.,!?;:]+\s*)$/s) ?? [];
+    return word && mark ? [word, mark] : [piece];
+  });
 
 const push = (parts: DiffPart[], kind: DiffPart["kind"], text: string) => {
   const last = parts[parts.length - 1];
@@ -69,6 +75,9 @@ export function changeCount(parts: DiffPart[]): {
   const count = (kind: DiffPart["kind"]) =>
     parts
       .filter((p) => p.kind === kind)
-      .reduce((n, p) => n + (p.text.match(/\S+/g)?.length ?? 0), 0);
+      .reduce(
+        (n, p) => n + (p.text.match(/[\p{L}\p{N}]\S*/gu)?.length ?? 0),
+        0,
+      );
   return { added: count("added"), removed: count("removed") };
 }
