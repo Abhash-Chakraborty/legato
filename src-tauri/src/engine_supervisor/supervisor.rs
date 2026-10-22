@@ -924,8 +924,17 @@ impl Owner {
     /// Make sure the slot holds a worker with the model loaded, starting a
     /// fresh one if the last one died or was cancelled.
     fn ensure_worker(&mut self) -> Result<(), EngineError> {
-        if self.worker.is_some() {
-            return Ok(());
+        if let Some(worker) = &self.worker {
+            // Ended while it sat idle (from Task Manager, say): nothing it
+            // was asked to do killed it, so the GPU isn't to blame.
+            let Some(status) = worker.control.exited() else {
+                return Ok(());
+            };
+            warn!(
+                "Transcription worker (pid {}) exited while idle: {}",
+                worker.control.pid, status
+            );
+            self.worker = None;
         }
         if self.spec.is_none() {
             return Err(not_loaded());
@@ -1224,6 +1233,9 @@ struct Control {
     pid: u32,
     child: Mutex<Child>,
     stdin: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
+    /// Set when Legato kills it (a cancel, a stopped aside), so its exit
+    /// isn't reported as a crash.
+    killed: AtomicBool,
 }
 
 impl Control {
@@ -1239,7 +1251,13 @@ impl Control {
     }
 
     fn kill(&self) {
+        self.killed.store(true, Ordering::Release);
         let _ = lock(&self.child).kill();
+    }
+
+    /// How it exited, if it already has.
+    fn exited(&self) -> Option<ExitStatus> {
+        lock(&self.child).try_wait().ok().flatten()
     }
 }
 
@@ -1301,6 +1319,7 @@ impl Worker {
                 pid,
                 child: Mutex::new(child),
                 stdin: Mutex::new(Some(stdin_tx)),
+                killed: AtomicBool::new(false),
             }),
             responses,
             stderr_done,
@@ -1414,7 +1433,12 @@ impl Worker {
             }
         };
         let tail = self.native_tail();
-        if tail.is_empty() {
+        if self.control.killed.load(Ordering::Acquire) {
+            debug!(
+                "Transcription worker (pid {}) stopped: {}",
+                self.control.pid, status
+            );
+        } else if tail.is_empty() {
             error!(
                 "Transcription worker (pid {}) died: {}",
                 self.control.pid, status
@@ -1872,6 +1896,31 @@ mod tests {
         engine
             .transcribe(test_pcm(), RunOptions::default())
             .unwrap();
+    }
+
+    /// A worker ended from outside while it sat idle (Task Manager) is
+    /// replaced on the same device: nothing it ran crashed it, so the GPU
+    /// isn't marked unavailable. Ends every process named like the worker.
+    #[test]
+    #[ignore]
+    fn worker_ended_while_idle_is_replaced_on_gpu() {
+        set_fault(None, false);
+        let engine = EngineSupervisor::new(true);
+        let info = engine.load(spec()).unwrap();
+        assert!(info.on_gpu, "needs a GPU");
+        let exe = env_path("LEGATO_TRANSCRIBE_WORKER_EXE");
+        let name = exe.file_name().unwrap().to_string_lossy().into_owned();
+        let ended = ProcessCommand::new("taskkill")
+            .args(["/F", "/IM", &name])
+            .status()
+            .unwrap();
+        assert!(ended.success());
+        thread::sleep(Duration::from_millis(500));
+        engine
+            .transcribe(test_pcm(), RunOptions::default())
+            .unwrap();
+        assert!(!engine.shared.gpu_unavailable());
+        assert!(engine.loaded().unwrap().on_gpu);
     }
 
     /// A crash that only happens on the GPU: the dictation succeeds on CPU,
