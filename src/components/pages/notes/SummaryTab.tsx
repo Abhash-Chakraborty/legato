@@ -293,7 +293,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
       ) : hasSummary ? (
         <>
           {stale && enabled && hasAi && (
-            <p className="mb-4 flex max-w-[640px] flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--r-md)] bg-surface-2 px-3 py-2 text-[13px] text-text-2">
+            <p className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--r-md)] bg-surface-2 px-3 py-2 text-[13px] text-text-2">
               {t("notes.summary.stale")}
               <button
                 type="button"
@@ -304,9 +304,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
               </button>
             </p>
           )}
-          <p className="max-w-[640px] text-[15px] leading-relaxed">
-            {note.summary}
-          </p>
+          <p className="text-[15px] leading-relaxed">{note.summary}</p>
           {note.decisions.length > 0 && (
             <section className="mt-6">
               <h3 className="mb-2 text-sm font-medium">
