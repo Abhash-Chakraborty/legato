@@ -589,6 +589,8 @@ const RecordingOverlay: React.FC = () => {
       );
 
       const unlistenHide = await listen("hide-overlay", () => {
+        clearTimeout(hoverTimerRef.current);
+        setIslandOpen(false);
         setIsVisible(false);
         setCaptureReady(false);
         setStage(null);

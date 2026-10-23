@@ -1476,7 +1476,7 @@
     "loadingModel": "Loading model...",
     "stage": {
       "fixing": "Fixing words...",
-      "polishing": "Polishing...",
+      "polishing": "Cleaning up...",
       "transforming": "Running your transform...",
       "waiting": "Finishing the last dictation...",
       "pasting": "Pasting...",

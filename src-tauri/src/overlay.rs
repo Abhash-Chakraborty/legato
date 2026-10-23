@@ -1120,7 +1120,7 @@ pub fn island_cover_changed(app_handle: &AppHandle, covered: bool) {
 /// checks the cursor against the shape 30 times a second while the island
 /// shows, and sleeps while it doesn't.
 pub mod island_hit {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
     use std::sync::{Condvar, Mutex, Once};
     use std::time::Duration;
 
@@ -1133,6 +1133,12 @@ pub mod island_hit {
     static STARTED: Once = Once::new();
     /// Whether the window takes clicks now.
     static TAKING: AtomicBool = AtomicBool::new(true);
+    /// What the page last heard about the pointer: 0 off the shape, 1 on
+    /// it, 2 nothing since the island was armed. Kept apart from TAKING,
+    /// which disarming resets without the page hearing, so the island
+    /// stayed open after the pointer had gone.
+    static TOLD: AtomicU8 = AtomicU8::new(UNTOLD);
+    const UNTOLD: u8 = 2;
 
     /// The page's report of where the shape is.
     pub fn set_shape(x: f64, y: f64, w: f64, h: f64) {
@@ -1156,6 +1162,7 @@ pub mod island_hit {
             }
         });
         take_clicks(window, false);
+        TOLD.store(UNTOLD, Ordering::SeqCst);
         *ARMED.lock().unwrap_or_else(|e| e.into_inner()) = Some(window.clone());
         WAKE.notify_all();
     }
@@ -1183,17 +1190,20 @@ pub mod island_hit {
                 let (inside, close) = cursor_on_shape(&window);
                 near = close;
                 // The window may have been disarmed while we looked.
-                if ARMED.lock().unwrap_or_else(|e| e.into_inner()).is_some()
-                    && TAKING.load(Ordering::SeqCst) != inside
-                {
-                    take_clicks(&window, inside);
+                if ARMED.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+                    if TAKING.load(Ordering::SeqCst) != inside {
+                        take_clicks(&window, inside);
+                    }
                     // The page can't see the pointer leave once clicks pass
                     // through, so it hears both ways from here.
-                    use tauri::{Emitter, Manager};
-                    let _ =
-                        window
-                            .app_handle()
-                            .emit_to("recording_overlay", "island-pointer", inside);
+                    if TOLD.swap(inside as u8, Ordering::SeqCst) != inside as u8 {
+                        use tauri::{Emitter, Manager};
+                        let _ = window.app_handle().emit_to(
+                            "recording_overlay",
+                            "island-pointer",
+                            inside,
+                        );
+                    }
                 }
             }
             // Quick only while the pointer is near: from across the screen
