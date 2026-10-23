@@ -137,21 +137,38 @@
   color: var(--s-muted);
 }
 
-/* At rest: a small shape with one teal dot; under the pointer it opens to
-   Dictate, Notes, the Scratchpad and the dictation keys. */
+/* At rest: a small shape with the time in grey; under the pointer it opens
+   to Dictate, Notes, the Scratchpad and today's words. Nothing at rest is
+   coloured, so it never looks like the microphone is on. */
 .irest {
-  width: 112px;
-  height: 24px;
+  height: 20px;
+  padding: 0 11px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.irest-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--s-accent);
-  opacity: 0.8;
+.irest-time {
+  font-family: var(--s-font);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--s-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.irest-tx {
+  margin-left: 7px;
+  padding-left: 7px;
+  border-left: 1px solid var(--s-border);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--s-font);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--s-muted);
 }
 .irest.open {
   width: auto;
@@ -202,13 +219,11 @@
   height: 16px;
   flex: none;
 }
-.ikeys {
-  margin-left: 6px;
+.iwords {
+  margin-left: 4px;
   font-size: 11px;
-  color: var(--s-faint);
-  border: 1px solid var(--s-border);
-  border-radius: 4px;
-  padding: 3px 5px;
+  color: var(--s-muted);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 

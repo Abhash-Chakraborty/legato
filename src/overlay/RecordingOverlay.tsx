@@ -430,13 +430,42 @@ const RecordingOverlay: React.FC = () => {
   const [overflowing, setOverflowing] = useState(false);
   // The bar takes the island's look (Settings › Bar).
   const [island, setIsland] = useState(false);
-  // The resting island opened under the pointer, and the dictation keys it
-  // shows then.
+  // The resting island opened under the pointer; at rest it shows the time,
+  // and open, the words dictated today.
   const [islandOpen, setIslandOpen] = useState(false);
-  const [dictateKeys, setDictateKeys] = useState("");
+  const [clockNow, setClockNow] = useState(() => new Date());
+  const [wordsToday, setWordsToday] = useState<number | null>(null);
+  // The transform that runs after every dictation (Transforms), named at
+  // rest and while dictating so it's clear the words will be rewritten.
+  const [autoTransform, setAutoTransform] = useState<string | null>(null);
   // Notes and the Scratchpad can be off in Settings › Features.
   const [features, setFeatures] = useState({ notes: true, scratchpad: true });
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // The resting island's clock, ticking on the minute, and today's words,
+  // kept current as dictations are saved.
+  const resting = island && state === "rest";
+  useEffect(() => {
+    if (!resting) return;
+    setClockNow(new Date());
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      const now = new Date();
+      setClockNow(now);
+      timer = setTimeout(tick, 60_000 - (now.getTime() % 60_000) + 50);
+    };
+    timer = setTimeout(tick, 60_000 - (Date.now() % 60_000) + 50);
+    const load = () =>
+      commands.getHistorySummary().then((r) => {
+        if (r.status === "ok") setWordsToday(r.data.today.words);
+      });
+    load();
+    const off = events.historyUpdatePayload.listen(() => load());
+    return () => {
+      clearTimeout(timer);
+      off.then((f) => f());
+    };
+  }, [resting]);
 
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
   // Live-text scroll-back: the text region "sticks" to the newest line while the
@@ -476,8 +505,13 @@ const RecordingOverlay: React.FC = () => {
             setMini(settings.data.overlay_style === "minimal");
             setCaptionTop(settings.data.live_caption === "top");
             setIsland(settings.data.bar_look === "island");
-            setDictateKeys(
-              settings.data.bindings?.transcribe?.current_binding ?? "",
+            const autoId = settings.data.auto_transform_id;
+            setAutoTransform(
+              (autoId &&
+                settings.data.transforms?.find(
+                  (x) => x.id === autoId && x.enabled,
+                )?.name) ||
+                null,
             );
             setFeatures({
               notes: settings.data.notes_enabled ?? true,
@@ -787,6 +821,11 @@ const RecordingOverlay: React.FC = () => {
     <div className="sbase">
       <div className="sbase-l">
         <span className={`sdot ${captureReady ? "ready" : "arming"}`} />
+        {autoTransform && (
+          <span className="stx" title={t("overlay.autoTransform")}>
+            {autoTransform}
+          </span>
+        )}
       </div>
       {waveform}
       <div className="sbase-r">
@@ -808,7 +847,7 @@ const RecordingOverlay: React.FC = () => {
     </div>
   );
 
-  // ---- The island at rest: a small shape that opens under the pointer
+  // ---- The island at rest: the time, small; under the pointer it opens
   // with Dictate, Notes and the Scratchpad.
   if (state === "rest") {
     return frame(
@@ -843,13 +882,24 @@ const RecordingOverlay: React.FC = () => {
               <NotebookPen aria-hidden="true" />
             </button>
           )}
-          {dictateKeys && (
-            <span className="ikeys">{formatKeyCombination(dictateKeys)}</span>
+          {wordsToday !== null && wordsToday > 0 && (
+            <span className="iwords">
+              {t("overlay.island.wordsToday", {
+                count: wordsToday,
+                formatted: wordsToday.toLocaleString(),
+              })}
+            </span>
           )}
         </div>
       ) : (
         <div className="irest" aria-hidden="true">
-          <span className="irest-dot" />
+          <span className="irest-time">
+            {clockNow.toLocaleTimeString([], {
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </span>
+          {autoTransform && <span className="irest-tx">{autoTransform}</span>}
         </div>
       ),
       islandOpen ? "rest-open" : "rest",
@@ -908,8 +958,8 @@ const RecordingOverlay: React.FC = () => {
       <div
         key={session}
         className={`scard ${open ? "open" : ""} ${collapsed ? "working" : ""} ${
-          isVisible ? "" : "leaving"
-        }`}
+          autoTransform ? "withtx" : ""
+        } ${isVisible ? "" : "leaving"}`}
       >
         <div className="stext">
           <div className="stext-clip">
@@ -1618,7 +1668,11 @@ const RecordingOverlay: React.FC = () => {
   }
 
   return frame(
-    <div className={`scard compact ${working && isVisible ? "cworking" : ""}`}>
+    <div
+      className={`scard compact ${working && isVisible ? "cworking" : ""} ${
+        autoTransform ? "withtx" : ""
+      }`}
+    >
       {working ? workingRow(workLabel, true) : listeningRow(false, true)}
     </div>,
     "dictation",

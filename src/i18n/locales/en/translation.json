@@ -1459,6 +1459,7 @@
     "showNotes": "Notes · {{time}}"
   },
   "overlay": {
+    "autoTransform": "Runs after every dictation",
     "cancel": "Cancel",
     "finish": "Finish and paste",
     "transcribing": "Transcribing...",
@@ -1593,6 +1594,8 @@
     },
     "island": {
       "dictate": "Dictate",
+      "wordsToday_one": "{{formatted}} word today",
+      "wordsToday_other": "{{formatted}} words today",
       "notes": "Notes",
       "scratchpad": "Scratchpad"
     },
@@ -2993,19 +2996,9 @@
     "callSettings": "Call detection settings",
     "calls": {
       "label": "Call detection",
-      "off": "Call detection is off",
-      "offHelp": "Legato won't offer to take notes when a call starts. You can still record from here.",
-      "turnOn": "Turn on",
       "live": "{{app}} call in progress",
       "liveHelp": "Started at {{time}} · not recording",
-      "start": "Start notes",
-      "none": "No apps to watch",
-      "noneHelp": "Call detection is on, but every call app is switched off.",
-      "chooseApps": "Choose apps",
-      "waiting": "No call right now",
-      "waitingHelp": "Watching {{apps}} for calls.",
-      "test": "Test detection",
-      "list": "{{list}} and {{last}}"
+      "start": "Start notes"
     },
     "line": {
       "menu": "Line actions",
