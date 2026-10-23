@@ -17,6 +17,8 @@
     "uninstallHandy": "Your settings, history and recordings are now in Legato.\n\nUninstall Handy so the two apps don't both run and fight over the same shortcut. Open Windows Settings to uninstall it?"
   },
   "sidebar": {
+    "collapse": "Collapse",
+    "expand": "Expand the sidebar",
     "label": "Pages",
     "home": "Home",
     "dictionary": "Dictionary",

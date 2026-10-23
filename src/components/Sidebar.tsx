@@ -7,6 +7,8 @@ import {
   Cpu,
   House,
   NotebookPen,
+  PanelLeftClose,
+  PanelLeftOpen,
   Replace,
   Scissors,
   Settings,
@@ -78,21 +80,25 @@ const startsGroup = (top: NavItem[], i: number) => {
   return TOP.slice(from, TOP.indexOf(top[i]) + 1).some((n) => n.gapBefore);
 };
 
-const NavButton: React.FC<{ item: NavItem; gap: boolean }> = ({
-  item,
-  gap,
-}) => {
+const NavButton: React.FC<{
+  item: NavItem;
+  gap: boolean;
+  collapsed: boolean;
+}> = ({ item, gap, collapsed }) => {
   const { t } = useTranslation();
   const page = useNavStore((state) => state.page);
   const go = useNavStore((state) => state.go);
   const current = page === item.id;
   const Icon = item.icon;
+  const label = t(item.labelKey);
 
   return (
     <button
       type="button"
       onClick={() => go(item.id)}
       aria-current={current ? "page" : undefined}
+      aria-label={collapsed ? label : undefined}
+      title={collapsed ? label : undefined}
       className={`group relative flex h-[38px] w-full items-center gap-3 rounded-[var(--r-md)] px-2.5 text-[15px] text-text transition-colors duration-[var(--dur-1)] hover:duration-0 ring-inside ${
         current
           ? "bg-sidebar-active font-medium"
@@ -109,9 +115,9 @@ const NavButton: React.FC<{ item: NavItem; gap: boolean }> = ({
         aria-hidden
         className={`h-[18px] w-[18px] flex-none stroke-[1.75] ${current ? "text-text" : "text-text-2 group-hover:text-text"}`}
       />
-      <span className="min-w-0 flex-1 truncate text-start">
-        {t(item.labelKey)}
-      </span>
+      {!collapsed && (
+        <span className="min-w-0 flex-1 truncate text-start">{label}</span>
+      )}
     </button>
   );
 };
@@ -121,6 +127,8 @@ export const Sidebar: React.FC = () => {
   const { settings } = useSettings();
   const page = useNavStore((state) => state.page);
   const go = useNavStore((state) => state.go);
+  const collapsed = useNavStore((state) => state.sidebarCollapsed);
+  const toggle = useNavStore((state) => state.toggleSidebar);
   const top = TOP.filter((item) => shown(item, settings));
 
   // A page whose feature was just switched off goes back to Home.
@@ -135,12 +143,47 @@ export const Sidebar: React.FC = () => {
       className="flex min-h-0 flex-col gap-0.5 overflow-hidden px-3 pt-1 pb-4"
     >
       {top.map((item, i) => (
-        <NavButton key={item.id} item={item} gap={startsGroup(top, i)} />
+        <NavButton
+          key={item.id}
+          item={item}
+          gap={startsGroup(top, i)}
+          collapsed={collapsed}
+        />
       ))}
       <div className="flex-1" />
       {BOTTOM.map((item) => (
-        <NavButton key={item.id} item={item} gap={!!item.gapBefore} />
+        <NavButton
+          key={item.id}
+          item={item}
+          gap={!!item.gapBefore}
+          collapsed={collapsed}
+        />
       ))}
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+        title={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+        className="group mt-1 flex h-[34px] w-full items-center gap-3 rounded-[var(--r-md)] px-2.5 text-[13px] text-text-3 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0 active:bg-surface-4 ring-inside"
+      >
+        {collapsed ? (
+          <PanelLeftOpen
+            aria-hidden
+            className="h-[18px] w-[18px] flex-none stroke-[1.75]"
+          />
+        ) : (
+          <PanelLeftClose
+            aria-hidden
+            className="h-[18px] w-[18px] flex-none stroke-[1.75]"
+          />
+        )}
+        {!collapsed && (
+          <span className="min-w-0 flex-1 truncate text-start">
+            {t("sidebar.collapse")}
+          </span>
+        )}
+      </button>
     </nav>
   );
 };

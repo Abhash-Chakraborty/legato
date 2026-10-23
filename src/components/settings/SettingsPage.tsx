@@ -160,8 +160,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-[1120px] items-start gap-7 min-[1180px]:gap-9">
-      <div className="sticky top-0 w-[168px] flex-none min-[1180px]:w-[184px]">
+    <div className="mx-auto flex w-full max-w-[1120px] items-start gap-6 min-[1180px]:gap-8">
+      <div className="sticky top-0 w-[184px] flex-none min-[1180px]:w-[200px]">
         <div className="relative mb-3">
           <Search
             className="pointer-events-none absolute start-[11px] top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-text-3"
@@ -214,7 +214,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 data-section={s.id}
                 onClick={() => openSection(s.id)}
                 aria-current={on ? "true" : undefined}
-                className={`group flex h-[34px] w-full items-center gap-2.5 rounded-[var(--r-sm)] px-2.5 text-sm transition-colors duration-[var(--dur-1)] hover:duration-0 ring-inside ${
+                className={`group flex h-9 w-full items-center gap-2.5 rounded-[var(--r-sm)] px-2.5 text-[15px] transition-colors duration-[var(--dur-1)] hover:duration-0 ring-inside ${
                   on
                     ? "bg-surface-2 font-medium text-text"
                     : "text-text-2 hover:bg-surface-2 hover:text-text"
@@ -222,7 +222,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               >
                 <Icon
                   aria-hidden
-                  className={`h-4 w-4 flex-none stroke-[1.75] ${on ? "text-text" : "text-text-3 group-hover:text-text-2"}`}
+                  className={`h-[17px] w-[17px] flex-none stroke-[1.75] ${on ? "text-text" : "text-text-3 group-hover:text-text-2"}`}
                 />
                 <span className="truncate">
                   {t(`settings.sections.${s.id}.title`)}
@@ -236,7 +236,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       <div ref={contentRef} className="min-w-0 flex-1">
         {q ? (
           <>
-            <div className="mb-5 flex min-h-10 items-center justify-between gap-4">
+            <div className="mb-4 flex min-h-10 items-center justify-between gap-4">
               <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
                 {t("settings.search.title")}
               </h1>
@@ -266,7 +266,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </>
         ) : (
           <div key={current.id} className="view-enter">
-            <div className="mb-5 flex min-h-10 items-center justify-between gap-4">
+            <div className="mb-4 flex min-h-10 items-center justify-between gap-4">
               <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
                 {t(`settings.sections.${current.id}.title`)}
               </h1>

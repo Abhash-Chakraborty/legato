@@ -100,6 +100,7 @@ function App() {
   // The setup step to open (new users, or setup left part-way).
   const [setupStep, setSetupStep] = useState<Step>("mic");
   const page = useNavStore((state) => state.page);
+  const sidebarCollapsed = useNavStore((state) => state.sidebarCollapsed);
   const { settings, updateSetting } = useSettings();
   const refreshAudioDevices = useSettingsStore(
     (state) => state.refreshAudioDevices,
@@ -468,13 +469,19 @@ function App() {
           <WhatsNewGate />
         </ErrorBoundary>
         <TitleBar />
-        <div className="grid min-h-0 flex-1 grid-cols-[212px_minmax(0,1fr)]">
+        <div
+          className={`grid min-h-0 flex-1 transition-[grid-template-columns] duration-[var(--dur-3)] ease-[var(--ease-out)] motion-reduce:transition-none ${
+            sidebarCollapsed
+              ? "grid-cols-[64px_minmax(0,1fr)]"
+              : "grid-cols-[212px_minmax(0,1fr)]"
+          }`}
+        >
           <Sidebar />
           <main className="relative mb-3.5 me-3.5 min-h-0 overflow-hidden rounded-[var(--r-xl)] border border-line bg-surface">
             <div
               ref={settingsScrollRef}
               data-scroll-root
-              className={`h-full overflow-y-auto px-6 pt-6 min-[1180px]:px-9 [scrollbar-gutter:stable] ${
+              className={`h-full overflow-y-auto px-5 pt-5 min-[1180px]:px-7 [scrollbar-gutter:stable] ${
                 // Notes is a split view that fits the window: its list and
                 // its note scroll on their own, not the page.
                 page === "notes"

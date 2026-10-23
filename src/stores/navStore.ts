@@ -41,7 +41,19 @@ interface NavStore {
   /** Opens a page on one of its parts. */
   goTo: (page: Page, hint: string | null) => void;
   clearHint: () => void;
+  /** The sidebar shows icons only; remembered on this PC. */
+  sidebarCollapsed: boolean;
+  toggleSidebar: () => void;
 }
+
+const COLLAPSED_KEY = "legato.sidebar.collapsed";
+const readCollapsed = () => {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
 
 export const useNavStore = create<NavStore>()((set) => ({
   page: "home",
@@ -49,6 +61,17 @@ export const useNavStore = create<NavStore>()((set) => ({
   hint: null,
   goTo: (page, hint) => set({ page, hint }),
   clearHint: () => set({ hint: null }),
+  sidebarCollapsed: readCollapsed(),
+  toggleSidebar: () =>
+    set((state) => {
+      const sidebarCollapsed = !state.sidebarCollapsed;
+      try {
+        localStorage.setItem(COLLAPSED_KEY, sidebarCollapsed ? "1" : "0");
+      } catch {
+        // Not remembered; it still toggles.
+      }
+      return { sidebarCollapsed };
+    }),
   go: (page, section) =>
     set((state) => ({
       page,
