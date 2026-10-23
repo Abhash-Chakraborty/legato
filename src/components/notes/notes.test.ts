@@ -11,6 +11,7 @@ import {
   longClock,
   renamable,
   speakerLabel,
+  voiceColour,
   THEM_SIDE,
   summaryText,
   voiceChoices,
@@ -192,4 +193,9 @@ assert.deepEqual(
   },
 );
 
+// Each voice gets its own colour; the ninth comes round to the first.
+assert.equal(voiceColour({ ...lines[1], speaker: 1 }), "var(--voice-1)");
+assert.equal(voiceColour({ ...lines[1], speaker: 8 }), "var(--voice-8)");
+assert.equal(voiceColour({ ...lines[1], speaker: 9 }), "var(--voice-1)");
+assert.equal(voiceColour(lines[0]), "var(--teal-700)");
 console.log("notes: ok");

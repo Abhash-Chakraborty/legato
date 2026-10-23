@@ -76,6 +76,17 @@
   --danger: #c7423d;
   --danger-soft: #fbe7e6;
 
+  /* voices in a transcript: calm hues that read as text on the surface,
+     one per speaker the speaker model finds (Speaker 9 reuses 1) */
+  --voice-1: #2f5f9e;
+  --voice-2: #7a4a8c;
+  --voice-3: #8a5a12;
+  --voice-4: #a03f5a;
+  --voice-5: #4d6b22;
+  --voice-6: #2b6a80;
+  --voice-7: #9a4a26;
+  --voice-8: #4f4fa0;
+
   /* type */
   --sans:
     "Figtree", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
@@ -160,6 +171,14 @@
     --shadow-3: 0 8px 24px rgba(0, 0, 0, 0.45);
     --toggle-on: var(--teal-500);
     --toggle-on-hover: var(--teal-400);
+    --voice-1: #8fb4e8;
+    --voice-2: #c3a0d6;
+    --voice-3: #dcb26a;
+    --voice-4: #e69ab0;
+    --voice-5: #a9c77a;
+    --voice-6: #7fc0d4;
+    --voice-7: #e5a07c;
+    --voice-8: #a9a9ee;
     --focus-outer: #f1f0ec;
   }
 }
@@ -195,6 +214,14 @@
   --shadow-3: 0 8px 24px rgba(0, 0, 0, 0.45);
   --toggle-on: var(--teal-500);
   --toggle-on-hover: var(--teal-400);
+  --voice-1: #8fb4e8;
+  --voice-2: #c3a0d6;
+  --voice-3: #dcb26a;
+  --voice-4: #e69ab0;
+  --voice-5: #a9c77a;
+  --voice-6: #7fc0d4;
+  --voice-7: #e5a07c;
+  --voice-8: #a9a9ee;
   --focus-outer: #f1f0ec;
 }
 

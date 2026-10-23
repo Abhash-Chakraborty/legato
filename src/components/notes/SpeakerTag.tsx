@@ -3,7 +3,13 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { commands, type NoteLine } from "@/bindings";
 import { useNotesStore } from "../../stores/notesStore";
-import { renamable, speakerLabel, THEM_SIDE, type SpeakerNames } from "./notes";
+import {
+  renamable,
+  speakerLabel,
+  THEM_SIDE,
+  voiceColour,
+  type SpeakerNames,
+} from "./notes";
 
 /** What transcripts call each side and each voice, in the UI's words. */
 export const useSpeakerNames = (): SpeakerNames => {
@@ -32,12 +38,12 @@ export const SpeakerTag: React.FC<{
   // Esc ends the edit; the blur that follows mustn't save it.
   const open = useRef(false);
   const label = speakerLabel(line, speakers, names);
-  const tone = line.who === "you" ? "text-teal-700" : "text-text-2";
+  const colour = { color: voiceColour(line) };
   const voice = renamable(line);
 
   if (voice == null || line.id < 0)
     return (
-      <span className={`${className} truncate font-medium ${tone}`}>
+      <span className={`${className} truncate font-medium`} style={colour}>
         {label}
       </span>
     );
@@ -98,7 +104,8 @@ export const SpeakerTag: React.FC<{
           ? t("notes.speakers.recognised", { name: label })
           : t("notes.speakers.rename", { name: label })
       }
-      className={`${className} -mx-1 inline-flex min-w-0 items-center gap-1 rounded-[var(--r-xs)] px-1 text-start font-medium ${tone} transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0`}
+      style={colour}
+      className={`${className} -mx-1 inline-flex min-w-0 items-center gap-1 rounded-[var(--r-xs)] px-1 text-start font-medium transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:duration-0`}
     >
       {recognised && (
         <span

@@ -96,6 +96,18 @@ export const speakerLabel = (
   return speakers?.find((s) => s.speaker === n)?.name || names.voice(n);
 };
 
+/** How many voice colours the theme has (`--voice-1` to `--voice-8`). */
+export const VOICE_COLOURS = 8;
+
+/** The colour a line's speaker is named in: one per voice the speaker
+ *  model found, teal for you, plain for the other side before that. */
+export const voiceColour = (line: NoteLine): string =>
+  line.speaker != null
+    ? `var(--voice-${((((line.speaker - 1) % VOICE_COLOURS) + VOICE_COLOURS) % VOICE_COLOURS) + 1})`
+    : line.who === "you"
+      ? "var(--teal-700)"
+      : "var(--text-2)";
+
 /** The speaker a line's name belongs to, so renaming it renames all their
  *  lines: its voice, else the other side as a whole. You aren't renamed. */
 export const renamable = (line: NoteLine): number | null =>
