@@ -377,6 +377,15 @@ pub fn set_pinned(conn: &mut Connection, id: i64, pinned: bool) -> Result<Dictio
     get(conn, id)?.ok_or_else(|| anyhow!("Saved word is missing"))
 }
 
+/// Says what a word is: a name, a project, an organisation or a term.
+pub fn set_kind(conn: &Connection, id: i64, kind: Option<WordKind>) -> Result<DictionaryEntry> {
+    conn.execute(
+        "UPDATE dictionary_entry SET kind = ?1 WHERE id = ?2",
+        params![kind.map(|k| k.as_str()), id],
+    )?;
+    get(conn, id)?.ok_or_else(|| anyhow!("That word is no longer in your Dictionary"))
+}
+
 /// Deletes words, returning them as they were so they can be restored.
 pub fn delete(conn: &mut Connection, ids: &[i64]) -> Result<Vec<DictionaryEntry>> {
     let tx = conn.transaction()?;

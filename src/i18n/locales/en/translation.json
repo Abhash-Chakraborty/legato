@@ -631,7 +631,7 @@
     "sections": {
       "general": {
         "title": "General",
-        "subtitle": "Startup and how Legato looks."
+        "subtitle": "Your name, startup and how Legato looks."
       },
       "features": {
         "title": "Features",
@@ -687,6 +687,7 @@
       }
     },
     "groups": {
+      "you": "You",
       "startup": "Startup",
       "appearance": "Appearance",
       "dictation": "Dictation",
@@ -1387,6 +1388,15 @@
         "title": "The island",
         "help": "The bar as a dark shape hanging from the top edge, with Dictate, Notes and the Scratchpad on hover. It takes the bubble's place."
       }
+    },
+    "yourName": {
+      "title": "Your name",
+      "description": "Notes give tasks meant for you to You, and dictations and summaries spell your name right. It's kept in the Dictionary as a person's name.",
+      "name": "Name",
+      "placeholder": "What people call you",
+      "heard": "Legato sometimes hears it as",
+      "heardPlaceholder": "Type a misheard form, then Enter",
+      "failed": "Couldn't save your name"
     }
   },
   "footer": {
@@ -3103,6 +3113,23 @@
     "confirmDelete": {
       "title": "Delete “{{title}}”?",
       "description": "It moves to Recently deleted with its recording, and you can restore it for 30 days."
+    },
+    "addWord": {
+      "button": "Add to Dictionary",
+      "menu": "Add “{{word}}” to Dictionary",
+      "title": "Add “{{word}}” to the Dictionary",
+      "heading": "Add to Dictionary",
+      "heard": "Legato wrote “{{heard}}”",
+      "shouldBe": "Should be",
+      "fixes_one": "Writes it this way in 1 line of this note, and from now on hears “{{heard}}” as this word.",
+      "fixes_other": "Writes it this way in {{count}} lines of this note, and from now on hears “{{heard}}” as this word.",
+      "learns": "From now on Legato hears “{{heard}}” as this word.",
+      "keeps": "Legato keeps it exactly as written, in dictations and summaries.",
+      "add": "Add",
+      "added": "Added {{word}} to the Dictionary",
+      "addedFixed_one": "Added {{word}} to the Dictionary and fixed 1 line",
+      "addedFixed_other": "Added {{word}} to the Dictionary and fixed {{count}} lines",
+      "failed": "Couldn't add the word"
     }
   },
   "calls": {

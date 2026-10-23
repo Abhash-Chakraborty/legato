@@ -152,6 +152,47 @@ export const transcriptText = (
     .join("\n");
 
 /** Whether a line contains every word of the query, ignoring case. */
+const isWordChar = (c: string | undefined) => !!c && /[\p{L}\p{N}]/u.test(c);
+
+/** `text` with each whole-word `from` (any case) written as `to`, or null
+ *  when it has none; the same rule the backend fixes lines with. */
+export const replaceWords = (
+  text: string,
+  from: string,
+  to: string,
+): string | null => {
+  const needle = from.trim().toLowerCase();
+  if (!needle) return null;
+  const lower = text.toLowerCase();
+  if (lower.length !== text.length) return null;
+  let out = "";
+  let last = 0;
+  let found = false;
+  for (let at = lower.indexOf(needle); at !== -1; ) {
+    const end = at + needle.length;
+    if (!isWordChar(text[at - 1]) && !isWordChar(text[end])) {
+      out += text.slice(last, at) + to;
+      last = end;
+      found = true;
+    }
+    at = lower.indexOf(needle, end);
+  }
+  return found ? out + text.slice(last) : null;
+};
+
+/** How many lines writing `heard` as `word` would change. */
+export const linesToFix = (
+  lines: NoteLine[],
+  heard: string,
+  word: string,
+): number =>
+  word.trim()
+    ? lines.filter((l) => {
+        const fixed = replaceWords(l.text, heard, word.trim());
+        return fixed !== null && fixed !== l.text;
+      }).length
+    : 0;
+
 export const lineMatches = (line: NoteLine, query: string): boolean => {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const text = line.text.toLowerCase();

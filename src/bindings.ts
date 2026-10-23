@@ -1338,6 +1338,26 @@ async removeNeverLearnWord(word: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getYourName() : Promise<Result<YourName, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_your_name") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Saves your name, and keeps it in the Dictionary as a person's name with
+ * the ways it's misheard, so dictations and notes spell it right.
+ */
+async setYourName(name: string, heard: string[]) : Promise<Result<YourName, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_your_name", { name, heard }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeLearnFromEditsSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_learn_from_edits_setting", { enabled }) };
@@ -1899,6 +1919,18 @@ async editNoteLine(id: number, who: Speaker, speaker: number | null, text: strin
 async fixNoteWord(fix: WordFix, learn: boolean) : Promise<Result<WordFixed, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("fix_note_word", { fix, learn }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Adds words selected in a transcript to the Dictionary and writes them
+ * that way in every line of the note.
+ */
+async addNoteWord(id: number, heard: string, word: string, kind: WordKind | null) : Promise<Result<WordFixed, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_note_word", { id, heard, word, kind }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2860,6 +2892,11 @@ export type ImportSummary = { added: number; updated: number; skipped: number }
 /**
  * Everything the Dictionary page shows.
  */
+/**
+ * Your name as Settings shows it, with the ways the model mishears it,
+ * which are kept on its Dictionary word.
+ */
+export type YourName = { name: string; heard: string[] }
 export type DictionaryView = { entries: DictionaryEntry[]; 
 /**
  * What the speech model gets before it listens, in order.
@@ -3054,7 +3091,11 @@ word: string;
 /**
  * The note's other lines with the same miss.
  */
-others: number[] }
+others: number[]; 
+/**
+ * What the word is, when it was said.
+ */
+kind?: WordKind | null }
 /**
  * What fixing a word across a note came to.
  */
@@ -3679,6 +3720,11 @@ notes_live_transcript?: boolean;
  * The recorder reminds you to tell people you're recording.
  */
 notes_reminder?: boolean; 
+/**
+ * What people call you, so notes know a task meant for you; the
+ * ways it's misheard live on its Dictionary word.
+ */
+your_name?: string; 
 /**
  * Notes tells voices apart after a recording, once the speaker model
  * is downloaded.

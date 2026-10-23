@@ -20,6 +20,7 @@ import { useNavStore } from "../../../stores/navStore";
 import { useNotesStore } from "../../../stores/notesStore";
 import { ActionMenu } from "../../ui/ActionMenu";
 import { Button } from "../../ui/Button";
+import { AddWordFromSelection } from "../../notes/AddWord";
 import { LineText } from "../../notes/LineText";
 import { clock, lineAt, lineMatches, voiceChoices } from "../../notes/notes";
 import { SpeakerTag } from "../../notes/SpeakerTag";
@@ -379,6 +380,9 @@ export const TranscriptTab: React.FC<{
             );
           })}
         </ol>
+      )}
+      {lines && (
+        <AddWordFromSelection noteId={note.id} lines={lines} root={listRef} />
       )}
     </div>
   );

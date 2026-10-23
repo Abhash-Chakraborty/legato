@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
   ArrowLeftRight,
+  BookPlus,
   EllipsisVertical,
   Pencil,
   Trash2,
@@ -11,6 +12,7 @@ import {
 import { commands, type NoteLine, type WordFix } from "@/bindings";
 import { useNotesStore } from "../../stores/notesStore";
 import { ActionMenu, type ActionMenuItem } from "../ui/ActionMenu";
+import { ADD_WORD_EVENT, pickedWords } from "./AddWord";
 import { speakerLabel, type Voice } from "./notes";
 import { useSpeakerNames } from "./SpeakerTag";
 
@@ -34,6 +36,9 @@ export const LineText: React.FC<{
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(line.text);
   const [menu, setMenu] = useState(false);
+  // Words selected in this line when its menu opened.
+  const [picked, setPicked] = useState<string | null>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
   const [fix, setFix] = useState<WordFix | null>(null);
   const [learned, setLearned] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -156,6 +161,17 @@ export const LineText: React.FC<{
   };
 
   const items: ActionMenuItem[] = [
+    ...(picked
+      ? [
+          {
+            id: "add-word",
+            label: t("notes.addWord.menu", { word: picked }),
+            icon: BookPlus,
+            onSelect: () => window.dispatchEvent(new Event(ADD_WORD_EVENT)),
+          },
+          "separator" as const,
+        ]
+      : []),
     { id: "edit", label: t("notes.line.edit"), icon: Pencil, onSelect: edit },
     ...(voices.length
       ? voices.map((v) => ({
@@ -193,6 +209,7 @@ export const LineText: React.FC<{
       onContextMenu={(e) => {
         if (editing) return;
         e.preventDefault();
+        setPicked(pickedWords(textRef.current)?.text ?? null);
         setMenu(true);
       }}
     >
@@ -220,9 +237,10 @@ export const LineText: React.FC<{
         />
       ) : (
         <span
+          ref={textRef}
           data-line-text
           onDoubleClick={edit}
-          className={`${className} block pe-7`}
+          className={`${className} block select-text pe-7`}
         >
           {line.text}
         </span>
@@ -231,7 +249,10 @@ export const LineText: React.FC<{
         <button
           ref={more}
           type="button"
-          onClick={() => setMenu(!menu)}
+          onClick={() => {
+            setPicked(null);
+            setMenu(!menu);
+          }}
           aria-label={t("notes.line.menu")}
           aria-expanded={menu}
           aria-haspopup="menu"

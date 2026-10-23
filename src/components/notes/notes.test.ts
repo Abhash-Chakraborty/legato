@@ -8,6 +8,8 @@ import {
   inFilter,
   lineAt,
   lineMatches,
+  linesToFix,
+  replaceWords,
   longClock,
   renamable,
   speakerLabel,
@@ -142,6 +144,26 @@ assert.equal(
 assert.ok(lineMatches(lines[1], "netbird UP"));
 assert.ok(!lineMatches(lines[1], "netbird down"));
 assert.ok(!lineMatches(lines[1], "  "));
+
+// Selected words are fixed only where they stand as whole words.
+assert.equal(
+  replaceWords("IPES ships, and ipes is late", "ipes", "AIPS"),
+  "AIPS ships, and AIPS is late",
+);
+assert.equal(
+  replaceWords("Recipes are not IPES", "ipes", "AIPS"),
+  "Recipes are not AIPS",
+);
+assert.equal(replaceWords("nothing here", "ipes", "AIPS"), null);
+assert.equal(replaceWords("anything", "  ", "AIPS"), null);
+{
+  const said = (text: string) => ({ ...lines[0], text });
+  const transcript = [said("IPES is up"), said("AIPS is up"), said("no ipes")];
+  assert.equal(linesToFix(transcript, "IPES", "AIPS"), 2);
+  // Adding a word spelled right changes no line.
+  assert.equal(linesToFix(transcript, "AIPS", "AIPS"), 0);
+  assert.equal(linesToFix(transcript, "IPES", " "), 0);
+}
 
 assert.equal(
   summaryText(note(), { decisions: "Decisions", actions: "Action items" }),

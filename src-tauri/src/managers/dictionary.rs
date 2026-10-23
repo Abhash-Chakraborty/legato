@@ -3,7 +3,7 @@
 
 use super::dictionary_store::{
     self as store, DictionaryEntry, DictionarySource, EntryInput, FixApp, ImportSummary, Learned,
-    PendingWord,
+    PendingWord, WordKind,
 };
 use super::history_store::{AppliedFix, FixSource, TextSnapshot};
 use crate::audio_toolkit::text::{CompiledDictionary, DictionaryCorrection};
@@ -211,6 +211,12 @@ impl DictionaryManager {
         )?;
         self.changed();
         Ok(learned)
+    }
+
+    pub fn set_kind(&self, id: i64, kind: Option<WordKind>) -> Result<DictionaryEntry> {
+        let entry = store::set_kind(&self.conn()?, id, kind)?;
+        self.changed();
+        Ok(entry)
     }
 
     pub fn unlearn(&self, learned: &Learned) -> Result<()> {

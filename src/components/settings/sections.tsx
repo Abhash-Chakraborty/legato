@@ -21,6 +21,7 @@ import type { SettingsSection } from "../../stores/navStore";
 import { useModelStore } from "../../stores/modelStore";
 
 import { AdminAppsToggle } from "./AdminAppsToggle";
+import { YourName } from "./YourName";
 import { FeatureToggle, IslandToggle } from "./FeatureSettings";
 import { InyonAlertsRow, InyonCard } from "./connections/InyonSettings";
 import { AutostartToggle } from "./AutostartToggle";
@@ -250,6 +251,20 @@ export const buildSections = (
     id: "general",
     icon: Settings2,
     groups: [
+      {
+        id: "you",
+        titleKey: "settings.groups.you",
+        rows: [
+          {
+            id: "your-name",
+            searchKeys: [
+              "settings.yourName.title",
+              "settings.yourName.description",
+            ],
+            render: () => <YourName grouped />,
+          },
+        ],
+      },
       {
         id: "startup",
         titleKey: "settings.groups.startup",

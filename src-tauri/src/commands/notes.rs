@@ -1,6 +1,7 @@
 //! Commands behind the Notes page and its recorder.
 
 use crate::loopback::{self, AudioApp};
+use crate::managers::dictionary_store::WordKind;
 use crate::managers::notes_store::Speaker;
 use crate::managers::notes_store::{DeletedRecording, Note, NoteLine, NoteMatch, Voice};
 use crate::notes::{
@@ -66,6 +67,20 @@ pub fn edit_note_line(
 #[specta::specta]
 pub fn fix_note_word(notes: Notes<'_>, fix: WordFix, learn: bool) -> Result<WordFixed, String> {
     text(notes.fix_word(&fix, learn))
+}
+
+/// Adds words selected in a transcript to the Dictionary and writes them
+/// that way in every line of the note.
+#[tauri::command]
+#[specta::specta]
+pub fn add_note_word(
+    notes: Notes<'_>,
+    id: i64,
+    heard: String,
+    word: String,
+    kind: Option<WordKind>,
+) -> Result<WordFixed, String> {
+    text(notes.add_word(id, &heard, &word, kind))
 }
 
 #[tauri::command]

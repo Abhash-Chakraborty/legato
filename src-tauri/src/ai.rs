@@ -405,6 +405,7 @@ pub async fn summarise_note(
     tags_in_use: &[String],
     people: &[String],
     words: &[String],
+    you: Option<&str>,
 ) -> Result<notes_rules::NotesSummary, AiProblem> {
     let json_hint = !config.provider.supports_structured_output
         || config.provider.api_format == PostProcessApiFormat::Anthropic;
@@ -432,6 +433,7 @@ pub async fn summarise_note(
             tags_in_use,
             people,
             words,
+            you,
         ))
         .await;
     }
@@ -445,6 +447,7 @@ pub async fn summarise_note(
                 tags_in_use,
                 people,
                 words,
+                you,
             ))
             .await?,
         );
@@ -454,6 +457,7 @@ pub async fn summarise_note(
         json_hint,
         tags_in_use,
         words,
+        you,
     ))
     .await?;
     // Each part's details keep their own times; the combined answer's

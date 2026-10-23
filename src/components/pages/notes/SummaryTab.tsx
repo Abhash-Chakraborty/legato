@@ -378,9 +378,11 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
               <span>{people.join(", ")}</span>
             </p>
           )}
-          <p className="text-[15px] leading-relaxed">{note.summary}</p>
+          <p className="select-text text-[15px] leading-relaxed">
+            {note.summary}
+          </p>
           {topics.length > 0 && (
-            <div className="mt-4 grid gap-3">
+            <div className="mt-4 grid select-text gap-3">
               {topics.map((topic, i) => (
                 <div key={i}>
                   <h4 className="text-sm font-medium">{topic.heading}</h4>
@@ -396,7 +398,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
               <h3 className="mb-2 text-sm font-medium">
                 {t("notes.summary.decisions")}
               </h3>
-              <ul className="grid gap-1.5 ps-1 text-sm">
+              <ul className="grid select-text gap-1.5 ps-1 text-sm">
                 {note.decisions.map((d, i) => (
                   <li key={i} className="flex gap-2.5">
                     <span
@@ -459,7 +461,10 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
               </h3>
               <div className="grid gap-3">
                 {details.map((d, i) => (
-                  <p key={i} className="text-sm leading-relaxed text-text-2">
+                  <p
+                    key={i}
+                    className="select-text text-sm leading-relaxed text-text-2"
+                  >
                     <span className="font-medium text-text">{d.heading}</span>
                     {d.heading ? ": " : ""}
                     {d.text}

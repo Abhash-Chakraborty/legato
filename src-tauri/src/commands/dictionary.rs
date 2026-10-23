@@ -4,7 +4,7 @@ use crate::learn_rules::Spelling;
 use crate::managers::dictionary::{applied_fixes, DictionaryManager, FixUndo};
 use crate::managers::dictionary_store::{
     self as store, DictionaryEntry, DictionarySource, EntryInput, ImportSummary, PendingWord,
-    HINT_LIMIT, MAX_WORD_CHARS, PIN_LIMIT,
+    WordKind, HINT_LIMIT, MAX_WORD_CHARS, PIN_LIMIT,
 };
 use crate::managers::history::HistoryManager;
 use crate::managers::history_store::{AppliedFix, FixSource};
@@ -428,6 +428,87 @@ pub fn remove_never_learn_word(
     word: String,
 ) -> Result<(), String> {
     dictionary.remove_never(&word).map_err(|e| e.to_string())
+}
+
+/// Your name as Settings shows it, with the ways the model mishears it,
+/// which are kept on its Dictionary word.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct YourName {
+    pub name: String,
+    pub heard: Vec<String>,
+}
+
+fn your_name(app: &AppHandle, dictionary: &DictionaryManager) -> Result<YourName, String> {
+    let name = crate::settings::get_settings(app).your_name;
+    let heard = if name.trim().is_empty() {
+        Vec::new()
+    } else {
+        dictionary
+            .list()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|e| e.text.eq_ignore_ascii_case(name.trim()))
+            .map(|e| e.heard)
+            .unwrap_or_default()
+    };
+    Ok(YourName { name, heard })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_your_name(
+    app: AppHandle,
+    dictionary: State<'_, Arc<DictionaryManager>>,
+) -> Result<YourName, String> {
+    your_name(&app, &dictionary)
+}
+
+/// Saves your name, and keeps it in the Dictionary as a person's name with
+/// the ways it's misheard, so dictations and notes spell it right.
+#[tauri::command]
+#[specta::specta]
+pub fn set_your_name(
+    app: AppHandle,
+    dictionary: State<'_, Arc<DictionaryManager>>,
+    name: String,
+    heard: Vec<String>,
+) -> Result<YourName, String> {
+    let name = store::clean_word(&name);
+    if name.chars().count() > MAX_WORD_CHARS {
+        return Err(format!("Keep it under {MAX_WORD_CHARS} characters"));
+    }
+    if !name.is_empty() {
+        let mut forms: Vec<String> = Vec::new();
+        for form in heard.iter().map(|h| h.trim()) {
+            if !form.is_empty()
+                && !form.eq_ignore_ascii_case(&name)
+                && !forms.iter().any(|f| f.eq_ignore_ascii_case(form))
+            {
+                forms.push(form.to_string());
+            }
+        }
+        let existing = dictionary
+            .list()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|e| e.text.eq_ignore_ascii_case(&name));
+        let input = EntryInput {
+            text: name.clone(),
+            heard: forms,
+            pinned: existing.as_ref().is_some_and(|e| e.pinned),
+            case_sensitive: existing.as_ref().is_some_and(|e| e.case_sensitive),
+            kind: Some(WordKind::Person),
+        };
+        match existing {
+            Some(entry) => dictionary.update(entry.id, &input),
+            None => dictionary.add(&input, DictionarySource::Manual),
+        }
+        .map_err(|e| e.to_string())?;
+    }
+    let mut settings = crate::settings::get_settings(&app);
+    settings.your_name = name;
+    crate::settings::write_settings(&app, settings);
+    your_name(&app, &dictionary)
 }
 
 #[tauri::command]

@@ -465,6 +465,7 @@ pub fn summary_request(
     tags_in_use: &[String],
     people: &[String],
     words: &[String],
+    you: Option<&str>,
 ) -> String {
     let mut request = String::from(
         "Summarise this transcript.\n\n\
@@ -478,6 +479,11 @@ pub fn summary_request(
          details: one entry per topic or notable exchange, in order, each with a heading, three to six sentences on who said what (by name when known, with the numbers, names and reasons given), and at: the time in square brackets of the first line it draws on, copied from the transcript, such as 5:48.\n\
          Spell names, products and organisations the way the people list and the transcript's corrected lines do.\n",
     );
+    if let Some(name) = you.map(str::trim).filter(|n| !n.is_empty()) {
+        request.push_str(&format!(
+            "The person who recorded is {name}; their lines say You. When someone speaks to or about {name}, they mean the person who recorded: tasks for {name} have the owner \"You\", and {name} isn't listed in people.\n"
+        ));
+    }
     if !people.is_empty() {
         request.push_str("People invited to the meeting: ");
         request.push_str(&people.join(", "));
@@ -512,6 +518,7 @@ pub fn combine_request(
     json_hint: bool,
     tags_in_use: &[String],
     words: &[String],
+    you: Option<&str>,
 ) -> String {
     let mut text = String::new();
     for (i, part) in parts.iter().enumerate() {
@@ -527,7 +534,7 @@ pub fn combine_request(
         }
     }
     let people: Vec<String> = merge_people(parts.iter().map(|p| p.outline.people.as_slice()));
-    summary_request(&text, json_hint, tags_in_use, &people, words).replace(
+    summary_request(&text, json_hint, tags_in_use, &people, words, you).replace(
         "Summarise this transcript.",
         "These are summaries of consecutive parts of one long conversation. Combine them into one summary, removing repeats; details may stay empty, since each part keeps its own.",
     )
@@ -1307,7 +1314,7 @@ mod tests {
             "AIPS (a project name; misheard as IPS, IPES)"
         );
         assert_eq!(describe_word("Datev", None, &[]), "Datev");
-        assert!(summary_request("You: hi", false, &[], &[], &["AIPS (a project name)".into()])
+        assert!(summary_request("You: hi", false, &[], &[], &["AIPS (a project name)".into()], None)
             .contains("spelled right (the transcript may have them misheard; write them this way): AIPS (a project name)"));
         let r = summary_request(
             "You: hi",
@@ -1315,13 +1322,21 @@ mod tests {
             &["backend".into(), "clients".into()],
             &[],
             &[],
+            None,
         );
         assert!(r.contains("Tags already in use, to pick from when one fits: backend, clients"));
-        assert!(!summary_request("You: hi", false, &[], &[], &[]).contains("already in use"));
-        assert!(summary_request("You: hi", true, &[], &[], &[]).contains("\"title\""));
+        assert!(!summary_request("You: hi", false, &[], &[], &[], None).contains("already in use"));
+        assert!(summary_request("You: hi", true, &[], &[], &[], None).contains("\"title\""));
         assert!(
-            summary_request("You: hi", false, &[], &["Sahil Khan".into()], &[])
+            summary_request("You: hi", false, &[], &["Sahil Khan".into()], &[], None)
                 .contains("People invited to the meeting: Sahil Khan\n")
+        );
+        let mine = summary_request("You: hi", false, &[], &[], &[], Some(" Abhash "));
+        assert!(mine.contains("The person who recorded is Abhash; their lines say You."));
+        assert!(mine.contains("tasks for Abhash have the owner \"You\""));
+        assert!(
+            !summary_request("You: hi", false, &[], &[], &[], Some("  "))
+                .contains("person who recorded is")
         );
     }
 

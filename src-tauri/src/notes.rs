@@ -8,7 +8,7 @@
 use crate::learn_rules;
 use crate::loopback::{self, Capture, Source};
 use crate::managers::dictionary::DictionaryManager;
-use crate::managers::dictionary_store::{self, DictionarySource, Learned};
+use crate::managers::dictionary_store::{self, DictionarySource, Learned, WordKind};
 use crate::managers::notes_store::{
     self as store, DeletedRecording, NewNote, Note, NoteKind, NoteLine, NoteMatch, NoteStatus,
     Speaker,
@@ -398,11 +398,45 @@ impl NotesManager {
                     heard: edit.heard,
                     word: edit.word,
                     others,
+                    kind: None,
                 })
             }
             None => None,
         };
         Ok(LineEdit { line, fix })
+    }
+
+    /// Adds words picked out of a transcript to the Dictionary: `word` as
+    /// it should be written, `heard` as the model wrote it, fixed in every
+    /// line of the note that has it.
+    pub fn add_word(
+        &self,
+        note_id: i64,
+        heard: &str,
+        word: &str,
+        kind: Option<WordKind>,
+    ) -> Result<WordFixed> {
+        let word = word.trim();
+        if word.is_empty() {
+            return Err(anyhow!("Type the word as it should be written"));
+        }
+        let others = store::lines(&self.conn()?, note_id)?
+            .into_iter()
+            .filter(|l| {
+                notes_rules::replace_words(&l.text, heard, word).is_some_and(|t| t != l.text)
+            })
+            .map(|l| l.id)
+            .collect();
+        self.fix_word(
+            &WordFix {
+                note_id,
+                heard: heard.trim().to_string(),
+                word: word.to_string(),
+                others,
+                kind,
+            },
+            true,
+        )
     }
 
     /// Fixes a corrected word in the note's other lines and, if asked,
@@ -430,13 +464,14 @@ impl NotesManager {
                 .try_state::<Arc<DictionaryManager>>()
                 .ok_or_else(|| anyhow!("The Dictionary isn't ready"))?;
             let word = dictionary_store::clean_word(&fix.word);
-            Some(dictionary.learn(
-                &word,
-                Some(fix.heard.trim()),
-                DictionarySource::Fixed,
-                false,
-                None,
-            )?)
+            let heard = fix.heard.trim();
+            let heard = (!heard.is_empty() && !heard.eq_ignore_ascii_case(&word)).then_some(heard);
+            let mut learned =
+                dictionary.learn(&word, heard, DictionarySource::Fixed, false, None)?;
+            if let Some(kind) = fix.kind.filter(|k| learned.entry.kind != Some(*k)) {
+                learned.entry = dictionary.set_kind(learned.entry.id, Some(kind))?;
+            }
+            Some(learned)
         } else {
             None
         };
@@ -797,6 +832,9 @@ pub struct WordFix {
     pub word: String,
     /// The note's other lines with the same miss.
     pub others: Vec<i64>,
+    /// What the word is, when it was said.
+    #[serde(default)]
+    pub kind: Option<WordKind>,
 }
 
 /// What fixing a word across a note came to.
@@ -2024,7 +2062,10 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
     let started = Instant::now();
     let tags_in_use = m.tags().unwrap_or_default();
     let words = dictionary_for_ai(app, SUMMARY_WORDS);
-    match crate::ai::summarise_note(app, &config, &prompt, &tags_in_use, &people, &words).await {
+    let you = get_settings(app).your_name;
+    let you = Some(you.trim()).filter(|n| !n.is_empty());
+    match crate::ai::summarise_note(app, &config, &prompt, &tags_in_use, &people, &words, you).await
+    {
         Ok(mut summary) => {
             summary.outline.fit_to(last_ms);
             let local = if crate::ai::is_local(&config.provider) {

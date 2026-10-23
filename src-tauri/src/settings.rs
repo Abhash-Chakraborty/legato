@@ -970,6 +970,10 @@ pub struct AppSettings {
     /// The recorder reminds you to tell people you're recording.
     #[serde(default = "default_true")]
     pub notes_reminder: bool,
+    /// What people call you, so notes know a task meant for you; the
+    /// ways it's misheard live on its Dictionary word.
+    #[serde(default)]
+    pub your_name: String,
     /// Notes tells voices apart during and after a recording; the first
     /// meeting downloads the speaker model.
     #[serde(default = "default_true")]
@@ -1691,6 +1695,7 @@ pub fn get_default_settings() -> AppSettings {
         ai_notes_enabled: true,
         notes_live_transcript: true,
         notes_reminder: true,
+        your_name: String::new(),
         notes_speakers: true,
         notes_remember_voices: true,
         notes_audio_keep_days: 90,
