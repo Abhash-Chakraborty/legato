@@ -1306,12 +1306,12 @@
         "title": "Inyon",
         "help": "Pair with your Inyon hub to see agents that are waiting for you on the bar or the island, and answer them there.",
         "hub": "Hub address",
-        "hubPlaceholder": "Hub address, like https://hub.example.com",
+        "hubPlaceholder": "Hub address or pairing link",
         "code": "Pairing code",
         "codePlaceholder": "Code",
         "pair": "Pair",
         "pairing": "Pairing…",
-        "where": "In Inyon, open Settings › Paired devices › Pair a companion app for the code, or run inyon hub companion-code on the hub's computer. The code works once, for 5 minutes.",
+        "where": "In Inyon, open Settings › Paired devices: paste its pairing link here, or type the hub's address and the code from Pair a companion app (or inyon hub companion-code on the hub's computer). A code works once, for 5 minutes.",
         "paired": "Paired with {{hub}}",
         "connected": "Connected",
         "connecting": "Connecting…",
@@ -3628,7 +3628,9 @@
       "scope": "Legato isn't allowed to do that.",
       "failed": "That didn't work. Try again.",
       "notAnOption": "Didn't catch which option. Say its number or its words.",
-      "insecure": "Legato pairs over https, or over plain http only on this PC or a NetBird or Tailscale address, so nobody on the network can read the hub's token. Use the hub's https address."
+      "insecure": "Legato pairs over https, or over plain http only on this PC or a NetBird or Tailscale address, so nobody on the network can read the hub's token. Use the hub's https address.",
+      "untrusted": "Windows doesn't trust this hub's certificate. In Inyon, open Settings › Paired devices › Copy pairing link, and paste the link here: it names the hub's own certificate.",
+      "badLink": "That pairing link isn't complete. Copy it again in Inyon's Paired devices."
     }
   },
   "trash": {

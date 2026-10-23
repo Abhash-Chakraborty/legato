@@ -135,7 +135,7 @@ async fn run(app: AppHandle) {
             CHANGED.notified().await;
             continue;
         };
-        let route = match route(&hub).await {
+        let route = match route(&hub, settings.tls_fingerprint.as_deref()).await {
             Ok(route) => route,
             Err(reason) if reason == "insecure" => {
                 if !INSECURE.swap(true, Ordering::SeqCst) {
@@ -207,8 +207,17 @@ async fn connect(
         max_frame_size: Some(MAX_BODY * 4),
         ..Default::default()
     };
+    let pinned = match &route.pin {
+        Some(pin) => Some(tokio_tungstenite::Connector::Rustls(std::sync::Arc::new(
+            pinned_tls(pin)?,
+        ))),
+        None => None,
+    };
     let handshake = async {
-        if route.addrs.is_empty() {
+        if pinned.is_some() {
+            tokio_tungstenite::connect_async_tls_with_config(request, Some(config), false, pinned)
+                .await
+        } else if route.addrs.is_empty() {
             tokio_tungstenite::connect_async_with_config(request, Some(config), false).await
         } else {
             // Plain http goes only to the addresses that were checked.
@@ -335,21 +344,27 @@ struct Route {
     hub: String,
     host: String,
     addrs: Vec<SocketAddr>,
+    /// The hub's certificate when it serves TLS itself: the only one
+    /// trusted, in place of Windows' check.
+    pin: Option<String>,
 }
 
 /// Refuses a hub address that would send the token in the clear. https
-/// passes (Windows checks the certificate); plain http only when every
+/// passes (Windows checks the certificate, or it must be the pinned one);
+/// plain http only when every
 /// address the host resolves to is this PC or a NetBird or Tailscale one,
 /// and then connections go to those addresses alone, so a second lookup
 /// can't send the token somewhere else.
-async fn route(hub: &str) -> Result<Route, String> {
+async fn route(hub: &str, pin: Option<&str>) -> Result<Route, String> {
     let (host, port) = rules::host_port(hub).ok_or("badAddress")?;
     let mut route = Route {
         hub: hub.to_string(),
         host,
         addrs: Vec::new(),
+        pin: None,
     };
     if hub.starts_with("https://") {
+        route.pin = pin.and_then(rules::tls_fingerprint);
         return Ok(route);
     }
     route.addrs = tokio::net::lookup_host((route.host.as_str(), port))
@@ -373,7 +388,20 @@ fn client(route: &Route) -> Result<reqwest::Client, String> {
     if !route.addrs.is_empty() {
         builder = builder.resolve_to_addrs(&route.host, &route.addrs);
     }
+    if let Some(pin) = &route.pin {
+        builder = builder.use_preconfigured_tls(pinned_tls(pin)?);
+    }
     builder.build().map_err(|e| e.to_string())
+}
+
+/// TLS that trusts only the hub's pinned certificate.
+fn pinned_tls(pin: &str) -> Result<rustls::ClientConfig, String> {
+    crate::sync::identity::hub_client_config(pin).map_err(|e| e.to_string())
+}
+
+/// The pinned certificate for the paired hub, if it gave one.
+fn pin(app: &AppHandle) -> Option<String> {
+    get_settings(app).inyon.tls_fingerprint
 }
 
 /// The largest answer read from the hub; the contract's are far smaller.
@@ -406,11 +434,20 @@ async fn refusal(response: reqwest::Response) -> String {
     rules::reason_key(status, reason.as_deref()).to_string()
 }
 
-/// Pairs with a hub from the code Inyon shows. Errors are reason keys.
+/// Pairs with a hub from the code Inyon shows, or from its pairing link
+/// (given as `hub`), which also carries the hub's certificate when the hub
+/// serves TLS itself. Errors are reason keys.
 pub async fn pair(app: &AppHandle, hub: &str, code: &str) -> Result<InyonStatus, String> {
-    let hub = rules::hub_url(hub).ok_or("badAddress")?;
-    let route = route(&hub).await?;
-    let code = rules::pairing_code(code).ok_or("badCode")?;
+    let (hub, code, link_pin) = match rules::pairing_link(hub) {
+        Some(link) => (link.hub, link.code, link.fingerprint),
+        None if hub.trim().starts_with("inyon://") => return Err("badLink".into()),
+        None => (
+            rules::hub_url(hub).ok_or("badAddress")?,
+            rules::pairing_code(code).ok_or("badCode")?,
+            None,
+        ),
+    };
+    let route = route(&hub, link_pin.as_deref()).await?;
     let name = format!(
         "Legato on {}",
         std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows".into())
@@ -423,8 +460,14 @@ pub async fn pair(app: &AppHandle, hub: &str, code: &str) -> Result<InyonStatus,
         .send()
         .await
         .map_err(|e| {
-            debug!("Inyon pairing: {e}");
-            "unreachable".to_string()
+            debug!("Inyon pairing: {e:?}");
+            // A hub with its own certificate, which Windows doesn't know
+            // (or not the one the link names).
+            if hub.starts_with("https://") && format!("{e:?}").contains("ertificate") {
+                "untrusted".to_string()
+            } else {
+                "unreachable".to_string()
+            }
         })?;
     if !response.status().is_success() {
         let status = response.status().as_u16();
@@ -439,6 +482,19 @@ pub async fn pair(app: &AppHandle, hub: &str, code: &str) -> Result<InyonStatus,
     if claimed.contract_version != rules::CONTRACT {
         return Err("contract".into());
     }
+    // The certificate the hub names is the one trusted from now on; it must
+    // be the one the link named, which the connection just showed.
+    let claimed_pin = claimed
+        .tls_fingerprint
+        .as_deref()
+        .and_then(rules::tls_fingerprint)
+        .filter(|_| hub.starts_with("https://"));
+    if let (Some(link), Some(claimed)) = (&link_pin, &claimed_pin) {
+        if link != claimed {
+            return Err("untrusted".into());
+        }
+    }
+    let pin = claimed_pin.or(link_pin);
     crate::secrets::write_secret(TOKEN, &claimed.token).map_err(|e| {
         warn!("Couldn't keep Inyon's token in Credential Manager: {e}");
         "vault".to_string()
@@ -460,6 +516,7 @@ pub async fn pair(app: &AppHandle, hub: &str, code: &str) -> Result<InyonStatus,
     settings.inyon.hub = Some(hub.clone());
     settings.inyon.hub_id = Some(claimed.hub_id);
     settings.inyon.hub_name = hub_name;
+    settings.inyon.tls_fingerprint = pin;
     write_settings(app, settings);
     info!("Paired with Inyon at {hub}");
     REMOVED.store(false, Ordering::SeqCst);
@@ -478,6 +535,7 @@ pub fn unpair(app: &AppHandle) {
     settings.inyon.hub = None;
     settings.inyon.hub_id = None;
     settings.inyon.hub_name = None;
+    settings.inyon.tls_fingerprint = None;
     write_settings(app, settings);
     REMOVED.store(false, Ordering::SeqCst);
     INSECURE.store(false, Ordering::SeqCst);
@@ -505,7 +563,7 @@ pub async fn answer(
     text: Option<String>,
 ) -> Result<(), String> {
     let hub = get_settings(app).inyon.hub.ok_or("signedOut")?;
-    let route = route(&hub).await?;
+    let route = route(&hub, pin(app).as_deref()).await?;
     let token = token().ok_or("signedOut")?;
     let mut body = serde_json::json!({ "option": option, "key": key });
     if let Some(text) = text {
@@ -576,7 +634,7 @@ pub fn agents() -> Vec<InyonAgent> {
 /// ("delivered", "queued" or "sent"); errors are reason keys.
 pub async fn send_text(app: &AppHandle, pane: &PaneRef, text: &str) -> Result<String, String> {
     let hub = get_settings(app).inyon.hub.ok_or("signedOut")?;
-    let route = route(&hub).await?;
+    let route = route(&hub, pin(app).as_deref()).await?;
     let token = token().ok_or("signedOut")?;
     let text = rules::terminal_text(text);
     // A retry with the same id is never typed twice.

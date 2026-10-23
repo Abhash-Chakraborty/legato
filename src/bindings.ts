@@ -4169,6 +4169,11 @@ hub?: string | null; hub_id?: string | null;
  */
 hub_name?: string | null; 
 /**
+ * The SHA-256 of the hub's certificate when it serves TLS itself: the
+ * one certificate trusted for it (contract 1.1).
+ */
+tls_fingerprint?: string | null; 
+/**
  * Agents waiting for you show on the bar or the island. Off keeps the
  * pairing but stops listening.
  */

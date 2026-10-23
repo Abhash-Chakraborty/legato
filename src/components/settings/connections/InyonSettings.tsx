@@ -35,8 +35,12 @@ export const InyonCard: React.FC = () => {
   const [pairing, setPairing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Inyon's pairing link holds the address, the code and the certificate.
+  const isLink = hub.trim().startsWith("inyon://");
+  const ready = !!hub.trim() && (isLink || !!code.trim());
+
   const pair = async () => {
-    if (!hub.trim() || !code.trim() || pairing) return;
+    if (!ready || pairing) return;
     setPairing(true);
     setError(null);
     const r = await commands.inyonPair(hub, code);
@@ -103,7 +107,7 @@ export const InyonCard: React.FC = () => {
           }}
         >
           <input
-            className={`input compact min-w-0 flex-[1_1_240px] ${hub ? "font-mono text-[12.5px]" : ""}`}
+            className={`input compact min-w-0 flex-[1_1_240px] ${hub ? "truncate font-mono text-[12.5px]" : ""}`}
             value={hub}
             placeholder={t("settings.connections.inyon.hubPlaceholder")}
             aria-label={t("settings.connections.inyon.hub")}
@@ -114,15 +118,28 @@ export const InyonCard: React.FC = () => {
             }}
           />
           <input
-            className="input compact w-32 font-mono uppercase"
-            value={code}
+            className="input compact w-32 font-mono uppercase disabled:opacity-50"
+            value={isLink ? "" : code}
+            disabled={isLink}
             maxLength={8}
             placeholder={t("settings.connections.inyon.codePlaceholder")}
             aria-label={t("settings.connections.inyon.code")}
             spellCheck={false}
             autoComplete="off"
             onChange={(e) => {
-              setCode(e.target.value);
+              // A pairing link pasted here belongs in the address box.
+              if (e.target.value.trim().startsWith("inyon://")) {
+                setHub(e.target.value.trim());
+                setCode("");
+              } else setCode(e.target.value);
+              setError(null);
+            }}
+            onPaste={(e) => {
+              const text = e.clipboardData.getData("text").trim();
+              if (!text.startsWith("inyon://")) return;
+              e.preventDefault();
+              setHub(text);
+              setCode("");
               setError(null);
             }}
           />
@@ -130,7 +147,7 @@ export const InyonCard: React.FC = () => {
             type="submit"
             variant="secondary"
             size="sm"
-            disabled={!hub.trim() || !code.trim() || pairing}
+            disabled={!ready || pairing}
           >
             {pairing
               ? t("settings.connections.inyon.pairing")

@@ -105,6 +105,8 @@ impl Identity {
             .with_custom_certificate_verifier(Arc::new(Pinned {
                 provider,
                 fingerprint: fingerprint.to_string(),
+                encode: self::fingerprint,
+                whose: "the PC's",
             }))
             .with_client_auth_cert(vec![self.cert_der()], self.key_der())?;
         Ok(Arc::new(config))
@@ -118,6 +120,36 @@ pub fn server_name() -> ServerName<'static> {
 
 pub fn fingerprint(cert: &CertificateDer<'_>) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(cert.as_ref()))
+}
+
+/// A certificate's SHA-256 as 64 lowercase hex digits, the way Inyon's
+/// hub gives it.
+pub fn sha256_hex(cert: &CertificateDer<'_>) -> String {
+    Sha256::digest(cert.as_ref())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// A TLS client that trusts exactly one server certificate, the one whose
+/// SHA-256 is `sha256_hex`, whatever name it carries: for an Inyon hub
+/// that serves its own certificate. Speaks HTTP/1.1, which both the hub's
+/// API and its WebSocket use.
+#[allow(dead_code)] // The app's side; phone/core doesn't talk to Inyon.
+pub fn hub_client_config(sha256_hex: &str) -> Result<ClientConfig> {
+    let provider = provider();
+    let mut config = ClientConfig::builder_with_provider(provider.clone())
+        .with_safe_default_protocol_versions()?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(Pinned {
+            provider,
+            fingerprint: sha256_hex.to_ascii_lowercase(),
+            encode: self::sha256_hex,
+            whose: "the Inyon hub's",
+        }))
+        .with_no_client_auth();
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    Ok(config)
 }
 
 pub fn random_bytes<const N: usize>() -> [u8; N] {
@@ -217,11 +249,15 @@ impl ClientCertVerifier for AnyClientCert {
     }
 }
 
-#[allow(dead_code)] // The phone's side, used by phone/core.
+/// Trusts the one certificate whose fingerprint, as `encode` writes it, is
+/// `fingerprint`.
 #[derive(Debug)]
 struct Pinned {
     provider: Arc<CryptoProvider>,
     fingerprint: String,
+    encode: fn(&CertificateDer<'_>) -> String,
+    /// Whose certificate, for the error.
+    whose: &'static str,
 }
 
 impl ServerCertVerifier for Pinned {
@@ -233,12 +269,13 @@ impl ServerCertVerifier for Pinned {
         _ocsp_response: &[u8],
         _now: UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
-        if same_secret(&fingerprint(end_entity), &self.fingerprint) {
+        if same_secret(&(self.encode)(end_entity), &self.fingerprint) {
             Ok(ServerCertVerified::assertion())
         } else {
-            Err(rustls::Error::General(
-                "the PC's certificate doesn't match the paired one".into(),
-            ))
+            Err(rustls::Error::General(format!(
+                "{} certificate doesn't match the paired one",
+                self.whose
+            )))
         }
     }
 

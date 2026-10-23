@@ -56,7 +56,16 @@ enigo = "0.6.1"
 # Feedback sounds. No `recording`: microphone capture is handy-recorder's.
 rodio = { version = "0.23.0", default-features = false, features = ["playback", "wav", "flac", "mp3", "vorbis"] }
 handy-recorder = "0.1"
-reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "deflate"] }
+# rustls (no provider of its own) only for an Inyon hub with a pinned
+# certificate; everything else keeps Windows' native TLS.
+reqwest = { version = "0.12", features = [
+  "json",
+  "stream",
+  "gzip",
+  "brotli",
+  "deflate",
+  "rustls-tls-manual-roots-no-provider",
+] }
 futures-util = "0.3"
 rustfft = "6.4.0"
 strsim = "0.11.0"
@@ -74,8 +83,9 @@ sha2 = "0.10"
 # Phone sync: TLS with pinned self-signed certificates, on ring like reqwest.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging"] }
-# Inyon's hub WebSocket (inyon.rs), over the same native TLS reqwest uses.
-tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+# Inyon's hub WebSocket (inyon.rs), over the same native TLS reqwest uses,
+# or rustls with the hub's pinned certificate.
+tokio-tungstenite = { version = "0.24", features = ["native-tls", "__rustls-tls"] }
 rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }
 ring = "0.17"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }

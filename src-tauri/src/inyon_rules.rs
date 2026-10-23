@@ -105,6 +105,51 @@ pub fn pairing_code(input: &str) -> Option<String> {
     (code.len() == 6 && code.chars().all(|c| c.is_ascii_alphanumeric())).then_some(code)
 }
 
+/// A hub certificate's SHA-256 as Inyon gives it: 64 hex digits, kept
+/// lowercase. Anything else is refused.
+pub fn tls_fingerprint(input: &str) -> Option<String> {
+    let fp = input.trim().to_ascii_lowercase();
+    (fp.len() == 64 && fp.chars().all(|c| c.is_ascii_hexdigit())).then_some(fp)
+}
+
+/// What Inyon's Copy pairing link holds:
+/// `inyon://companion?u=<hub origin>&c=<code>[&f=<sha256 hex>]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PairingLink {
+    pub hub: String,
+    pub code: String,
+    /// The hub's certificate, when it serves TLS itself.
+    pub fingerprint: Option<String>,
+}
+
+/// Reads a pairing link; None for anything that isn't a whole, valid one.
+/// A fingerprint goes only with an https hub.
+pub fn pairing_link(input: &str) -> Option<PairingLink> {
+    let url = url::Url::parse(input.trim()).ok()?;
+    if url.scheme() != "inyon" || url.host_str() != Some("companion") {
+        return None;
+    }
+    let param = |name: &str| {
+        url.query_pairs()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.into_owned())
+    };
+    // The hub's origin as the link gives it, scheme and all.
+    let hub = param("u").filter(|u| u.contains("://"))?;
+    let hub = hub_url(&hub)?;
+    let code = pairing_code(&param("c")?)?;
+    let fingerprint = match param("f") {
+        Some(f) => Some(tls_fingerprint(&f)?),
+        None => None,
+    }
+    .filter(|_| hub.starts_with("https://"));
+    Some(PairingLink {
+        hub,
+        code,
+        fingerprint,
+    })
+}
+
 /// A pane id in a route travels without its `%`.
 pub fn pane_path(pane: &str) -> &str {
     pane.strip_prefix('%').unwrap_or(pane)
@@ -141,6 +186,9 @@ pub struct Claimed {
     #[serde(default)]
     pub scopes: Vec<String>,
     pub contract_version: u32,
+    /// The hub's certificate, when it serves TLS itself (contract 1.1).
+    #[serde(default)]
+    pub tls_fingerprint: Option<String>,
 }
 
 /// One of an agent's options.
@@ -1029,5 +1077,65 @@ mod tests {
         assert_eq!(reason_key(409, Some("already-answered")), "alreadyAnswered");
         assert_eq!(reason_key(401, None), "signedOut");
         assert_eq!(reason_key(500, None), "failed");
+    }
+
+    #[test]
+    fn a_pairing_link_carries_the_hub_the_code_and_its_certificate() {
+        let fp = "AB".repeat(32);
+        let link = pairing_link(&format!(
+            "inyon://companion?u=https%3A%2F%2Fhub.example.com%3A4777&c=k7q-2xp&f={fp}"
+        ))
+        .unwrap();
+        assert_eq!(link.hub, "https://hub.example.com:4777");
+        assert_eq!(link.code, "K7Q2XP");
+        assert_eq!(link.fingerprint, Some("ab".repeat(32)));
+        // No fingerprint on plain http, and none needed.
+        let plain =
+            pairing_link("inyon://companion?u=http%3A%2F%2F100.97.1.2%3A4777&c=K7Q2XP&f=00")
+                .map(|l| l.fingerprint);
+        assert_eq!(plain, None, "a bad fingerprint refuses the link");
+        let plain = pairing_link(&format!(
+            "inyon://companion?u=http%3A%2F%2F100.97.1.2%3A4777&c=K7Q2XP&f={fp}"
+        ))
+        .unwrap();
+        assert_eq!(plain.fingerprint, None);
+        assert!(
+            pairing_link("inyon://companion?u=https%3A%2F%2Fhub.example.com&c=K7Q2XP")
+                .is_some_and(|l| l.fingerprint.is_none())
+        );
+        // Not a link, not Inyon's, a hub with a path, or no code.
+        assert_eq!(pairing_link("K7Q2XP"), None);
+        assert_eq!(pairing_link("https://hub.example.com/?c=K7Q2XP"), None);
+        assert_eq!(
+            pairing_link("inyon://other?u=https%3A%2F%2Fhub.example.com&c=K7Q2XP"),
+            None
+        );
+        assert_eq!(
+            pairing_link("inyon://companion?u=https%3A%2F%2Fhub.example.com%2Fx&c=K7Q2XP"),
+            None
+        );
+        assert_eq!(
+            pairing_link("inyon://companion?u=hub.example.com&c=K7Q2XP"),
+            None
+        );
+        assert_eq!(
+            pairing_link("inyon://companion?u=https%3A%2F%2Fhub.example.com"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_claim_may_carry_the_hub_certificate() {
+        let with: Claimed = serde_json::from_str(
+            r#"{"token":"t","hubId":"h","contractVersion":1,"tlsFingerprint":"ab"}"#,
+        )
+        .unwrap();
+        assert_eq!(with.tls_fingerprint.as_deref(), Some("ab"));
+        let without: Claimed =
+            serde_json::from_str(r#"{"token":"t","hubId":"h","contractVersion":1}"#).unwrap();
+        assert_eq!(without.tls_fingerprint, None);
+        assert_eq!(tls_fingerprint(&"F0".repeat(32)), Some("f0".repeat(32)));
+        assert_eq!(tls_fingerprint(&"g0".repeat(32)), None);
+        assert_eq!(tls_fingerprint("abcd"), None);
     }
 }

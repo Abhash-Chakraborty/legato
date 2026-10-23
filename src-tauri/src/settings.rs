@@ -250,6 +250,10 @@ pub struct InyonSettings {
     /// What the hub calls itself, for Settings.
     #[serde(default)]
     pub hub_name: Option<String>,
+    /// The SHA-256 of the hub's certificate when it serves TLS itself: the
+    /// one certificate trusted for it (contract 1.1).
+    #[serde(default)]
+    pub tls_fingerprint: Option<String>,
     /// Agents waiting for you show on the bar or the island. Off keeps the
     /// pairing but stops listening.
     #[serde(default = "default_true")]
@@ -262,6 +266,7 @@ impl Default for InyonSettings {
             hub: None,
             hub_id: None,
             hub_name: None,
+            tls_fingerprint: None,
             alerts: true,
         }
     }
