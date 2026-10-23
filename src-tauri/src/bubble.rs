@@ -38,6 +38,8 @@ static VISIBLE: AtomicBool = AtomicBool::new(false);
 /// A dictation is running; the bubble shows it even over a fullscreen
 /// window, since the bar leaves it to the bubble.
 static DICTATING: AtomicBool = AtomicBool::new(false);
+/// Set while a thread builds the window.
+static BUILDING: AtomicBool = AtomicBool::new(false);
 
 /// Whether the bubble shows, and so wants `mic-level` while you talk.
 pub fn wants_levels() -> bool {
@@ -228,8 +230,23 @@ pub fn set_dictating(app: &AppHandle, on: bool) {
 }
 
 /// Runs `refresh_visibility` on the main thread, where the window's Win32
-/// calls belong.
+/// calls belong. The first time the bubble is wanted, its window is built
+/// on another thread first.
 fn refresh(app: &AppHandle) {
+    if app.get_webview_window(WINDOW).is_none() {
+        if !takes_dictation(app) || BUILDING.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            let built = build_window(&handle);
+            BUILDING.store(false, Ordering::SeqCst);
+            if built {
+                refresh(&handle);
+            }
+        });
+        return;
+    }
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || refresh_visibility(&handle));
 }
@@ -290,38 +307,12 @@ fn set_shown(hwnd: windows::Win32::Foundation::HWND, show: bool) {
     }
 }
 
-/// Creates the bubble's window at startup and starts watching for windows
-/// that fill the screen.
+/// Starts watching for windows that fill the screen, and creates the
+/// bubble's window if it's on. With it off, the window (a whole webview) is
+/// left until it's turned on.
 pub fn init(app: &AppHandle) {
     *SPOT.lock().unwrap_or_else(|e| e.into_inner()) = saved_spot(app);
-    let mut builder = WebviewWindowBuilder::new(
-        app,
-        WINDOW,
-        tauri::WebviewUrl::App("src/bubble/index.html".into()),
-    )
-    .title("Legato bubble")
-    .resizable(false)
-    .inner_size(bubble_rules::COLLAPSED.0, bubble_rules::COLLAPSED.1)
-    .shadow(false)
-    .maximizable(false)
-    .minimizable(false)
-    .closable(false)
-    .decorations(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .transparent(true)
-    .focusable(false)
-    .focused(false)
-    .visible(false);
-    if let Some(data_dir) = crate::portable::data_dir() {
-        builder = builder.data_directory(data_dir.join("webview"));
-    }
-    if let Err(e) = builder.build() {
-        warn!("Couldn't create the bubble: {e}");
-        return;
-    }
-    apply(app);
-    refresh_visibility(app);
+    refresh(app);
 
     let app = app.clone();
     std::thread::spawn(move || loop {
@@ -346,6 +337,43 @@ pub fn init(app: &AppHandle) {
             refresh(&app);
         }
     });
+}
+
+/// Creates the hidden window. Not on the main thread: building a webview
+/// from there deadlocks on Windows.
+fn build_window(app: &AppHandle) -> bool {
+    if app.get_webview_window(WINDOW).is_some() {
+        return true;
+    }
+    let mut builder = WebviewWindowBuilder::new(
+        app,
+        WINDOW,
+        tauri::WebviewUrl::App("src/bubble/index.html".into()),
+    )
+    .title("Legato bubble")
+    .resizable(false)
+    .inner_size(bubble_rules::COLLAPSED.0, bubble_rules::COLLAPSED.1)
+    .shadow(false)
+    .maximizable(false)
+    .minimizable(false)
+    .closable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .transparent(true)
+    .focusable(false)
+    .focused(false)
+    .visible(false);
+    if let Some(data_dir) = crate::portable::data_dir() {
+        builder = builder.data_directory(data_dir.join("webview"));
+    }
+    match builder.build() {
+        Ok(_) => true,
+        Err(e) => {
+            warn!("Couldn't create the bubble: {e}");
+            false
+        }
+    }
 }
 
 /// Whether the window in front fills its monitor (a video, a game, a

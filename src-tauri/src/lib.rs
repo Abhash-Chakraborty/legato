@@ -529,10 +529,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
 
-    // The desktop bubble, when it's on (it creates its window either way so
-    // turning it on later needs no restart).
+    // The desktop bubble, when it's on (its window is created when it's
+    // first wanted). The Notes panel's window waits until it first opens.
     bubble::init(app_handle);
-    notes_panel::init(app_handle);
     // Agents waiting on Inyon, while paired.
     inyon::init(app_handle);
 }

@@ -20,9 +20,14 @@ pub fn is_open() -> bool {
     OPEN.load(Ordering::Relaxed)
 }
 
-/// Builds the hidden window at startup. Building a webview later, from a
-/// command on the main thread, deadlocks on Windows.
-pub fn init(app: &AppHandle) {
+/// Builds the hidden window the first time the panel opens, so a PC that
+/// never uses Notes doesn't keep a webview for it. Not on the main thread:
+/// building a webview from there deadlocks on Windows. The page loads the
+/// recording in progress, lines so far included, when it starts.
+fn build_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+    if let Some(window) = app.get_webview_window(WINDOW) {
+        return Some(window);
+    }
     let mut builder = WebviewWindowBuilder::new(
         app,
         WINDOW,
@@ -44,9 +49,10 @@ pub fn init(app: &AppHandle) {
     if let Some(data_dir) = crate::portable::data_dir() {
         builder = builder.data_directory(data_dir.join("webview"));
     }
-    if let Err(e) = builder.build() {
-        warn!("Couldn't create the Notes panel: {e}");
-    }
+    builder
+        .build()
+        .map_err(|e| warn!("Couldn't create the Notes panel: {e}"))
+        .ok()
 }
 
 /// Docks the window at the right of the work area of the screen the
@@ -82,9 +88,10 @@ fn set_open(app: &AppHandle, open: bool) {
     }
 }
 
-/// Shows the panel on the recording in progress.
+/// Shows the panel on the recording in progress. Called from async
+/// commands, off the main thread.
 pub fn show(app: &AppHandle) {
-    let Some(window) = app.get_webview_window(WINDOW) else {
+    let Some(window) = build_window(app) else {
         return;
     };
     dock(app, &window);
