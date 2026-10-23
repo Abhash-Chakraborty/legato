@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
+  CalendarPlus,
   Copy,
   FileDown,
   FileText,
@@ -23,6 +24,7 @@ import { SummaryTab } from "./SummaryTab";
 import { TranscriptTab } from "./TranscriptTab";
 import { NotePlayer, useNoteAudio } from "./NoteAudio";
 import { useSpeakerNames } from "../../notes/SpeakerTag";
+import { ScheduleDialog } from "../../notes/ScheduleDialog";
 
 type Tab = "summary" | "transcript" | "mine";
 
@@ -212,6 +214,7 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
   const { t, i18n } = useTranslation();
   const [tab, setTab] = useState<Tab>("summary");
   const [menu, setMenu] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [tagging, setTagging] = useState(false);
   const [jump, setJump] = useState<Jump | null>(null);
@@ -254,11 +257,16 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
       toast(t("notes.toast.transcriptCopied"));
   };
 
-  const exportMarkdown = async () => {
+  // Word for Google Docs and Word, Markdown for everything else.
+  const exportAs = async (format: "docx" | "md") => {
     const name = note.title.replace(/[\\/:*?"<>|]+/g, " ").trim() || "Note";
     const path = await save({
-      defaultPath: `${name}.md`,
-      filters: [{ name: t("notes.detail.markdownFiles"), extensions: ["md"] }],
+      defaultPath: `${name}.${format}`,
+      filters: [
+        format === "docx"
+          ? { name: t("notes.detail.wordFiles"), extensions: ["docx"] }
+          : { name: t("notes.detail.markdownFiles"), extensions: ["md"] },
+      ],
     }).catch(() => null);
     if (!path) return;
     const result = await commands.exportNote(note.id, path);
@@ -346,11 +354,24 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
                     onSelect: copyTranscript,
                   },
                   {
+                    id: "export-word",
+                    label: t("notes.detail.exportWord"),
+                    icon: FileDown,
+                    disabled: recording,
+                    onSelect: () => exportAs("docx"),
+                  },
+                  {
                     id: "export",
                     label: t("notes.detail.export"),
                     icon: FileDown,
                     disabled: recording,
-                    onSelect: exportMarkdown,
+                    onSelect: () => exportAs("md"),
+                  },
+                  {
+                    id: "schedule",
+                    label: t("notes.detail.scheduleFollowUp"),
+                    icon: CalendarPlus,
+                    onSelect: () => setScheduling(true),
                   },
                   "separator",
                   {
@@ -472,6 +493,14 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
           <MyNotesTab note={note} recording={recording} />
         )}
       </div>
+      <ScheduleDialog
+        open={scheduling}
+        prefill={{
+          title: t("notes.schedule.followUp", { title: note.title }),
+          details: note.summary || undefined,
+        }}
+        onClose={() => setScheduling(false)}
+      />
     </div>
   );
 };

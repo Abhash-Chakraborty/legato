@@ -679,7 +679,7 @@
       },
       "connections": {
         "title": "Connections",
-        "subtitle": "Your calendars, your Inyon hub, and AI apps that may read Legato."
+        "subtitle": "Your calendars, where notes are kept as documents, your Inyon hub, and AI apps that may read Legato."
       },
       "devices": {
         "title": "Devices",
@@ -725,6 +725,7 @@
       "whatSyncs": "What syncs",
       "clipboard": "Clipboard",
       "calendars": "Meetings",
+      "documents": "Documents",
       "aiApps": "AI apps",
       "speakers": "Speakers in notes",
       "recordings": "Recordings",
@@ -1288,6 +1289,18 @@
           "tomorrow": "Tomorrow"
         },
         "hasLink": "Has a meeting link"
+      },
+      "notesFolder": {
+        "title": "Keep notes in a folder",
+        "help": "A Word copy of every note, rewritten when the note changes, which Google Docs opens with its formatting. In your Google Drive or OneDrive folder the copies reach the cloud through that app; Legato itself never signs in anywhere.",
+        "use": "Use {{service}}",
+        "choose": "Choose folder…",
+        "change": "Change…",
+        "stop": "Stop",
+        "noDrive": "Install Google Drive for desktop to keep notes in Google Drive.",
+        "started": "Notes are being copied to the folder",
+        "failed": "Couldn't use that folder",
+        "missing": "That folder isn't there right now"
       },
       "mcp": {
         "title": "Let AI apps read Legato",
@@ -2932,8 +2945,10 @@
       "tagPlaceholder": "Tag name",
       "copySummary": "Copy summary",
       "copyTranscript": "Copy transcript",
+      "exportWord": "Save as Word document",
       "export": "Export as Markdown",
       "markdownFiles": "Markdown files",
+      "wordFiles": "Word documents",
       "delete": "Delete",
       "startedAt": "started {{time}}",
       "youAndOthers": "You and others",
@@ -2944,7 +2959,8 @@
         "transcript": "Transcript",
         "mine": "My notes"
       },
-      "copyDocs": "Copy for Google Docs"
+      "copyDocs": "Copy for Google Docs",
+      "scheduleFollowUp": "Schedule a follow-up"
     },
     "summary": {
       "decisions": "Decisions",
@@ -3130,6 +3146,40 @@
       "addedFixed_one": "Added {{word}} to the Dictionary and fixed 1 line",
       "addedFixed_other": "Added {{word}} to the Dictionary and fixed {{count}} lines",
       "failed": "Couldn't add the word"
+    },
+    "schedule": {
+      "button": "Schedule a meeting",
+      "title": "Schedule a meeting",
+      "description": "Your calendar opens in the browser with this filled in. Save it there; Google adds a Meet link and Outlook a Teams link with one click.",
+      "titleLabel": "Title",
+      "untitled": "Meeting",
+      "followUp": "Follow-up: {{title}}",
+      "date": "Date",
+      "time": "Start",
+      "length": "Length",
+      "minutes": "{{count}} min",
+      "invite": "Invite",
+      "invitePlaceholder": "sahil@example.com, priya@example.com",
+      "inviteHelp": "Email addresses, separated by commas. Optional.",
+      "inviteCount_one": "{{count}} person invited",
+      "inviteCount_other": "{{count}} people invited",
+      "calendar": "Calendar",
+      "site": {
+        "google": "Google",
+        "outlook": "Outlook",
+        "outlookCom": "Outlook.com"
+      },
+      "siteHelp": {
+        "google": "Google Calendar, in the browser you're signed in to.",
+        "outlook": "Outlook for work or school (Microsoft 365).",
+        "outlookCom": "Outlook.com and Hotmail accounts."
+      },
+      "open": {
+        "google": "Open Google Calendar",
+        "outlook": "Open Outlook",
+        "outlookCom": "Open Outlook.com"
+      },
+      "failed": "Couldn't open the calendar"
     }
   },
   "calls": {

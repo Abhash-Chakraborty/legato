@@ -19,6 +19,7 @@ mod clipboard;
 mod commands;
 mod context;
 mod desktop;
+mod document;
 mod edit_reader;
 mod elevation;
 pub mod engine_supervisor;
@@ -32,6 +33,7 @@ mod loopback;
 mod managers;
 pub mod mcp;
 mod mcp_rules;
+mod note_copies;
 mod notes;
 mod notes_panel;
 mod notes_rules;
@@ -1140,6 +1142,9 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::forget_voice,
             commands::notes::change_notes_remember_voices_setting,
             commands::notes::change_notes_audio_keep_days_setting,
+            commands::notes::change_notes_folder_setting,
+            commands::notes::note_folder_suggestions,
+            commands::notes::open_notes_folder,
             commands::notes::save_note_my_notes,
             commands::notes::add_note_tag,
             commands::notes::remove_note_tag,

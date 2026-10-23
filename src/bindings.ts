@@ -2381,6 +2381,35 @@ async changeNotesAudioKeepDaysSetting(days: number) : Promise<Result<null, strin
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Where a Word copy of every note is kept, or None to stop. The folder is
+ * made if it isn't there; copies already written stay.
+ */
+async changeNotesFolderSetting(folder: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_notes_folder_setting", { folder }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Opens the folder the notes' Word copies go to.
+ */
+async openNotesFolder() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_notes_folder") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Google Drive's and OneDrive's folders on this PC, offered for the copies.
+ */
+async noteFolderSuggestions() : Promise<FolderSuggestion[]> {
+    return await TAURI_INVOKE("note_folder_suggestions");
+},
 async changeNotesSpeakersSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_notes_speakers_setting", { enabled }) };
@@ -3402,6 +3431,19 @@ export type CleanupLevel = "none" | "light" | "medium"
  * fractions of that monitor's work area.
  */
 export type CalendarFeed = { id: string; name: string }
+/**
+ * A folder a sync app keeps in the cloud, offered when you pick where the
+ * copies go.
+ */
+export type FolderSuggestion = { 
+/**
+ * "Google Drive" or "OneDrive".
+ */
+service: string; 
+/**
+ * A "Legato notes" folder inside it, made when chosen.
+ */
+path: string }
 export type CalendarStatus = { id: string; name: string; 
 /**
  * Unix seconds of the last good fetch.
@@ -3741,6 +3783,12 @@ notes_remember_voices?: boolean;
  * existed keep audio for good, so an update deletes nothing unasked.
  */
 notes_audio_keep_days?: number; 
+/**
+ * A folder that keeps a Word copy of every note, rewritten as notes
+ * change: Google Drive's or OneDrive's, so the copies reach the cloud
+ * through that app. None keeps notes in Legato only.
+ */
+notes_folder?: string | null; 
 /**
  * Models for kinds of AI work that shouldn't use the main one.
  */

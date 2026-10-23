@@ -89,6 +89,8 @@ tokio-tungstenite = { version = "0.24", features = ["native-tls", "__rustls-tls"
 rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }
 ring = "0.17"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+# Notes as Word files (document.rs), stored uncompressed: no codec needed.
+zip = { version = "4.6", default-features = false }
 libc = "0.2"
 # Every model runs through transcribe-cpp (GGUF/ggml, native backends).
 # Per-architecture backend features are added in the target tables below

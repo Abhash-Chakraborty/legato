@@ -164,12 +164,20 @@ pub fn copy_note_formatted(app: AppHandle, notes: Notes<'_>, id: i64) -> Result<
         .map_err(|e| e.to_string())
 }
 
-/// Saves the note as a Markdown file where the save dialog said.
+/// Saves the note where the save dialog said: a Word file for a .docx
+/// name, Markdown otherwise.
 #[tauri::command]
 #[specta::specta]
 pub fn export_note(notes: Notes<'_>, id: i64, path: String) -> Result<(), String> {
-    let markdown = text(notes.markdown(id))?;
-    std::fs::write(&path, markdown).map_err(|e| e.to_string())
+    let word = std::path::Path::new(&path)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("docx"));
+    let bytes = if word {
+        text(notes.docx(id))?
+    } else {
+        text(notes.markdown(id))?.into_bytes()
+    };
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())
 }
 
 /// Apps a meeting can record, and the output device "Everything" records.
@@ -364,6 +372,50 @@ pub fn change_notes_audio_keep_days_setting(
     write_settings(&app, settings);
     notes.expire_audio();
     Ok(())
+}
+
+/// Where a Word copy of every note is kept, or None to stop. The folder is
+/// made if it isn't there; copies already written stay.
+#[tauri::command]
+#[specta::specta]
+pub fn change_notes_folder_setting(app: AppHandle, folder: Option<String>) -> Result<(), String> {
+    let folder = folder
+        .map(|f| f.trim().to_string())
+        .filter(|f| !f.is_empty());
+    if let Some(f) = &folder {
+        let path = std::path::Path::new(f);
+        if !path.is_absolute() {
+            return Err("Pick a folder on this PC".into());
+        }
+        std::fs::create_dir_all(path).map_err(|e| e.to_string())?;
+    }
+    let mut settings = get_settings(&app);
+    settings.notes_folder = folder;
+    write_settings(&app, settings);
+    crate::note_copies::nudge(&app);
+    Ok(())
+}
+
+/// Opens the folder the notes' Word copies go to.
+#[tauri::command]
+#[specta::specta]
+pub fn open_notes_folder(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let folder = get_settings(&app)
+        .notes_folder
+        .ok_or("No notes folder is set")?;
+    app.opener()
+        .open_path(folder, None::<String>)
+        .map_err(|e| e.to_string())
+}
+
+/// Google Drive's and OneDrive's folders on this PC, offered for the copies.
+#[tauri::command]
+#[specta::specta]
+pub async fn note_folder_suggestions() -> Vec<crate::note_copies::FolderSuggestion> {
+    tauri::async_runtime::spawn_blocking(crate::note_copies::suggestions)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]

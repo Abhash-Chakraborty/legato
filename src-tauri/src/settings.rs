@@ -992,6 +992,11 @@ pub struct AppSettings {
     /// existed keep audio for good, so an update deletes nothing unasked.
     #[serde(default)]
     pub notes_audio_keep_days: u32,
+    /// A folder that keeps a Word copy of every note, rewritten as notes
+    /// change: Google Drive's or OneDrive's, so the copies reach the cloud
+    /// through that app. None keeps notes in Legato only.
+    #[serde(default)]
+    pub notes_folder: Option<String>,
     /// Models for kinds of AI work that shouldn't use the main one.
     #[serde(default)]
     pub ai_task_models: AiTaskModels,
@@ -1704,6 +1709,7 @@ pub fn get_default_settings() -> AppSettings {
         notes_speakers: true,
         notes_remember_voices: true,
         notes_audio_keep_days: 90,
+        notes_folder: None,
         ai_task_models: AiTaskModels::default(),
         calls: CallSettings::default(),
         sync: SyncSettings::default(),

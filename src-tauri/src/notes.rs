@@ -148,6 +148,17 @@ pub struct StartNotes {
     pub app_pid: Option<u32>,
 }
 
+/// When a note was recorded, as the copied and exported note shows it.
+fn when(note: &Note) -> String {
+    chrono::DateTime::from_timestamp(note.started_at, 0)
+        .map(|t| {
+            t.with_timezone(&chrono::Local)
+                .format("%b %-d, %Y, %-I:%M %p")
+                .to_string()
+        })
+        .unwrap_or_default()
+}
+
 /// The note list, the transcript and the audio files.
 pub struct NotesManager {
     app: AppHandle,
@@ -178,6 +189,7 @@ impl NotesManager {
         if let Err(e) = NotesChanged.emit(&self.app) {
             error!("Failed to emit notes-changed: {}", e);
         }
+        crate::note_copies::nudge(&self.app);
     }
 
     fn recover(&self) {
@@ -648,15 +660,16 @@ impl NotesManager {
     /// that only take text.
     pub fn formatted(&self, id: i64) -> Result<(String, String)> {
         let note = self.get(id)?.ok_or_else(|| anyhow!("That note is gone"))?;
-        let when = chrono::DateTime::from_timestamp(note.started_at, 0)
-            .map(|t| {
-                t.with_timezone(&chrono::Local)
-                    .format("%b %-d, %Y, %-I:%M %p")
-                    .to_string()
-            })
-            .unwrap_or_default();
-        let html = store::html(&note, &when);
+        let html = store::html(&note, &when(&note));
         Ok((html, self.markdown(id)?))
+    }
+
+    /// The note as a Word file with its transcript, which Google Docs opens
+    /// with the same formatting.
+    pub fn docx(&self, id: i64) -> Result<Vec<u8>> {
+        let note = self.get(id)?.ok_or_else(|| anyhow!("That note is gone"))?;
+        let lines = self.lines(id)?;
+        store::docx(&note, &when(&note), &lines, "You", "Them")
     }
 
     pub fn markdown(&self, id: i64) -> Result<String> {

@@ -7,6 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::document::{self, Block, Run};
 use crate::notes_rules::{clock, NoteOutline, NotesSummary};
 
 /// A voice memo is the microphone alone; a meeting adds what the PC plays.
@@ -1115,76 +1116,94 @@ pub fn markdown(note: &Note, lines: &[NoteLine], you: &str, them: &str) -> Strin
     out.trim_end().to_string() + "\n"
 }
 
-fn esc(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
 /// The note as HTML for pasting into Google Docs or Word, which keep its
 /// headings, lists and bold titles. The transcript stays out: it belongs
 /// in the export, not in notes someone reads.
 pub fn html(note: &Note, when: &str) -> String {
-    let mut out = format!("<h1>{}</h1>", esc(&note.title));
+    document::html(&blocks(note, when, None))
+}
+
+/// The note as a Word file, transcript included, for Export and for the
+/// copy kept in a folder (Google Drive's, say).
+pub fn docx(note: &Note, when: &str, lines: &[NoteLine], you: &str, them: &str) -> Result<Vec<u8>> {
+    document::docx(&blocks(note, when, Some((lines, you, them))))
+}
+
+/// The note's parts in reading order: the summary and its topics, then
+/// decisions, next steps, details, your own notes and, when given, the
+/// transcript.
+fn blocks(note: &Note, when: &str, transcript: Option<(&[NoteLine], &str, &str)>) -> Vec<Block> {
+    let mut out = vec![Block::Title(note.title.clone())];
     let people = people(note);
-    let mut meta = vec![esc(when)];
+    let mut meta = vec![when.to_string()];
     if !people.is_empty() {
-        meta.push(esc(&people.join(", ")));
+        meta.push(people.join(", "));
     }
-    out.push_str(&format!("<p><i>{}</i></p>", meta.join(" · ")));
+    out.push(Block::Para(vec![Run::italic(meta.join(" · "))]));
     if !note.summary.is_empty() {
-        out.push_str(&format!("<h2>Summary</h2><p>{}</p>", esc(&note.summary)));
+        out.push(Block::Heading("Summary".into()));
+        out.push(Block::Para(vec![Run::plain(note.summary.as_str())]));
         for t in &note.outline.topics {
-            out.push_str(&format!(
-                "<p><b>{}</b><br>{}</p>",
-                esc(&t.heading),
-                esc(&t.text)
-            ));
+            out.push(Block::Para(vec![
+                Run::bold(t.heading.as_str()),
+                Run::plain(format!("\n{}", t.text)),
+            ]));
         }
     }
-    let item = |text: &str| match split_title(text) {
-        (Some(title), rest) => format!("<b>{}</b>: {}", esc(title), esc(rest)),
-        (None, rest) => esc(rest),
+    let item = |lead: String, text: &str| match split_title(text) {
+        (Some(title), rest) => vec![
+            Run::plain(lead),
+            Run::bold(title),
+            Run::plain(format!(": {rest}")),
+        ],
+        (None, rest) => vec![Run::plain(format!("{lead}{rest}"))],
     };
+    let tidy =
+        |runs: Vec<Run>| -> Vec<Run> { runs.into_iter().filter(|r| !r.text.is_empty()).collect() };
     if !note.decisions.is_empty() {
-        out.push_str("<h2>Decisions</h2><ul>");
+        out.push(Block::Heading("Decisions".into()));
         for d in &note.decisions {
-            out.push_str(&format!("<li>{}</li>", item(d)));
+            out.push(Block::Bullet(tidy(item(String::new(), d))));
         }
-        out.push_str("</ul>");
     }
     if !note.actions.is_empty() {
-        out.push_str("<h2>Next steps</h2><ul>");
+        out.push(Block::Heading("Next steps".into()));
         for a in &note.actions {
             let mark = if a.done { "☑" } else { "☐" };
-            out.push_str(&format!(
-                "<li>{mark} [{}] {}</li>",
-                esc(&a.owner),
-                item(&a.text)
-            ));
+            out.push(Block::Bullet(tidy(item(
+                format!("{mark} [{}] ", a.owner),
+                &a.text,
+            ))));
         }
-        out.push_str("</ul>");
     }
     if !note.outline.details.is_empty() {
-        out.push_str("<h2>Details</h2>");
+        out.push(Block::Heading("Details".into()));
         for d in &note.outline.details {
             let at = d
                 .at_ms
                 .map(|ms| format!(" ({})", clock(ms)))
                 .unwrap_or_default();
-            out.push_str(&format!(
-                "<p><b>{}</b>: {}{}</p>",
-                esc(&d.heading),
-                esc(&d.text),
-                at
-            ));
+            out.push(Block::Para(vec![
+                Run::bold(d.heading.as_str()),
+                Run::plain(format!(": {}{at}", d.text)),
+            ]));
         }
     }
     if !note.my_notes.trim().is_empty() {
-        out.push_str("<h2>My notes</h2>");
+        out.push(Block::Heading("My notes".into()));
         for para in note.my_notes.trim().split("\n\n") {
-            out.push_str(&format!("<p>{}</p>", esc(para).replace('\n', "<br>")));
+            out.push(Block::Para(vec![Run::plain(para)]));
+        }
+    }
+    if let Some((lines, you, them)) = transcript.filter(|(lines, ..)| !lines.is_empty()) {
+        out.push(Block::Heading("Transcript".into()));
+        for l in lines {
+            let who = speaker_label(note, l, you, them, "Speaker {n}");
+            out.push(Block::Para(vec![
+                Run::plain(format!("{} ", clock(l.at_ms))),
+                Run::bold(format!("{who}:")),
+                Run::plain(format!(" {}", l.text)),
+            ]));
         }
     }
     out
@@ -1385,6 +1404,47 @@ mod tests {
         assert!(md.starts_with("# Infra sync\n"));
         assert!(md.contains("23:30 Them: Extension, right?"));
         assert_eq!(clock(3_725_000), "1:02:05");
+    }
+
+    #[test]
+    fn copied_notes_keep_their_shape_and_word_files_add_the_transcript() {
+        let conn = db();
+        let mut note = meeting(&conn);
+        let line = add_line(&conn, note.id, 65_000, 67_000, Speaker::Them, "Ship <it>.").unwrap();
+        note.summary = "Workers move to Cloudflare.".into();
+        note.outline.topics = vec![crate::notes_rules::OutlineTopic {
+            heading: "Workers".into(),
+            text: "They predate the builds.".into(),
+        }];
+        note.outline.details = vec![crate::notes_rules::OutlineDetail {
+            heading: "Builds".into(),
+            text: "Twice as fast".into(),
+            at_ms: Some(65_000),
+        }];
+        note.decisions = vec!["Switch: on Friday.".into(), "Plain one".into()];
+        note.actions = vec![NoteAction {
+            id: 1,
+            owner: "You".into(),
+            text: "Write it up: with images.".into(),
+            done: true,
+        }];
+        note.my_notes = "First\nline\n\nSecond".into();
+        assert_eq!(
+            html(&note, "Oct 17"),
+            "<h1>Infra sync</h1><p><i>Oct 17</i></p><h2>Summary</h2><p>Workers move to Cloudflare.</p>\
+             <p><b>Workers</b><br>They predate the builds.</p><h2>Decisions</h2>\
+             <ul><li><b>Switch</b>: on Friday.</li><li>Plain one</li></ul><h2>Next steps</h2>\
+             <ul><li>☑ [You] <b>Write it up</b>: with images.</li></ul><h2>Details</h2>\
+             <p><b>Builds</b>: Twice as fast (1:05)</p><h2>My notes</h2><p>First<br>line</p><p>Second</p>"
+        );
+        let bytes = docx(&note, "Oct 17", &[line], "You", "Them").unwrap();
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut doc = String::new();
+        std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").unwrap(), &mut doc)
+            .unwrap();
+        assert!(doc.contains(">Transcript</w:t>"));
+        assert!(doc.contains(">Them:</w:t>"));
+        assert!(doc.contains("> Ship &lt;it&gt;.</w:t>"));
     }
 
     #[test]

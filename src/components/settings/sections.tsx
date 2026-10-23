@@ -24,6 +24,7 @@ import { AdminAppsToggle } from "./AdminAppsToggle";
 import { YourName } from "./YourName";
 import { FeatureToggle, IslandToggle } from "./FeatureSettings";
 import { InyonAlertsRow, InyonCard } from "./connections/InyonSettings";
+import { NotesFolderRow } from "./connections/NotesFolder";
 import { AutostartToggle } from "./AutostartToggle";
 import { ShowTrayIcon } from "./ShowTrayIcon";
 import { StartHidden } from "./StartHidden";
@@ -1242,6 +1243,20 @@ export const buildSections = (
             ],
             render: () => <MeetingCardsRow />,
             when: ({ settings }) => hasCalendars(settings?.calendars),
+          },
+        ],
+      },
+      {
+        id: "documents",
+        titleKey: "settings.groups.documents",
+        rows: [
+          {
+            id: "notes-folder",
+            searchKeys: [
+              "settings.connections.notesFolder.title",
+              "settings.connections.notesFolder.help",
+            ],
+            render: () => <NotesFolderRow />,
           },
         ],
       },

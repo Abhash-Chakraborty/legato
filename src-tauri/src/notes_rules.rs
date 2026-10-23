@@ -1451,6 +1451,47 @@ pub fn ask_request(transcript: &str, question: &str) -> String {
     format!("Transcript:\n{transcript}\nQuestion: {}", question.trim())
 }
 
+/// The file name a note's Word copy gets in its folder, before any
+/// " (2)": the day it was recorded first, so the folder sorts by date, then
+/// the title with what Windows refuses in a file name taken out.
+pub fn copy_name(title: &str, date: &str) -> String {
+    let mut clean: String = title
+        .chars()
+        .map(|c| match c {
+            '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => ' ',
+            c if c.is_control() => ' ',
+            c => c,
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if clean.chars().count() > 80 {
+        clean = clean.chars().take(80).collect();
+    }
+    // Windows drops trailing dots and spaces, so "Plan." and "Plan" collide.
+    let clean = clean.trim_end_matches(['.', ' ']);
+    let title = if clean.is_empty() { "Note" } else { clean };
+    format!("{date} {title}")
+}
+
+/// `base` as a .docx name no one else has: "base.docx", then "base (2).docx"
+/// and so on. `taken` says whether a name (any case) is already used.
+pub fn unique_docx(base: &str, taken: impl Fn(&str) -> bool) -> String {
+    let mut n = 1;
+    loop {
+        let name = if n == 1 {
+            format!("{base}.docx")
+        } else {
+            format!("{base} ({n}).docx")
+        };
+        if !taken(&name) {
+            return name;
+        }
+        n += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2060,5 +2101,23 @@ mod tests {
         assert_eq!(apart.of(1, 1), groups.of(0, 2));
         assert_ne!(apart.of(1, 2), apart.of(0, 3));
         assert_eq!(unlink(&groups, &[]), groups);
+    }
+
+    #[test]
+    fn word_copies_get_safe_dated_names() {
+        assert_eq!(
+            copy_name("Sahil: project details?", "2026-10-21"),
+            "2026-10-21 Sahil project details"
+        );
+        assert_eq!(copy_name("  ..  ", "2026-10-21"), "2026-10-21 Note");
+        assert_eq!(copy_name("Plan v2.", "2026-10-21"), "2026-10-21 Plan v2");
+        assert_eq!(copy_name("a\tb\nc", "2026-10-21"), "2026-10-21 a b c");
+        assert_eq!(copy_name(&"x".repeat(120), "d").len(), 82);
+        let taken = ["base.docx", "base (2).docx"];
+        assert_eq!(
+            unique_docx("base", |n| taken.iter().any(|t| t.eq_ignore_ascii_case(n))),
+            "base (3).docx"
+        );
+        assert_eq!(unique_docx("new", |_| false), "new.docx");
     }
 }

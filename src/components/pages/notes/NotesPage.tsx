@@ -7,7 +7,13 @@ import React, {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { ChevronDown, Search, Settings2, Tag } from "lucide-react";
+import {
+  CalendarPlus,
+  ChevronDown,
+  Search,
+  Settings2,
+  Tag,
+} from "lucide-react";
 import { commands, type Note, type NoteKind, type NoteLine } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";
@@ -26,6 +32,7 @@ import {
 import { NoteDetail } from "./NoteDetail";
 import { NoteRow } from "./NoteRow";
 import { RecordDialog } from "./RecordDialog";
+import { ScheduleDialog } from "../../notes/ScheduleDialog";
 import { RecordingStrip } from "./RecordingStrip";
 import { CallStrip } from "./CallStrip";
 import { ConfirmDelete } from "../../shared/ConfirmDelete";
@@ -113,6 +120,7 @@ export const NotesPage: React.FC = () => {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [dialog, setDialog] = useState<NoteKind | null>(null);
+  const [scheduling, setScheduling] = useState(false);
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const listRef = useRef<HTMLUListElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -341,6 +349,15 @@ export const NotesPage: React.FC = () => {
           {t("notes.title")}
         </h1>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setScheduling(true)}
+            aria-label={t("notes.schedule.button")}
+            title={t("notes.schedule.button")}
+            className="grid h-9 w-9 place-items-center rounded-[var(--r-md)] border border-line-strong bg-surface text-text-2 shadow-[var(--shadow-1)] transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:text-text hover:duration-0 active:scale-[0.97]"
+          >
+            <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+          </button>
           <button
             type="button"
             onClick={() => go("settings", "calls")}
@@ -577,6 +594,8 @@ export const NotesPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ScheduleDialog open={scheduling} onClose={() => setScheduling(false)} />
 
       <RecordDialog
         open={dialog !== null}
