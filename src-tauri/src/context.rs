@@ -306,6 +306,58 @@ pub fn app_icon_png(exe_path: &str) -> Option<Vec<u8>> {
     }
 }
 
+/// For an executable inside a Store package (`...\WindowsApps\<package>\...`),
+/// the package's folder and the executable's path inside it. Explorer draws
+/// those apps' icons from the package, since their executables carry none.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn package_of(exe_path: &str) -> Option<(std::path::PathBuf, String, String)> {
+    let lower = exe_path.to_ascii_lowercase();
+    let at = lower.find("\\windowsapps\\")? + "\\windowsapps\\".len();
+    let rest = &exe_path[at..];
+    let (folder, inside) = rest.split_once('\\')?;
+    Some((
+        std::path::PathBuf::from(&exe_path[..at + folder.len()]),
+        folder.to_string(),
+        inside.to_string(),
+    ))
+}
+
+/// The AppUserModelID of the app in a package folder named
+/// `<name>_<version>_<arch>_<resource>_<publisher id>` whose manifest lists
+/// `exe` (its path inside the package), or its only app.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn packaged_app_id(folder: &str, exe: &str, manifest: &str) -> Option<String> {
+    let parts: Vec<&str> = folder.split('_').collect();
+    if parts.len() < 5 || parts[0].is_empty() || parts[parts.len() - 1].is_empty() {
+        return None;
+    }
+    let family = format!("{}_{}", parts[0], parts[parts.len() - 1]);
+    let attr = |tag: &str, name: &str| -> Option<String> {
+        let key = format!(" {name}=\"");
+        let start = tag.find(&key)? + key.len();
+        let end = tag[start..].find('"')? + start;
+        Some(tag[start..end].to_string())
+    };
+    let apps: Vec<(String, Option<String>)> = manifest
+        .split("<Application ")
+        .skip(1)
+        .filter_map(|rest| {
+            let tag = &rest[..rest.find('>')?];
+            Some((attr(tag, "Id")?, attr(tag, "Executable")))
+        })
+        .collect();
+    let wanted = exe.replace('/', "\\").to_ascii_lowercase();
+    let id = apps
+        .iter()
+        .find(|(_, e)| {
+            e.as_deref()
+                .is_some_and(|e| e.replace('/', "\\").to_ascii_lowercase() == wanted)
+        })
+        .or_else(|| (apps.len() == 1).then(|| &apps[0]))
+        .map(|(id, _)| id.clone())?;
+    Some(format!("{family}!{id}"))
+}
+
 fn cached_description(exe_path: &str) -> Option<String> {
     static CACHE: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
     let mut guard = CACHE.lock().unwrap_or_else(|e| e.into_inner());
@@ -491,6 +543,7 @@ mod win {
     use super::ForegroundWindow;
     use std::ffi::c_void;
     use windows::core::{w, BOOL, HSTRING, PWSTR};
+    use windows::Win32::Foundation::SIZE;
     use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM};
     use windows::Win32::Graphics::Gdi::{
         CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW, BITMAP, BITMAPINFO,
@@ -499,11 +552,15 @@ mod win {
     use windows::Win32::Storage::FileSystem::{
         GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, FILE_FLAGS_AND_ATTRIBUTES,
     };
+    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
     use windows::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
         PROCESS_QUERY_LIMITED_INFORMATION,
     };
-    use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
+    use windows::Win32::UI::Shell::{
+        IShellItemImageFactory, SHCreateItemFromParsingName, SHGetFileInfoW, SHFILEINFOW,
+        SHGFI_ICON, SHGFI_LARGEICON, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY,
+    };
     use windows::Win32::UI::WindowsAndMessaging::{
         DestroyIcon, EnumChildWindows, GetForegroundWindow, GetIconInfo, GetWindowTextLengthW,
         GetWindowTextW, GetWindowThreadProcessId, HICON, ICONINFO,
@@ -778,7 +835,93 @@ mod win {
         }
     }
 
+    /// Icons are drawn at up to 24 px; 48 stays sharp at 200% scaling.
+    const ICON_PX: i32 = 48;
+
+    /// The icon Explorer shows: a Store app's from its package, any other
+    /// app's from its executable at 48 px; else the 32 px shell icon.
     pub fn app_icon_png(exe_path: &str) -> Option<Vec<u8>> {
+        shell_icon_png(exe_path).or_else(|| file_info_icon_png(exe_path))
+    }
+
+    fn shell_icon_png(exe_path: &str) -> Option<Vec<u8>> {
+        let target = super::package_of(exe_path)
+            .and_then(|(dir, folder, inside)| {
+                let manifest = std::fs::read_to_string(dir.join("AppxManifest.xml")).ok()?;
+                super::packaged_app_id(&folder, &inside, &manifest)
+            })
+            .map(|id| format!("shell:AppsFolder\\{id}"))
+            .unwrap_or_else(|| exe_path.to_string());
+        // SAFETY: COM is set up and torn down on this thread around the
+        // shell calls, and the bitmap is freed after it's read.
+        unsafe {
+            let init = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            let png = (|| {
+                let factory: IShellItemImageFactory =
+                    SHCreateItemFromParsingName(&HSTRING::from(target), None).ok()?;
+                let bitmap = factory
+                    .GetImage(
+                        SIZE {
+                            cx: ICON_PX,
+                            cy: ICON_PX,
+                        },
+                        SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK,
+                    )
+                    .ok()?;
+                let png = shell_bitmap_png(bitmap);
+                let _ = DeleteObject(bitmap.into());
+                png
+            })();
+            if init.is_ok() {
+                CoUninitialize();
+            }
+            png
+        }
+    }
+
+    /// The shell's bitmaps carry premultiplied alpha.
+    unsafe fn shell_bitmap_png(bitmap: HBITMAP) -> Option<Vec<u8>> {
+        let mut info = BITMAP::default();
+        if GetObjectW(
+            bitmap.into(),
+            std::mem::size_of::<BITMAP>() as i32,
+            Some(&mut info as *mut BITMAP as *mut c_void),
+        ) == 0
+        {
+            return None;
+        }
+        let (width, height) = (info.bmWidth, info.bmHeight.abs());
+        let mut pixels = bitmap_bgra(bitmap, width, height)?;
+        if pixels.as_chunks::<4>().0.iter().all(|p| p[3] == 0) {
+            for p in pixels.as_chunks_mut::<4>().0 {
+                p[3] = 255;
+            }
+        } else {
+            for p in pixels.as_chunks_mut::<4>().0 {
+                let a = u32::from(p[3]);
+                if a > 0 && a < 255 {
+                    for c in &mut p[..3] {
+                        *c = ((u32::from(*c) * 255 + a / 2) / a).min(255) as u8;
+                    }
+                }
+            }
+        }
+        bgra_png(pixels, width, height)
+    }
+
+    fn bgra_png(mut pixels: Vec<u8>, width: i32, height: i32) -> Option<Vec<u8>> {
+        for p in pixels.as_chunks_mut::<4>().0 {
+            p.swap(0, 2);
+        }
+        let image = image::RgbaImage::from_raw(width as u32, height as u32, pixels)?;
+        let mut png = Vec::new();
+        image
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .ok()?;
+        Some(png)
+    }
+
+    fn file_info_icon_png(exe_path: &str) -> Option<Vec<u8>> {
         unsafe {
             let mut info = SHFILEINFOW::default();
             let found = SHGetFileInfoW(
@@ -853,15 +996,7 @@ mod win {
                     p[3] = 255 - m[0];
                 }
             }
-            for p in pixels.as_chunks_mut::<4>().0 {
-                p.swap(0, 2);
-            }
-            let image = image::RgbaImage::from_raw(width as u32, height as u32, pixels)?;
-            let mut png = Vec::new();
-            image
-                .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
-                .ok()?;
-            Some(png)
+            bgra_png(pixels, width, height)
         })();
         let _ = DeleteObject(info.hbmColor.into());
         let _ = DeleteObject(info.hbmMask.into());
@@ -872,6 +1007,31 @@ mod win {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_store_apps_icon_comes_from_its_package() {
+        let exe = r"C:\Program Files\WindowsApps\5319275A.WhatsAppDesktop_2.2425.6.0_x64__cv1g1gvanyjgm\WhatsApp.exe";
+        let (dir, folder, inside) = package_of(exe).unwrap();
+        assert!(dir
+            .to_string_lossy()
+            .ends_with("5319275A.WhatsAppDesktop_2.2425.6.0_x64__cv1g1gvanyjgm"));
+        assert_eq!(inside, "WhatsApp.exe");
+        let manifest = r#"<Package><Applications>
+            <Application Id="WhatsAppDesktop" Executable="WhatsApp.exe" EntryPoint="Windows.FullTrustApplication">
+            </Application></Applications></Package>"#;
+        assert_eq!(
+            packaged_app_id(&folder, &inside, manifest).as_deref(),
+            Some("5319275A.WhatsAppDesktop_cv1g1gvanyjgm!WhatsAppDesktop")
+        );
+        // Two apps in one package: the one whose executable it is.
+        let two = r#"<Application Id="App" Executable="app\main.exe"></Application>
+            <Application Id="Helper" Executable="WhatsApp.exe"></Application>"#;
+        assert_eq!(
+            packaged_app_id(&folder, &inside, two).as_deref(),
+            Some("5319275A.WhatsAppDesktop_cv1g1gvanyjgm!Helper")
+        );
+        assert_eq!(package_of(r"C:\Program Files\Zen Browser\zen.exe"), None);
+    }
 
     fn info(exe: &str, described: Option<&str>, title: &str) -> AppInfo {
         classify(&format!("C:\\Apps\\{exe}"), exe, described, title)
