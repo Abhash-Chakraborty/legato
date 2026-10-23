@@ -14,7 +14,7 @@ const FOCUSABLE_SELECTOR = [
 interface DialogProps {
   open: boolean;
   title: React.ReactNode;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   onOpenChange: (open: boolean) => void;
   description?: React.ReactNode;
   footer?: React.ReactNode;
@@ -192,12 +192,15 @@ export const Dialog: React.FC<DialogProps> = ({
             </button>
           )}
         </div>
-        <div
-          className={`min-h-0 overflow-y-auto px-4 pb-4 pt-3 ${contentClassName}`}
-          style={contentStyle}
-        >
-          {children}
-        </div>
+        {/* A confirmation says it all in the header: no empty band. */}
+        {children != null && children !== false && (
+          <div
+            className={`min-h-0 overflow-y-auto px-4 pb-4 pt-3 ${contentClassName}`}
+            style={contentStyle}
+          >
+            {children}
+          </div>
+        )}
         {footer && (
           <div className="flex shrink-0 justify-end gap-2 border-t border-mid-gray/20 px-4 py-3">
             {footer}

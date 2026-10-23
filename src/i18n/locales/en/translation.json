@@ -683,7 +683,7 @@
       },
       "devices": {
         "title": "Devices",
-        "subtitle": "Your phone, sync and the shared clipboard."
+        "subtitle": "Your phones and tablets, sync and the shared clipboard."
       }
     },
     "groups": {
@@ -720,7 +720,7 @@
       "detection": "Detection",
       "callStart": "When a call starts",
       "callEnd": "When the call ends",
-      "phone": "Phone",
+      "phone": "Phones and tablets",
       "whatSyncs": "What syncs",
       "clipboard": "Clipboard",
       "calendars": "Meetings",
@@ -1057,7 +1057,7 @@
       }
     },
     "devices": {
-      "whatSyncs": "Both devices keep a full copy and update each other directly.",
+      "whatSyncs": "Each device keeps a full copy and updates this PC directly.",
       "via": {
         "lan": "Home Wi-Fi",
         "netbird": "Netbird",
@@ -1090,9 +1090,9 @@
         "waiting": "Waiting for your phone…"
       },
       "pairCard": {
-        "title": "Pair a phone",
+        "title": "Pair a phone or tablet",
         "help": "Keep your Dictionary, snippets, notes and history on Legato for Android too, and share the clipboard.",
-        "button": "Pair a phone…",
+        "button": "Pair a device…",
         "listenError": "Legato can't listen for phones: {{error}}"
       },
       "rename": {
@@ -1118,10 +1118,12 @@
       },
       "unpair": {
         "title": "Unpair {{name}}?",
-        "help": "{{name}} stops syncing with this PC. What's already on it stays.",
         "cancel": "Cancel",
         "confirm": "Unpair",
-        "done": "{{name}} is unpaired"
+        "done": "{{name}} is unpaired",
+        "stops": "{{name}} stops syncing with this PC, and the clipboard stops going between them.",
+        "keeps": "What's already on {{name}} stays there, and nothing is deleted on this PC.",
+        "again": "To sync again later, pair it with a new QR code."
       },
       "merges": {
         "title": "Merged changes",
@@ -1139,7 +1141,7 @@
         "seeMerges": "See merges"
       },
       "pcName": {
-        "title": "Name on your phone",
+        "title": "Name on your devices",
         "help": "What this PC is called in Legato for Android."
       },
       "kinds": {
@@ -1225,7 +1227,7 @@
         "resumed": "Clipboard sync is on again"
       },
       "send": {
-        "title": "Send clipboard to phone",
+        "title": "Send clipboard to your devices",
         "help": "Sends what's on the clipboard now.",
         "offline": "{{name}} isn't connected.",
         "button": "Send to {{name}}",
@@ -1247,7 +1249,12 @@
         "outgoing": "To the phone",
         "image": "Copied image",
         "late": "Arrived more than 2 minutes after it was copied, so it wasn't put on the clipboard."
-      }
+      },
+      "pairAnother": {
+        "help": "Each phone or tablet syncs with this PC on its own.",
+        "button": "Pair another device…"
+      },
+      "names": "{{rest}} and {{last}}"
     },
     "connections": {
       "calendars": {

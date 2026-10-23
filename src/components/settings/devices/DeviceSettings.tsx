@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { toast } from "sonner";
 import {
   ArrowDownLeft,
@@ -9,6 +10,7 @@ import {
   Check,
   Copy,
   Network,
+  Plus,
   RefreshCw,
   Smartphone,
   Wifi,
@@ -19,6 +21,7 @@ import {
   type ClipRow,
   type Merge,
   type PairingInfo,
+  type PhoneState,
   type SyncSettings,
 } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
@@ -65,11 +68,24 @@ export const useSyncSettings = () => {
   return { sync, set, busy: isUpdating("sync") };
 };
 
-/** The paired phone, if there is one, kept current. */
+/** "Pixel 8", "Pixel 8 and Tab S9", "Pixel 8, Tab S9 and Moto G". */
+const listNames = (phones: PhoneState[], t: TFunction) => {
+  const names = phones.map((p) => p.peer.name);
+  if (names.length < 2) return names[0] ?? "";
+  return t("settings.devices.names", {
+    rest: names.slice(0, -1).join(", "),
+    last: names[names.length - 1],
+  });
+};
+
+/** The paired phones, kept current. `phone` is one that's connected, if
+ * any is, for the rows that speak of a single device. */
 export const usePhone = () => {
   useEffect(watchSync, []);
   const state = useSyncStore((s) => s.state);
-  return { state, phone: state?.phones[0] ?? null };
+  const phones = state?.phones ?? [];
+  const online = phones.filter((p) => p.online);
+  return { state, phones, online, phone: online[0] ?? phones[0] ?? null };
 };
 
 const nowS = () => Math.floor(Date.now() / 1000);
@@ -300,14 +316,41 @@ const PairPhoneRow: React.FC<{ onPair: () => void }> = ({ onPair }) => {
   );
 };
 
-/** Pair a phone, or the paired phone. The dialog lives here so it stays
- * open to say the phone was paired when the row underneath switches. */
+/** Under the paired devices: pair one more. Each syncs with this PC on
+ * its own, so a phone and a tablet both stay current. */
+const PairAnotherRow: React.FC<{ onPair: () => void }> = ({ onPair }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
+      <span className="text-[13px] text-text-3">
+        {t("settings.devices.pairAnother.help")}
+      </span>
+      <Button variant="secondary" size="sm" onClick={onPair}>
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+        {t("settings.devices.pairAnother.button")}
+      </Button>
+    </div>
+  );
+};
+
+/** Pair a phone, or the paired phones and a way to pair another. The dialog
+ * lives here so it stays open to say the phone was paired when the rows
+ * underneath change. */
 export const PhoneCard: React.FC = () => {
-  const { phone } = usePhone();
+  const { phones } = usePhone();
   const [open, setOpen] = useState(false);
   return (
     <>
-      {phone ? <PhoneRow /> : <PairPhoneRow onPair={() => setOpen(true)} />}
+      {phones.length === 0 ? (
+        <PairPhoneRow onPair={() => setOpen(true)} />
+      ) : (
+        <>
+          {phones.map((p, i) => (
+            <PhoneRow key={p.peer.device_id} phone={p} first={i === 0} />
+          ))}
+          <PairAnotherRow onPair={() => setOpen(true)} />
+        </>
+      )}
       <PairDialog open={open} onClose={() => setOpen(false)} />
     </>
   );
@@ -370,13 +413,14 @@ const NameDialog: React.FC<{
   );
 };
 
-const PhoneRow: React.FC = () => {
+const PhoneRow: React.FC<{ phone: PhoneState; first: boolean }> = ({
+  phone,
+  first,
+}) => {
   const { t, i18n } = useTranslation();
-  const { phone } = usePhone();
   const [syncing, setSyncing] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [unpairing, setUnpairing] = useState(false);
-  if (!phone) return null;
   const { peer } = phone;
   const paired = new Date(peer.paired_at * 1000).toLocaleDateString(
     i18n.language,
@@ -428,7 +472,7 @@ const PhoneRow: React.FC = () => {
 
   return (
     <div
-      id="settings-devices-phone"
+      id={first ? "settings-devices-phone" : undefined}
       className="flex flex-wrap items-center gap-x-4 gap-y-3 py-3.5"
     >
       <span className="grid h-10 w-10 flex-none place-items-center rounded-[var(--r-md)] border border-line bg-surface-2">
@@ -487,7 +531,6 @@ const PhoneRow: React.FC = () => {
         open={unpairing}
         onOpenChange={(next) => !next && setUnpairing(false)}
         title={t("settings.devices.unpair.title", { name: peer.name })}
-        description={t("settings.devices.unpair.help", { name: peer.name })}
         closeLabel={t("settings.devices.unpair.cancel")}
         footer={
           <div className="flex justify-end gap-2">
@@ -500,7 +543,17 @@ const PhoneRow: React.FC = () => {
           </div>
         }
       >
-        {null}
+        <ul className="grid gap-2.5 text-sm text-text-2">
+          {(["stops", "keeps", "again"] as const).map((key) => (
+            <li key={key} className="flex gap-2.5">
+              <span
+                aria-hidden="true"
+                className="mt-[7px] h-1.5 w-1.5 flex-none rounded-full bg-text-3"
+              />
+              {t(`settings.devices.unpair.${key}`, { name: peer.name })}
+            </li>
+          ))}
+        </ul>
       </Dialog>
     </div>
   );
@@ -559,14 +612,17 @@ const MergesDialog: React.FC<{ open: boolean; onClose: () => void }> = ({
 
 export const SyncStatusRow: React.FC = () => {
   const { t } = useTranslation();
-  const { state, phone } = usePhone();
+  const { state, phones } = usePhone();
   const [open, setOpen] = useState(false);
-  if (!phone || !state) return null;
+  if (phones.length === 0 || !state) return null;
   const merges = state.merges;
+  const away = phones.filter((p) => !p.online);
   const description = [
-    phone.online
+    away.length === 0
       ? t("settings.devices.status.upToDate")
-      : t("settings.devices.status.waiting", { name: phone.peer.name }),
+      : t("settings.devices.status.waiting", {
+          name: listNames(away, t),
+        }),
     merges > 0 ? t("settings.devices.status.merged", { count: merges }) : "",
   ]
     .filter(Boolean)
@@ -796,7 +852,7 @@ export const NeverShareAppsRow: React.FC = () => {
 
 export const PhonePillRow: React.FC = () => {
   const { t } = useTranslation();
-  const { phone } = usePhone();
+  const { phones } = usePhone();
   const { sync, set, busy } = useSyncSettings();
   return (
     <ToggleSwitch
@@ -805,7 +861,7 @@ export const PhonePillRow: React.FC = () => {
       isUpdating={busy}
       label={t("settings.devices.pill.title")}
       description={t("settings.devices.pill.help", {
-        name: phone?.peer.name ?? "",
+        name: listNames(phones, t),
       })}
       descriptionMode="inline"
       grouped
@@ -909,10 +965,12 @@ export const PauseClipboardRow: React.FC = () => {
 
 export const SendClipboardRow: React.FC = () => {
   const { t } = useTranslation();
-  const { phone } = usePhone();
+  const { phones, online } = usePhone();
   const { sync } = useSyncSettings();
-  if (!phone) return null;
-  const name = phone.peer.name;
+  if (phones.length === 0) return null;
+  // The clip goes to every connected device.
+  const name = listNames(online.length ? online : phones, t);
+  const phone = { online: online.length > 0 };
   const send = async () => {
     const result = await commands.sendClipboardToPhone();
     if (result.status === "error") toast.error(result.error);
@@ -1113,9 +1171,7 @@ export const RecentClipsRow: React.FC = () => {
             </Button>
           </div>
         }
-      >
-        {null}
-      </Dialog>
+      />
     </div>
   );
 };
