@@ -20,6 +20,7 @@ import { durationLabel, summaryText, transcriptText } from "../../notes/notes";
 import { MyNotesTab } from "./MyNotesTab";
 import { SummaryTab } from "./SummaryTab";
 import { TranscriptTab } from "./TranscriptTab";
+import { NotePlayer, useNoteAudio } from "./NoteAudio";
 import { useSpeakerNames } from "../../notes/SpeakerTag";
 
 type Tab = "summary" | "transcript" | "mine";
@@ -261,6 +262,8 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
       });
   };
 
+  const player = useNoteAudio(note);
+
   const showTime = (ms: number) => {
     setTab("transcript");
     setJump((j) => ({ ms, n: (j?.n ?? 0) + 1 }));
@@ -385,6 +388,7 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
           </span>
         </div>
         <Tags note={note} adding={tagging} setAdding={setTagging} />
+        {!recording && <NotePlayer note={note} player={player} />}
 
         <div
           role="tablist"
@@ -442,7 +446,12 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
             onShowTranscript={() => setTab("transcript")}
           />
         ) : shown === "transcript" ? (
-          <TranscriptTab note={note} jump={jump} onCopy={copyTranscript} />
+          <TranscriptTab
+            note={note}
+            jump={jump}
+            onCopy={copyTranscript}
+            player={player}
+          />
         ) : (
           <MyNotesTab note={note} recording={recording} />
         )}

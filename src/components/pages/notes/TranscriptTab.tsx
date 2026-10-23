@@ -1,11 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   Copy,
   Loader2,
-  Pause,
-  Play,
   RotateCw,
   Search,
   SpellCheck,
@@ -21,72 +18,11 @@ import { useNavStore } from "../../../stores/navStore";
 import { useNotesStore } from "../../../stores/notesStore";
 import { Button } from "../../ui/Button";
 import { LineText } from "../../notes/LineText";
-import {
-  clock,
-  durationLabel,
-  lineAt,
-  lineMatches,
-  voiceChoices,
-} from "../../notes/notes";
+import { clock, lineAt, lineMatches, voiceChoices } from "../../notes/notes";
 import { SpeakerTag } from "../../notes/SpeakerTag";
 import { FixReview } from "./FixReview";
+import type { NoteAudio } from "./NoteAudio";
 import type { Jump } from "./NoteDetail";
-
-/** Play, a seek bar and the time; the line playing is marked below. */
-const Player: React.FC<{
-  audio: React.RefObject<HTMLAudioElement>;
-  src: string;
-  durationMs: number;
-  at: number;
-  playing: boolean;
-}> = ({ audio, src, durationMs, at, playing }) => {
-  const { t } = useTranslation();
-  const total = Math.max(durationMs, at);
-  return (
-    <div className="flex min-w-0 flex-1 items-center gap-3">
-      <button
-        type="button"
-        onClick={() => {
-          const el = audio.current;
-          if (!el) return;
-          if (el.paused) el.play().catch(() => {});
-          else el.pause();
-        }}
-        aria-label={
-          playing ? t("notes.transcript.pause") : t("notes.transcript.play")
-        }
-        title={
-          playing ? t("notes.transcript.pause") : t("notes.transcript.play")
-        }
-        className="grid h-8 w-8 flex-none place-items-center rounded-full bg-teal-fill text-white transition-colors duration-[var(--dur-1)] hover:bg-teal-fill-hover active:scale-[0.97]"
-      >
-        {playing ? (
-          <Pause className="h-3.5 w-3.5" aria-hidden="true" />
-        ) : (
-          <Play className="ms-px h-3.5 w-3.5" aria-hidden="true" />
-        )}
-      </button>
-      <input
-        type="range"
-        className="slider min-w-0 flex-1"
-        min={0}
-        max={total}
-        step={250}
-        value={at}
-        aria-label={t("notes.transcript.seek")}
-        aria-valuetext={clock(at)}
-        onChange={(e) => {
-          if (audio.current)
-            audio.current.currentTime = Number(e.target.value) / 1000;
-        }}
-      />
-      <span className="flex-none text-xs tabular-nums text-text-3">
-        {clock(at)} / {clock(total)}
-      </span>
-      <audio ref={audio} src={src} preload="metadata" />
-    </div>
-  );
-};
 
 /** The transcript, line by line with who spoke and when; plays the
  *  recording from any line, and searches it. */
@@ -94,16 +30,14 @@ export const TranscriptTab: React.FC<{
   note: Note;
   jump: Jump | null;
   onCopy: () => void;
-}> = ({ note, jump, onCopy }) => {
+  player: NoteAudio;
+}> = ({ note, jump, onCopy, player }) => {
   const { t } = useTranslation();
   const linesVersion = useNotesStore((s) => s.linesVersion);
   const [lines, setLines] = useState<NoteLine[] | null>(null);
-  const [src, setSrc] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [retrying, setRetrying] = useState(false);
-  const [at, setAt] = useState(0);
-  const [playing, setPlaying] = useState(false);
-  const [player, setPlayer] = useState(false);
+  const { src, at, playing, playFrom } = player;
   const [marked, setMarked] = useState<number | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [finding, setFinding] = useState(false);
@@ -116,7 +50,6 @@ export const TranscriptTab: React.FC<{
     !!aiStatus &&
     aiStatus.kind !== "none" &&
     note.status === "ready";
-  const audio = useRef<HTMLAudioElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
 
   useEffect(watchAi, []);
@@ -132,46 +65,6 @@ export const TranscriptTab: React.FC<{
       live = false;
     };
   }, [note.id, linesVersion]);
-
-  useEffect(() => {
-    let live = true;
-    setSrc(null);
-    setPlayer(false);
-    commands
-      .getNoteAudio(note.id)
-      .then(
-        (r) =>
-          live &&
-          r.status === "ok" &&
-          r.data &&
-          setSrc(convertFileSrc(r.data, "asset")),
-      )
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [note.id, note.audio_file]);
-
-  // Follow the audio element.
-  useEffect(() => {
-    const el = audio.current;
-    if (!el) return;
-    const time = () => setAt(Math.round(el.currentTime * 1000));
-    const play = () => setPlaying(true);
-    const pause = () => setPlaying(false);
-    el.addEventListener("timeupdate", time);
-    el.addEventListener("seeked", time);
-    el.addEventListener("play", play);
-    el.addEventListener("pause", pause);
-    el.addEventListener("ended", pause);
-    return () => {
-      el.removeEventListener("timeupdate", time);
-      el.removeEventListener("seeked", time);
-      el.removeEventListener("play", play);
-      el.removeEventListener("pause", pause);
-      el.removeEventListener("ended", pause);
-    };
-  }, [player, src]);
 
   const voices = useMemo(() => voiceChoices(lines ?? []), [lines]);
   const canFindSpeakers =
@@ -209,16 +102,6 @@ export const TranscriptTab: React.FC<{
     query.trim() ? query.trim().split(/\s+/) : [],
     "[data-line-text]",
   );
-
-  const playFrom = (ms: number) => {
-    setPlayer(true);
-    requestAnimationFrame(() => {
-      const el = audio.current;
-      if (!el) return;
-      el.currentTime = ms / 1000;
-      el.play().catch(() => {});
-    });
-  };
 
   const scrollTo = (id: number) =>
     listRef.current
@@ -264,32 +147,12 @@ export const TranscriptTab: React.FC<{
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {src && player ? (
-          <Player
-            audio={audio}
-            src={src}
-            durationMs={note.duration_ms}
-            at={at}
-            playing={playing}
-          />
-        ) : src ? (
-          <button
-            type="button"
-            onClick={() => playFrom(0)}
-            className="inline-flex h-8 items-center gap-2 rounded-[var(--r-md)] border border-line px-3 text-[13px] font-medium transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 active:scale-[0.97]"
-          >
-            <Play className="h-3.5 w-3.5" aria-hidden="true" />
-            {t("notes.transcript.playRecording")}
-            <span className="font-normal text-text-3">
-              · {durationLabel(note.duration_ms)}
-            </span>
-          </button>
-        ) : (
-          <span className="flex-1 text-[13px] text-text-3">
-            {note.status === "ready" ? t("notes.transcript.noAudio") : ""}
+        {!src && note.status === "ready" && (
+          <span className="text-[13px] text-text-3">
+            {t("notes.transcript.noAudio")}
           </span>
         )}
-        <span className={src && player ? "" : "flex-1"} />
+        <span className="flex-1" />
         {offerSpeakers && (
           <button
             type="button"
