@@ -7,7 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::notes_rules::{clock, NotesSummary};
+use crate::notes_rules::{clock, NoteOutline, NotesSummary};
 
 /// A voice memo is the microphone alone; a meeting adds what the PC plays.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -131,6 +131,12 @@ pub struct Note {
     pub retryable: i64,
     pub lines: i64,
     pub actions: Vec<NoteAction>,
+    /// The summary's topics, timed details and the people it names.
+    #[serde(default)]
+    pub outline: NoteOutline,
+    /// Who was invited, when the note began with a calendar meeting.
+    #[serde(default)]
+    pub attendees: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -221,7 +227,7 @@ pub struct NewNote<'a> {
 
 const COLUMNS: &str = "id, title, kind, status, app, app_path, microphone, system_audio,
     started_at, duration_ms, audio_file, my_notes, summary, decisions, summary_model,
-    summary_at, summary_error, failed_lines, edited_at,
+    summary_at, summary_error, failed_lines, edited_at, outline, attendees,
     (SELECT COUNT(*) FROM note_line l WHERE l.note_id = note.id) AS lines,
     (SELECT COUNT(*) FROM note_failed_line f WHERE f.note_id = note.id) AS retryable";
 
@@ -229,6 +235,8 @@ fn map(row: &Row<'_>) -> rusqlite::Result<Note> {
     let kind: String = row.get("kind")?;
     let status: String = row.get("status")?;
     let decisions: String = row.get("decisions")?;
+    let outline: Option<String> = row.get("outline")?;
+    let attendees: Option<String> = row.get("attendees")?;
     Ok(Note {
         id: row.get("id")?,
         title: row.get("title")?,
@@ -254,6 +262,12 @@ fn map(row: &Row<'_>) -> rusqlite::Result<Note> {
         retryable: row.get("retryable")?,
         lines: row.get("lines")?,
         actions: Vec::new(),
+        outline: outline
+            .and_then(|o| serde_json::from_str(&o).ok())
+            .unwrap_or_default(),
+        attendees: attendees
+            .and_then(|a| serde_json::from_str(&a).ok())
+            .unwrap_or_default(),
     })
 }
 
@@ -731,13 +745,14 @@ pub fn set_summary(
     let tx = conn.transaction()?;
     tx.execute(
         "UPDATE note SET summary = ?2, decisions = ?3, summary_model = ?4, summary_at = ?5,
-            summary_error = NULL WHERE id = ?1",
+            summary_error = NULL, outline = ?6 WHERE id = ?1",
         params![
             id,
             summary.summary,
             serde_json::to_string(&summary.decisions)?,
             model,
-            at
+            at,
+            serde_json::to_string(&summary.outline)?
         ],
     )?;
     tx.execute("DELETE FROM note_action WHERE note_id = ?1", params![id])?;
@@ -749,6 +764,15 @@ pub fn set_summary(
         )?;
     }
     tx.commit()?;
+    Ok(())
+}
+
+/// The people invited to the meeting the note began with.
+pub fn set_attendees(conn: &Connection, id: i64, people: &[String]) -> Result<()> {
+    conn.execute(
+        "UPDATE note SET attendees = ?2 WHERE id = ?1",
+        params![id, serde_json::to_string(people)?],
+    )?;
     Ok(())
 }
 
@@ -859,9 +883,9 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
     tx.execute(
         "INSERT INTO note (id, title, kind, status, app, app_path, microphone, system_audio,
             started_at, duration_ms, audio_file, my_notes, summary, decisions, summary_model,
-            summary_at, summary_error, failed_lines, edited_at)
+            summary_at, summary_error, failed_lines, edited_at, outline, attendees)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
-            ?19)",
+            ?19, ?20, ?21)",
         params![
             n.id,
             n.title,
@@ -881,7 +905,9 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
             n.summary_at,
             n.summary_error,
             n.failed_lines,
-            n.edited_at
+            n.edited_at,
+            serde_json::to_string(&n.outline)?,
+            serde_json::to_string(&n.attendees)?
         ],
     )?;
     for tag in &n.tags {
@@ -995,28 +1021,86 @@ pub fn speaker_label(
 }
 
 /// The note as Markdown, for Copy and Export.
+/// A decision or task written "Title: what it means" as (title, rest);
+/// anything else is all rest.
+pub fn split_title(text: &str) -> (Option<&str>, &str) {
+    match text.split_once(": ") {
+        Some((title, rest))
+            if !rest.trim().is_empty()
+                && title.chars().count() <= 60
+                && !title.contains(['.', '!', '?']) =>
+        {
+            (Some(title.trim()), rest.trim())
+        }
+        _ => (None, text.trim()),
+    }
+}
+
+/// Everyone the note names: who was invited, then who the summary found.
+pub fn people(note: &Note) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for name in note.attendees.iter().chain(&note.outline.people) {
+        let name = name.trim();
+        // "Priya" from the talk is the "Priya Shah" who was invited.
+        let known = out.iter().any(|n| {
+            n.eq_ignore_ascii_case(name)
+                || n.split(' ')
+                    .next()
+                    .is_some_and(|first| first.eq_ignore_ascii_case(name))
+        });
+        if !name.is_empty() && !known {
+            out.push(name.to_string());
+        }
+    }
+    out
+}
+
 pub fn markdown(note: &Note, lines: &[NoteLine], you: &str, them: &str) -> String {
     let mut out = format!("# {}\n\n", note.title);
+    let people = people(note);
+    if !people.is_empty() {
+        out.push_str(&format!("People: {}\n\n", people.join(", ")));
+    }
     if !note.tags.is_empty() {
         out.push_str(&format!("Tags: {}\n\n", note.tags.join(", ")));
     }
     if !note.summary.is_empty() {
         out.push_str(&format!("## Summary\n\n{}\n\n", note.summary));
+        for t in &note.outline.topics {
+            out.push_str(&format!("**{}**  \n{}\n\n", t.heading, t.text));
+        }
     }
     if !note.decisions.is_empty() {
         out.push_str("## Decisions\n\n");
         for d in &note.decisions {
-            out.push_str(&format!("- {d}\n"));
+            match split_title(d) {
+                (Some(title), rest) => out.push_str(&format!("- **{title}**: {rest}\n")),
+                (None, rest) => out.push_str(&format!("- {rest}\n")),
+            }
         }
         out.push('\n');
     }
     if !note.actions.is_empty() {
-        out.push_str("## Action items\n\n");
+        out.push_str("## Next steps\n\n");
         for a in &note.actions {
             let mark = if a.done { "x" } else { " " };
-            out.push_str(&format!("- [{mark}] {} ({})\n", a.text, a.owner));
+            let text = match split_title(&a.text) {
+                (Some(title), rest) => format!("**{title}**: {rest}"),
+                (None, rest) => rest.to_string(),
+            };
+            out.push_str(&format!("- [{mark}] [{}] {text}\n", a.owner));
         }
         out.push('\n');
+    }
+    if !note.outline.details.is_empty() {
+        out.push_str("## Details\n\n");
+        for d in &note.outline.details {
+            let at = d
+                .at_ms
+                .map(|ms| format!(" ({})", clock(ms)))
+                .unwrap_or_default();
+            out.push_str(&format!("**{}**: {}{at}\n\n", d.heading, d.text));
+        }
     }
     if !note.my_notes.trim().is_empty() {
         out.push_str(&format!("## My notes\n\n{}\n\n", note.my_notes.trim()));
@@ -1031,9 +1115,100 @@ pub fn markdown(note: &Note, lines: &[NoteLine], you: &str, them: &str) -> Strin
     out.trim_end().to_string() + "\n"
 }
 
+fn esc(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// The note as HTML for pasting into Google Docs or Word, which keep its
+/// headings, lists and bold titles. The transcript stays out: it belongs
+/// in the export, not in notes someone reads.
+pub fn html(note: &Note, when: &str) -> String {
+    let mut out = format!("<h1>{}</h1>", esc(&note.title));
+    let people = people(note);
+    let mut meta = vec![esc(when)];
+    if !people.is_empty() {
+        meta.push(esc(&people.join(", ")));
+    }
+    out.push_str(&format!("<p><i>{}</i></p>", meta.join(" · ")));
+    if !note.summary.is_empty() {
+        out.push_str(&format!("<h2>Summary</h2><p>{}</p>", esc(&note.summary)));
+        for t in &note.outline.topics {
+            out.push_str(&format!(
+                "<p><b>{}</b><br>{}</p>",
+                esc(&t.heading),
+                esc(&t.text)
+            ));
+        }
+    }
+    let item = |text: &str| match split_title(text) {
+        (Some(title), rest) => format!("<b>{}</b>: {}", esc(title), esc(rest)),
+        (None, rest) => esc(rest),
+    };
+    if !note.decisions.is_empty() {
+        out.push_str("<h2>Decisions</h2><ul>");
+        for d in &note.decisions {
+            out.push_str(&format!("<li>{}</li>", item(d)));
+        }
+        out.push_str("</ul>");
+    }
+    if !note.actions.is_empty() {
+        out.push_str("<h2>Next steps</h2><ul>");
+        for a in &note.actions {
+            let mark = if a.done { "☑" } else { "☐" };
+            out.push_str(&format!(
+                "<li>{mark} [{}] {}</li>",
+                esc(&a.owner),
+                item(&a.text)
+            ));
+        }
+        out.push_str("</ul>");
+    }
+    if !note.outline.details.is_empty() {
+        out.push_str("<h2>Details</h2>");
+        for d in &note.outline.details {
+            let at = d
+                .at_ms
+                .map(|ms| format!(" ({})", clock(ms)))
+                .unwrap_or_default();
+            out.push_str(&format!(
+                "<p><b>{}</b>: {}{}</p>",
+                esc(&d.heading),
+                esc(&d.text),
+                at
+            ));
+        }
+    }
+    if !note.my_notes.trim().is_empty() {
+        out.push_str("<h2>My notes</h2>");
+        for para in note.my_notes.trim().split("\n\n") {
+            out.push_str(&format!("<p>{}</p>", esc(para).replace('\n', "<br>")));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn titles_split_off_decisions_and_tasks() {
+        assert_eq!(
+            split_title("Switch the workers: the code predates the new builds."),
+            (
+                Some("Switch the workers"),
+                "the code predates the new builds."
+            )
+        );
+        assert_eq!(
+            split_title("Ship it. Then: rest"),
+            (None, "Ship it. Then: rest")
+        );
+        assert_eq!(split_title("Plain task"), (None, "Plain task"));
+    }
 
     fn db() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();

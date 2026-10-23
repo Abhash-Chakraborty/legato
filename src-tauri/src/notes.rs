@@ -603,6 +603,21 @@ impl NotesManager {
             .filter(|p| p.exists()))
     }
 
+    /// The note as HTML for Google Docs or Word, with its Markdown for apps
+    /// that only take text.
+    pub fn formatted(&self, id: i64) -> Result<(String, String)> {
+        let note = self.get(id)?.ok_or_else(|| anyhow!("That note is gone"))?;
+        let when = chrono::DateTime::from_timestamp(note.started_at, 0)
+            .map(|t| {
+                t.with_timezone(&chrono::Local)
+                    .format("%b %-d, %Y, %-I:%M %p")
+                    .to_string()
+            })
+            .unwrap_or_default();
+        let html = store::html(&note, &when);
+        Ok((html, self.markdown(id)?))
+    }
+
     pub fn markdown(&self, id: i64) -> Result<String> {
         let note = self.get(id)?.ok_or_else(|| anyhow!("That note is gone"))?;
         let lines = self.lines(id)?;
@@ -991,6 +1006,9 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
         .filter(|_| capture.as_ref().is_some_and(|c| !c.fallback))
         .and_then(crate::context::app_for_process);
 
+    let on_calendar = (options.kind == NoteKind::Meeting)
+        .then(|| crate::calendar::meeting_now(app))
+        .flatten();
     let title = options
         .title
         .as_deref()
@@ -998,12 +1016,7 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
         .filter(|t| !t.is_empty())
         .map(str::to_string)
         // A meeting on the calendar names the note.
-        .or_else(|| {
-            (options.kind == NoteKind::Meeting)
-                .then(|| crate::calendar::meeting_now(app))
-                .flatten()
-                .map(|m| m.title)
-        })
+        .or_else(|| on_calendar.as_ref().map(|m| m.title.clone()))
         .unwrap_or_else(|| default_title(options.kind));
     let started_at = chrono::Utc::now().timestamp();
     let note = store::create(
@@ -1018,6 +1031,12 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
             started_at,
         },
     )?;
+    // Who was invited, for the summary to name.
+    if let Some(people) = on_calendar.map(|m| m.people).filter(|p| !p.is_empty()) {
+        if let Err(e) = store::set_attendees(&m.conn()?, note.id, &people) {
+            warn!("Couldn't keep who was invited: {e}");
+        }
+    }
     let meeting = options.kind == NoteKind::Meeting;
 
     let (jobs_tx, jobs_rx) = channel::<Job>();
@@ -1915,10 +1934,30 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
             return;
         }
     };
-    let labels = match m.get(note_id) {
-        Ok(Some(note)) => speaker_labels(&note, &lines),
-        _ => Vec::new(),
-    };
+    let note = m.get(note_id).ok().flatten();
+    let labels = note
+        .as_ref()
+        .map(|n| speaker_labels(n, &lines))
+        .unwrap_or_default();
+    // Who was invited, then the voices you named.
+    let people = note
+        .as_ref()
+        .map(|n| {
+            notes_rules::merge_people(
+                [
+                    n.attendees.clone(),
+                    n.speakers.iter().map(|s| s.name.clone()).collect(),
+                ]
+                .iter()
+                .map(Vec::as_slice),
+            )
+        })
+        .unwrap_or_default();
+    let last_ms = lines
+        .iter()
+        .map(|l| l.end_ms.max(l.at_ms))
+        .max()
+        .unwrap_or(0);
     let prompt = prompt_lines(&lines, &labels);
     let save = |result: Result<()>| {
         if let Err(e) = result {
@@ -1940,8 +1979,9 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
     m.changed();
     let started = Instant::now();
     let tags_in_use = m.tags().unwrap_or_default();
-    match crate::ai::summarise_note(app, &config, &prompt, &tags_in_use).await {
-        Ok(summary) => {
+    match crate::ai::summarise_note(app, &config, &prompt, &tags_in_use, &people).await {
+        Ok(mut summary) => {
+            summary.outline.fit_to(last_ms);
             let local = if crate::ai::is_local(&config.provider) {
                 "local"
             } else {

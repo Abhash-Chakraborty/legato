@@ -77,6 +77,9 @@ pub struct Event {
     /// replaces.
     pub recurrence_id: Option<NaiveDateTime>,
     pub cancelled: bool,
+    /// The organiser and the people invited as (name, address), rooms
+    /// left out.
+    pub people: Vec<(String, String)>,
 }
 
 /// One meeting on the calendar, as Legato shows it.
@@ -93,6 +96,9 @@ pub struct Meeting {
     pub location: Option<String>,
     /// The calendar's name in Legato.
     pub calendar: String,
+    /// Who was invited, organiser first.
+    #[serde(default)]
+    pub people: Vec<String>,
 }
 
 /// Joins folded lines: a line starting with a space or tab continues the
@@ -136,6 +142,32 @@ fn split(line: &str) -> Option<(String, Params, &str)> {
         })
         .collect();
     Some((name, params, value))
+}
+
+/// A person on an invite as (name, address): their name, else their
+/// address up to the @. Rooms and other resources aren't people.
+fn person(params: &Params, value: &str) -> Option<(String, String)> {
+    let param = |key: &str| {
+        params
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+    };
+    if param("CUTYPE").is_some_and(|t| !t.eq_ignore_ascii_case("INDIVIDUAL")) {
+        return None;
+    }
+    let name = param("CN").map(|n| unescape(n).trim().to_string());
+    let address = value.trim();
+    let address = address
+        .strip_prefix("mailto:")
+        .or_else(|| address.strip_prefix("MAILTO:"))
+        .unwrap_or(address);
+    let from_address = address.split('@').next().unwrap_or("").trim().to_string();
+    // Google writes the address itself as the name when there isn't one.
+    let name = name
+        .filter(|n| !n.is_empty() && !n.contains('@'))
+        .or_else(|| (!from_address.is_empty()).then_some(from_address.clone()))?;
+    Some((name, address.to_lowercase()))
 }
 
 fn unescape(value: &str) -> String {
@@ -325,6 +357,23 @@ pub fn parse(ics: &str) -> Vec<Event> {
             ),
             "RECURRENCE-ID" => e.recurrence_id = stamp(value, &params).map(|s| s.naive()),
             "STATUS" => e.cancelled = value.trim().eq_ignore_ascii_case("CANCELLED"),
+            "ORGANIZER" | "ATTENDEE" => {
+                if let Some(person) = person(&params, value) {
+                    let known = e
+                        .people
+                        .iter()
+                        .position(|p| p.1.eq_ignore_ascii_case(&person.1));
+                    match known {
+                        // A real name beats an address standing in for one.
+                        Some(i) if e.people[i].1.split('@').next() == Some(&e.people[i].0) => {
+                            e.people[i].0 = person.0
+                        }
+                        Some(_) => {}
+                        None if name == "ORGANIZER" => e.people.insert(0, person),
+                        None => e.people.push(person),
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -607,6 +656,7 @@ pub fn meetings(
                     link: link.clone(),
                     location: location.clone(),
                     calendar: calendar.to_string(),
+                    people: e.people.iter().map(|p| p.0.clone()).collect(),
                 });
             }
         };
@@ -918,6 +968,20 @@ END:VCALENDAR\r
     }
 
     #[test]
+    fn invites_name_the_people_rooms_left_out() {
+        let ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:a\r\nSUMMARY:Sahil project details\r\n\
+DTSTART:20261021T100000Z\r\nDTEND:20261021T103000Z\r\n\
+ATTENDEE;CN=Sahil Khan;PARTSTAT=ACCEPTED:mailto:sahil@example.com\r\n\
+ATTENDEE;CUTYPE=RESOURCE;CN=Room 4:mailto:room4@example.com\r\n\
+ATTENDEE;CN=abhash@example.com:mailto:abhash@example.com\r\n\
+ORGANIZER;CN=\"Abhash Chakraborty\":mailto:abhash@example.com\r\n\
+END:VEVENT\r\nEND:VCALENDAR\r\n";
+        let events = parse(ics);
+        let names: Vec<&str> = events[0].people.iter().map(|p| p.0.as_str()).collect();
+        assert_eq!(names, vec!["Sahil Khan", "Abhash Chakraborty"]);
+    }
+
+    #[test]
     fn the_meeting_now_or_about_to_start() {
         let m = |title: &str, start: i64, end: i64, all_day: bool| Meeting {
             uid: title.into(),
@@ -928,6 +992,7 @@ END:VCALENDAR\r
             link: None,
             location: None,
             calendar: "c".into(),
+            people: vec![],
         };
         let list = vec![
             m("Day off", 0, 86_400, true),
@@ -983,6 +1048,7 @@ END:VCALENDAR\r
             link: Some("https://meet.google.com/abc-defg-hij".into()),
             location: None,
             calendar: "Work".into(),
+            people: vec![],
         }
     }
 

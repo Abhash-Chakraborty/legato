@@ -1138,6 +1138,7 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::restore_note,
             commands::notes::get_note_audio,
             commands::notes::get_note_markdown,
+            commands::notes::copy_note_formatted,
             commands::notes::export_note,
             commands::notes::get_notes_audio_sources,
             commands::notes::start_notes,

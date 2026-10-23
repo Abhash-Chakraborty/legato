@@ -137,6 +137,18 @@ pub fn get_note_markdown(notes: Notes<'_>, id: i64) -> Result<String, String> {
     text(notes.markdown(id))
 }
 
+/// Puts the note on the clipboard formatted, so pasting into Google Docs or
+/// Word keeps its headings, lists and bold titles.
+#[tauri::command]
+#[specta::specta]
+pub fn copy_note_formatted(app: AppHandle, notes: Notes<'_>, id: i64) -> Result<(), String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let (html, markdown) = text(notes.formatted(id))?;
+    app.clipboard()
+        .write_html(html, Some(markdown))
+        .map_err(|e| e.to_string())
+}
+
 /// Saves the note as a Markdown file where the save dialog said.
 #[tauri::command]
 #[specta::specta]

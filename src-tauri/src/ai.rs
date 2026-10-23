@@ -403,6 +403,7 @@ pub async fn summarise_note(
     config: &AiConfig,
     lines: &[notes_rules::PromptLine<'_>],
     tags_in_use: &[String],
+    people: &[String],
 ) -> Result<notes_rules::NotesSummary, AiProblem> {
     let json_hint = !config.provider.supports_structured_output
         || config.provider.api_format == PostProcessApiFormat::Anthropic;
@@ -428,20 +429,40 @@ pub async fn summarise_note(
             &transcript,
             json_hint,
             tags_in_use,
+            people,
         ))
         .await;
     }
     debug!("Summarising a long note in {} parts", parts.len());
     let mut summaries = Vec::new();
     for part in &parts {
-        summaries.push(one(notes_rules::summary_request(part, json_hint, tags_in_use)).await?);
+        summaries.push(
+            one(notes_rules::summary_request(
+                part,
+                json_hint,
+                tags_in_use,
+                people,
+            ))
+            .await?,
+        );
     }
-    one(notes_rules::combine_request(
+    let mut combined = one(notes_rules::combine_request(
         &summaries,
         json_hint,
         tags_in_use,
     ))
-    .await
+    .await?;
+    // Each part's details keep their own times; the combined answer's
+    // topics, decisions and tasks cover the whole.
+    combined.outline.details = summaries
+        .iter()
+        .flat_map(|s| s.outline.details.iter().cloned())
+        .collect();
+    combined.outline.people = notes_rules::merge_people(
+        std::iter::once(combined.outline.people.as_slice())
+            .chain(summaries.iter().map(|s| s.outline.people.as_slice())),
+    );
+    Ok(combined)
 }
 
 /// Answers a question from a note's transcript, citing line times.

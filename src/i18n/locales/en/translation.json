@@ -2913,11 +2913,12 @@
         "summary": "Summary",
         "transcript": "Transcript",
         "mine": "My notes"
-      }
+      },
+      "copyDocs": "Copy for Google Docs"
     },
     "summary": {
       "decisions": "Decisions",
-      "actions": "Action items",
+      "actions": "Next steps",
       "doneCount": "{{done}} of {{count}} done",
       "copy": "Copy summary",
       "regenerate": "Regenerate",
@@ -2936,7 +2937,11 @@
       "readTranscript": "Read the transcript",
       "failedWith": "No summary: {{problem}}.",
       "stale": "You corrected the transcript after this summary was written.",
-      "update": "Update summary"
+      "update": "Update summary",
+      "details": "Details",
+      "people": "People",
+      "playFrom": "Play from {{time}}",
+      "copyDocs": "Copy for Google Docs"
     },
     "ask": {
       "title": "Ask about this note",
@@ -3000,7 +3005,8 @@
       "transcriptCopied": "Transcript copied",
       "exported": "Note exported",
       "exportFailed": "Couldn't export the note",
-      "summaryFailed": "Couldn't write the summary"
+      "summaryFailed": "Couldn't write the summary",
+      "docsCopied": "Copied with formatting. Paste it into a Google Doc."
     },
     "callSettings": "Call detection settings",
     "calls": {

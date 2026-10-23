@@ -1986,6 +1986,14 @@ async getNoteMarkdown(id: number) : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async copyNoteFormatted(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("copy_note_formatted", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async exportNote(id: number, path: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("export_note", { id, path }) };
@@ -2871,8 +2879,28 @@ failed_lines: number;
 /**
  * Of those, the ones that can be tried again from the audio.
  */
-retryable?: number; lines: number; actions: NoteAction[] }
+retryable?: number; lines: number; actions: NoteAction[]; 
+/**
+ * The summary's topics, timed details and the people it names.
+ */
+outline?: NoteOutline; 
+/**
+ * Who was invited, when the note began with a calendar meeting.
+ */
+attendees?: string[] }
 export type NoteAction = { id: number; owner: string; text: string; done: boolean }
+/**
+ * A summary's longer parts: who took part, a short paragraph per topic,
+ * and details tied to the moment in the recording they come from.
+ */
+export type NoteOutline = { people?: string[]; topics?: OutlineTopic[]; details?: OutlineDetail[] }
+export type OutlineTopic = { heading: string; text: string }
+export type OutlineDetail = { heading: string; text: string; 
+/**
+ * Where in the recording it starts, when the answer gave a time that
+ * fits.
+ */
+at_ms: number | null }
 export type NoteInsert = { note_id: number; text: string }
 export type NoteKind = "memo" | "meeting"
 export type NoteLine = { id: number; note_id: number; 
@@ -3260,7 +3288,11 @@ link: string | null; location: string | null;
 /**
  * The calendar's name in Legato.
  */
-calendar: string }
+calendar: string; 
+/**
+ * Who was invited, organiser first.
+ */
+people?: string[] }
 export type McpClient = { id: string; name: string; 
 /**
  * Legato is already in its configuration.

@@ -2,7 +2,16 @@ import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { toast } from "sonner";
-import { ArrowUp, Copy, Loader2, Mail, RotateCw } from "lucide-react";
+import {
+  ArrowUp,
+  Copy,
+  FileText,
+  Loader2,
+  Mail,
+  Play,
+  RotateCw,
+  Users,
+} from "lucide-react";
 import {
   commands,
   type AiStatus,
@@ -15,6 +24,54 @@ import { useAiStore, watchAi } from "../../../stores/aiStore";
 import { useNavStore } from "../../../stores/navStore";
 import { Button } from "../../ui/Button";
 import { answerParts } from "../../notes/notes";
+
+/** "Switch the workers: the code predates…" as a bold title and the rest. */
+const splitTitle = (text: string): [string | null, string] => {
+  const at = text.indexOf(": ");
+  if (at < 0) return [null, text];
+  const title = text.slice(0, at);
+  const rest = text.slice(at + 2).trim();
+  if (!rest || title.length > 60 || /[.!?]/.test(title)) return [null, text];
+  return [title.trim(), rest];
+};
+
+const Titled: React.FC<{ text: string }> = ({ text }) => {
+  const [title, rest] = splitTitle(text);
+  return title ? (
+    <span>
+      <span className="font-medium text-text">{title}</span>
+      <span className="text-text-2">: {rest}</span>
+    </span>
+  ) : (
+    <span>{rest}</span>
+  );
+};
+
+/** Everyone the note names: who was invited, then who the summary found. */
+const peopleOf = (note: Note): string[] => {
+  const out: string[] = [];
+  for (const name of [
+    ...(note.attendees ?? []),
+    ...(note.outline?.people ?? []),
+  ]) {
+    const key = name.trim().toLowerCase();
+    // "Priya" from the talk is the "Priya Shah" who was invited.
+    const known = out.some((n) => {
+      const other = n.toLowerCase();
+      return other === key || other.split(" ")[0] === key;
+    });
+    if (key && !known) out.push(name.trim());
+  }
+  return out;
+};
+
+const clock = (ms: number) => {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor(s / 60) % 60;
+  const sec = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+};
 
 /** Why a note has no summary, or why Ask can't answer, in words; `fix`
  *  opens Settings › AI. */
@@ -190,6 +247,9 @@ interface SummaryTabProps {
   note: Note;
   onCopy: () => void;
   onTime: (ms: number) => void;
+  /** Plays the recording from a detail's time, when there is audio. */
+  onPlay?: (ms: number) => void;
+  onCopyFormatted: () => void;
   onShowTranscript: () => void;
 }
 
@@ -199,6 +259,8 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
   note,
   onCopy,
   onTime,
+  onPlay,
+  onCopyFormatted,
   onShowTranscript,
 }) => {
   const { t } = useTranslation();
@@ -261,6 +323,9 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
     done: done[a.id] ?? a.done,
   }));
   const doneCount = actions.filter((a) => a.done).length;
+  const people = peopleOf(note);
+  const topics = note.outline?.topics ?? [];
+  const details = note.outline?.details ?? [];
   const canAsk = enabled && hasAi && note.lines > 0;
   // Lines were corrected after the summary was written.
   const stale =
@@ -304,7 +369,28 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
               </button>
             </p>
           )}
+          {people.length > 0 && (
+            <p className="mb-3 flex items-start gap-2 text-[13px] text-text-2">
+              <Users
+                className="mt-0.5 h-3.5 w-3.5 flex-none text-text-3"
+                aria-label={t("notes.summary.people")}
+              />
+              <span>{people.join(", ")}</span>
+            </p>
+          )}
           <p className="text-[15px] leading-relaxed">{note.summary}</p>
+          {topics.length > 0 && (
+            <div className="mt-4 grid gap-3">
+              {topics.map((topic, i) => (
+                <div key={i}>
+                  <h4 className="text-sm font-medium">{topic.heading}</h4>
+                  <p className="mt-0.5 text-sm leading-relaxed text-text-2">
+                    {topic.text}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
           {note.decisions.length > 0 && (
             <section className="mt-6">
               <h3 className="mb-2 text-sm font-medium">
@@ -317,7 +403,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
                       aria-hidden="true"
                       className="mt-[9px] h-1 w-1 flex-none rounded-full bg-text-3"
                     />
-                    {d}
+                    <Titled text={d} />
                   </li>
                 ))}
               </ul>
@@ -347,7 +433,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
                       <span
                         className={`min-w-0 flex-1 ${a.done ? "text-text-3 line-through" : ""}`}
                       >
-                        {a.text}
+                        {a.done ? a.text : <Titled text={a.text} />}
                       </span>
                       <span
                         className={`flex-none rounded-[var(--r-xs)] px-1.5 py-0.5 text-xs ${
@@ -364,6 +450,40 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
                   </li>
                 ))}
               </ul>
+            </section>
+          )}
+          {details.length > 0 && (
+            <section className="mt-6">
+              <h3 className="mb-2 text-sm font-medium">
+                {t("notes.summary.details")}
+              </h3>
+              <div className="grid gap-3">
+                {details.map((d, i) => (
+                  <p key={i} className="text-sm leading-relaxed text-text-2">
+                    <span className="font-medium text-text">{d.heading}</span>
+                    {d.heading ? ": " : ""}
+                    {d.text}
+                    {d.at_ms != null && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onPlay ? onPlay(d.at_ms ?? 0) : onTime(d.at_ms ?? 0)
+                        }
+                        title={t(
+                          onPlay ? "notes.summary.playFrom" : "notes.ask.jump",
+                          { time: clock(d.at_ms) },
+                        )}
+                        className="ms-1.5 inline-flex items-center gap-1 rounded-[var(--r-xs)] bg-teal-50 px-1 align-[1px] text-[12.5px] font-medium tabular-nums text-teal-700 hover:bg-teal-100"
+                      >
+                        {onPlay && (
+                          <Play className="h-2.5 w-2.5" aria-hidden="true" />
+                        )}
+                        {clock(d.at_ms)}
+                      </button>
+                    )}
+                  </p>
+                ))}
+              </div>
             </section>
           )}
         </>
@@ -399,6 +519,12 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
             <Button variant="secondary" size="sm" onClick={onCopy}>
               <Copy className="h-3.5 w-3.5" aria-hidden="true" />
               {t("notes.summary.copy")}
+            </Button>
+          )}
+          {hasSummary && (
+            <Button variant="secondary" size="sm" onClick={onCopyFormatted}>
+              <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+              {t("notes.summary.copyDocs")}
             </Button>
           )}
           {issue?.fix ? (

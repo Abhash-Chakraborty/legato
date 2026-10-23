@@ -459,15 +459,29 @@ pub const TAG_MAX: usize = 3;
 /// The request for one transcript, or one part of a long one. `tags_in_use`
 /// are the tags on other notes, offered first so the same topic keeps one
 /// name.
-pub fn summary_request(transcript: &str, json_hint: bool, tags_in_use: &[String]) -> String {
+pub fn summary_request(
+    transcript: &str,
+    json_hint: bool,
+    tags_in_use: &[String],
+    people: &[String],
+) -> String {
     let mut request = String::from(
         "Summarise this transcript.\n\n\
          title: a short name for the conversation, three to six words, in sentence case, naming its main topic; no date, no quotes.\n\
          tags: one to three short topic tags, lowercase, one or two words each.\n\
-         summary: two or three plain sentences on what was discussed and concluded.\n\
-         decisions: what was agreed, one short line each; empty when nothing was.\n\
-         actions: tasks someone took on, each with its owner: \"You\" for the person who recorded, a name when the transcript gives one, else \"Them\".\n",
+         summary: one sentence of at most 25 words on what the conversation was about and where it landed.\n\
+         people: the names of everyone who spoke or was addressed by name; leave out anyone the transcript doesn't name.\n\
+         topics: two to five topics in the order they came up, each with a heading of two to six words and one to three sentences on what was said and concluded.\n\
+         decisions: what was agreed, each as a short title, a colon, then one sentence on what it means; empty when nothing was.\n\
+         actions: tasks someone took on, each with its owner (\"You\" for the person who recorded, a name when the transcript gives one, else \"Them\") and text as a short title, a colon, then exactly what to do.\n\
+         details: one entry per topic or notable exchange, in order, each with a heading, three to six sentences on who said what (by name when known, with the numbers, names and reasons given), and at: the time in square brackets of the first line it draws on, copied from the transcript, such as 5:48.\n\
+         Spell names, products and organisations the way the people list and the transcript's corrected lines do.\n",
     );
+    if !people.is_empty() {
+        request.push_str("People invited to the meeting: ");
+        request.push_str(&people.join(", "));
+        request.push('\n');
+    }
     if !tags_in_use.is_empty() {
         request.push_str("Tags already in use, to pick from when one fits: ");
         request.push_str(&tags_in_use.join(", "));
@@ -476,7 +490,7 @@ pub fn summary_request(transcript: &str, json_hint: bool, tags_in_use: &[String]
     if json_hint {
         request.push_str(
             "\nAnswer exactly like this, with no other text:\n\
-             {\"title\": \"…\", \"tags\": [\"…\"], \"summary\": \"…\", \"decisions\": [\"…\"], \"actions\": [{\"owner\": \"You\", \"text\": \"…\"}]}\n",
+             {\"title\": \"…\", \"tags\": [\"…\"], \"summary\": \"…\", \"people\": [\"…\"], \"topics\": [{\"heading\": \"…\", \"text\": \"…\"}], \"decisions\": [\"Title: …\"], \"actions\": [{\"owner\": \"You\", \"text\": \"Title: …\"}], \"details\": [{\"heading\": \"…\", \"text\": \"…\", \"at\": \"5:48\"}]}\n",
         );
     }
     request.push_str("\nTranscript:\n");
@@ -489,6 +503,9 @@ pub fn combine_request(parts: &[NotesSummary], json_hint: bool, tags_in_use: &[S
     let mut text = String::new();
     for (i, part) in parts.iter().enumerate() {
         text.push_str(&format!("Part {}: {}\n", i + 1, part.summary));
+        for t in &part.outline.topics {
+            text.push_str(&format!("Topic: {}: {}\n", t.heading, t.text));
+        }
         for d in &part.decisions {
             text.push_str(&format!("Decision: {d}\n"));
         }
@@ -496,10 +513,40 @@ pub fn combine_request(parts: &[NotesSummary], json_hint: bool, tags_in_use: &[S
             text.push_str(&format!("Action ({owner}): {task}\n"));
         }
     }
-    summary_request(&text, json_hint, tags_in_use).replace(
+    let people: Vec<String> = merge_people(parts.iter().map(|p| p.outline.people.as_slice()));
+    summary_request(&text, json_hint, tags_in_use, &people).replace(
         "Summarise this transcript.",
-        "These are summaries of consecutive parts of one long conversation. Combine them into one summary, removing repeats.",
+        "These are summaries of consecutive parts of one long conversation. Combine them into one summary, removing repeats; details may stay empty, since each part keeps its own.",
     )
+}
+
+/// Each name once, in the order first seen.
+pub fn merge_people<'a>(lists: impl Iterator<Item = &'a [String]>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for name in lists.flatten() {
+        let name = name.trim();
+        if !name.is_empty() && !out.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+            out.push(name.to_string());
+        }
+    }
+    out
+}
+
+/// A time written like the transcript's ("5:48", "[1:02:03]") in ms.
+pub fn parse_clock(text: &str) -> Option<i64> {
+    let text = text
+        .trim()
+        .trim_matches(|c| c == '[' || c == ']' || c == '(' || c == ')');
+    let parts: Vec<i64> = text
+        .split(':')
+        .map(|p| p.trim().parse::<i64>().ok().filter(|n| *n >= 0))
+        .collect::<Option<_>>()?;
+    let secs = match parts.as_slice() {
+        [m, s] if *s < 60 => m * 60 + s,
+        [h, m, s] if *m < 60 && *s < 60 => h * 3600 + m * 60 + s,
+        _ => return None,
+    };
+    Some(secs * 1000)
 }
 
 pub fn summary_schema() -> serde_json::Value {
@@ -509,6 +556,19 @@ pub fn summary_schema() -> serde_json::Value {
             "title": { "type": "string" },
             "tags": { "type": "array", "items": { "type": "string" } },
             "summary": { "type": "string" },
+            "people": { "type": "array", "items": { "type": "string" } },
+            "topics": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "heading": { "type": "string" },
+                        "text": { "type": "string" }
+                    },
+                    "required": ["heading", "text"],
+                    "additionalProperties": false
+                }
+            },
             "decisions": { "type": "array", "items": { "type": "string" } },
             "actions": {
                 "type": "array",
@@ -521,15 +581,28 @@ pub fn summary_schema() -> serde_json::Value {
                     "required": ["owner", "text"],
                     "additionalProperties": false
                 }
+            },
+            "details": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "heading": { "type": "string" },
+                        "text": { "type": "string" },
+                        "at": { "type": "string" }
+                    },
+                    "required": ["heading", "text", "at"],
+                    "additionalProperties": false
+                }
             }
         },
-        "required": ["title", "tags", "summary", "decisions", "actions"],
+        "required": ["title", "tags", "summary", "people", "topics", "decisions", "actions", "details"],
         "additionalProperties": false
     })
 }
 
 /// What a summary found: a suggested title and tags, the overview,
-/// decisions, and (owner, task) pairs.
+/// decisions, (owner, task) pairs, and the longer parts in `outline`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NotesSummary {
     pub title: String,
@@ -537,6 +610,52 @@ pub struct NotesSummary {
     pub summary: String,
     pub decisions: Vec<String>,
     pub actions: Vec<(String, String)>,
+    pub outline: NoteOutline,
+}
+
+/// A summary's longer parts: who took part, a short paragraph per topic,
+/// and details tied to the moment in the recording they come from.
+#[derive(
+    Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type,
+)]
+pub struct NoteOutline {
+    #[serde(default)]
+    pub people: Vec<String>,
+    #[serde(default)]
+    pub topics: Vec<OutlineTopic>,
+    #[serde(default)]
+    pub details: Vec<OutlineDetail>,
+}
+
+#[derive(
+    Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type,
+)]
+pub struct OutlineTopic {
+    pub heading: String,
+    pub text: String,
+}
+
+#[derive(
+    Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type,
+)]
+pub struct OutlineDetail {
+    pub heading: String,
+    pub text: String,
+    /// Where in the recording it starts, when the answer gave a time that
+    /// fits.
+    pub at_ms: Option<i64>,
+}
+
+impl NoteOutline {
+    /// Drops times past the end of the recording: a detail never points at
+    /// audio that isn't there.
+    pub fn fit_to(&mut self, last_ms: i64) {
+        for d in &mut self.details {
+            if d.at_ms.is_some_and(|at| at > last_ms) {
+                d.at_ms = None;
+            }
+        }
+    }
 }
 
 /// Reads the model's JSON, also when it is wrapped in a code fence or text.
@@ -583,12 +702,44 @@ pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
         .map(clean_title)
         .unwrap_or_default();
     let tags = clean_tags(&strings("tags"));
+    let pairs = |key: &str| -> Vec<(String, String, Option<String>)> {
+        value
+            .get(key)
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|item| {
+                        let heading = item.get("heading")?.as_str()?.trim().to_string();
+                        let text = item.get("text")?.as_str()?.trim().to_string();
+                        let at = item.get("at").and_then(|v| v.as_str()).map(str::to_string);
+                        (!text.is_empty()).then_some((heading, text, at))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let outline = NoteOutline {
+        people: merge_people(std::iter::once(strings("people").as_slice())),
+        topics: pairs("topics")
+            .into_iter()
+            .map(|(heading, text, _)| OutlineTopic { heading, text })
+            .collect(),
+        details: pairs("details")
+            .into_iter()
+            .map(|(heading, text, at)| OutlineDetail {
+                heading,
+                text,
+                at_ms: at.as_deref().and_then(parse_clock),
+            })
+            .collect(),
+    };
     (!summary.is_empty()).then_some(NotesSummary {
         title,
         tags,
         summary,
         decisions,
         actions,
+        outline,
     })
 }
 
@@ -1052,6 +1203,33 @@ mod tests {
     }
 
     #[test]
+    fn summaries_bring_topics_people_and_timed_details() {
+        let answer = r#"{"summary": "Repos and a test plan.", "people": ["Sahil", "sahil", "Abhash"],
+            "topics": [{"heading": "GIS app", "text": "A map of 3.3 million buildings."}, {"heading": "", "text": ""}],
+            "details": [{"heading": "Cloudflare workers", "text": "They switch them.", "at": "[5:48]"},
+                        {"heading": "Late", "text": "Past the end.", "at": "1:02:03"},
+                        {"heading": "No time", "text": "Fine.", "at": "soon"}]}"#;
+        let mut s = parse_summary(answer).unwrap();
+        assert_eq!(s.outline.people, vec!["Sahil", "Abhash"]);
+        assert_eq!(s.outline.topics.len(), 1);
+        assert_eq!(s.outline.details[0].at_ms, Some(348_000));
+        assert_eq!(s.outline.details[1].at_ms, Some(3_723_000));
+        assert_eq!(s.outline.details[2].at_ms, None);
+        s.outline.fit_to(1_200_000);
+        assert_eq!(s.outline.details[1].at_ms, None);
+        assert_eq!(s.outline.details[0].at_ms, Some(348_000));
+    }
+
+    #[test]
+    fn clocks_read_like_the_transcript_writes_them() {
+        assert_eq!(parse_clock("0:54"), Some(54_000));
+        assert_eq!(parse_clock("00:00:54"), Some(54_000));
+        assert_eq!(parse_clock("(12:07)"), Some(727_000));
+        assert_eq!(parse_clock("5:75"), None);
+        assert_eq!(parse_clock("five"), None);
+    }
+
+    #[test]
     fn summaries_bring_a_title_and_tags() {
         let answer = r##"{"title": "\"AIPS backend not working.\"", "tags": ["#backend", "Backend", "deployment", "a tag far too long to be a tag at all", "api", "extra"], "summary": "The server is slow.", "decisions": [], "actions": []}"##;
         let s = parse_summary(answer).unwrap();
@@ -1090,10 +1268,14 @@ mod tests {
 
     #[test]
     fn the_summary_request_offers_tags_in_use() {
-        let r = summary_request("You: hi", false, &["backend".into(), "clients".into()]);
+        let r = summary_request("You: hi", false, &["backend".into(), "clients".into()], &[]);
         assert!(r.contains("Tags already in use, to pick from when one fits: backend, clients"));
-        assert!(!summary_request("You: hi", false, &[]).contains("already in use"));
-        assert!(summary_request("You: hi", true, &[]).contains("\"title\""));
+        assert!(!summary_request("You: hi", false, &[], &[]).contains("already in use"));
+        assert!(summary_request("You: hi", true, &[], &[]).contains("\"title\""));
+        assert!(
+            summary_request("You: hi", false, &[], &["Sahil Khan".into()])
+                .contains("People invited to the meeting: Sahil Khan\n")
+        );
     }
 
     #[test]

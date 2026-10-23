@@ -5,6 +5,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import {
   Copy,
   FileDown,
+  FileText,
   MoreVertical,
   Pencil,
   Plus,
@@ -238,6 +239,12 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
       toast(t("notes.toast.summaryCopied"));
   };
 
+  const copyFormatted = async () => {
+    const result = await commands.copyNoteFormatted(note.id);
+    if (result.status === "ok") toast(t("notes.toast.docsCopied"));
+    else toast.error(result.error);
+  };
+
   const copyTranscript = async () => {
     const result = await commands.getNoteLines(note.id);
     if (result.status !== "ok" || !result.data.length) return;
@@ -323,6 +330,13 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
                     icon: Copy,
                     disabled: !note.summary.trim(),
                     onSelect: copySummary,
+                  },
+                  {
+                    id: "copy-docs",
+                    label: t("notes.detail.copyDocs"),
+                    icon: FileText,
+                    disabled: !note.summary.trim(),
+                    onSelect: copyFormatted,
                   },
                   {
                     id: "copy-transcript",
@@ -442,7 +456,9 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
           <SummaryTab
             note={note}
             onCopy={copySummary}
+            onCopyFormatted={copyFormatted}
             onTime={showTime}
+            onPlay={note.audio_file ? player.playFrom : undefined}
             onShowTranscript={() => setTab("transcript")}
           />
         ) : shown === "transcript" ? (

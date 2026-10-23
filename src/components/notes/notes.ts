@@ -152,6 +152,8 @@ export const summaryText = (
   heads: { decisions: string; actions: string },
 ): string => {
   const parts = [note.summary.trim()];
+  for (const topic of note.outline?.topics ?? [])
+    parts.push(`${topic.heading}\n${topic.text}`);
   if (note.decisions.length)
     parts.push(
       `${heads.decisions}\n${note.decisions.map((d) => `- ${d}`).join("\n")}`,

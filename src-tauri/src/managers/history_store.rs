@@ -404,6 +404,12 @@ pub static MIGRATIONS: &[M] = &[
                (SELECT 1 FROM daily_app_stats n
                 WHERE n.day = old.day AND n.app = 'Windows Terminal');",
     ),
+    // Notes: the summary's topics, details and people (JSON), and the
+    // people invited when the note came from a calendar meeting.
+    M::up(
+        "ALTER TABLE note ADD COLUMN outline TEXT;
+         ALTER TABLE note ADD COLUMN attendees TEXT;",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.
