@@ -810,6 +810,12 @@ fn log_dir_for_errors() -> std::path::PathBuf {
         .join("logs")
 }
 
+/// Set once `RunEvent::Exit` has run. When Windows shuts down, tao's event
+/// loop can still get a message after it was destroyed and panics with
+/// "cannot move state from Destroyed"; by then Legato has finished, so that
+/// panic must not put an error box in front of the shutdown.
+static EXITING: AtomicBool = AtomicBool::new(false);
+
 /// A panic on the main thread ends Legato, and with no console a person
 /// would see it vanish. This logs every panic and, for that one, says what
 /// happened and where the log is before the process goes.
@@ -818,6 +824,10 @@ fn install_panic_hook() {
     std::panic::set_hook(Box::new(move |info| {
         let thread = std::thread::current();
         let name = thread.name().unwrap_or("unnamed");
+        if EXITING.load(Ordering::SeqCst) {
+            log::warn!("Panic on thread {name} after exit: {info}");
+            return;
+        }
         log::error!("Panic on thread {name}: {info}");
         if name == "main" {
             #[cfg(windows)]
@@ -1534,6 +1544,7 @@ pub fn run(cli_args: CliArgs) {
     app.run(|_, event| {
         if let tauri::RunEvent::Exit = event {
             log::info!("Legato is exiting.");
+            EXITING.store(true, Ordering::SeqCst);
         }
     });
 }
