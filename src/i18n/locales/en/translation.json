@@ -334,12 +334,19 @@
       "overlay": {
         "style": {
           "title": "Style",
-          "description": "Minimal is a small dark pill with cancel and finish. Live is a wider bar that shows the words as you speak with streaming models. None hides the bar.",
+          "description": "What the bar shows while you dictate.",
           "options": {
             "none": "None",
             "minimal": "Minimal",
             "live": "Live"
-          }
+          },
+          "help": {
+            "none": "No bar. The tray icon still shows when Legato is listening.",
+            "minimal": "Cancel, a waveform and Finish. It never grows.",
+            "live": "Your words as you say them, the time and the transform that runs after."
+          },
+          "bubbleTakes": "The bubble shows your dictations while it's on, so the bar only shows messages. Turn the bubble off below, or choose the island, to see this style while you dictate.",
+          "noStreaming": "{{model}} writes your words after you stop, so Live shows the time and transform but no words. Pick a model marked Streaming in Models to see them as you speak."
         },
         "look": {
           "title": "Shape",
@@ -731,7 +738,6 @@
       "speakers": "Speakers in notes",
       "recordings": "Recordings",
       "features": "What Legato does",
-      "featuresOnScreen": "On screen",
       "featuresOther": "Other apps",
       "inyon": "Inyon"
     },
@@ -752,8 +758,7 @@
       "clipboardSync": "Turn on Shared clipboard first.",
       "mcp": "Turn on Let AI apps read Legato first.",
       "bubble": "Turn on Bubble on the desktop first.",
-      "islandOff": "The island stands in for the bubble while it's on (Shape, above).",
-      "barOn": "Turn the bar on first, in Legato bar › Style.",
+      "islandOff": "The island stands in for the bubble. Choose the Bar shape above to use the bubble.",
       "notesFeature": "Notes are off in Settings › Features.",
       "scratchpadFeature": "The Scratchpad is off in Settings › Features."
     },
@@ -1397,10 +1402,6 @@
       "insights": {
         "title": "Insights",
         "help": "How much you dictate, and how often Legato gets a word wrong."
-      },
-      "island": {
-        "title": "The island",
-        "help": "The bar as a dark shape hanging from the top edge, with Dictate, Notes and the Scratchpad on hover. It takes the bubble's place."
       }
     },
     "yourName": {

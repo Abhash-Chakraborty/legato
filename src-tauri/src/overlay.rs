@@ -21,8 +21,10 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Webview
 //
 // Compact overlay (Minimal / transcribing / processing): the 40h pill animates
 // width from 172 (--ov-rest-w) to 216 (--ov-work-w) and expands from center, so
-// the window must fit the widest state plus a little slack.
-const OVERLAY_WIDTH: f64 = 256.0;
+// the window must fit the widest state plus a little slack. Live with a model
+// that writes after you stop adds the time and the transform's name, up to
+// about 280.
+const OVERLAY_WIDTH: f64 = 296.0;
 const OVERLAY_HEIGHT: f64 = 50.0;
 
 const OVERLAY_CHANGES_WIDTH: f64 = 480.0;

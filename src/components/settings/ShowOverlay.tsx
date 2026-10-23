@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
+import { useModelStore } from "../../stores/modelStore";
+import { BarStylePicker } from "./BarStylePicker";
 import type {
   BarLook,
   IslandIdle,
@@ -19,21 +21,8 @@ export const ShowOverlay: React.FC<ShowOverlayProps> = React.memo(
   ({ descriptionMode = "tooltip", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
-
-    const styleOptions = [
-      {
-        value: "none",
-        label: t("settings.advanced.overlay.style.options.none"),
-      },
-      {
-        value: "minimal",
-        label: t("settings.advanced.overlay.style.options.minimal"),
-      },
-      {
-        value: "live",
-        label: t("settings.advanced.overlay.style.options.live"),
-      },
-    ];
+    const { currentModel, models } = useModelStore();
+    const model = models.find((m) => m.id === currentModel);
 
     const positionOptions = [
       {
@@ -86,15 +75,36 @@ export const ShowOverlay: React.FC<ShowOverlayProps> = React.memo(
           description={t("settings.advanced.overlay.style.description")}
           descriptionMode={descriptionMode}
           grouped={grouped}
+          layout="stacked"
         >
-          <Dropdown
-            options={styleOptions}
-            selectedValue={selectedStyle}
-            onSelect={(value) =>
-              updateSetting("overlay_style", value as OverlayStyle)
+          <BarStylePicker
+            value={selectedStyle}
+            onChange={(value) => updateSetting("overlay_style", value)}
+            look={
+              selectedLook === "island"
+                ? "island"
+                : selectedPosition === "top"
+                  ? "bar-top"
+                  : "bar-bottom"
             }
             disabled={isUpdating("overlay_style")}
           />
+          {/* With the bar's shape, the bubble takes dictations while it's on. */}
+          {selectedStyle !== "none" &&
+            selectedLook === "bar" &&
+            (getSetting("bubble_enabled") ?? true) && (
+              <p className="mt-2 text-[13px] leading-[1.45] text-text-2">
+                {t("settings.advanced.overlay.style.bubbleTakes")}
+              </p>
+            )}
+          {/* Live's words come only from a model that writes as you speak. */}
+          {selectedStyle === "live" && model && !model.supports_streaming && (
+            <p className="mt-2 text-[13px] leading-[1.45] text-text-2">
+              {t("settings.advanced.overlay.style.noStreaming", {
+                model: model.name,
+              })}
+            </p>
+          )}
         </SettingContainer>
 
         {selectedStyle !== "none" && (

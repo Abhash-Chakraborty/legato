@@ -29,20 +29,3 @@ export const FeatureToggle: React.FC<{ feature: FeatureKey; name: string }> = ({
     />
   );
 };
-
-/** The island at the top of the screen, or the bar as before. */
-export const IslandToggle: React.FC = () => {
-  const { t } = useTranslation();
-  const { getSetting, updateSetting, isUpdating } = useSettings();
-  return (
-    <ToggleSwitch
-      checked={getSetting("bar_look") === "island"}
-      onChange={(on) => updateSetting("bar_look", on ? "island" : "bar")}
-      isUpdating={isUpdating("bar_look")}
-      label={t("settings.features.island.title")}
-      description={t("settings.features.island.help")}
-      descriptionMode="inline"
-      grouped
-    />
-  );
-};

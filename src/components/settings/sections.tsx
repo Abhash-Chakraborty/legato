@@ -22,7 +22,7 @@ import { useModelStore } from "../../stores/modelStore";
 
 import { AdminAppsToggle } from "./AdminAppsToggle";
 import { YourName } from "./YourName";
-import { FeatureToggle, IslandToggle } from "./FeatureSettings";
+import { FeatureToggle } from "./FeatureSettings";
 import { InyonAlertsRow, InyonCard } from "./connections/InyonSettings";
 import { NotesFolderRow } from "./connections/NotesFolder";
 import { AutostartToggle } from "./AutostartToggle";
@@ -373,36 +373,6 @@ export const buildSections = (
             render: () => (
               <FeatureToggle feature="insights_enabled" name="insights" />
             ),
-          },
-        ],
-      },
-      {
-        id: "features-screen",
-        titleKey: "settings.groups.featuresOnScreen",
-        rows: [
-          {
-            id: "feature-island",
-            searchKeys: [
-              "settings.features.island.title",
-              "settings.features.island.help",
-            ],
-            render: () => <IslandToggle />,
-            requires: ({ settings }) =>
-              settings?.overlay_style === "none"
-                ? { reasonKey: "settings.requires.barOn" }
-                : null,
-          },
-          {
-            id: "feature-bubble",
-            searchKeys: [
-              "settings.bar.bubble.title",
-              "settings.bar.bubble.help",
-            ],
-            render: () => <ShowBubble grouped />,
-            requires: ({ settings }) =>
-              islandOn(settings)
-                ? { reasonKey: "settings.requires.islandOff" }
-                : null,
           },
         ],
       },
@@ -1325,6 +1295,8 @@ export const buildSections = (
             searchKeys: [
               "settings.advanced.overlay.style.title",
               "settings.advanced.overlay.style.description",
+              "settings.advanced.overlay.style.options.minimal",
+              "settings.advanced.overlay.style.options.live",
               "settings.advanced.overlay.position.title",
               "settings.advanced.overlay.position.description",
               "settings.advanced.overlay.look.title",
@@ -1353,12 +1325,13 @@ export const buildSections = (
               "settings.bar.liveCaption.help",
             ],
             render: () => <LiveCaptionPlace grouped />,
+            // A choice about the bubble's dictations; the island shows its
+            // own words, so the row goes while it's on.
+            when: ({ settings }) => !islandOn(settings),
             requires: ({ settings }) =>
-              islandOn(settings)
-                ? { reasonKey: "settings.requires.islandOff" }
-                : settings?.bubble_enabled === false
-                  ? { reasonKey: "settings.requires.bubble" }
-                  : null,
+              settings?.bubble_enabled === false
+                ? { reasonKey: "settings.requires.bubble" }
+                : null,
           },
         ],
       },

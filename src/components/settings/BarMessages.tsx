@@ -43,9 +43,14 @@ export const ShowChanges: React.FC<{ grouped?: boolean }> = ({ grouped }) => {
 export const ShowBubble: React.FC<{ grouped?: boolean }> = ({ grouped }) => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
+  // The island stands in for the bubble, so it reads as off while the
+  // island is on, whatever is saved for when it goes.
+  const island =
+    getSetting("bar_look") === "island" &&
+    getSetting("overlay_style") !== "none";
   return (
     <ToggleSwitch
-      checked={getSetting("bubble_enabled") ?? true}
+      checked={(getSetting("bubble_enabled") ?? true) && !island}
       onChange={(on) => updateSetting("bubble_enabled", on)}
       isUpdating={isUpdating("bubble_enabled")}
       label={t("settings.bar.bubble.title")}

@@ -236,6 +236,31 @@
 .scard.withtx .sbase {
   column-gap: 12px;
 }
+/* Live with a model that writes after you stop: the compact card shows the
+   time beside Cancel and sizes to what it holds. */
+.scard.compact:not(.cworking) {
+  width: auto;
+  min-width: var(--ov-rest-w);
+}
+.scard.compact .stimer {
+  opacity: 1;
+}
+.scard.compact .stx {
+  max-width: 96px;
+}
+/* A row sized to its content keeps the same gap on both sides of the
+   waveform. Equal side columns centre it, but leave a wide gap before
+   Cancel when the transform's name fills the left one. */
+.scard.compact:not(.cworking) .sbase,
+.scard.withtx:not(.open):not(.working):not(.cworking) .sbase {
+  grid-template-columns: auto auto auto;
+  column-gap: 14px;
+  justify-content: space-between;
+}
+.scard.compact:not(.cworking) .swave,
+.scard.withtx:not(.open):not(.working):not(.cworking) .swave {
+  padding-right: 0;
+}
 
 /* Notice: a single line sized to its text, up to the Live panel's width. */
 .scard.notice {
