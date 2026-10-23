@@ -492,6 +492,19 @@ pub fn set_your_name(
             .map_err(|e| e.to_string())?
             .into_iter()
             .find(|e| e.text.eq_ignore_ascii_case(&name));
+        // The forms Settings showed belong to the name saved before; a word
+        // that only now becomes your name keeps the forms it already had.
+        let was = crate::settings::get_settings(&app).your_name;
+        if let Some(entry) = existing
+            .as_ref()
+            .filter(|_| !was.trim().eq_ignore_ascii_case(&name))
+        {
+            for form in &entry.heard {
+                if !forms.iter().any(|f| f.eq_ignore_ascii_case(form)) {
+                    forms.push(form.clone());
+                }
+            }
+        }
         let input = EntryInput {
             text: name.clone(),
             heard: forms,

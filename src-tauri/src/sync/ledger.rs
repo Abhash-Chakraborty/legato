@@ -36,12 +36,14 @@ pub struct Item {
     pub at: Option<i64>,
 }
 
-/// JSON with object keys sorted, so equal bodies hash the same.
+/// JSON with object keys sorted, so equal bodies hash the same. A field
+/// that's null reads as one that isn't there, so a field added later (sent
+/// as null when unset) changes nothing for items that don't use it.
 pub fn canonical(value: &Value) -> String {
     fn sorted(value: &Value) -> Value {
         match value {
             Value::Object(map) => {
-                let mut keys: Vec<&String> = map.keys().collect();
+                let mut keys: Vec<&String> = map.keys().filter(|k| !map[*k].is_null()).collect();
                 keys.sort();
                 Value::Object(
                     keys.into_iter()
@@ -690,6 +692,15 @@ mod tests {
         assert_eq!(canonical(&a), canonical(&b));
         assert_eq!(hash(Some(&a)), hash(Some(&b)));
         assert_eq!(hash(None), "-");
+        // Null and missing are the same body.
+        assert_eq!(
+            hash(Some(&json!({"text": "AIPS", "kind": null}))),
+            hash(Some(&json!({"text": "AIPS"})))
+        );
+        assert_ne!(
+            hash(Some(&json!({"text": "AIPS", "kind": "project"}))),
+            hash(Some(&json!({"text": "AIPS"})))
+        );
     }
 
     #[test]

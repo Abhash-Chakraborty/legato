@@ -416,8 +416,13 @@ impl NotesManager {
         word: &str,
         kind: Option<WordKind>,
     ) -> Result<WordFixed> {
-        let word = word.trim();
-        if word.is_empty() {
+        // Punctuation at either end of a selection isn't part of the word.
+        let (heard, word) = (
+            dictionary_store::clean_heard(heard),
+            dictionary_store::clean_heard(word),
+        );
+        let (heard, word) = (heard.as_str(), word.as_str());
+        if word.is_empty() || heard.is_empty() {
             return Err(anyhow!("Type the word as it should be written"));
         }
         let others = store::lines(&self.conn()?, note_id)?
@@ -669,38 +674,53 @@ impl NotesManager {
         let mut conn = self.conn()?;
         let deleted = store::delete(&mut conn, id)?;
         if let Some(d) = &deleted {
-            let text = if d.note.summary.trim().is_empty() {
-                d.lines
-                    .iter()
-                    .map(|l| l.text.as_str())
-                    .take(6)
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            } else {
-                d.note.summary.clone()
-            };
-            trash_store::put(
-                &conn,
-                &NewTrash {
-                    kind: TrashKind::Note,
-                    item_id: id,
-                    title: &d.note.title,
-                    preview: &trash_store::preview(&text),
-                    duration_ms: Some(d.note.duration_ms),
-                    payload: serde_json::to_string(d)?,
-                },
-                chrono::Utc::now().timestamp(),
-            )?;
+            if let Err(e) = self.trash(&conn, id, d) {
+                // Never gone with no way back: put it back and say so.
+                store::restore(&mut conn, d)?;
+                return Err(e);
+            }
             crate::trash::changed(&self.app);
         }
         self.changed();
         Ok(deleted)
     }
 
+    /// Keeps a deleted note in Recently deleted.
+    fn trash(&self, conn: &Connection, id: i64, d: &DeletedRecording) -> Result<()> {
+        let text = if d.note.summary.trim().is_empty() {
+            d.lines
+                .iter()
+                .map(|l| l.text.as_str())
+                .take(6)
+                .collect::<Vec<_>>()
+                .join(" ")
+        } else {
+            d.note.summary.clone()
+        };
+        trash_store::put(
+            conn,
+            &NewTrash {
+                kind: TrashKind::Note,
+                item_id: id,
+                title: &d.note.title,
+                preview: &trash_store::preview(&text),
+                duration_ms: Some(d.note.duration_ms),
+                payload: serde_json::to_string(d)?,
+            },
+            chrono::Utc::now().timestamp(),
+        )?;
+        Ok(())
+    }
+
     /// Puts a deleted note back, from the toast's Undo or Recently deleted.
     pub fn restore(&self, deleted: &DeletedRecording) -> Result<()> {
         let mut conn = self.conn()?;
         store::restore(&mut conn, deleted)?;
+        // Deleted while its summary was being written: that work stopped
+        // with it, so it mustn't come back stuck on "Summarising".
+        if deleted.note.status != NoteStatus::Ready && current_note() != Some(deleted.note.id) {
+            store::set_status(&conn, deleted.note.id, NoteStatus::Ready)?;
+        }
         trash_store::forget(&conn, TrashKind::Note, deleted.note.id)?;
         crate::trash::changed(&self.app);
         self.changed();

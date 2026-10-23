@@ -151,11 +151,10 @@ fn export_dictionary(conn: &Connection) -> Result<Vec<Item>> {
         let (id, text, case_sensitive, pinned, added_at, kind) = row?;
         let mut forms = heard.remove(&id).unwrap_or_default();
         forms.sort_by_key(|f| f.to_lowercase());
-        let mut body = json!({"text": text, "case_sensitive": case_sensitive, "pinned": pinned, "heard": forms});
-        // Only when set, so words without one read as they did before.
-        if let Some(kind) = kind {
-            body["kind"] = json!(kind);
-        }
+        // An unset kind goes as null, which hashes like no kind at all, so
+        // words without one read as they did before kinds, and clearing one
+        // reaches the other side.
+        let body = json!({"text": text, "case_sensitive": case_sensitive, "pinned": pinned, "heard": forms, "kind": kind});
         items.push(Item {
             key: text.to_lowercase(),
             body,
@@ -189,21 +188,30 @@ fn apply_dictionary(
     if word.is_empty() {
         bail!("a word with no text");
     }
-    // A side that doesn't know kinds leaves the one here alone.
-    let kind = body["kind"]
-        .as_str()
-        .filter(|k| crate::managers::dictionary_store::WordKind::parse(k).is_some());
+    // A side that doesn't know kinds sends none and leaves the one here
+    // alone; null clears it.
+    let (set_kind, kind) = match body.get("kind") {
+        None => (false, None),
+        Some(Value::Null) => (true, None),
+        Some(k) => {
+            let kind = k
+                .as_str()
+                .filter(|k| crate::managers::dictionary_store::WordKind::parse(k).is_some());
+            (kind.is_some(), kind)
+        }
+    };
     let id = match existing {
         Some(id) => {
             conn.execute(
                 "UPDATE dictionary_entry SET text = ?2, case_sensitive = ?3, pinned = ?4,
-                    kind = COALESCE(?5, kind) WHERE id = ?1",
+                    kind = CASE WHEN ?6 THEN ?5 ELSE kind END WHERE id = ?1",
                 params![
                     id,
                     word,
                     flag(body, "case_sensitive"),
                     flag(body, "pinned"),
-                    kind
+                    kind,
+                    set_kind
                 ],
             )?;
             conn.execute("DELETE FROM dictionary_heard WHERE entry_id = ?1", [id])?;
@@ -411,6 +419,13 @@ fn apply_history(
     Ok(Applied::default())
 }
 
+/// A key this device made (`me:<id>`), as opposed to one mapped from
+/// another device's.
+fn is_own(key: &str, me: &str) -> bool {
+    key.strip_prefix(me)
+        .is_some_and(|rest| rest.starts_with(':'))
+}
+
 /* -- notes ------------------------------------------------------------------- */
 
 fn export_notes(conn: &Connection, me: &str) -> Result<Vec<Item>> {
@@ -599,7 +614,10 @@ fn apply_note(
             clear(id)?;
             id
         }
-        None if local.is_some() => return Ok(Applied::default()),
+        // One of ours that's gone here stays gone. Another device's that we
+        // removed comes back: this version is newer than the removal (a
+        // note restored from Recently deleted there).
+        None if local.is_some() && is_own(key, me) => return Ok(Applied::default()),
         None => {
             conn.execute(
                 "INSERT INTO note (title, kind, status, started_at, duration_ms, app, my_notes,
@@ -733,7 +751,7 @@ fn apply_scratch(
                 ],
             )?;
         }
-        None if local.is_some() => {}
+        None if local.is_some() && is_own(key, me) => {}
         None => {
             conn.execute(
                 "INSERT INTO scratch_note (title, auto_title, text, pinned, created_at, updated_at)
@@ -887,6 +905,80 @@ mod tests {
         )
         .unwrap();
         assert_eq!(count(&conn, "history").unwrap(), 1);
+    }
+
+    #[test]
+    fn a_word_kind_set_kept_and_cleared() {
+        let mut conn = db();
+        let kind = |conn: &Connection| -> Option<String> {
+            conn.query_row("SELECT kind FROM dictionary_entry", [], |r| r.get(0))
+                .unwrap()
+        };
+        let word = |kind: Value| {
+            let mut body = json!({"text": "AIPS", "heard": ["IPES"]});
+            if !kind.is_string() || kind != "absent" {
+                body["kind"] = kind;
+            }
+            body
+        };
+        let mut send = |body: Value, at| {
+            apply(
+                &mut conn,
+                "dictionary",
+                "aips",
+                Some(&body),
+                "PC",
+                "phone",
+                at,
+            )
+            .unwrap();
+        };
+        send(word(json!("project")), 1);
+        // A device that doesn't know kinds leaves it; null clears it.
+        send(word(json!("absent")), 2);
+        send(word(Value::Null), 3);
+        drop(send);
+        assert_eq!(kind(&conn), None);
+        apply(
+            &mut conn,
+            "dictionary",
+            "aips",
+            Some(&word(json!("project"))),
+            "PC",
+            "phone",
+            4,
+        )
+        .unwrap();
+        apply(
+            &mut conn,
+            "dictionary",
+            "aips",
+            Some(&word(json!("absent"))),
+            "PC",
+            "phone",
+            5,
+        )
+        .unwrap();
+        assert_eq!(kind(&conn).as_deref(), Some("project"));
+    }
+
+    #[test]
+    fn a_note_restored_on_the_other_device_comes_back() {
+        let mut conn = db();
+        let body = json!({"title": "Weekly sync", "kind": "meeting", "lines": []});
+        for kind in ["notes", "scratchpad"] {
+            // The PC's note arrives on the phone, is deleted there by the
+            // PC's delete, then restored on the PC with a newer version.
+            apply(&mut conn, kind, "pc:12", Some(&body), "PC", "phone", 1).unwrap();
+            assert_eq!(count(&conn, kind).unwrap(), 1);
+            apply(&mut conn, kind, "pc:12", None, "PC", "phone", 2).unwrap();
+            assert_eq!(count(&conn, kind).unwrap(), 0);
+            apply(&mut conn, kind, "pc:12", Some(&body), "PC", "phone", 3).unwrap();
+            assert_eq!(count(&conn, kind).unwrap(), 1, "{kind}");
+            // And it's that row an edit updates, not a second one.
+            apply(&mut conn, kind, "pc:12", Some(&body), "PC", "phone", 4).unwrap();
+            assert_eq!(count(&conn, kind).unwrap(), 1, "{kind}");
+        }
     }
 
     #[test]

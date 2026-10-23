@@ -36,7 +36,11 @@ export const pickedWords = (root: HTMLElement | null): Pick | null => {
   const selection = window.getSelection();
   if (!root || !selection || selection.isCollapsed || !selection.rangeCount)
     return null;
-  const text = selection.toString().trim().replace(/\s+/g, " ");
+  // "Karol," is the word Karol: punctuation at either end isn't part of it.
+  const text = selection
+    .toString()
+    .replace(/\s+/g, " ")
+    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
   if (!text || text.length > MAX_CHARS || text.split(" ").length > MAX_WORDS)
     return null;
   const lineOf = (node: Node | null) =>

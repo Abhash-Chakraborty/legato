@@ -26,8 +26,11 @@ export const LineText: React.FC<{
   preview?: boolean;
   /** Who the line can be given to, once voices were told apart. */
   voices?: Voice[];
+  /** Selected words can be added to the Dictionary (an
+   *  AddWordFromSelection is mounted around the line). */
+  canAddWord?: boolean;
   className?: string;
-}> = ({ line, preview, voices = [], className = "" }) => {
+}> = ({ line, preview, voices = [], canAddWord = false, className = "" }) => {
   const { t } = useTranslation();
   const names = useSpeakerNames();
   const speakers = useNotesStore(
@@ -209,7 +212,9 @@ export const LineText: React.FC<{
       onContextMenu={(e) => {
         if (editing) return;
         e.preventDefault();
-        setPicked(pickedWords(textRef.current)?.text ?? null);
+        setPicked(
+          canAddWord ? (pickedWords(textRef.current)?.text ?? null) : null,
+        );
         setMenu(true);
       }}
     >

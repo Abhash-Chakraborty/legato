@@ -40,8 +40,12 @@ export const YourName: React.FC<{ grouped?: boolean }> = ({
       nextHeard.join("\n") === saved.heard.join("\n")
     )
       return;
+    // A new name starts from the forms its Dictionary word already has;
+    // the ones shown were heard for the old name.
+    const renamed =
+      clean.toLowerCase() !== (saved?.name ?? "").trim().toLowerCase();
     const result = await commands
-      .setYourName(clean, clean ? nextHeard : [])
+      .setYourName(clean, clean && !renamed ? nextHeard : [])
       .catch(() => null);
     if (result?.status !== "ok") {
       toast.error(t("settings.yourName.failed"), {

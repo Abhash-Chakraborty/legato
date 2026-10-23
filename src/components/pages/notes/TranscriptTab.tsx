@@ -375,7 +375,7 @@ export const TranscriptTab: React.FC<{
                   {clock(line.at_ms)}
                 </button>
                 <SpeakerTag line={line} className="text-[13px]" />
-                <LineText line={line} voices={voices} />
+                <LineText line={line} voices={voices} canAddWord />
               </li>
             );
           })}

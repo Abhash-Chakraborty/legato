@@ -29,6 +29,9 @@ fn conn(app: &AppHandle) -> Result<Connection> {
 }
 
 pub fn list(app: &AppHandle) -> Result<Vec<TrashItem>> {
+    // Legato can run for weeks; what's past its 30 days goes now, not at
+    // the next start.
+    purge_expired(app);
     trash_store::list(&conn(app)?)
 }
 

@@ -208,7 +208,7 @@ impl ScratchpadManager {
         let mut conn = self.conn()?;
         let gone = store::delete(&mut conn, ids)?;
         let at = now();
-        for d in &gone {
+        let kept = gone.iter().try_for_each(|d| -> Result<()> {
             trash_store::put(
                 &conn,
                 &NewTrash {
@@ -221,6 +221,15 @@ impl ScratchpadManager {
                 },
                 at,
             )?;
+            Ok(())
+        });
+        if let Err(e) = kept {
+            // Never gone with no way back: put them back and say so.
+            store::restore(&mut conn, &gone)?;
+            for d in &gone {
+                trash_store::forget(&conn, TrashKind::Scratch, d.note.id)?;
+            }
+            return Err(e);
         }
         if !gone.is_empty() {
             crate::trash::changed(&self.app);

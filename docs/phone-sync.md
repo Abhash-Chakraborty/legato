@@ -225,19 +225,22 @@ note that loses keeps its text as a version, so nothing typed is lost.
 
 A device never sends an item back to the device it came from.
 
+Two bodies are the same item when their JSON matches with keys sorted and `null` fields left
+out, so a field added later (sent as `null` when unset) changes nothing for items without it.
+
 ## What syncs
 
 Each kind can be switched off on the PC. Keys are stable across devices.
 
-| Kind         | Key                                   | Body                                                                                                                |
-| ------------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `dictionary` | the word, lowercased                  | `text`, `case_sensitive`, `pinned`, `heard` (sorted), `kind` (only when set; a side without it keeps its own)       |
-| `snippets`   | the trigger, lowercased               | `trigger`, `text`, `alone`                                                                                          |
-| `history`    | `<device id>:<id on that device>`     | `text`, `heard`, `at` (seconds), `title`, `app`, `category`, `words`, `speech_ms`, `model`, `transform`             |
-| `notes`      | `<device id>:<id on that device>`     | `title`, `kind`, `started_at`, `duration_ms`, `app`, `my_notes`, `summary`, `decisions`, `tags`, `actions`, `lines` |
-| `scratchpad` | `<device id>:<id on that device>`     | `title`, `auto_title`, `text`, `pinned`, `created_at`, `updated_at`                                                 |
-| `transforms` | the transform's ID                    | `name`, `description`, `prompt`, `enabled`, `built_in`, `output`, `show_changes`, `position`                        |
-| `style`      | the kind of app (`personal`, `work`…) | `tone`                                                                                                              |
+| Kind         | Key                                   | Body                                                                                                                  |
+| ------------ | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `dictionary` | the word, lowercased                  | `text`, `case_sensitive`, `pinned`, `heard` (sorted), `kind` (`null` clears it; a side that sends none keeps its own) |
+| `snippets`   | the trigger, lowercased               | `trigger`, `text`, `alone`                                                                                            |
+| `history`    | `<device id>:<id on that device>`     | `text`, `heard`, `at` (seconds), `title`, `app`, `category`, `words`, `speech_ms`, `model`, `transform`               |
+| `notes`      | `<device id>:<id on that device>`     | `title`, `kind`, `started_at`, `duration_ms`, `app`, `my_notes`, `summary`, `decisions`, `tags`, `actions`, `lines`   |
+| `scratchpad` | `<device id>:<id on that device>`     | `title`, `auto_title`, `text`, `pinned`, `created_at`, `updated_at`                                                   |
+| `transforms` | the transform's ID                    | `name`, `description`, `prompt`, `enabled`, `built_in`, `output`, `show_changes`, `position`                          |
+| `style`      | the kind of app (`personal`, `work`…) | `tone`                                                                                                                |
 
 Rules per kind:
 
@@ -250,6 +253,9 @@ Rules per kind:
   PC's speaker model has told voices apart, a line carries `speaker` (1, 2, …) and the note
   `speakers`, a list of `{speaker, name}` for the voices given a name; both are left out when
   unset, so older notes hash as before. Saved voice clips stay on the PC.
+- **Notes and the Scratchpad**: a deleted note waits 30 days in Recently deleted on the device
+  it was deleted on. Restoring it there sends a newer version, and a device that had removed
+  that note puts it back.
 - **Transforms** leave out the AI provider and model, since API keys stay on each device.
 - **Style** syncs the tone only. Paste method, the key after paste and the trailing space
   belong to the PC.
