@@ -231,7 +231,7 @@ Each kind can be switched off on the PC. Keys are stable across devices.
 
 | Kind         | Key                                   | Body                                                                                                                |
 | ------------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `dictionary` | the word, lowercased                  | `text`, `case_sensitive`, `pinned`, `heard` (sorted)                                                                |
+| `dictionary` | the word, lowercased                  | `text`, `case_sensitive`, `pinned`, `heard` (sorted), `kind` (only when set; a side without it keeps its own)       |
 | `snippets`   | the trigger, lowercased               | `trigger`, `text`, `alone`                                                                                          |
 | `history`    | `<device id>:<id on that device>`     | `text`, `heard`, `at` (seconds), `title`, `app`, `category`, `words`, `speech_ms`, `model`, `transform`             |
 | `notes`      | `<device id>:<id on that device>`     | `title`, `kind`, `started_at`, `duration_ms`, `app`, `my_notes`, `summary`, `decisions`, `tags`, `actions`, `lines` |
