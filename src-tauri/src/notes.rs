@@ -1355,7 +1355,7 @@ fn spawn_speaker_passes(app: &AppHandle, note_id: i64, meeting: bool, shared: Ar
                     continue;
                 }
                 let started = Instant::now();
-                match find_speakers_in(&app, note_id, &track, meeting.then_some(side)) {
+                match find_speakers_in(&app, note_id, &track, meeting.then_some(side), false) {
                     Ok(count) => debug!(
                         "Live speaker pass: {count} voices in {:?}",
                         started.elapsed()
@@ -1776,7 +1776,7 @@ impl FollowUp {
 
     fn find_voices(&self, app: &AppHandle) {
         if let Some((audio, side)) = &self.voices {
-            match find_speakers_in(app, self.note_id, audio, *side) {
+            match find_speakers_in(app, self.note_id, audio, *side, true) {
                 Ok(count) => info!("Told {count} voices apart"),
                 Err(e) => warn!("Couldn't tell the voices apart: {e}"),
             }
@@ -1880,15 +1880,21 @@ static SPEAKER_PASS: Mutex<()> = Mutex::new(());
 /// line when None) to one of them. Numbers (and so names) stay with the
 /// voices they had, and lines given to someone by hand stay theirs. Then
 /// unnamed voices that sound like a saved one get its name. Returns how
-/// many voices were found.
+/// many voices were found. The last pass (`wide`) also tells apart more
+/// voices than the model holds at once, which takes longer.
 fn find_speakers_in(
     app: &AppHandle,
     note_id: i64,
     audio: &Path,
     side: Option<Speaker>,
+    wide: bool,
 ) -> Result<usize> {
     let _pass = lock(&SPEAKER_PASS);
-    let turns = crate::speakers::turns(app, audio)?;
+    let turns = if wide {
+        crate::speakers::turns_wide(app, audio)?
+    } else {
+        crate::speakers::turns(app, audio)?
+    };
     let m = manager(app);
     let conn = m.conn()?;
     let open = store::speaker_lines(&conn, note_id, side)?;
@@ -1953,7 +1959,7 @@ pub fn find_speakers(app: &AppHandle, note_id: i64) -> Result<usize> {
         .audio_file(note_id)?
         .ok_or_else(|| anyhow!("The note's audio isn't kept"))?;
     let side = (note.kind == NoteKind::Meeting).then_some(Speaker::Them);
-    find_speakers_in(app, note_id, &audio, side)
+    find_speakers_in(app, note_id, &audio, side, true)
 }
 
 /// Why a note has no summary, as Notes words it: "short", or how the

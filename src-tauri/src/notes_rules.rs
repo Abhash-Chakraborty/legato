@@ -285,6 +285,11 @@ pub fn keep_numbers(old: &[Option<i64>], new: &[Option<i64>]) -> Vec<Option<i64>
 /// clip in `[0, a_end_ms)`, the second in `[b_start_ms, b_end_ms)`. The
 /// voice that holds most of the first clip must hold most of the second.
 pub fn same_voice(turns: &[Turn], a_end_ms: i64, b_start_ms: i64, b_end_ms: i64) -> f64 {
+    same_voices(turns, a_end_ms, &[(b_start_ms, b_end_ms)])[0]
+}
+
+/// `same_voice` for one clip followed by several: a score for each span.
+pub fn same_voices(turns: &[Turn], a_end_ms: i64, spans: &[(i64, i64)]) -> Vec<f64> {
     let held = |from: i64, to: i64| -> Vec<(i32, i64)> {
         let mut cover: Vec<(i32, i64)> = Vec::new();
         for turn in turns {
@@ -300,16 +305,24 @@ pub fn same_voice(turns: &[Turn], a_end_ms: i64, b_start_ms: i64, b_end_ms: i64)
     };
     let top = |cover: &[(i32, i64)]| cover.iter().copied().max_by_key(|&(s, ms)| (ms, -s));
     let a = held(0, a_end_ms);
-    let b = held(b_start_ms, b_end_ms);
-    let (Some((voice, a_ms)), Some((b_voice, _))) = (top(&a), top(&b)) else {
-        return 0.0;
+    let Some((voice, a_ms)) = top(&a) else {
+        return vec![0.0; spans.len()];
     };
     // Mostly silence in the first clip: nothing to compare.
-    if voice != b_voice || (a_ms as f64) < a_end_ms as f64 * 0.5 {
-        return 0.0;
+    if (a_ms as f64) < a_end_ms as f64 * 0.5 {
+        return vec![0.0; spans.len()];
     }
-    let b_ms = b.iter().find(|(s, _)| *s == voice).map_or(0, |&(_, ms)| ms);
-    (b_ms as f64 / (b_end_ms - b_start_ms).max(1) as f64).min(1.0)
+    spans
+        .iter()
+        .map(|&(from, to)| {
+            let b = held(from, to);
+            if top(&b).map(|(v, _)| v) != Some(voice) {
+                return 0.0;
+            }
+            let b_ms = b.iter().find(|(s, _)| *s == voice).map_or(0, |&(_, ms)| ms);
+            (b_ms as f64 / (to - from).max(1) as f64).min(1.0)
+        })
+        .collect()
 }
 
 /// Two clips count as one voice from this score up.
@@ -342,6 +355,343 @@ pub fn pick_voices(scores: &[Vec<f64>]) -> Vec<Option<usize>> {
         }
     }
     picked
+}
+
+// ---- More voices than the speaker model holds --------------------------
+
+/// The speaker model keeps four voices apart. A long meeting with more is
+/// heard in one-minute windows, short enough that rarely more than four talk in one;
+/// neighbouring windows share a stretch, so a voice talking there links
+/// them, and voices that never share a window are compared by ear.
+pub const MODEL_VOICES: usize = 4;
+pub const VOICE_WINDOW_MS: i64 = 60_000;
+pub const VOICE_OVERLAP_MS: i64 = 20_000;
+/// A voice must talk this long in a shared stretch to link two windows.
+const LINK_MS: i64 = 1_500;
+
+/// The windows `[start, end)` a recording of `duration_ms` is heard in.
+pub fn voice_windows(duration_ms: i64) -> Vec<(i64, i64)> {
+    windows_of(duration_ms, VOICE_WINDOW_MS, VOICE_OVERLAP_MS)
+}
+
+pub fn windows_of(duration_ms: i64, window_ms: i64, overlap_ms: i64) -> Vec<(i64, i64)> {
+    let step = (window_ms - overlap_ms).max(1);
+    let mut out = Vec::new();
+    let mut start = 0;
+    loop {
+        let end = (start + window_ms).min(duration_ms);
+        out.push((start, end));
+        if end >= duration_ms {
+            break;
+        }
+        start += step;
+    }
+    out
+}
+
+/// One window's turns, in the recording's time, with the window's own
+/// voice numbers.
+#[derive(Debug, Clone)]
+pub struct WindowTurns {
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub turns: Vec<Turn>,
+}
+
+impl WindowTurns {
+    fn voices(&self) -> Vec<i32> {
+        let mut v: Vec<i32> = self.turns.iter().map(|t| t.speaker).collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+}
+
+/// How long each pair of voices talks at the same time within `[from, to)`.
+fn together(a: &[Turn], b: &[Turn], from: i64, to: i64) -> Vec<((i32, i32), i64)> {
+    let mut out: Vec<((i32, i32), i64)> = Vec::new();
+    for x in a {
+        for y in b {
+            let overlap = x.t1_ms.min(y.t1_ms).min(to) - x.t0_ms.max(y.t0_ms).max(from);
+            if overlap > 0 {
+                match out.iter_mut().find(|(p, _)| *p == (x.speaker, y.speaker)) {
+                    Some((_, ms)) => *ms += overlap,
+                    None => out.push(((x.speaker, y.speaker), overlap)),
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The meeting's voices before any are compared by ear: each window's
+/// voices, linked to the next window's where they talk in the stretch the
+/// two share. `groups[w]` gives each voice of window `w` its group.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoiceGroups {
+    pub groups: Vec<Vec<(i32, usize)>>,
+    pub count: usize,
+}
+
+impl VoiceGroups {
+    pub fn of(&self, window: usize, voice: i32) -> Option<usize> {
+        self.groups
+            .get(window)?
+            .iter()
+            .find(|(v, _)| *v == voice)
+            .map(|&(_, g)| g)
+    }
+
+    /// The windows each group talks in.
+    pub fn windows(&self) -> Vec<Vec<usize>> {
+        let mut out = vec![Vec::new(); self.count];
+        for (w, voices) in self.groups.iter().enumerate() {
+            for &(_, g) in voices {
+                if !out[g].contains(&w) {
+                    out[g].push(w);
+                }
+            }
+        }
+        out
+    }
+}
+
+pub fn link_windows(windows: &[WindowTurns]) -> VoiceGroups {
+    let mut groups: Vec<Vec<(i32, usize)>> = Vec::with_capacity(windows.len());
+    let mut count = 0;
+    for (w, window) in windows.iter().enumerate() {
+        let mut mine: Vec<(i32, usize)> = Vec::new();
+        if w > 0 {
+            let before = &windows[w - 1];
+            let mut pairs = together(&before.turns, &window.turns, window.start_ms, before.end_ms);
+            pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            for ((old, new), ms) in pairs {
+                if ms < LINK_MS || mine.iter().any(|(v, _)| *v == new) {
+                    continue;
+                }
+                let Some(group) = groups[w - 1].iter().find(|(v, _)| *v == old).map(|p| p.1) else {
+                    continue;
+                };
+                if mine.iter().any(|&(_, g)| g == group) {
+                    continue;
+                }
+                mine.push((new, group));
+            }
+        }
+        for voice in window.voices() {
+            if !mine.iter().any(|(v, _)| *v == voice) {
+                mine.push((voice, count));
+                count += 1;
+            }
+        }
+        groups.push(mine);
+    }
+    VoiceGroups { groups, count }
+}
+
+/// Each voice linked to the window before: (window, voice, earlier voice).
+pub fn window_links(groups: &VoiceGroups) -> Vec<(usize, i32, i32)> {
+    let mut out = Vec::new();
+    for w in 1..groups.groups.len() {
+        for &(voice, g) in &groups.groups[w] {
+            if let Some(&(earlier, _)) = groups.groups[w - 1].iter().find(|&&(_, h)| h == g) {
+                out.push((w, voice, earlier));
+            }
+        }
+    }
+    out
+}
+
+/// A link is doubted when the model, hearing the two voices one after the
+/// other, scores them below this.
+pub const LINK_DOUBT: f64 = 0.3;
+
+/// A stretch `(start, end)` of the recording, in ms.
+pub type Span = (i64, i64);
+
+/// What to play to check each link by ear: the later voice's clearest
+/// stretch after the shared part, and the earlier voice's before it. None
+/// when either has no stretch long enough.
+pub fn link_clips(
+    windows: &[WindowTurns],
+    links: &[(usize, i32, i32)],
+    min_ms: i64,
+    max_ms: i64,
+) -> Vec<Option<(Span, Span)>> {
+    links
+        .iter()
+        .map(|&(w, voice, earlier)| {
+            let (now, before) = (windows.get(w)?, windows.get(w.checked_sub(1)?)?);
+            let after: Vec<Turn> = now
+                .turns
+                .iter()
+                .filter(|t| t.t0_ms >= before.end_ms)
+                .copied()
+                .collect();
+            let ahead: Vec<Turn> = before
+                .turns
+                .iter()
+                .filter(|t| t.t1_ms <= now.start_ms)
+                .copied()
+                .collect();
+            let slot = |v: i32| usize::try_from(v - 1).ok();
+            let a = *clearest_turns(&after, MODEL_VOICES, min_ms, max_ms).get(slot(voice)?)?;
+            let b = *clearest_turns(&ahead, MODEL_VOICES, min_ms, max_ms).get(slot(earlier)?)?;
+            Some((a?, b?))
+        })
+        .collect()
+}
+
+/// The groups again without the links in `broken` (window, voice): that
+/// voice and the windows after it that were linked through it start a new
+/// group. Groups are numbered in the order they first talk.
+pub fn unlink(groups: &VoiceGroups, broken: &[(usize, i32)]) -> VoiceGroups {
+    let mut out: Vec<Vec<(i32, usize)>> = Vec::with_capacity(groups.groups.len());
+    let mut count = 0;
+    for (w, voices) in groups.groups.iter().enumerate() {
+        let mut mine = Vec::new();
+        for &(voice, g) in voices {
+            let earlier = (w > 0 && !broken.contains(&(w, voice)))
+                .then(|| groups.groups[w - 1].iter().position(|&(_, h)| h == g))
+                .flatten();
+            let group = match earlier {
+                Some(i) => out[w - 1][i].1,
+                None => {
+                    count += 1;
+                    count - 1
+                }
+            };
+            mine.push((voice, group));
+        }
+        out.push(mine);
+    }
+    VoiceGroups { groups: out, count }
+}
+
+/// Joins groups the comparisons say are one voice, the surest first. Two
+/// groups that talk in the same window stay apart: the model told them
+/// apart there. `pairs` are (group, group, score); returns each group's
+/// voice, numbered from 0 in group order.
+pub fn join_voices(groups: &VoiceGroups, pairs: &[(usize, usize, f64)]) -> Vec<usize> {
+    let mut root: Vec<usize> = (0..groups.count).collect();
+    let mut windows = groups.windows();
+    fn find(root: &mut [usize], g: usize) -> usize {
+        let mut g = g;
+        while root[g] != g {
+            root[g] = root[root[g]];
+            g = root[g];
+        }
+        g
+    }
+    let mut sure: Vec<&(usize, usize, f64)> = pairs.iter().filter(|p| p.2 >= SAME_VOICE).collect();
+    sure.sort_by(|a, b| b.2.total_cmp(&a.2).then((a.0, a.1).cmp(&(b.0, b.1))));
+    for &&(a, b, _) in &sure {
+        if a >= groups.count || b >= groups.count {
+            continue;
+        }
+        let (ra, rb) = (find(&mut root, a), find(&mut root, b));
+        if ra == rb || windows[ra].iter().any(|w| windows[rb].contains(w)) {
+            continue;
+        }
+        let (keep, gone) = (ra.min(rb), ra.max(rb));
+        root[gone] = keep;
+        let moved = std::mem::take(&mut windows[gone]);
+        windows[keep].extend(moved);
+    }
+    let mut number: Vec<usize> = Vec::new();
+    (0..groups.count)
+        .map(|g| {
+            let r = find(&mut root, g);
+            match number.iter().position(|&n| n == r) {
+                Some(i) => i,
+                None => {
+                    number.push(r);
+                    number.len() - 1
+                }
+            }
+        })
+        .collect()
+}
+
+/// The whole recording's turns from its windows: each window keeps the
+/// part up to the middle of the stretch it shares with the next, and each
+/// turn takes its voice's number (from 1).
+pub fn stitch_turns(windows: &[WindowTurns], groups: &VoiceGroups, voice: &[usize]) -> Vec<Turn> {
+    let mut out = Vec::new();
+    for (w, window) in windows.iter().enumerate() {
+        let from = match w {
+            0 => i64::MIN,
+            _ => (window.start_ms + windows[w - 1].end_ms) / 2,
+        };
+        let to = match windows.get(w + 1) {
+            Some(next) => (next.start_ms + window.end_ms) / 2,
+            None => i64::MAX,
+        };
+        for turn in &window.turns {
+            let (t0, t1) = (turn.t0_ms.max(from), turn.t1_ms.min(to));
+            let Some(g) = groups.of(w, turn.speaker) else {
+                continue;
+            };
+            if t1 > t0 {
+                out.push(Turn {
+                    speaker: voice.get(g).map_or(g, |&v| v) as i32 + 1,
+                    t0_ms: t0,
+                    t1_ms: t1,
+                });
+            }
+        }
+    }
+    out.sort_by_key(|t| (t.t0_ms, t.speaker));
+    out
+}
+
+/// The clearest stretch of each voice in `turns`, at least `min_ms` long:
+/// its longest turn that no one talks over, cut to `max_ms`. Indexed by
+/// voice number - 1.
+pub fn clearest_turns(
+    turns: &[Turn],
+    voices: usize,
+    min_ms: i64,
+    max_ms: i64,
+) -> Vec<Option<(i64, i64)>> {
+    let mut best: Vec<Option<(i64, i64)>> = vec![None; voices];
+    for (i, turn) in turns.iter().enumerate() {
+        let Some(slot) = usize::try_from(turn.speaker - 1)
+            .ok()
+            .filter(|&s| s < voices)
+        else {
+            continue;
+        };
+        let talked_over = turns.iter().enumerate().any(|(j, o)| {
+            j != i && o.speaker != turn.speaker && o.t0_ms < turn.t1_ms && o.t1_ms > turn.t0_ms
+        });
+        let length = turn.t1_ms - turn.t0_ms;
+        if talked_over || length < min_ms {
+            continue;
+        }
+        if best[slot].is_none_or(|(a, b)| b - a < length.min(max_ms)) {
+            best[slot] = Some((turn.t0_ms, turn.t0_ms + length.min(max_ms)));
+        }
+    }
+    best
+}
+
+/// Pairs of groups worth comparing: they never talk in the same window,
+/// and both have a clip.
+pub fn voice_pairs(groups: &VoiceGroups, has_clip: &[bool]) -> Vec<(usize, usize)> {
+    let windows = groups.windows();
+    let mut out = Vec::new();
+    for a in 0..groups.count {
+        for b in a + 1..groups.count {
+            if has_clip.get(a) == Some(&true)
+                && has_clip.get(b) == Some(&true)
+                && !windows[a].iter().any(|w| windows[b].contains(w))
+            {
+                out.push((a, b));
+            }
+        }
+    }
+    out
 }
 
 /// Whether a microphone line is the speakers playing a line of the call back
@@ -1536,5 +1886,149 @@ mod tests {
         // Both voices sound like the same saved one: neither is named.
         assert_eq!(pick_voices(&[vec![0.9], vec![0.8]]), vec![None, None]);
         assert_eq!(pick_voices(&[vec![]]), vec![None]);
+    }
+
+    fn turn(speaker: i32, t0_s: i64, t1_s: i64) -> Turn {
+        Turn {
+            speaker,
+            t0_ms: t0_s * 1000,
+            t1_ms: t1_s * 1000,
+        }
+    }
+
+    #[test]
+    fn long_meetings_are_heard_in_overlapping_windows() {
+        assert_eq!(voice_windows(50_000), vec![(0, 50_000)]);
+        assert_eq!(voice_windows(90_000), vec![(0, 60_000), (40_000, 90_000)]);
+        assert_eq!(
+            voice_windows(150_000),
+            vec![
+                (0, 60_000),
+                (40_000, 100_000),
+                (80_000, 140_000),
+                (120_000, 150_000)
+            ]
+        );
+        assert_eq!(windows_of(300_000, 120_000, 30_000).len(), 3);
+    }
+
+    #[test]
+    fn one_clip_is_compared_with_several() {
+        // A in 0-5 s, then three clips; the second is A's voice again.
+        let t = [
+            turn(1, 0, 5),
+            turn(2, 6, 10),
+            turn(1, 11, 15),
+            turn(3, 16, 20),
+        ];
+        let scores = same_voices(
+            &t,
+            5_000,
+            &[(5_600, 10_000), (10_600, 15_000), (15_600, 20_000)],
+        );
+        assert_eq!(scores[0], 0.0);
+        assert!(scores[1] > 0.9);
+        assert_eq!(scores[2], 0.0);
+    }
+
+    fn three_windows() -> Vec<WindowTurns> {
+        vec![
+            // Ana, then Ben, then Cy, who's still talking into window 2.
+            WindowTurns {
+                start_ms: 0,
+                end_ms: 120_000,
+                turns: vec![turn(1, 0, 50), turn(2, 50, 95), turn(3, 95, 120)],
+            },
+            // Cy carries on, then Dee, a new voice.
+            WindowTurns {
+                start_ms: 90_000,
+                end_ms: 210_000,
+                turns: vec![turn(1, 92, 95), turn(2, 95, 150), turn(3, 150, 210)],
+            },
+            // Dee isn't heard in the shared stretch; Ana is back.
+            WindowTurns {
+                start_ms: 180_000,
+                end_ms: 300_000,
+                turns: vec![turn(1, 212, 300)],
+            },
+        ]
+    }
+
+    #[test]
+    fn voices_talking_in_a_shared_stretch_link_two_windows() {
+        let groups = link_windows(&three_windows());
+        // Window 1's voice 1 is Ben (talking 92-95 s), voice 2 is Cy.
+        assert_eq!(groups.of(1, 1), groups.of(0, 2));
+        assert_eq!(groups.of(1, 2), groups.of(0, 3));
+        assert_eq!(groups.of(1, 3), Some(3));
+        // Nothing links window 3's voice: it starts a group of its own.
+        assert_eq!(groups.of(2, 1), Some(4));
+        assert_eq!(groups.count, 5);
+        assert_eq!(groups.windows()[2], vec![0, 1]);
+    }
+
+    #[test]
+    fn voices_join_by_ear_only_if_they_never_share_a_window() {
+        let groups = link_windows(&three_windows());
+        // Window 3's voice sounds like Ana (group 0), and also like Cy
+        // (group 2), who shares no window with it either; Ana is surer.
+        // Ben and Dee share window 2, so a high score can't join them.
+        let voice = join_voices(
+            &groups,
+            &[(2, 4, 0.7), (0, 4, 0.9), (1, 3, 0.95), (0, 3, 0.4)],
+        );
+        assert_eq!(voice[4], voice[0]);
+        assert_ne!(voice[4], voice[2]);
+        assert_ne!(voice[1], voice[3]);
+        assert_eq!(voice, vec![0, 1, 2, 3, 0]);
+        let turns = stitch_turns(&three_windows(), &groups, &voice);
+        // Cy's turn is cut where the windows meet (105 s) and goes on in
+        // window 2 under the same number.
+        assert!(turns.contains(&turn(3, 95, 105)));
+        assert!(turns.contains(&turn(3, 105, 150)));
+        // Dee's turn ends where windows 2 and 3 meet (195 s); Ana's comes
+        // back as voice 1.
+        assert!(turns.contains(&turn(4, 150, 195)));
+        assert_eq!(turns.last(), Some(&turn(1, 212, 300)));
+    }
+
+    #[test]
+    fn voices_to_compare_have_a_clip_and_no_shared_window() {
+        let groups = link_windows(&three_windows());
+        let pairs = voice_pairs(&groups, &[true, true, true, true, true]);
+        assert!(pairs.contains(&(0, 4)));
+        assert!(pairs.contains(&(2, 4)));
+        assert!(!pairs.contains(&(1, 3)));
+        assert!(!pairs.contains(&(0, 1)));
+        assert!(!voice_pairs(&groups, &[false, true, true, true, true]).contains(&(0, 4)));
+    }
+
+    #[test]
+    fn a_voice_is_clearest_where_no_one_talks_over_it() {
+        let t = [
+            turn(1, 0, 3),
+            turn(2, 2, 12),
+            turn(1, 12, 16),
+            turn(2, 20, 21),
+        ];
+        let clips = clearest_turns(&t, 2, 2_500, 6_000);
+        assert_eq!(clips[0], Some((12_000, 16_000)));
+        // Voice 2's long turn is talked over at the start; its clean one is
+        // too short.
+        assert_eq!(clips[1], None);
+    }
+
+    #[test]
+    fn a_link_that_fails_by_ear_starts_a_new_group() {
+        let groups = link_windows(&three_windows());
+        let links = window_links(&groups);
+        assert_eq!(links.len(), 2);
+        assert!(links.contains(&(1, 1, 2)) && links.contains(&(1, 2, 3)));
+        // Window 2's voice 2 doesn't sound like window 1's voice 3.
+        let apart = unlink(&groups, &[(1, 2)]);
+        assert_eq!(apart.count, 6);
+        assert_eq!(apart.of(1, 1), groups.of(0, 2));
+        assert_ne!(apart.of(1, 2), apart.of(0, 3));
+        assert_eq!(unlink(&groups, &[]), groups);
     }
 }

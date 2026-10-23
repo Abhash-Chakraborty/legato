@@ -1,6 +1,9 @@
 //! Telling voices apart in Notes: the speaker model, downloaded on request
 //! from Settings › Context & calls, and who spoke when in a recording. The
 //! model runs in a transcription worker of its own (`engine_supervisor`).
+//! It holds four voices; after a meeting that fills all four, the recording
+//! is heard again in one-minute windows whose voices are joined into the
+//! meeting's, so a big call keeps everyone apart.
 //!
 //! Naming a speaker saves a short clip of their voice (on this PC only,
 //! never synced). A later meeting plays each unnamed voice next to every
@@ -231,6 +234,193 @@ fn turns_many(app: &AppHandle, files: &[PathBuf]) -> Result<Vec<Vec<Turn>>> {
                 .collect()
         })
         .collect())
+}
+
+// ---- More than four voices ---------------------------------------------
+
+/// After a big meeting, at most this many comparisons run, each one voice
+/// played before up to three others.
+const MAX_COMPARE_FILES: usize = 120;
+const PER_FILE: usize = 3;
+
+fn samples_ms(samples: usize) -> i64 {
+    samples as i64 * 1000 / RATE as i64
+}
+
+/// Who spoke when, for any number of voices. A recording where the model
+/// filled all four of its voices is heard again in short windows, and the
+/// windows' voices are joined into the meeting's: by who talks where two
+/// windows overlap, then by playing voices that never share a window one
+/// after the other through the model. Blocks for a while.
+pub fn turns_wide(app: &AppHandle, audio: &Path) -> Result<Vec<Turn>> {
+    let whole = turns(app, audio)?;
+    let mut voices: Vec<i32> = whole.iter().map(|t| t.speaker).collect();
+    voices.sort_unstable();
+    voices.dedup();
+    let reader = hound::WavReader::open(audio)?;
+    let duration = samples_ms(reader.duration() as usize);
+    drop(reader);
+    let windows = notes_rules::voice_windows(duration);
+    if voices.len() < notes_rules::MODEL_VOICES || windows.len() < 2 {
+        return Ok(whole);
+    }
+    let started = Instant::now();
+    let dir = voices_dir(app)?.join(format!("windows-{}", now()));
+    std::fs::create_dir_all(&dir)?;
+    let result = windowed(app, audio, &windows, &dir);
+    let _ = std::fs::remove_dir_all(&dir);
+    let turns = result?;
+    let mut found: Vec<i32> = turns.iter().map(|t| t.speaker).collect();
+    found.sort_unstable();
+    found.dedup();
+    info!(
+        "Heard {} windows and found {} voices in {:?}",
+        windows.len(),
+        found.len(),
+        started.elapsed()
+    );
+    Ok(turns)
+}
+
+fn windowed(app: &AppHandle, audio: &Path, spans: &[(i64, i64)], dir: &Path) -> Result<Vec<Turn>> {
+    let mut files = Vec::new();
+    for (i, &(from, to)) in spans.iter().enumerate() {
+        let path = dir.join(format!("w{i}.wav"));
+        write_wav(&path, &read_wav(audio, from, to - from)?)?;
+        files.push(path);
+    }
+    let windows: Vec<notes_rules::WindowTurns> = spans
+        .iter()
+        .zip(turns_many(app, &files)?)
+        .map(|(&(from, to), turns)| notes_rules::WindowTurns {
+            start_ms: from,
+            end_ms: to,
+            turns: turns
+                .into_iter()
+                .map(|t| Turn {
+                    speaker: t.speaker,
+                    t0_ms: t.t0_ms + from,
+                    t1_ms: t.t1_ms + from,
+                })
+                .collect(),
+        })
+        .collect();
+    let groups = check_links(
+        app,
+        audio,
+        &windows,
+        notes_rules::link_windows(&windows),
+        dir,
+    )?;
+    let apart: Vec<usize> = (0..groups.count).collect();
+    let linked = notes_rules::stitch_turns(&windows, &groups, &apart);
+    let clips = notes_rules::clearest_turns(&linked, groups.count, MIN_CLIP_MS, COMPARE_MS);
+    let has_clip: Vec<bool> = clips.iter().map(Option::is_some).collect();
+
+    // Each voice, then up to three it might be, in one file.
+    let mut jobs: Vec<(usize, Vec<usize>)> = Vec::new();
+    for (a, b) in notes_rules::voice_pairs(&groups, &has_clip) {
+        match jobs.last_mut() {
+            Some((first, others)) if *first == a && others.len() < PER_FILE => others.push(b),
+            _ => jobs.push((a, vec![b])),
+        }
+    }
+    if jobs.len() > MAX_COMPARE_FILES {
+        warn!(
+            "{} voice comparisons needed; running the first {MAX_COMPARE_FILES}",
+            jobs.len()
+        );
+        jobs.truncate(MAX_COMPARE_FILES);
+    }
+    let clip_of = |g: usize| -> Result<Vec<i16>> {
+        let (from, to) = clips[g].ok_or_else(|| anyhow!("No clip for that voice"))?;
+        read_wav(audio, from, to - from)
+    };
+    let gap = vec![0i16; (GAP_MS * RATE as i64 / 1000) as usize];
+    let mut files = Vec::new();
+    let mut layout: Vec<(i64, Vec<(i64, i64)>)> = Vec::new();
+    for (k, (a, others)) in jobs.iter().enumerate() {
+        let mut samples = clip_of(*a)?;
+        let a_end = samples_ms(samples.len());
+        let mut spans = Vec::new();
+        for &b in others {
+            samples.extend_from_slice(&gap);
+            let start = samples_ms(samples.len());
+            samples.extend(clip_of(b)?);
+            spans.push((start, samples_ms(samples.len())));
+        }
+        let path = dir.join(format!("c{k}.wav"));
+        write_wav(&path, &samples)?;
+        files.push(path);
+        layout.push((a_end, spans));
+    }
+    let heard = if files.is_empty() {
+        Vec::new()
+    } else {
+        turns_many(app, &files)?
+    };
+    let mut scores = Vec::new();
+    for (((a, others), (a_end, spans)), turns) in jobs.iter().zip(&layout).zip(&heard) {
+        for (&b, score) in others
+            .iter()
+            .zip(notes_rules::same_voices(turns, *a_end, spans))
+        {
+            scores.push((*a, b, score));
+        }
+    }
+    let voice = notes_rules::join_voices(&groups, &scores);
+    Ok(notes_rules::stitch_turns(&windows, &groups, &voice))
+}
+
+/// Plays each voice linked across two windows next to the voice it was
+/// linked to, on stretches the windows don't share, and drops the links
+/// the model hears as two people: a window that mixed up two voices
+/// mustn't hand the mix-up on.
+fn check_links(
+    app: &AppHandle,
+    audio: &Path,
+    windows: &[notes_rules::WindowTurns],
+    groups: notes_rules::VoiceGroups,
+    dir: &Path,
+) -> Result<notes_rules::VoiceGroups> {
+    let links = notes_rules::window_links(&groups);
+    let clips = notes_rules::link_clips(windows, &links, MIN_CLIP_MS, COMPARE_MS);
+    let gap = vec![0i16; (GAP_MS * RATE as i64 / 1000) as usize];
+    let mut files = Vec::new();
+    let mut checks = Vec::new();
+    for (k, (link, clip)) in links.iter().zip(&clips).enumerate() {
+        let Some(((a0, a1), (b0, b1))) = *clip else {
+            continue;
+        };
+        let mut samples = read_wav(audio, a0, a1 - a0)?;
+        let a_end = samples_ms(samples.len());
+        samples.extend_from_slice(&gap);
+        let b_start = samples_ms(samples.len());
+        samples.extend(read_wav(audio, b0, b1 - b0)?);
+        let path = dir.join(format!("l{k}.wav"));
+        write_wav(&path, &samples)?;
+        files.push(path);
+        checks.push((*link, a_end, b_start, samples_ms(samples.len())));
+    }
+    if files.is_empty() {
+        return Ok(groups);
+    }
+    let broken: Vec<(usize, i32)> = checks
+        .iter()
+        .zip(turns_many(app, &files)?)
+        .filter(|((_, a_end, b_start, b_end), turns)| {
+            notes_rules::same_voice(turns, *a_end, *b_start, *b_end) < notes_rules::LINK_DOUBT
+        })
+        .map(|(((w, voice, _), ..), _)| (*w, *voice))
+        .collect();
+    if !broken.is_empty() {
+        info!(
+            "{} of {} window links didn't hold up",
+            broken.len(),
+            checks.len()
+        );
+    }
+    Ok(notes_rules::unlink(&groups, &broken))
 }
 
 // ---- Saved voices -------------------------------------------------------
