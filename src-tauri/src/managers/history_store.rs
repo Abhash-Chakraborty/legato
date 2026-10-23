@@ -410,6 +410,21 @@ pub static MIGRATIONS: &[M] = &[
         "ALTER TABLE note ADD COLUMN outline TEXT;
          ALTER TABLE note ADD COLUMN attendees TEXT;",
     ),
+    // Recently deleted: a deleted note or Scratchpad note, whole, for 30
+    // days.
+    M::up(
+        "CREATE TABLE trash (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            item_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            preview TEXT NOT NULL DEFAULT '',
+            duration_ms INTEGER,
+            deleted_at INTEGER NOT NULL,
+            payload TEXT NOT NULL
+        );
+        CREATE INDEX idx_trash_deleted_at ON trash(deleted_at);",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.

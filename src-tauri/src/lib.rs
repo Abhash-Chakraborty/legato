@@ -53,6 +53,7 @@ mod sync;
 mod transcription_coordinator;
 mod transform_rules;
 mod transforms;
+mod trash;
 mod tray;
 mod tray_i18n;
 mod utils;
@@ -390,6 +391,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(snippet_manager);
     app_handle.manage(scratchpad_manager);
     app_handle.manage(notes_manager);
+    // Items deleted more than 30 days ago leave Recently deleted.
+    {
+        let app = app_handle.clone();
+        std::thread::spawn(move || trash::purge_expired(&app));
+    }
     app_handle.manage(context::DictationContext::default());
     app_handle.manage(tray::TrayState::new());
     // Watches for calls, to offer notes.
@@ -1137,6 +1143,10 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::set_note_action_done,
             commands::notes::delete_note,
             commands::notes::restore_note,
+            commands::trash::list_trash,
+            commands::trash::restore_trash,
+            commands::trash::delete_trash_forever,
+            commands::trash::empty_trash,
             commands::notes::get_note_audio,
             commands::notes::get_note_markdown,
             commands::notes::copy_note_formatted,
@@ -1190,6 +1200,7 @@ pub fn run(cli_args: CliArgs) {
             scratchpad::ScratchpadInsert,
             scratchpad::ScratchpadDictating,
             notes::NotesChanged,
+            trash::TrashChanged,
             notes::NoteLineAdded,
             notes::NotePreview,
             notes::NoteLineChanged,

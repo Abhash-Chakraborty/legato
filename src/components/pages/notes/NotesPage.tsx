@@ -28,6 +28,12 @@ import { NoteRow } from "./NoteRow";
 import { RecordDialog } from "./RecordDialog";
 import { RecordingStrip } from "./RecordingStrip";
 import { CallStrip } from "./CallStrip";
+import { ConfirmDelete } from "../../shared/ConfirmDelete";
+import {
+  RecentlyDeleted,
+  RecentlyDeletedLink,
+  useTrash,
+} from "../../shared/RecentlyDeleted";
 
 /** Search results: matching note ids, with the transcript line that matched
  *  when only the transcript did. */
@@ -209,6 +215,11 @@ export const NotesPage: React.FC = () => {
     );
   }, []);
 
+  // Deleting asks first; the note then waits in Recently deleted.
+  const [asking, setAsking] = useState<Note | null>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const trash = useTrash("note");
+
   const remove = async (note: Note) => {
     setHidden((h) => new Set(h).add(note.id));
     const result = await commands.deleteNote(note.id);
@@ -296,9 +307,7 @@ export const NotesPage: React.FC = () => {
     } else if (key === "delete" && note.id !== recordingId) {
       e.preventDefault();
       const next = ids[i + 1] ?? ids[i - 1];
-      focusRow(next);
-      if (next !== undefined) setSelectedId(next);
-      remove(note);
+      setAsking(note);
     }
   };
 
@@ -527,19 +536,25 @@ export const NotesPage: React.FC = () => {
                     selected={note.id === selected?.id}
                     onFocusRow={() => setFocusedId(note.id)}
                     onOpen={() => setSelectedId(note.id)}
-                    onDelete={() => remove(note)}
+                    onDelete={() => setAsking(note)}
                   />
                 ))}
               </ul>
             )}
-            <p className="border-t border-line px-4 py-2.5 text-xs text-text-3">
-              {t("notes.footer", {
-                notes: t("notes.counts.notes", {
-                  count: all.length,
-                  formatted: all.length.toLocaleString(i18n.language),
-                }),
-                duration: durationLabel(totalMs),
-              })}
+            <p className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line px-4 py-2.5 text-xs text-text-3">
+              <span>
+                {t("notes.footer", {
+                  notes: t("notes.counts.notes", {
+                    count: all.length,
+                    formatted: all.length.toLocaleString(i18n.language),
+                  }),
+                  duration: durationLabel(totalMs),
+                })}
+              </span>
+              <RecentlyDeletedLink
+                count={trash.length}
+                onOpen={() => setTrashOpen(true)}
+              />
             </p>
           </div>
 
@@ -552,7 +567,7 @@ export const NotesPage: React.FC = () => {
                 finishing={
                   selected.id === recordingId && session?.phase === "finishing"
                 }
-                onDelete={() => remove(selected)}
+                onDelete={() => setAsking(selected)}
               />
             ) : (
               <p className="px-7 py-14 text-center text-[13px] text-text-3">
@@ -572,6 +587,36 @@ export const NotesPage: React.FC = () => {
           setQuery("");
           setFilter("all");
           setTag(null);
+        }}
+      />
+
+      <ConfirmDelete
+        open={asking !== null}
+        title={t("notes.confirmDelete.title", { title: asking?.title ?? "" })}
+        description={t("notes.confirmDelete.description")}
+        onCancel={() => setAsking(null)}
+        onConfirm={() => {
+          const note = asking;
+          setAsking(null);
+          if (!note) return;
+          // The next note along takes the selection and focus.
+          const i = ids.indexOf(note.id);
+          const next = ids[i + 1] ?? ids[i - 1];
+          if (selected?.id === note.id && next !== undefined) {
+            setSelectedId(next);
+            focusRow(next);
+          }
+          remove(note);
+        }}
+      />
+      <RecentlyDeleted
+        kind="note"
+        items={trash}
+        open={trashOpen}
+        onClose={() => setTrashOpen(false)}
+        onRestored={(item) => {
+          setTrashOpen(false);
+          setSelectedId(item.item_id);
         }}
       />
     </div>

@@ -1976,6 +1976,48 @@ async restoreNote(deleted: DeletedRecording) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Recently deleted, newest first.
+ */
+async listTrash() : Promise<Result<TrashItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_trash") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Puts a deleted note back; says which kind it was.
+ */
+async restoreTrash(id: number) : Promise<Result<TrashKind, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_trash", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteTrashForever(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_trash_forever", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Deletes every note of a kind in Recently deleted for good; returns how
+ * many.
+ */
+async emptyTrash(kind: TrashKind) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("empty_trash", { kind }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getNoteAudio(id: number) : Promise<Result<string | null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_note_audio", { id }) };
@@ -2435,6 +2477,7 @@ speakerModelChanged: SpeakerModelChanged,
 noteLineChanged: NoteLineChanged,
 noteLineRemoved: NoteLineRemoved,
 notesChanged: NotesChanged,
+trashChanged: TrashChanged,
 notesSessionChanged: NotesSessionChanged,
 notesTick: NotesTick,
 micCheckLevel: MicCheckLevel,
@@ -2466,6 +2509,7 @@ speakerModelChanged: "speaker-model-changed",
 noteLineChanged: "note-line-changed",
 noteLineRemoved: "note-line-removed",
 notesChanged: "notes-changed",
+trashChanged: "trash-changed",
 notesSessionChanged: "notes-session-changed",
 notesTick: "notes-tick",
 micCheckLevel: "mic-check-level",
@@ -3015,6 +3059,39 @@ export type NoteLineRemoved = { note_id: number; line_id: number }
 export type NoteMatch = { id: number; line: NoteLine | null }
 export type NoteStatus = "recording" | "transcribing" | "summarising" | "ready"
 export type NotesChanged = null
+/**
+ * Sent when something goes into Recently deleted or leaves it.
+ */
+export type TrashChanged = null
+/**
+ * A row of Recently deleted, without what it holds.
+ */
+export type TrashItem = { id: number; kind: TrashKind; 
+/**
+ * The note's id, which it gets back on restore.
+ */
+item_id: number; title: string; 
+/**
+ * The start of its text.
+ */
+preview: string; 
+/**
+ * A recording's length.
+ */
+duration_ms: number | null; 
+/**
+ * Unix seconds.
+ */
+deleted_at: number }
+export type TrashKind = 
+/**
+ * A Notes recording, with its transcript and audio.
+ */
+"note" | 
+/**
+ * A Scratchpad note, with its versions.
+ */
+"scratch"
 export type NotesSessionChanged = { session: SessionInfo | null }
 export type NotesTick = { elapsed_ms: number; you: number; them: number | null; paused: boolean; pending: number }
 export type SessionInfo = { note_id: number; kind: NoteKind; title: string; started_at: number; phase: SessionPhase; paused: boolean; elapsed_ms: number; pending: number; microphone: string; system_audio: string | null; system_fallback: boolean; max_ms: number }

@@ -1417,7 +1417,8 @@
     "copy": "Copy",
     "clear": "Clear",
     "noOptionsFound": "No options found",
-    "resetToDefault": "Reset to default"
+    "resetToDefault": "Reset to default",
+    "cancel": "Cancel"
   },
   "contextMenu": {
     "cut": "Cut",
@@ -2704,7 +2705,7 @@
     },
     "toast": {
       "copied": "Copied to the clipboard",
-      "deleted": "Deleted “{{title}}”",
+      "deleted": "Moved “{{title}}” to Recently deleted",
       "undo": "Undo",
       "deleteFailed": "Couldn't delete the note",
       "newFailed": "Couldn't start a note",
@@ -2790,6 +2791,10 @@
       "none": "No transforms are turned on",
       "done": "Rewrote it with {{name}}",
       "failed": "{{name}} didn't run"
+    },
+    "confirmDelete": {
+      "title": "Delete “{{title}}”?",
+      "description": "It moves to Recently deleted with its versions, and you can restore it for 30 days."
     }
   },
   "notes": {
@@ -3003,7 +3008,7 @@
     "toast": {
       "startFailed": "Couldn't start recording",
       "actionFailed": "That didn't work",
-      "deleted": "Deleted {{title}}",
+      "deleted": "Moved {{title}} to Recently deleted",
       "undo": "Undo",
       "deleteFailed": "Couldn't delete the note",
       "restoreFailed": "Couldn't bring the note back",
@@ -3085,6 +3090,10 @@
       "setUpHint": "Download the speaker model in Settings",
       "recognised": "{{name}}, recognised from an earlier meeting. Click to rename; clear the name if it's someone else.",
       "findAgain": "Find speakers again"
+    },
+    "confirmDelete": {
+      "title": "Delete “{{title}}”?",
+      "description": "It moves to Recently deleted with its recording, and you can restore it for 30 days."
     }
   },
   "calls": {
@@ -3584,6 +3593,32 @@
       "failed": "That didn't work. Try again.",
       "notAnOption": "Didn't catch which option. Say its number or its words.",
       "insecure": "Legato pairs over https, or over plain http only on this PC or a NetBird or Tailscale address, so nobody on the network can read the hub's token. Use the hub's https address."
+    }
+  },
+  "trash": {
+    "link_one": "Recently deleted · {{count}}",
+    "link_other": "Recently deleted · {{count}}",
+    "title": "Recently deleted",
+    "description": "Deleted notes wait here for {{days}} days, recordings and all, then go for good.",
+    "none": "Nothing deleted in the last 30 days.",
+    "untitledNote": "Untitled note",
+    "restore": "Restore",
+    "restored": "Restored “{{title}}”",
+    "restoreFailed": "Couldn't restore the note",
+    "deleteNow": "Delete now",
+    "deleteNowLabel": "Delete “{{title}}” now",
+    "deleteFailed": "Couldn't delete it",
+    "deletedAgo": "Deleted {{when}}",
+    "daysLeft_one": "{{count}} day left",
+    "daysLeft_other": "{{count}} days left",
+    "empty": "Delete all now",
+    "confirmOne": {
+      "title": "Delete “{{title}}” now?",
+      "description": "It can't be restored after this."
+    },
+    "confirmEmpty": {
+      "title_one": "Delete {{count}} note now?",
+      "title_other": "Delete all {{count}} notes now?"
     }
   }
 }

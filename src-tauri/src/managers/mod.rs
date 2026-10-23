@@ -12,3 +12,4 @@ pub mod snippet_store;
 pub mod snippets;
 pub mod transcription;
 pub mod transform_store;
+pub mod trash_store;

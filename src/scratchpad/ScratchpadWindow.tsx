@@ -56,6 +56,8 @@ import { FailedPasteBanner } from "@/components/scratchpad/FailedPasteBanner";
 import { NotePreview } from "@/components/scratchpad/NotePreview";
 import { NoteStatus } from "@/components/scratchpad/NoteStatus";
 import { VersionHistory } from "@/components/scratchpad/VersionHistory";
+import { ConfirmDelete } from "@/components/shared/ConfirmDelete";
+import { RecentlyDeleted, useTrash } from "@/components/shared/RecentlyDeleted";
 import {
   byUpdated,
   insertAt,
@@ -130,6 +132,10 @@ export const ScratchpadWindow: React.FC = () => {
   const [formatting, setFormatting] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [rowMenu, setRowMenu] = useState<number | null>(null);
+  // Deleting asks first; the note then waits in Recently deleted.
+  const [asking, setAsking] = useState<ScratchNote | null>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const trash = useTrash("scratch");
   const now = Date.now() / 1000;
   const { i18n } = useTranslation();
 
@@ -708,7 +714,7 @@ export const ScratchpadWindow: React.FC = () => {
       label: t("scratchpad.actions.delete"),
       icon: Trash2,
       danger: true,
-      onSelect: () => remove(note),
+      onSelect: () => setAsking(note),
     },
   ];
 
@@ -996,7 +1002,7 @@ export const ScratchpadWindow: React.FC = () => {
                         onKeyDown={(e) => {
                           if (e.key === "Delete") {
                             e.preventDefault();
-                            remove(note);
+                            setAsking(note);
                           } else if (e.key === "F10" && e.shiftKey) {
                             e.preventDefault();
                             setRowMenu(note.id);
@@ -1046,6 +1052,21 @@ export const ScratchpadWindow: React.FC = () => {
                 })
               )}
             </ul>
+          )}
+          {panel && trash.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setTrashOpen(true)}
+              className={`${railItem} mt-1 flex-none text-text-3`}
+            >
+              <Trash2
+                className="h-[17px] w-[17px] flex-none"
+                aria-hidden="true"
+              />
+              <span className="truncate">
+                {t("trash.link", { count: trash.length })}
+              </span>
+            </button>
           )}
           {!panel && <span className="flex-1" />}
 
@@ -1388,6 +1409,29 @@ export const ScratchpadWindow: React.FC = () => {
         </main>
       </div>
 
+      <ConfirmDelete
+        open={asking !== null}
+        title={t("scratchpad.confirmDelete.title", {
+          title: asking?.title || t("scratchpad.untitled"),
+        })}
+        description={t("scratchpad.confirmDelete.description")}
+        onCancel={() => setAsking(null)}
+        onConfirm={() => {
+          const note = asking;
+          setAsking(null);
+          if (note) remove(note);
+        }}
+      />
+      <RecentlyDeleted
+        kind="scratch"
+        items={trash}
+        open={trashOpen}
+        onClose={() => setTrashOpen(false)}
+        onRestored={(item) => {
+          setTrashOpen(false);
+          setActiveId(item.item_id);
+        }}
+      />
       {versionsOf && (
         <VersionHistory note={versionsOf} onClose={() => setVersionsOf(null)} />
       )}

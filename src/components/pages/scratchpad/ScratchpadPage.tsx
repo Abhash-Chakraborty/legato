@@ -25,6 +25,12 @@ import { copyToClipboard } from "../home/clipboard";
 import { byUpdated, matchesQuery } from "../../scratchpad/notes";
 import { NoteCard } from "./NoteCard";
 import { NoteRow } from "./NoteRow";
+import { ConfirmDelete } from "../../shared/ConfirmDelete";
+import {
+  RecentlyDeleted,
+  RecentlyDeletedLink,
+  useTrash,
+} from "../../shared/RecentlyDeleted";
 
 type Tab = "all" | "pinned";
 const OPENS: ScratchpadOpen[] = ["resume", "new", "pinned"];
@@ -111,6 +117,11 @@ export const ScratchpadPage: React.FC = () => {
       toast(t("scratchpad.toast.copied"));
   };
 
+  // Deleting asks first; the note then waits in Recently deleted.
+  const [asking, setAsking] = useState<ScratchNote | null>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const trash = useTrash("scratch");
+
   const remove = async (note: ScratchNote) => {
     const result = await commands.deleteScratchNotes([note.id]);
     if (result.status === "error") {
@@ -183,8 +194,7 @@ export const ScratchpadPage: React.FC = () => {
       pin(note);
     } else if (key === "delete") {
       e.preventDefault();
-      focusRow(ids[i + 1] ?? ids[i - 1]);
-      remove(note);
+      setAsking(note);
     }
   };
 
@@ -422,18 +432,24 @@ export const ScratchpadPage: React.FC = () => {
                     onOpen={() => setSelectedId(note.id)}
                     onPin={() => pin(note)}
                     onCopy={() => copy(note)}
-                    onDelete={() => remove(note)}
+                    onDelete={() => setAsking(note)}
                   />
                 ))}
               </ul>
-              <p className="mt-3 flex-none text-[13px] text-text-3">
-                {t("scratchpad.footer", {
-                  notes: t("scratchpad.counts.notes", {
-                    count: all.length,
-                    formatted: all.length.toLocaleString(i18n.language),
-                  }),
-                  pinned: pinnedCount.toLocaleString(i18n.language),
-                })}
+              <p className="mt-3 flex flex-none flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[13px] text-text-3">
+                <span>
+                  {t("scratchpad.footer", {
+                    notes: t("scratchpad.counts.notes", {
+                      count: all.length,
+                      formatted: all.length.toLocaleString(i18n.language),
+                    }),
+                    pinned: pinnedCount.toLocaleString(i18n.language),
+                  })}
+                </span>
+                <RecentlyDeletedLink
+                  count={trash.length}
+                  onOpen={() => setTrashOpen(true)}
+                />
               </p>
             </>
           )}
@@ -449,6 +465,34 @@ export const ScratchpadPage: React.FC = () => {
           ) : null}
         </div>
       </div>
+
+      <ConfirmDelete
+        open={asking !== null}
+        title={t("scratchpad.confirmDelete.title", {
+          title: asking?.title || t("scratchpad.untitled"),
+        })}
+        description={t("scratchpad.confirmDelete.description")}
+        onCancel={() => setAsking(null)}
+        onConfirm={() => {
+          const note = asking;
+          setAsking(null);
+          if (!note) return;
+          const i = ids.indexOf(note.id);
+          const next = ids[i + 1] ?? ids[i - 1];
+          if (next !== undefined) focusRow(next);
+          remove(note);
+        }}
+      />
+      <RecentlyDeleted
+        kind="scratch"
+        items={trash}
+        open={trashOpen}
+        onClose={() => setTrashOpen(false)}
+        onRestored={(item) => {
+          setTrashOpen(false);
+          setSelectedId(item.item_id);
+        }}
+      />
     </div>
   );
 };

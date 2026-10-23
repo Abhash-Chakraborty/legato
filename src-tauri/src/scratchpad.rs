@@ -10,6 +10,7 @@ use crate::context::{self, AppInfo};
 use crate::managers::scratch_store::{
     self as store, DeletedNote, NewNote, NoteSource, ScratchNote, ScratchVersion,
 };
+use crate::managers::trash_store::{self, NewTrash, TrashKind};
 use crate::settings::{get_settings, write_settings, ScratchpadOpen};
 use crate::transcription_coordinator::TranscriptionCoordinator;
 use crate::transforms::BarNotice;
@@ -202,14 +203,40 @@ impl ScratchpadManager {
         Ok(note)
     }
 
+    /// Removes notes to Recently deleted, versions and all.
     pub fn delete(&self, ids: &[i64]) -> Result<Vec<DeletedNote>> {
-        let gone = store::delete(&mut self.conn()?, ids)?;
+        let mut conn = self.conn()?;
+        let gone = store::delete(&mut conn, ids)?;
+        let at = now();
+        for d in &gone {
+            trash_store::put(
+                &conn,
+                &NewTrash {
+                    kind: TrashKind::Scratch,
+                    item_id: d.note.id,
+                    title: &d.note.title,
+                    preview: &trash_store::preview(&d.note.text),
+                    duration_ms: None,
+                    payload: serde_json::to_string(d)?,
+                },
+                at,
+            )?;
+        }
+        if !gone.is_empty() {
+            crate::trash::changed(&self.app);
+        }
         self.changed();
         Ok(gone)
     }
 
+    /// Puts deleted notes back, from the toast's Undo or Recently deleted.
     pub fn restore(&self, deleted: &[DeletedNote]) -> Result<()> {
-        store::restore(&mut self.conn()?, deleted)?;
+        let mut conn = self.conn()?;
+        store::restore(&mut conn, deleted)?;
+        for d in deleted {
+            trash_store::forget(&conn, TrashKind::Scratch, d.note.id)?;
+        }
+        crate::trash::changed(&self.app);
         self.changed();
         Ok(())
     }
@@ -239,6 +266,11 @@ impl ScratchpadManager {
 
 fn manager(app: &AppHandle) -> Arc<ScratchpadManager> {
     app.state::<Arc<ScratchpadManager>>().inner().clone()
+}
+
+/// Puts deleted notes back, for Recently deleted.
+pub(crate) fn restore_deleted(app: &AppHandle, deleted: &[DeletedNote]) -> Result<()> {
+    manager(app).restore(deleted)
 }
 
 /// Remembers the note on screen, for Resume.

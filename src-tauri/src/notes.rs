@@ -14,6 +14,7 @@ use crate::managers::notes_store::{
     Speaker,
 };
 use crate::managers::transcription::TranscriptionManager;
+use crate::managers::trash_store::{self, NewTrash, TrashKind};
 use crate::notes_rules::{self, Segmenter, Utterance, RATE};
 use crate::settings::get_settings;
 use crate::transforms::BarNotice;
@@ -43,8 +44,6 @@ const PREVIEW_EVERY: usize = RATE * 3 / 2;
 /// System audio that falls this far behind the clock (nothing playing) is
 /// filled with silence, so both tracks stay in step.
 const PAD_AFTER: u64 = (RATE as u64) * 3 / 10;
-/// A deleted note's audio is removed after this, unless Undo brought it back.
-const DELETE_AUDIO_AFTER: Duration = Duration::from_secs(20);
 
 /// Sent when a note is added, changed or removed.
 #[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
@@ -261,10 +260,12 @@ impl NotesManager {
         }
     }
 
-    /// Removes audio whose note is gone: a note deleted just before Legato
-    /// quit keeps its file otherwise, since that delete waits for Undo.
+    /// Removes audio whose note is gone and isn't in Recently deleted.
     fn sweep_orphaned_audio(&self) {
         let Ok(conn) = self.conn() else {
+            return;
+        };
+        let Ok(kept) = trash_store::item_ids(&conn, TrashKind::Note) else {
             return;
         };
         let Ok(entries) = std::fs::read_dir(&self.dir) else {
@@ -281,7 +282,7 @@ impl NotesManager {
             else {
                 continue;
             };
-            if matches!(store::get(&conn, id), Ok(None)) {
+            if matches!(store::get(&conn, id), Ok(None)) && !kept.contains(&id) {
                 match std::fs::remove_file(entry.path()) {
                     Ok(()) => info!("Removed audio left by deleted note {id}"),
                     Err(e) => debug!("Couldn't remove {name}: {e}"),
@@ -624,37 +625,72 @@ impl NotesManager {
         Ok(store::markdown(&note, &lines, "You", "Them"))
     }
 
-    /// Removes a note; its audio goes a little later, so Undo can bring it
-    /// back.
+    /// Removes a note to Recently deleted, where it keeps its audio for
+    /// `trash_store::KEEP_DAYS`.
     pub fn delete(&self, id: i64) -> Result<Option<DeletedRecording>> {
         if current_note() == Some(id) {
             return Err(anyhow!("Stop the recording before deleting it"));
         }
-        let deleted = store::delete(&mut self.conn()?, id)?;
-        if let Some(file) = deleted.as_ref().and_then(|d| d.note.audio_file.clone()) {
-            let path = self.dir.join(file);
-            let db_path = self.db_path.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(DELETE_AUDIO_AFTER);
-                let back = Connection::open(&db_path)
-                    .ok()
-                    .and_then(|c| store::get(&c, id).ok().flatten())
-                    .is_some();
-                if !back {
-                    if let Err(e) = std::fs::remove_file(&path) {
-                        debug!("Couldn't remove a deleted note's audio: {e}");
-                    }
-                }
-            });
+        let mut conn = self.conn()?;
+        let deleted = store::delete(&mut conn, id)?;
+        if let Some(d) = &deleted {
+            let text = if d.note.summary.trim().is_empty() {
+                d.lines
+                    .iter()
+                    .map(|l| l.text.as_str())
+                    .take(6)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            } else {
+                d.note.summary.clone()
+            };
+            trash_store::put(
+                &conn,
+                &NewTrash {
+                    kind: TrashKind::Note,
+                    item_id: id,
+                    title: &d.note.title,
+                    preview: &trash_store::preview(&text),
+                    duration_ms: Some(d.note.duration_ms),
+                    payload: serde_json::to_string(d)?,
+                },
+                chrono::Utc::now().timestamp(),
+            )?;
+            crate::trash::changed(&self.app);
         }
         self.changed();
         Ok(deleted)
     }
 
+    /// Puts a deleted note back, from the toast's Undo or Recently deleted.
     pub fn restore(&self, deleted: &DeletedRecording) -> Result<()> {
-        store::restore(&mut self.conn()?, deleted)?;
+        let mut conn = self.conn()?;
+        store::restore(&mut conn, deleted)?;
+        trash_store::forget(&conn, TrashKind::Note, deleted.note.id)?;
+        crate::trash::changed(&self.app);
         self.changed();
         Ok(())
+    }
+
+    /// Removes the audio of a note that leaves Recently deleted for good.
+    pub(crate) fn remove_deleted_audio(&self, deleted: &DeletedRecording) {
+        let id = deleted.note.id;
+        let mut files = vec![self.audio_path(id), self.track_path(id, Speaker::You)];
+        files.push(self.track_path(id, Speaker::Them));
+        if let Some(file) = &deleted.note.audio_file {
+            // A bare file name in the recordings folder, never a path.
+            let path = Path::new(file);
+            if path.file_name() == Some(path.as_os_str()) {
+                files.push(self.dir.join(path));
+            }
+        }
+        for file in files {
+            match std::fs::remove_file(&file) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => debug!("Couldn't remove a deleted note's audio: {e}"),
+            }
+        }
     }
 
     /// Saves a line, unless it's the microphone hearing the call through the
