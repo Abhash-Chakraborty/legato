@@ -197,7 +197,7 @@ impl NotesManager {
                 continue;
             }
             let out = self.audio_path(id);
-            match mix_tracks(&you, them.exists().then_some(them.as_path()), &out) {
+            match mix_tracks(&you, them.exists().then_some(them.as_path()), &out, false) {
                 Ok(samples) => {
                     let duration = samples as i64 * 1000 / RATE as i64;
                     let file = file_name(&out);
@@ -286,6 +286,10 @@ impl NotesManager {
                     Ok(()) => info!("Removed audio left by deleted note {id}"),
                     Err(e) => debug!("Couldn't remove {name}: {e}"),
                 }
+            } else if name.ends_with("-them.wav") {
+                // Kept for telling voices apart after Stop, and Legato quit
+                // first; unfinished notes were mixed above, so it's spare.
+                let _ = std::fs::remove_file(entry.path());
             }
         }
     }
@@ -923,7 +927,7 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
     }
     if lock(&FINISHING).is_some() {
         return Err(anyhow!(
-            "The last recording is still being transcribed; try again in a moment"
+            "The last recording is still being saved; try again in a moment"
         ));
     }
     let settings = get_settings(app);
@@ -1132,9 +1136,13 @@ pub fn stop(app: &AppHandle) -> Result<()> {
     announce(app);
     let app = app.clone();
     std::thread::spawn(move || {
-        finish(&app, session);
+        let after = finish(&app, session);
+        // The next recording can start now; voices and the summary follow.
         *lock(&FINISHING) = None;
         announce(&app);
+        if let Some(after) = after {
+            after.run(&app);
+        }
     });
     Ok(())
 }
@@ -1584,7 +1592,9 @@ pub fn retry_failed_lines(app: &AppHandle, note_id: i64) -> Result<RetryResult> 
 
 /// Mixes the tracks into the note's audio file and removes them. Returns
 /// the samples written.
-fn mix_tracks(you: &Path, them: Option<&Path>, out: &Path) -> Result<u64> {
+/// Mixes the tracks into `out` and removes them, except the call's when
+/// `keep_them` asks: its voices are told apart afterwards.
+fn mix_tracks(you: &Path, them: Option<&Path>, out: &Path, keep_them: bool) -> Result<u64> {
     let Some(them) = them else {
         let samples = hound::WavReader::open(you)?.len() as u64;
         std::fs::rename(you, out)?;
@@ -1609,11 +1619,71 @@ fn mix_tracks(you: &Path, them: Option<&Path>, out: &Path) -> Result<u64> {
     }
     writer.finalize()?;
     let _ = std::fs::remove_file(you);
-    let _ = std::fs::remove_file(them);
+    if !keep_them {
+        let _ = std::fs::remove_file(them);
+    }
     Ok(written)
 }
 
-fn finish(app: &AppHandle, session: Session) {
+/// What's left after a recording is saved: the slow part, kept off the
+/// path of the next recording.
+struct FollowUp {
+    note_id: i64,
+    duration_ms: i64,
+    /// The audio to tell voices apart in and the side its lines are on,
+    /// when the speaker model should run.
+    voices: Option<(PathBuf, Option<Speaker>)>,
+    /// The call's track, kept for the voices and removed after.
+    leftover: Option<PathBuf>,
+}
+
+impl FollowUp {
+    /// Tells the voices apart, then writes the summary with their names.
+    /// With another recording running, the summary goes first and the
+    /// voices wait until it stops, so the speaker model doesn't compete
+    /// with it for the processor.
+    fn run(self, app: &AppHandle) {
+        let busy = is_recording();
+        if !busy {
+            self.find_voices(app);
+        }
+        tauri::async_runtime::block_on(summarise(app, self.note_id));
+        // The bar belongs to a recording that started meanwhile.
+        if !is_recording() {
+            crate::overlay::show_overlay_notice_for(
+                app,
+                &BarNotice::NoteReady {
+                    id: self.note_id,
+                    duration_ms: self.duration_ms,
+                },
+                5000,
+            );
+        }
+        crate::calls::note_ready(app, self.note_id);
+        if busy {
+            while is_recording() {
+                std::thread::sleep(Duration::from_secs(10));
+            }
+            self.find_voices(app);
+        }
+    }
+
+    fn find_voices(&self, app: &AppHandle) {
+        if let Some((audio, side)) = &self.voices {
+            match find_speakers_in(app, self.note_id, audio, *side) {
+                Ok(count) => info!("Told {count} voices apart"),
+                Err(e) => warn!("Couldn't tell the voices apart: {e}"),
+            }
+        }
+        if let Some(track) = &self.leftover {
+            let _ = std::fs::remove_file(track);
+        }
+    }
+}
+
+/// Saves the recording: the last lines, the mixed audio. Returns what's
+/// left to do, or None when nothing was kept.
+fn finish(app: &AppHandle, session: Session) -> Option<FollowUp> {
     let m = manager(app);
     let note_id = session.info.note_id;
     let meeting = session.info.kind == NoteKind::Meeting;
@@ -1641,20 +1711,19 @@ fn finish(app: &AppHandle, session: Session) {
     let you = m.track_path(note_id, Speaker::You);
     let them = m.track_path(note_id, Speaker::Them);
     // Voices are told apart on the side that has several: the call in a
-    // meeting, the room in a memo. Before mixing, which removes the tracks.
-    let voices = if meeting { &them } else { &you };
-    if saved > 1
+    // meeting, the room in a memo. A memo's room becomes the recording; a
+    // meeting's call is kept beside it until then.
+    let find_voices = saved > 1
         && get_settings(app).notes_speakers
         && crate::speakers::is_downloaded(app)
-        && voices.exists()
-    {
-        match find_speakers_in(app, note_id, voices, meeting.then_some(Speaker::Them)) {
-            Ok(count) => info!("Told {count} voices apart"),
-            Err(e) => warn!("Couldn't tell the voices apart: {e}"),
-        }
-    }
+        && (if meeting { &them } else { &you }).exists();
     let out = m.audio_path(note_id);
-    let audio = mix_tracks(&you, meeting.then_some(them.as_path()), &out);
+    let audio = mix_tracks(
+        &you,
+        meeting.then_some(them.as_path()),
+        &out,
+        find_voices && meeting,
+    );
     let duration_ms = match &audio {
         Ok(samples) => *samples as i64 * 1000 / RATE as i64,
         Err(e) => {
@@ -1669,7 +1738,8 @@ fn finish(app: &AppHandle, session: Session) {
         let _ = std::fs::remove_file(&out);
         m.changed();
         crate::overlay::show_overlay_notice(app, &BarNotice::NoteEmpty { duration_ms });
-        return;
+        let _ = std::fs::remove_file(&them);
+        return None;
     }
     let file = audio.is_ok().then(|| file_name(&out));
     let saved_note = m.conn().and_then(|c| {
@@ -1682,16 +1752,18 @@ fn finish(app: &AppHandle, session: Session) {
     info!("Notes ready: {saved} lines, {failed} failed, {duration_ms} ms");
     m.expire_audio();
     m.changed();
-    tauri::async_runtime::block_on(summarise(app, note_id));
-    crate::overlay::show_overlay_notice_for(
-        app,
-        &BarNotice::NoteReady {
-            id: note_id,
-            duration_ms,
-        },
-        5000,
-    );
-    crate::calls::note_ready(app, note_id);
+    let keeps_track = find_voices && meeting && audio.is_ok();
+    let voices = match (find_voices, meeting) {
+        (true, true) if keeps_track => Some((them.clone(), Some(Speaker::Them))),
+        (true, false) if audio.is_ok() => Some((out, None)),
+        _ => None,
+    };
+    Some(FollowUp {
+        note_id,
+        duration_ms,
+        voices,
+        leftover: keeps_track.then_some(them),
+    })
 }
 
 /// One pass of the speaker model at a time: the live passes and the last

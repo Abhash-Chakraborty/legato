@@ -633,13 +633,14 @@ fn clean_tags(tags: &[String]) -> Vec<String> {
 }
 
 /// Whether a note still has the name Legato gave it when it began, such as
-/// "Meeting · Oct 22, 2:29 PM", so a suggested title may replace it. A
-/// title you typed, or a meeting's name from your calendar, stays.
+/// "Meeting · Oct 22, 2:29 PM" or "Zoom call · Oct 22, 2:29 PM" from a
+/// call's card, so a suggested title may replace it. A title you typed, or
+/// a meeting's name from your calendar, stays.
 pub fn is_default_title(title: &str) -> bool {
     let Some((kind, when)) = title.split_once(" · ") else {
         return false;
     };
-    matches!(kind, "Meeting" | "Voice memo")
+    (matches!(kind, "Meeting" | "Voice memo") || kind.ends_with(" call"))
         && when.chars().any(|c| c.is_ascii_digit())
         && (when.ends_with(" AM") || when.ends_with(" PM"))
 }
@@ -1074,6 +1075,8 @@ mod tests {
         assert!(!is_default_title("AIPS backend not working"));
         assert!(!is_default_title("Meeting with Sahil"));
         assert!(!is_default_title("Meeting · design review"));
+        assert!(is_default_title("Google Meet call · Oct 23, 3:04 PM"));
+        assert!(!is_default_title("Sales call · pricing"));
     }
 
     #[test]
