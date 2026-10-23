@@ -58,6 +58,24 @@ pub fn classify_error(error: &str) -> AiStatusKind {
     }
 }
 
+/// A provider's error for the log: its first 300 characters, with anything
+/// that looks like an API key masked ("Incorrect API key provided: sk-…").
+/// The provider's message says why ("The model `gpt-x` does not exist"),
+/// which the status line's one word can't.
+pub fn error_for_log(error: &str) -> String {
+    static KEY: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"\b(?:sk|pk|rk|gsk|csk|xai)[-_][A-Za-z0-9_\-*.]{6,}|\b[A-Za-z0-9_\-]{32,}\b")
+            .expect("valid regex")
+    });
+    let flat = error.split_whitespace().collect::<Vec<_>>().join(" ");
+    let masked = KEY.replace_all(&flat, "[key]");
+    let mut out: String = masked.chars().take(300).collect();
+    if masked.chars().count() > 300 {
+        out.push('…');
+    }
+    out
+}
+
 /// Whether an address points at this PC, so text sent there stays on it.
 pub fn is_local_url(base_url: &str) -> bool {
     let rest = base_url
@@ -369,6 +387,24 @@ fn phrase_pattern(phrase: &str) -> Option<Regex> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn provider_errors_are_logged_short_and_without_keys() {
+        let e = r#"API request failed with status 404 Not Found: {
+  "error": { "message": "The model `gpt-9` does not exist or you do not have access to it.", "code": "model_not_found" } }"#;
+        let logged = error_for_log(e);
+        assert!(logged.contains("The model `gpt-9` does not exist"));
+        assert!(!logged.contains('\n'));
+
+        let e = "API request failed with status 401: Incorrect API key provided: sk-proj-abcdEFGH1234****wxyz.";
+        let logged = error_for_log(e);
+        assert!(!logged.contains("abcdEFGH"), "{logged}");
+        assert!(logged.contains("[key]"));
+
+        let long = "x ".repeat(400);
+        assert!(error_for_log(&long).chars().count() <= 301);
+    }
+
     use super::*;
 
     #[test]

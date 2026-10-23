@@ -314,7 +314,15 @@ async fn ask(
     };
     match tokio::time::timeout(timeout, call).await {
         Err(_) => Err(AiStatusKind::Slow),
-        Ok(Err(e)) => Err(ai_rules::classify_error(&e)),
+        Ok(Err(e)) => {
+            warn!(
+                "{} (model '{}') said: {}",
+                config.provider.id,
+                config.model,
+                ai_rules::error_for_log(&e)
+            );
+            Err(ai_rules::classify_error(&e))
+        }
         Ok(Ok(None)) => Err(AiStatusKind::Failed),
         Ok(Ok(Some(text))) => Ok(text),
     }
