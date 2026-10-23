@@ -1682,7 +1682,6 @@
       "failed": "This one didn't transcribe.",
       "tryAgain": "Try again",
       "fixWord": "Fix a word",
-      "fixWordKey": "Fix a word (F)",
       "fixedTip": "{{word}} · fixed from “{{heard}}” · {{by}}",
       "fixedByYou": "by you",
       "fixedByDictionary": "Dictionary",

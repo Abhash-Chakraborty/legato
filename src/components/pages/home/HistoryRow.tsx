@@ -17,6 +17,7 @@ import {
 import type { HistoryEntry } from "@/bindings";
 import { AudioPlayer } from "../../ui/AudioPlayer";
 import { ActionMenu, type ActionMenuItem } from "../../ui/ActionMenu";
+import { Tooltip } from "../../ui/Tooltip";
 import { markFixes } from "../../../lib/utils/words";
 import { AppIcon } from "./AppIcon";
 import { FixWord } from "./FixWord";
@@ -37,19 +38,22 @@ const RowButton: React.FC<{
   onClick: () => void;
   pressed?: boolean;
   expanded?: boolean;
-}> = ({ label, icon: Icon, onClick, pressed, expanded }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    aria-label={label}
-    title={label}
-    aria-pressed={pressed}
-    aria-expanded={expanded}
-    aria-haspopup={expanded === undefined ? undefined : "menu"}
-    className="grid h-8 w-8 place-items-center rounded-[var(--r-sm)] text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0 active:scale-[0.97]"
-  >
-    <Icon className="h-4 w-4 stroke-[1.75]" aria-hidden="true" />
-  </button>
+  shortcut?: string;
+}> = ({ label, icon: Icon, onClick, pressed, expanded, shortcut }) => (
+  <Tooltip label={label} shortcut={shortcut} side="left">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-keyshortcuts={shortcut}
+      aria-pressed={pressed}
+      aria-expanded={expanded}
+      aria-haspopup={expanded === undefined ? undefined : "menu"}
+      className={`grid h-8 w-8 place-items-center rounded-[var(--r-sm)] transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0 active:scale-[0.97] ${pressed ? "bg-surface-3 text-text" : "text-text-2"}`}
+    >
+      <Icon className="h-4 w-4 stroke-[1.75]" aria-hidden="true" />
+    </button>
+  </Tooltip>
 );
 
 /** A wrapping "a · b · c" line. Each item brings its own dot, and the dot
@@ -206,7 +210,7 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
         onFocusRow();
         setMenuOpen(true);
       }}
-      className={`group relative grid grid-cols-[68px_minmax(0,1fr)_auto] gap-x-3 rounded-[var(--r-md)] px-3 py-3 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 focus-visible:bg-surface-2 ring-inside ${menuOpen ? "bg-surface-2" : ""}`}
+      className={`group relative grid grid-cols-[68px_minmax(0,1fr)_32px] gap-x-3 rounded-[var(--r-md)] px-3 py-3 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 focus-visible:bg-surface-2 ring-inside ${menuOpen ? "bg-surface-2" : ""}`}
     >
       <div className="flex flex-col gap-1.5 pt-0.5 text-[13px] tabular-nums text-text-3">
         <span className="whitespace-nowrap">{time}</span>
@@ -333,8 +337,10 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
         )}
       </div>
 
+      {/* The actions stand in a column in the row's right gutter; on a
+          short row it reaches over the gutter of the row below. */}
       <div
-        className={`relative flex items-start gap-0.5 transition-opacity duration-[var(--dur-1)] group-hover:opacity-100 group-hover:duration-0 group-focus-within:opacity-100 ${menuOpen || playing || fixing ? "opacity-100" : "opacity-0"}`}
+        className={`absolute end-2 top-2 z-10 flex flex-col gap-0.5 rounded-[var(--r-md)] border border-line bg-surface p-0.5 shadow-[var(--shadow-1)] transition-opacity duration-[var(--dur-1)] group-hover:opacity-100 group-hover:duration-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto ${menuOpen || playing || fixing ? "opacity-100" : "pointer-events-none opacity-0"}`}
       >
         {hasAudio && (
           <RowButton
@@ -348,13 +354,15 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
           <RowButton
             label={copied ? t("home.row.copied") : t("home.row.copy")}
             icon={copied ? Check : Copy}
+            shortcut="Enter"
             onClick={() => copy(text)}
           />
         )}
         {!failed && (
           <RowButton
-            label={t("home.row.fixWordKey")}
+            label={t("home.row.fixWord")}
             icon={SpellCheck}
+            shortcut="F"
             pressed={fixing}
             onClick={fixing ? () => onExitFix(false) : onFix}
           />

@@ -1,114 +1,141 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-type TooltipPosition = "top" | "bottom";
+type Side = "top" | "bottom" | "left" | "right";
 
-interface TooltipCoords {
-  top: number;
-  left: number;
-  arrowLeft: number;
-  actualPosition: TooltipPosition;
-}
+const GAP = 6;
+const EDGE = 8;
+const DELAY = 500;
+/** Moving from one control to the next shows its tip almost at once. */
+const DELAY_AFTER = 100;
+const HIDE_AFTER = 5000;
 
-interface TooltipProps {
-  targetRef: React.RefObject<HTMLElement>;
-  position?: TooltipPosition;
+let lastClosed = 0;
+
+/** Where the tip goes beside its control, flipped to the other side when
+ *  it wouldn't fit, and kept inside the window. */
+const place = (
+  target: DOMRect,
+  tip: DOMRect,
+  side: Side,
+): { top: number; left: number } => {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let s = side;
+  if (s === "left" && target.left - GAP - tip.width < EDGE) s = "right";
+  else if (s === "right" && target.right + GAP + tip.width > vw - EDGE)
+    s = "left";
+  else if (s === "top" && target.top - GAP - tip.height < EDGE) s = "bottom";
+  else if (s === "bottom" && target.bottom + GAP + tip.height > vh - EDGE)
+    s = "top";
+  const across =
+    s === "left" || s === "right"
+      ? {
+          top: target.top + target.height / 2 - tip.height / 2,
+          left:
+            s === "left" ? target.left - GAP - tip.width : target.right + GAP,
+        }
+      : {
+          top:
+            s === "top" ? target.top - GAP - tip.height : target.bottom + GAP,
+          left: target.left + target.width / 2 - tip.width / 2,
+        };
+  return {
+    top: Math.min(Math.max(across.top, EDGE), vh - EDGE - tip.height),
+    left: Math.min(Math.max(across.left, EDGE), vw - EDGE - tip.width),
+  };
+};
+
+/** A short label for an icon control, with its key if it has one. Shows
+ *  after half a second of hover or on keyboard focus, and goes on a key
+ *  press, a click, or after five seconds. The control keeps its own
+ *  aria-label; the tip is for the eye only. */
+export const Tooltip: React.FC<{
+  label: string;
+  shortcut?: string;
+  side?: Side;
   children: React.ReactNode;
-}
+}> = ({ label, shortcut, side = "top", children }) => {
+  const anchor = useRef<HTMLSpanElement>(null);
+  const tip = useRef<HTMLDivElement>(null);
+  const timer = useRef<number | undefined>(undefined);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-const TOOLTIP_WIDTH = 200;
-const VIEWPORT_PADDING = 12;
-const GAP = 8;
-const ARROW_MARGIN = 12;
-const DEFAULT_HEIGHT = 60;
+  const show = (delay: number) => {
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setOpen(true), delay);
+  };
+  const hide = () => {
+    window.clearTimeout(timer.current);
+    setOpen((was) => {
+      if (was) lastClosed = Date.now();
+      return false;
+    });
+    setPos(null);
+  };
 
-export const Tooltip: React.FC<TooltipProps> = ({
-  targetRef,
-  position = "top",
-  children,
-}) => {
-  const [coords, setCoords] = useState<TooltipCoords | null>(null);
-  const tooltipRef = useRef<HTMLDivElement>(null);
-
-  const updatePosition = useCallback(() => {
-    if (!targetRef.current) return;
-
-    const targetRect = targetRef.current.getBoundingClientRect();
-    const tooltipHeight = tooltipRef.current?.offsetHeight || DEFAULT_HEIGHT;
-
-    let actualPosition = position;
-    let top: number;
-
-    if (position === "top") {
-      const spaceAbove = targetRect.top - tooltipHeight - GAP;
-      if (spaceAbove < VIEWPORT_PADDING) {
-        actualPosition = "bottom";
-        top = targetRect.bottom + GAP;
-      } else {
-        top = targetRect.top - GAP - tooltipHeight;
-      }
-    } else {
-      const spaceBelow =
-        window.innerHeight - targetRect.bottom - tooltipHeight - GAP;
-      if (spaceBelow < VIEWPORT_PADDING) {
-        actualPosition = "top";
-        top = targetRect.top - GAP - tooltipHeight;
-      } else {
-        top = targetRect.bottom + GAP;
-      }
-    }
-
-    const targetCenter = targetRect.left + targetRect.width / 2;
-    let left = targetCenter - TOOLTIP_WIDTH / 2;
-
-    if (left < VIEWPORT_PADDING) {
-      left = VIEWPORT_PADDING;
-    } else if (left + TOOLTIP_WIDTH > window.innerWidth - VIEWPORT_PADDING) {
-      left = window.innerWidth - TOOLTIP_WIDTH - VIEWPORT_PADDING;
-    }
-
-    const arrowLeft = Math.min(
-      Math.max(targetCenter - left, ARROW_MARGIN),
-      TOOLTIP_WIDTH - ARROW_MARGIN,
-    );
-
-    setCoords({ top, left, arrowLeft, actualPosition });
-  }, [targetRef, position]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
 
   useEffect(() => {
-    updatePosition();
-
-    window.addEventListener("scroll", updatePosition, true);
-    window.addEventListener("resize", updatePosition);
-
+    if (!open) return;
+    const away = window.setTimeout(hide, HIDE_AFTER);
+    window.addEventListener("keydown", hide, true);
+    window.addEventListener("scroll", hide, true);
     return () => {
-      window.removeEventListener("scroll", updatePosition, true);
-      window.removeEventListener("resize", updatePosition);
+      window.clearTimeout(away);
+      window.removeEventListener("keydown", hide, true);
+      window.removeEventListener("scroll", hide, true);
     };
-  }, [updatePosition]);
+  }, [open]);
 
-  const arrowClasses =
-    coords?.actualPosition === "top" ? "top-full" : "bottom-full rotate-180";
+  useLayoutEffect(() => {
+    if (!open || !anchor.current || !tip.current) return;
+    setPos(
+      place(
+        anchor.current.getBoundingClientRect(),
+        tip.current.getBoundingClientRect(),
+        side,
+      ),
+    );
+  }, [open, side, label]);
 
-  return createPortal(
-    <div
-      ref={tooltipRef}
-      style={{
-        position: "fixed",
-        top: coords?.top ?? -9999,
-        left: coords?.left ?? -9999,
-        width: TOOLTIP_WIDTH,
-        zIndex: 9999,
-        opacity: coords ? 1 : 0,
+  return (
+    <span
+      ref={anchor}
+      className="inline-flex"
+      onPointerEnter={(e) => {
+        if (e.pointerType === "mouse")
+          show(Date.now() - lastClosed < 400 ? DELAY_AFTER : DELAY);
       }}
-      className="px-3 py-2 bg-background border border-mid-gray/80 rounded-lg shadow-lg whitespace-normal transition-opacity duration-150"
+      onPointerLeave={hide}
+      onPointerDown={hide}
+      onFocus={(e) => {
+        if (e.target.matches(":focus-visible")) show(DELAY_AFTER);
+      }}
+      onBlur={hide}
     >
       {children}
-      <div
-        style={{ left: coords?.arrowLeft ?? 0 }}
-        className={`absolute ${arrowClasses} transform -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-mid-gray/80`}
-      />
-    </div>,
-    document.body,
+      {open &&
+        createPortal(
+          <div
+            ref={tip}
+            aria-hidden="true"
+            style={{
+              top: pos?.top ?? -9999,
+              left: pos?.left ?? -9999,
+            }}
+            className={`pointer-events-none fixed z-[9999] flex max-w-[260px] items-center gap-2 rounded-[var(--r-sm)] border border-line-strong bg-surface px-2 py-1 text-[12px] leading-[1.4] text-text shadow-[var(--shadow-2)] transition-opacity duration-[var(--dur-2)] motion-reduce:transition-none ${pos ? "opacity-100" : "opacity-0"}`}
+          >
+            <span>{label}</span>
+            {shortcut && (
+              <kbd className="rounded-[4px] border border-line bg-surface-2 px-1 font-sans text-[12px] leading-[16px] text-text-3">
+                {shortcut}
+              </kbd>
+            )}
+          </div>,
+          document.body,
+        )}
+    </span>
   );
 };
