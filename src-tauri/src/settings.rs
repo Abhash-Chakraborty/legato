@@ -970,8 +970,8 @@ pub struct AppSettings {
     /// The recorder reminds you to tell people you're recording.
     #[serde(default = "default_true")]
     pub notes_reminder: bool,
-    /// Notes tells voices apart after a recording, once the speaker model
-    /// is downloaded.
+    /// Notes tells voices apart during and after a recording; the first
+    /// meeting downloads the speaker model.
     #[serde(default = "default_true")]
     pub notes_speakers: bool,
     /// Naming a speaker saves a short clip of their voice, so later

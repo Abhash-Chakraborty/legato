@@ -1334,7 +1334,7 @@
       },
       "model": {
         "title": "Speaker model",
-        "help": "Needed to tell voices apart. {{size}} MB, downloaded once and run on this PC.",
+        "help": "Needed to tell voices apart. {{size}} MB, downloaded with your first meeting and run on this PC.",
         "ready": "Downloaded, {{size}} MB.",
         "downloading": "Downloading… {{done}} of {{size}} MB.",
         "error": "The download stopped: {{error}}",
@@ -2978,7 +2978,9 @@
       "retried_one": "Transcribed {{count}} line",
       "retried_other": "Transcribed {{count}} lines",
       "retryPartly_one": "{{count}} line still couldn't be transcribed",
-      "retryPartly_other": "{{count}} lines still couldn't be transcribed"
+      "retryPartly_other": "{{count}} lines still couldn't be transcribed",
+      "more": "More transcript actions",
+      "clearSearch": "Clear search"
     },
     "mine": {
       "help": "Private to you. Included when you copy or export this note.",
@@ -3075,7 +3077,8 @@
       "found_other": "Found {{count}} speakers",
       "setUp": "Tell speakers apart",
       "setUpHint": "Download the speaker model in Settings",
-      "recognised": "{{name}}, recognised from an earlier meeting. Click to rename; clear the name if it's someone else."
+      "recognised": "{{name}}, recognised from an earlier meeting. Click to rename; clear the name if it's someone else.",
+      "findAgain": "Find speakers again"
     }
   },
   "calls": {

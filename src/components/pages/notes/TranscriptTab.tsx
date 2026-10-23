@@ -3,10 +3,12 @@ import { useTranslation } from "react-i18next";
 import {
   Copy,
   Loader2,
+  MoreHorizontal,
   RotateCw,
   Search,
   SpellCheck,
   Users,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { commands, type Note, type NoteLine } from "@/bindings";
@@ -16,6 +18,7 @@ import { useSpeakerModel } from "../../../hooks/useSpeakerModel";
 import { useAiStore, watchAi } from "../../../stores/aiStore";
 import { useNavStore } from "../../../stores/navStore";
 import { useNotesStore } from "../../../stores/notesStore";
+import { ActionMenu } from "../../ui/ActionMenu";
 import { Button } from "../../ui/Button";
 import { LineText } from "../../notes/LineText";
 import { clock, lineAt, lineMatches, voiceChoices } from "../../notes/notes";
@@ -41,6 +44,14 @@ export const TranscriptTab: React.FC<{
   const [marked, setMarked] = useState<number | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [finding, setFinding] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const searchBox = useRef<HTMLInputElement>(null);
+  const openSearch = () => {
+    setSearching(true);
+    requestAnimationFrame(() => searchBox.current?.focus());
+  };
   const speakerModel = useSpeakerModel();
   const go = useNavStore((s) => s.go);
   const aiStatus = useAiStore((s) => s.status);
@@ -153,68 +164,67 @@ export const TranscriptTab: React.FC<{
           </span>
         )}
         <span className="flex-1" />
-        {offerSpeakers && (
-          <button
-            type="button"
-            onClick={() => go("settings", "calls")}
-            title={t("notes.speakers.setUpHint")}
-            className="inline-flex h-8 items-center gap-2 rounded-[var(--r-md)] px-2.5 text-[13px] font-medium text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:text-text hover:duration-0 active:scale-[0.97]"
+        {finding && (
+          <span
+            role="status"
+            className="inline-flex items-center gap-2 text-[13px] text-text-2"
           >
-            <Users className="h-3.5 w-3.5" aria-hidden="true" />
-            {t("notes.speakers.setUp")}
-          </button>
+            <Loader2
+              className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+            {t("notes.speakers.finding")}
+          </span>
         )}
-        {canFindSpeakers && (
-          <button
-            type="button"
-            onClick={findSpeakers}
-            disabled={finding}
-            title={t("notes.speakers.findHint")}
-            className="inline-flex h-8 items-center gap-2 rounded-[var(--r-md)] px-2.5 text-[13px] font-medium text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:text-text hover:duration-0 active:scale-[0.97] disabled:opacity-50"
-          >
-            {finding ? (
-              <Loader2
-                className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
-                aria-hidden="true"
-              />
-            ) : (
-              <Users className="h-3.5 w-3.5" aria-hidden="true" />
-            )}
-            {finding ? t("notes.speakers.finding") : t("notes.speakers.find")}
-          </button>
-        )}
-        {canFix && (
-          <button
-            type="button"
-            onClick={() => setReviewing(true)}
-            disabled={reviewing}
-            className="inline-flex h-8 items-center gap-2 rounded-[var(--r-md)] px-2.5 text-[13px] font-medium text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:text-text hover:duration-0 active:scale-[0.97] disabled:opacity-50"
-          >
-            <SpellCheck className="h-3.5 w-3.5" aria-hidden="true" />
-            {t("notes.aiFix.find")}
-          </button>
-        )}
-        <div className="relative w-[200px]">
-          <Search
-            className="pointer-events-none absolute start-[10px] top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-text-3"
-            aria-hidden="true"
-          />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && query) {
-                e.preventDefault();
-                e.stopPropagation();
+        {searching || query ? (
+          <div className="relative w-[220px]">
+            <Search
+              className="pointer-events-none absolute start-[10px] top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-text-3"
+              aria-hidden="true"
+            />
+            <input
+              ref={searchBox}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onBlur={() => !query && setSearching(false)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setQuery("");
+                  setSearching(false);
+                }
+              }}
+              placeholder={t("notes.transcript.search")}
+              aria-label={t("notes.transcript.search")}
+              className="input compact w-full pe-8 ps-[30px] [&::-webkit-search-cancel-button]:hidden"
+            />
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
                 setQuery("");
-              }
-            }}
-            placeholder={t("notes.transcript.search")}
+                setSearching(false);
+              }}
+              aria-label={t("notes.transcript.clearSearch")}
+              title={t("notes.transcript.clearSearch")}
+              className="absolute end-1 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-[var(--r-xs)] text-text-3 hover:bg-surface-3 hover:text-text"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={openSearch}
             aria-label={t("notes.transcript.search")}
-            className="input compact w-full ps-[30px] [&::-webkit-search-cancel-button]:hidden"
-          />
-        </div>
+            title={t("notes.transcript.search")}
+            className="grid h-8 w-8 place-items-center rounded-[var(--r-sm)] text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:text-text hover:duration-0 active:scale-[0.97]"
+          >
+            <Search className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onCopy}
@@ -224,6 +234,66 @@ export const TranscriptTab: React.FC<{
         >
           <Copy className="h-4 w-4" aria-hidden="true" />
         </button>
+        {(offerSpeakers || canFindSpeakers || canFix) && (
+          <div className="relative">
+            <button
+              ref={menuButton}
+              type="button"
+              onClick={() => setMenu(!menu)}
+              aria-haspopup="menu"
+              aria-expanded={menu}
+              aria-label={t("notes.transcript.more")}
+              title={t("notes.transcript.more")}
+              className="grid h-8 w-8 place-items-center rounded-[var(--r-sm)] text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:text-text hover:duration-0 active:scale-[0.97]"
+            >
+              <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+            </button>
+            {menu && (
+              <ActionMenu
+                label={t("notes.transcript.more")}
+                className="end-0 top-full z-10 mt-1 w-60"
+                onClose={(restore) => {
+                  setMenu(false);
+                  if (restore) menuButton.current?.focus();
+                }}
+                items={[
+                  ...(canFix
+                    ? [
+                        {
+                          id: "misheard",
+                          label: t("notes.aiFix.find"),
+                          icon: SpellCheck,
+                          disabled: reviewing,
+                          onSelect: () => setReviewing(true),
+                        },
+                      ]
+                    : []),
+                  ...(canFindSpeakers
+                    ? [
+                        {
+                          id: "speakers",
+                          label: t("notes.speakers.findAgain"),
+                          icon: Users,
+                          disabled: finding,
+                          onSelect: findSpeakers,
+                        },
+                      ]
+                    : []),
+                  ...(offerSpeakers
+                    ? [
+                        {
+                          id: "setup",
+                          label: t("notes.speakers.setUp"),
+                          icon: Users,
+                          onSelect: () => go("settings", "calls"),
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {reviewing && (

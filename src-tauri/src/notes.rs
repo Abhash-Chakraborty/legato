@@ -1001,6 +1001,14 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
             None
         }
     };
+    // Telling voices apart needs the speaker model; the first meeting
+    // fetches it, so the passes start once it lands.
+    if capture.is_some() && settings.notes_speakers && !crate::speakers::is_downloaded(app) {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = crate::speakers::download(&app).await;
+        });
+    }
     let app_info = options
         .app_pid
         .filter(|_| capture.as_ref().is_some_and(|c| !c.fallback))
