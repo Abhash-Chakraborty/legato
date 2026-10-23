@@ -1487,11 +1487,19 @@ const RecordingOverlay: React.FC = () => {
     );
   }
 
-  // ---- Changes: the transform's word diff, with Keep and Undo.
+  // ---- Changes: what the text was and what it is now. The result is
+  // already kept; the card closes itself, stays while hovered, and Undo
+  // takes it back.
   if (state === "changes" && changes) {
     const parts = wordDiff(changes.before, changes.after);
     return frame(
-      <div className="scard panel" role="dialog" aria-label={changes.name}>
+      <div
+        className="scard panel"
+        role="dialog"
+        aria-label={changes.name}
+        onMouseEnter={() => commands.barHold(true)}
+        onMouseLeave={() => commands.barHold(false)}
+      >
         <div className="spanel-head">
           <span className="spanel-title">{changes.name}</span>
           {changes.keys && (
@@ -1502,31 +1510,45 @@ const RecordingOverlay: React.FC = () => {
             </span>
           )}
         </div>
-        <div className="sdiff">
-          {parts.map((part, i) =>
-            part.kind === "same" ? (
-              <span key={i}>{part.text}</span>
-            ) : part.kind === "added" ? (
-              <ins key={i}>{part.text}</ins>
-            ) : (
-              <del key={i}>{part.text}</del>
-            ),
-          )}
+        <div className="sdiff-side before">
+          <span className="sdiff-label">{t("overlay.changes.before")}</span>
+          <div className="sdiff">
+            {parts.map((part, i) =>
+              part.kind === "same" ? (
+                <span key={i}>{part.text}</span>
+              ) : part.kind === "removed" ? (
+                <del key={i}>{part.text}</del>
+              ) : null,
+            )}
+          </div>
+        </div>
+        <div className="sdiff-side">
+          <span className="sdiff-label">{t("overlay.changes.after")}</span>
+          <div className="sdiff">
+            {parts.map((part, i) =>
+              part.kind === "same" ? (
+                <span key={i}>{part.text}</span>
+              ) : part.kind === "added" ? (
+                <ins key={i}>{part.text}</ins>
+              ) : null,
+            )}
+          </div>
         </div>
         <div className="spanel-actions">
-          <button
-            type="button"
-            className="sbtn primary"
-            onClick={() => commands.barKeep()}
-          >
-            {t("overlay.changes.keep")}
-          </button>
           <button
             type="button"
             className="sbtn"
             onClick={() => commands.barUndo()}
           >
             {t("overlay.undo")}
+          </button>
+          <span className="spanel-note">{t("overlay.changes.kept")}</span>
+          <button
+            type="button"
+            className="sbtn quiet"
+            onClick={() => commands.barKeep()}
+          >
+            {t("overlay.changes.close")}
           </button>
         </div>
       </div>,

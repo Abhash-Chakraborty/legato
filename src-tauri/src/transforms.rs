@@ -28,8 +28,9 @@ use tauri_specta::Event;
 /// selection stays as it was if it doesn't, and the bar's cancel stops it.
 const SELECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// How long the bar shows a transform's changes before keeping them.
-const CHANGES_MS: u64 = 15_000;
+/// How long the bar shows a transform's changes (already kept) before it
+/// closes, unless the pointer is on them.
+const CHANGES_MS: u64 = 9_000;
 /// How long the bar confirms a paste.
 const CONFIRM_MS: u64 = 2500;
 /// How long the bar shows a problem.

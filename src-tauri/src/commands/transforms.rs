@@ -379,6 +379,13 @@ pub fn bar_keep(app: AppHandle) {
     transforms::keep(&app);
 }
 
+/// The pointer is on the bar's panel, or left it.
+#[tauri::command]
+#[specta::specta]
+pub fn bar_hold(held: bool) {
+    crate::overlay::hold_bar(held);
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn bar_pick(app: AppHandle, id: String) {

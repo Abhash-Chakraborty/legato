@@ -1060,6 +1060,7 @@ pub fn run(cli_args: CliArgs) {
             commands::transforms::new_transform,
             commands::transforms::bar_undo,
             commands::transforms::bar_keep,
+            commands::transforms::bar_hold,
             commands::transforms::bar_pick,
             commands::transforms::bar_dismiss,
             commands::transforms::bar_review,

@@ -105,6 +105,7 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
   const [playing, setPlaying] = useState(false);
   const [copied, setCopied] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [wholeOriginal, setWholeOriginal] = useState(false);
 
   const text = finalText(entry);
   const failed = entry.status === "failed" || !entry.transcription_text.trim();
@@ -270,6 +271,36 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
             )}
           </p>
         )}
+
+        {entry.post_processed_text != null &&
+          !failed &&
+          !fixing &&
+          !retrying &&
+          entry.transcription_text.trim() !== text.trim() && (
+            <div className="mt-2 border-s-2 border-line ps-3 text-[13px] leading-[1.5] text-text-3">
+              <p
+                className={`select-text whitespace-pre-wrap break-words ${wholeOriginal ? "" : "line-clamp-2"}`}
+              >
+                <span className="font-medium text-text-2">
+                  {entry.transform
+                    ? t("home.row.before", { name: entry.transform })
+                    : t("home.row.beforeTransform")}
+                </span>{" "}
+                {entry.transcription_text}
+              </p>
+              {entry.transcription_text.length > 180 && (
+                <button
+                  type="button"
+                  onClick={() => setWholeOriginal((w) => !w)}
+                  className="mt-0.5 block font-medium text-teal-700 underline-offset-2 hover:underline"
+                >
+                  {wholeOriginal
+                    ? t("home.row.showLess")
+                    : t("home.row.showAll")}
+                </button>
+              )}
+            </div>
+          )}
 
         <MetaLine>
           {appLabel && (

@@ -26,7 +26,7 @@ const OVERLAY_WIDTH: f64 = 256.0;
 const OVERLAY_HEIGHT: f64 = 50.0;
 
 const OVERLAY_CHANGES_WIDTH: f64 = 480.0;
-const OVERLAY_CHANGES_HEIGHT: f64 = 250.0;
+const OVERLAY_CHANGES_HEIGHT: f64 = 290.0;
 const OVERLAY_PICK_WIDTH: f64 = 320.0;
 const OVERLAY_PICK_HEIGHT: f64 = 360.0;
 
@@ -619,6 +619,7 @@ pub fn show_bar<T: serde::Serialize>(
     hide_after_ms: Option<u64>,
 ) {
     let _ = app_handle.emit_to("recording_overlay", event, payload);
+    BAR_HELD.store(false, Ordering::SeqCst);
     show_overlay_state(app_handle, state);
     let Some(ms) = hide_after_ms else {
         return;
@@ -630,10 +631,31 @@ pub fn show_bar<T: serde::Serialize>(
         std::thread::sleep(std::time::Duration::from_millis(150));
         let shown = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
         std::thread::sleep(std::time::Duration::from_millis(ms));
-        if OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) == shown {
+        // A panel under the pointer stays until it leaves, then a moment.
+        let mut held = false;
+        while BAR_HELD.load(Ordering::SeqCst)
+            && OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) == shown
+        {
+            held = true;
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        if held {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+        }
+        if OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) == shown
+            && !BAR_HELD.load(Ordering::SeqCst)
+        {
             hide_recording_overlay(&handle);
         }
     });
+}
+
+/// Whether the pointer is over a panel the bar shows for a while, such as a
+/// transform's changes; it isn't hidden while it is.
+static BAR_HELD: AtomicBool = AtomicBool::new(false);
+
+pub fn hold_bar(held: bool) {
+    BAR_HELD.store(held, Ordering::SeqCst);
 }
 
 /// Sets the working label ("Polishing…") the next processing state shows;

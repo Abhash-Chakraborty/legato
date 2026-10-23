@@ -1551,6 +1551,12 @@ async barUndo() : Promise<void> {
 async barKeep() : Promise<void> {
     return await TAURI_INVOKE("bar_keep");
 },
+/**
+ * The pointer is on the bar's panel, or left it.
+ */
+async barHold(held: boolean) : Promise<void> {
+    return await TAURI_INVOKE("bar_hold", { held });
+},
 async barPick(id: string) : Promise<void> {
     return await TAURI_INVOKE("bar_pick", { id });
 },

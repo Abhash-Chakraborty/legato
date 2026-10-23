@@ -167,7 +167,7 @@
           },
           "view_changes": {
             "name": "Show the last changes",
-            "description": "Shows what the last transform changed, with Keep and Undo."
+            "description": "Shows what the last transform changed, before and after, with Undo."
           },
           "paste_last": {
             "name": "Paste last dictation",
@@ -948,7 +948,7 @@
       },
       "showChanges": {
         "title": "Show changes after a transform",
-        "help": "The bar shows what a transform changed, with Keep and Undo. Each transform can turn this off."
+        "help": "The bar shows the text before and after a transform for a few seconds, with Undo. The change is kept unless you undo it. Each transform can turn this off."
       }
     },
     "output": {
@@ -1553,8 +1553,11 @@
     "undo": "Undo",
     "review": "Review",
     "changes": {
-      "keep": "Keep",
-      "again": "{{keys}} shows these again"
+      "again": "{{keys}} shows these again",
+      "before": "Before",
+      "after": "After",
+      "kept": "Kept",
+      "close": "Close"
     },
     "pick": {
       "title": "Transform the selection",
@@ -1685,7 +1688,11 @@
       "fixedTip": "{{word}} · fixed from “{{heard}}” · {{by}}",
       "fixedByYou": "by you",
       "fixedByDictionary": "Dictionary",
-      "fixedByAi": "AI correction pass"
+      "fixedByAi": "AI correction pass",
+      "before": "Before {{name}}:",
+      "beforeTransform": "Before the transform:",
+      "showAll": "Show all",
+      "showLess": "Show less"
     },
     "meta": {
       "siteIn": "{{site}} in {{app}}",

@@ -366,7 +366,29 @@
 }
 .spanel-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+.spanel-note {
+  color: var(--s-muted);
+  font-size: 12px;
+}
+.sdiff-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+.sdiff-label {
+  color: var(--s-muted);
+  font-size: 12px;
+}
+.sdiff-side .sdiff {
+  max-height: 78px;
+}
+.sdiff-side.before .sdiff {
+  max-height: 58px;
+  color: var(--s-muted);
 }
 .spick-list {
   list-style: none;
