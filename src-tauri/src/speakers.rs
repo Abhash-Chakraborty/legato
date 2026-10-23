@@ -319,7 +319,11 @@ fn windowed(app: &AppHandle, audio: &Path, spans: &[(i64, i64)], dir: &Path) -> 
 
     // Each voice, then up to three it might be, in one file.
     let mut jobs: Vec<(usize, Vec<usize>)> = Vec::new();
-    for (a, b) in notes_rules::voice_pairs(&groups, &has_clip) {
+    for (a, b) in notes_rules::voice_pairs(
+        &groups,
+        &has_clip,
+        &notes_rules::speech_ms(&linked, groups.count),
+    ) {
         match jobs.last_mut() {
             Some((first, others)) if *first == a && others.len() < PER_FILE => others.push(b),
             _ => jobs.push((a, vec![b])),

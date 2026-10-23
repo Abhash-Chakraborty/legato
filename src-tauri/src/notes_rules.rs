@@ -677,18 +677,39 @@ pub fn clearest_turns(
 }
 
 /// Pairs of groups worth comparing: they never talk in the same window,
-/// and both have a clip.
-pub fn voice_pairs(groups: &VoiceGroups, has_clip: &[bool]) -> Vec<(usize, usize)> {
+/// and both have a clip. Groups that talk most come first, each with the
+/// others in the same order, so when there are too many to run, the ones
+/// left out are the least heard.
+pub fn voice_pairs(
+    groups: &VoiceGroups,
+    has_clip: &[bool],
+    speech_ms: &[i64],
+) -> Vec<(usize, usize)> {
     let windows = groups.windows();
+    let mut order: Vec<usize> = (0..groups.count)
+        .filter(|&g| has_clip.get(g) == Some(&true))
+        .collect();
+    order.sort_by_key(|&g| (std::cmp::Reverse(speech_ms.get(g).copied().unwrap_or(0)), g));
     let mut out = Vec::new();
-    for a in 0..groups.count {
-        for b in a + 1..groups.count {
-            if has_clip.get(a) == Some(&true)
-                && has_clip.get(b) == Some(&true)
-                && !windows[a].iter().any(|w| windows[b].contains(w))
-            {
+    for (i, &a) in order.iter().enumerate() {
+        for &b in &order[i + 1..] {
+            if !windows[a].iter().any(|w| windows[b].contains(w)) {
                 out.push((a, b));
             }
+        }
+    }
+    out
+}
+
+/// How long each voice talks in `turns`, indexed by voice number - 1.
+pub fn speech_ms(turns: &[Turn], voices: usize) -> Vec<i64> {
+    let mut out = vec![0; voices];
+    for t in turns {
+        if let Some(ms) = usize::try_from(t.speaker - 1)
+            .ok()
+            .and_then(|i| out.get_mut(i))
+        {
+            *ms += t.t1_ms - t.t0_ms;
         }
     }
     out
@@ -1995,12 +2016,21 @@ mod tests {
     #[test]
     fn voices_to_compare_have_a_clip_and_no_shared_window() {
         let groups = link_windows(&three_windows());
-        let pairs = voice_pairs(&groups, &[true, true, true, true, true]);
-        assert!(pairs.contains(&(0, 4)));
-        assert!(pairs.contains(&(2, 4)));
-        assert!(!pairs.contains(&(1, 3)));
-        assert!(!pairs.contains(&(0, 1)));
-        assert!(!voice_pairs(&groups, &[false, true, true, true, true]).contains(&(0, 4)));
+        let all = [true; 5];
+        let has =
+            |pairs: &[(usize, usize)], a, b| pairs.contains(&(a, b)) || pairs.contains(&(b, a));
+        let pairs = voice_pairs(&groups, &all, &[5, 4, 3, 2, 1]);
+        assert!(has(&pairs, 0, 4) && has(&pairs, 2, 4));
+        assert!(!has(&pairs, 1, 3) && !has(&pairs, 0, 1));
+        assert!(!has(
+            &voice_pairs(&groups, &[false, true, true, true, true], &[1; 5]),
+            0,
+            4
+        ));
+        // The voice heard most goes first.
+        assert_eq!(voice_pairs(&groups, &all, &[1, 1, 1, 9, 1])[0].0, 3);
+        let stitched = stitch_turns(&three_windows(), &groups, &[0, 1, 2, 3, 4]);
+        assert_eq!(speech_ms(&stitched, 5)[0], 50_000);
     }
 
     #[test]
