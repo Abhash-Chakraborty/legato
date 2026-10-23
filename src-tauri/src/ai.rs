@@ -404,6 +404,7 @@ pub async fn summarise_note(
     lines: &[notes_rules::PromptLine<'_>],
     tags_in_use: &[String],
     people: &[String],
+    words: &[String],
 ) -> Result<notes_rules::NotesSummary, AiProblem> {
     let json_hint = !config.provider.supports_structured_output
         || config.provider.api_format == PostProcessApiFormat::Anthropic;
@@ -430,6 +431,7 @@ pub async fn summarise_note(
             json_hint,
             tags_in_use,
             people,
+            words,
         ))
         .await;
     }
@@ -442,6 +444,7 @@ pub async fn summarise_note(
                 json_hint,
                 tags_in_use,
                 people,
+                words,
             ))
             .await?,
         );
@@ -450,6 +453,7 @@ pub async fn summarise_note(
         &summaries,
         json_hint,
         tags_in_use,
+        words,
     ))
     .await?;
     // Each part's details keep their own times; the combined answer's
@@ -597,6 +601,7 @@ pub async fn medium_pass(
             text: &e.text,
             heard: &e.heard,
             ordinary: ordinary_forms(&e.heard),
+            kind: e.kind.map(|k| k.noun()),
         })
         .collect();
     let input = crate::snippet_rules::to_ai(text);
@@ -682,6 +687,7 @@ pub async fn correction_pass(
             text: &e.text,
             heard: &e.heard,
             ordinary: ordinary_forms(&e.heard),
+            kind: e.kind.map(|k| k.noun()),
         })
         .collect();
 

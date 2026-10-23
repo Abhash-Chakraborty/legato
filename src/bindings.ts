@@ -2810,7 +2810,11 @@ last_app: string | null; last_app_path: string | null;
 /**
  * Transcripts the word fixed.
  */
-hits: number }
+hits: number; 
+/**
+ * What the word is, when you said.
+ */
+kind?: WordKind | null }
 /**
  * Where a word came from.
  */
@@ -2839,7 +2843,16 @@ export type DictionarySource =
 /**
  * A word as the editor saves it, and as files import it.
  */
-export type EntryInput = { text: string; heard?: string[]; pinned?: boolean; case_sensitive?: boolean }
+/**
+ * What a word is, so the AI treats it right: a name or a project is kept
+ * as written and never "corrected" into an ordinary word.
+ */
+export type WordKind = "person" | "project" | "organisation" | 
+/**
+ * A technical term or product name.
+ */
+"term"
+export type EntryInput = { text: string; heard?: string[]; pinned?: boolean; case_sensitive?: boolean; kind?: WordKind | null }
 /**
  * How many words an import added, extended and skipped.
  */

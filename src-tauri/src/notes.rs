@@ -2023,7 +2023,8 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
     m.changed();
     let started = Instant::now();
     let tags_in_use = m.tags().unwrap_or_default();
-    match crate::ai::summarise_note(app, &config, &prompt, &tags_in_use, &people).await {
+    let words = dictionary_for_ai(app, SUMMARY_WORDS);
+    match crate::ai::summarise_note(app, &config, &prompt, &tags_in_use, &people, &words).await {
         Ok(mut summary) => {
             summary.outline.fit_to(last_ms);
             let local = if crate::ai::is_local(&config.provider) {
@@ -2122,9 +2123,29 @@ pub async fn ask(app: &AppHandle, note_id: i64, question: &str) -> Result<String
 /// Dictionary words sent with a transcript, so the AI knows how they're
 /// spelled; pinned ones first.
 const FIX_WORDS: usize = 200;
+/// How many Dictionary words a summary request carries, so names come out
+/// spelled your way.
+const SUMMARY_WORDS: usize = 80;
 
 /// Asks your AI for misheard words in the note. Nothing changes until the
 /// fixes are accepted. Errors are codes, as for Ask.
+/// The Dictionary for a note's AI requests: names, projects and terms first,
+/// then pinned words, then the most used, each saying what it is and how
+/// it gets misheard.
+fn dictionary_for_ai(app: &AppHandle, limit: usize) -> Vec<String> {
+    app.try_state::<Arc<DictionaryManager>>()
+        .and_then(|d| d.list().ok())
+        .map(|mut entries| {
+            entries.sort_by_key(|e| (e.kind.is_none(), !e.pinned, -e.hits));
+            entries
+                .iter()
+                .take(limit)
+                .map(|e| notes_rules::describe_word(&e.text, e.kind.map(|k| k.noun()), &e.heard))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub async fn suggest_fixes(app: &AppHandle, note_id: i64) -> Result<Vec<SuggestedFix>, String> {
     let config = notes_ai(app)?;
     let m = manager(app);
@@ -2136,18 +2157,7 @@ pub async fn suggest_fixes(app: &AppHandle, note_id: i64) -> Result<Vec<Suggeste
     if lines.is_empty() {
         return Err("empty".to_string());
     }
-    let words: Vec<String> = app
-        .try_state::<Arc<DictionaryManager>>()
-        .and_then(|d| d.list().ok())
-        .map(|mut entries| {
-            entries.sort_by_key(|e| !e.pinned);
-            entries
-                .into_iter()
-                .take(FIX_WORDS)
-                .map(|e| e.text)
-                .collect()
-        })
-        .unwrap_or_default();
+    let words = dictionary_for_ai(app, FIX_WORDS);
     let labels = speaker_labels(&note, &lines);
     let fixes = crate::ai::find_note_fixes(
         app,

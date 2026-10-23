@@ -132,6 +132,7 @@ pub fn test_dictionary(
             last_app: None,
             last_app_path: None,
             hits: 0,
+            kind: draft.kind,
         };
         entries.retain(|e| {
             Some(e.id) != draft_id && e.text.to_lowercase() != word.text.to_lowercase()

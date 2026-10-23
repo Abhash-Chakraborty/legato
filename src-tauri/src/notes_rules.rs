@@ -464,6 +464,7 @@ pub fn summary_request(
     json_hint: bool,
     tags_in_use: &[String],
     people: &[String],
+    words: &[String],
 ) -> String {
     let mut request = String::from(
         "Summarise this transcript.\n\n\
@@ -480,6 +481,13 @@ pub fn summary_request(
     if !people.is_empty() {
         request.push_str("People invited to the meeting: ");
         request.push_str(&people.join(", "));
+        request.push('\n');
+    }
+    if !words.is_empty() {
+        request.push_str(
+            "Names and terms this person uses, spelled right (the transcript may have them misheard; write them this way): ",
+        );
+        request.push_str(&words.join("; "));
         request.push('\n');
     }
     if !tags_in_use.is_empty() {
@@ -499,7 +507,12 @@ pub fn summary_request(
 }
 
 /// The request that combines the summaries of a long transcript's parts.
-pub fn combine_request(parts: &[NotesSummary], json_hint: bool, tags_in_use: &[String]) -> String {
+pub fn combine_request(
+    parts: &[NotesSummary],
+    json_hint: bool,
+    tags_in_use: &[String],
+    words: &[String],
+) -> String {
     let mut text = String::new();
     for (i, part) in parts.iter().enumerate() {
         text.push_str(&format!("Part {}: {}\n", i + 1, part.summary));
@@ -514,7 +527,7 @@ pub fn combine_request(parts: &[NotesSummary], json_hint: bool, tags_in_use: &[S
         }
     }
     let people: Vec<String> = merge_people(parts.iter().map(|p| p.outline.people.as_slice()));
-    summary_request(&text, json_hint, tags_in_use, &people).replace(
+    summary_request(&text, json_hint, tags_in_use, &people, words).replace(
         "Summarise this transcript.",
         "These are summaries of consecutive parts of one long conversation. Combine them into one summary, removing repeats; details may stay empty, since each part keeps its own.",
     )
@@ -811,7 +824,7 @@ pub fn match_existing_tags(suggested: &[String], in_use: &[String]) -> Vec<Strin
         .collect()
 }
 
-pub const FIX_SYSTEM: &str = "You proofread a speech-to-text transcript of one conversation. Speech models mishear names, product names, jargon and acronyms, writing words that sound alike, such as \"cube cuddle\" for \"kubectl\". Find the words that are clearly misheard, judging from the rest of the conversation, its title and the person's own word list, and give the word that was meant. Fix only misheard words: never rephrase, fix grammar or style, change punctuation, or translate. When unsure, leave the word alone. Answer with JSON only.";
+pub const FIX_SYSTEM: &str = "You proofread a speech-to-text transcript of one conversation. Speech models mishear names, product names, jargon and acronyms, writing words that sound alike, such as \"cube cuddle\" for \"kubectl\". Find the words that are clearly misheard, judging from the rest of the conversation, its title and the person's own word list, and give the word that was meant. Words in that list are spelled exactly as listed: a person, project, organisation or term from it is never turned into a similar ordinary word, and a misheard form listed for a word is that word wherever the sentence is about it. Fix only misheard words: never rephrase, fix grammar or style, change punctuation, or translate. When unsure, leave the word alone. Answer with JSON only.";
 
 /// At most this many fixes are suggested for one note.
 pub const FIX_MAX: usize = 40;
@@ -837,13 +850,30 @@ pub fn numbered_parts(lines: &[PromptLine<'_>]) -> Vec<String> {
     parts
 }
 
+/// A Dictionary word for a note's AI requests: what it is and how it gets
+/// misheard, as in "AIPS (a project name; misheard as IPS, IPES)".
+pub fn describe_word(text: &str, kind: Option<&str>, heard: &[String]) -> String {
+    let mut about: Vec<String> = Vec::new();
+    if let Some(kind) = kind {
+        about.push(kind.to_string());
+    }
+    if !heard.is_empty() {
+        about.push(format!("misheard as {}", heard.join(", ")));
+    }
+    if about.is_empty() {
+        text.to_string()
+    } else {
+        format!("{text} ({})", about.join("; "))
+    }
+}
+
 /// The request for misheard words in one numbered part.
 pub fn fix_request(part: &str, title: &str, words: &[String], json_hint: bool) -> String {
     let mut request = format!("Title: {title}\n");
     if !words.is_empty() {
         request.push_str(&format!(
             "Words this person uses, spelled right: {}\n",
-            words.join(", ")
+            words.join("; ")
         ));
     }
     request.push_str(
@@ -1268,12 +1298,29 @@ mod tests {
 
     #[test]
     fn the_summary_request_offers_tags_in_use() {
-        let r = summary_request("You: hi", false, &["backend".into(), "clients".into()], &[]);
+        assert_eq!(
+            describe_word(
+                "AIPS",
+                Some("a project name"),
+                &["IPS".into(), "IPES".into()]
+            ),
+            "AIPS (a project name; misheard as IPS, IPES)"
+        );
+        assert_eq!(describe_word("Datev", None, &[]), "Datev");
+        assert!(summary_request("You: hi", false, &[], &[], &["AIPS (a project name)".into()])
+            .contains("spelled right (the transcript may have them misheard; write them this way): AIPS (a project name)"));
+        let r = summary_request(
+            "You: hi",
+            false,
+            &["backend".into(), "clients".into()],
+            &[],
+            &[],
+        );
         assert!(r.contains("Tags already in use, to pick from when one fits: backend, clients"));
-        assert!(!summary_request("You: hi", false, &[], &[]).contains("already in use"));
-        assert!(summary_request("You: hi", true, &[], &[]).contains("\"title\""));
+        assert!(!summary_request("You: hi", false, &[], &[], &[]).contains("already in use"));
+        assert!(summary_request("You: hi", true, &[], &[], &[]).contains("\"title\""));
         assert!(
-            summary_request("You: hi", false, &[], &["Sahil Khan".into()])
+            summary_request("You: hi", false, &[], &["Sahil Khan".into()], &[])
                 .contains("People invited to the meeting: Sahil Khan\n")
         );
     }

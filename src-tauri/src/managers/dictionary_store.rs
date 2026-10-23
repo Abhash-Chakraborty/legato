@@ -60,6 +60,49 @@ impl DictionarySource {
     }
 }
 
+/// What a word is, so the AI treats it right: a name or a project is kept
+/// as written and never "corrected" into an ordinary word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WordKind {
+    Person,
+    Project,
+    Organisation,
+    /// A technical term or product name.
+    Term,
+}
+
+impl WordKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WordKind::Person => "person",
+            WordKind::Project => "project",
+            WordKind::Organisation => "organisation",
+            WordKind::Term => "term",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "person" => Some(WordKind::Person),
+            "project" => Some(WordKind::Project),
+            "organisation" => Some(WordKind::Organisation),
+            "term" => Some(WordKind::Term),
+            _ => None,
+        }
+    }
+
+    /// How the AI's prompts name it.
+    pub fn noun(self) -> &'static str {
+        match self {
+            WordKind::Person => "a person's name",
+            WordKind::Project => "a project name",
+            WordKind::Organisation => "an organisation's name",
+            WordKind::Term => "a technical term",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct DictionaryEntry {
     pub id: i64,
@@ -76,6 +119,9 @@ pub struct DictionaryEntry {
     pub last_app_path: Option<String>,
     /// Transcripts the word fixed.
     pub hits: i64,
+    /// What the word is, when you said.
+    #[serde(default)]
+    pub kind: Option<WordKind>,
 }
 
 /// A word as the editor saves it, and as files import it.
@@ -88,13 +134,15 @@ pub struct EntryInput {
     pub pinned: bool,
     #[serde(default)]
     pub case_sensitive: bool,
+    #[serde(default)]
+    pub kind: Option<WordKind>,
 }
 
 /// An app a fix happened in: its name, and an executable for its icon.
 pub type FixApp<'a> = Option<(&'a str, Option<&'a str>)>;
 
 const COLUMNS: &str = "id, text, source, pinned, case_sensitive, added_at, last_fix_at, last_app,
-    last_app_path, hits";
+    last_app_path, hits, kind";
 
 fn map_entry(row: &Row<'_>) -> rusqlite::Result<DictionaryEntry> {
     let source: String = row.get("source")?;
@@ -110,6 +158,10 @@ fn map_entry(row: &Row<'_>) -> rusqlite::Result<DictionaryEntry> {
         last_app: row.get("last_app")?,
         last_app_path: row.get("last_app_path")?,
         hits: row.get("hits")?,
+        kind: row
+            .get::<_, Option<String>>("kind")?
+            .as_deref()
+            .and_then(WordKind::parse),
     })
 }
 
@@ -264,14 +316,15 @@ pub fn add(
     let tx = conn.transaction()?;
     let text = validate(&tx, input, None)?;
     tx.execute(
-        "INSERT INTO dictionary_entry (text, source, pinned, case_sensitive, added_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
+        "INSERT INTO dictionary_entry (text, source, pinned, case_sensitive, added_at, kind)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
             text,
             source.as_str(),
             input.pinned,
             input.case_sensitive,
-            now
+            now,
+            input.kind.map(WordKind::as_str)
         ],
     )?;
     let id = tx.last_insert_rowid();
@@ -291,8 +344,15 @@ pub fn update(conn: &mut Connection, id: i64, input: &EntryInput) -> Result<Dict
     get(&tx, id)?.ok_or_else(|| anyhow!("That word is no longer in your Dictionary"))?;
     let text = validate(&tx, input, Some(id))?;
     tx.execute(
-        "UPDATE dictionary_entry SET text = ?1, pinned = ?2, case_sensitive = ?3 WHERE id = ?4",
-        params![text, input.pinned, input.case_sensitive, id],
+        "UPDATE dictionary_entry SET text = ?1, pinned = ?2, case_sensitive = ?3, kind = ?5
+         WHERE id = ?4",
+        params![
+            text,
+            input.pinned,
+            input.case_sensitive,
+            id,
+            input.kind.map(WordKind::as_str)
+        ],
     )?;
     tx.execute(
         "DELETE FROM dictionary_heard WHERE entry_id = ?1 OR heard = ?2 COLLATE NOCASE",
@@ -346,8 +406,8 @@ pub fn restore(conn: &mut Connection, entries: &[DictionaryEntry]) -> Result<()>
         )?;
         tx.execute(
             "INSERT OR REPLACE INTO dictionary_entry (id, text, source, pinned, case_sensitive,
-                added_at, last_fix_at, last_app, last_app_path, hits)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                added_at, last_fix_at, last_app, last_app_path, hits, kind)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 e.id,
                 e.text,
@@ -358,7 +418,8 @@ pub fn restore(conn: &mut Connection, entries: &[DictionaryEntry]) -> Result<()>
                 e.last_fix_at,
                 e.last_app,
                 e.last_app_path,
-                e.hits
+                e.hits,
+                e.kind.map(WordKind::as_str)
             ],
         )?;
         tx.execute(

@@ -145,8 +145,7 @@ mod tests {
         let word = EntryInput {
             text: "Netbird".into(),
             heard: vec!["net bird".into()],
-            pinned: false,
-            case_sensitive: false,
+            ..Default::default()
         };
         dictionary_store::add(&mut conn, &word, DictionarySource::Manual, 1).unwrap();
         let snippet = SnippetInput {

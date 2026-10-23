@@ -77,6 +77,11 @@ export const WordRow: React.FC<WordRowProps> = ({
           <span data-word-text className="truncate text-[15px] font-medium">
             {entry.text}
           </span>
+          {entry.kind && (
+            <span className="text-xs text-text-3">
+              {t(`dictionary.kind.${entry.kind}`)}
+            </span>
+          )}
           {entry.case_sensitive && (
             <span
               className="rounded-[var(--r-xs)] border border-line px-1 text-[11px] font-medium leading-4 text-text-3"

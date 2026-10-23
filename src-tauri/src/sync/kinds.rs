@@ -134,7 +134,7 @@ fn export_dictionary(conn: &Connection) -> Result<Vec<Item>> {
         }
     }
     let mut stmt = conn.prepare(
-        "SELECT id, text, case_sensitive, pinned, added_at FROM dictionary_entry ORDER BY id",
+        "SELECT id, text, case_sensitive, pinned, added_at, kind FROM dictionary_entry ORDER BY id",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
@@ -143,16 +143,22 @@ fn export_dictionary(conn: &Connection) -> Result<Vec<Item>> {
             r.get::<_, bool>(2)?,
             r.get::<_, bool>(3)?,
             r.get::<_, i64>(4)?,
+            r.get::<_, Option<String>>(5)?,
         ))
     })?;
     let mut items = Vec::new();
     for row in rows {
-        let (id, text, case_sensitive, pinned, added_at) = row?;
+        let (id, text, case_sensitive, pinned, added_at, kind) = row?;
         let mut forms = heard.remove(&id).unwrap_or_default();
         forms.sort_by_key(|f| f.to_lowercase());
+        let mut body = json!({"text": text, "case_sensitive": case_sensitive, "pinned": pinned, "heard": forms});
+        // Only when set, so words without one read as they did before.
+        if let Some(kind) = kind {
+            body["kind"] = json!(kind);
+        }
         items.push(Item {
             key: text.to_lowercase(),
-            body: json!({"text": text, "case_sensitive": case_sensitive, "pinned": pinned, "heard": forms}),
+            body,
             at: seconds_to_ms(added_at),
         });
     }
@@ -183,24 +189,36 @@ fn apply_dictionary(
     if word.is_empty() {
         bail!("a word with no text");
     }
+    // A side that doesn't know kinds leaves the one here alone.
+    let kind = body["kind"]
+        .as_str()
+        .filter(|k| crate::managers::dictionary_store::WordKind::parse(k).is_some());
     let id = match existing {
         Some(id) => {
             conn.execute(
-                "UPDATE dictionary_entry SET text = ?2, case_sensitive = ?3, pinned = ?4 WHERE id = ?1",
-                params![id, word, flag(body, "case_sensitive"), flag(body, "pinned")],
+                "UPDATE dictionary_entry SET text = ?2, case_sensitive = ?3, pinned = ?4,
+                    kind = COALESCE(?5, kind) WHERE id = ?1",
+                params![
+                    id,
+                    word,
+                    flag(body, "case_sensitive"),
+                    flag(body, "pinned"),
+                    kind
+                ],
             )?;
             conn.execute("DELETE FROM dictionary_heard WHERE entry_id = ?1", [id])?;
             id
         }
         None => {
             conn.execute(
-                "INSERT INTO dictionary_entry (text, source, pinned, case_sensitive, added_at)
-                 VALUES (?1, 'manual', ?2, ?3, ?4)",
+                "INSERT INTO dictionary_entry (text, source, pinned, case_sensitive, added_at, kind)
+                 VALUES (?1, 'manual', ?2, ?3, ?4, ?5)",
                 params![
                     word,
                     flag(body, "pinned"),
                     flag(body, "case_sensitive"),
-                    now
+                    now,
+                    kind
                 ],
             )?;
             conn.last_insert_rowid()

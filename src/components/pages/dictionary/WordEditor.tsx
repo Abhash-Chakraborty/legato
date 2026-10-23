@@ -3,16 +3,30 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { commands, type DictionaryEntry, type EntryInput } from "@/bindings";
+import {
+  commands,
+  type DictionaryEntry,
+  type EntryInput,
+  type WordKind,
+} from "@/bindings";
 import { Button } from "../../ui/Button";
+import { Segmented } from "../../ui/Segmented";
 import { Sheet } from "../../ui/Sheet";
 import { TestSentence } from "./TestSentence";
+
+const WORD_KINDS: (WordKind | "word")[] = [
+  "word",
+  "person",
+  "project",
+  "organisation",
+  "term",
+];
 
 interface WordEditorProps {
   /** The word to edit, or null to add one. */
   entry: DictionaryEntry | null;
   /** What a new word starts with, such as one from Needs review. */
-  initial?: { text: string; heard: string[] };
+  initial?: { text: string; heard: string[]; kind?: WordKind | null };
   entries: DictionaryEntry[];
   pinLimit: number;
   maxChars: number;
@@ -49,6 +63,9 @@ export const WordEditor: React.FC<WordEditorProps> = ({
     entry?.case_sensitive ?? false,
   );
   const [pinned, setPinned] = useState(entry?.pinned ?? false);
+  const [kind, setKind] = useState<WordKind | "word">(
+    entry?.kind ?? initial?.kind ?? "word",
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -79,6 +96,7 @@ export const WordEditor: React.FC<WordEditorProps> = ({
     heard: heardInput.trim() ? [...heard, heardInput.trim()] : heard,
     pinned,
     case_sensitive: caseSensitive,
+    kind: kind === "word" ? null : kind,
   };
 
   const save = async () => {
@@ -198,6 +216,24 @@ export const WordEditor: React.FC<WordEditorProps> = ({
                   })
                 : ""))
             )}
+          </p>
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-[13px] font-medium">
+            {t("dictionary.editor.kind")}
+          </p>
+          <Segmented
+            label={t("dictionary.editor.kind")}
+            value={kind}
+            onChange={setKind}
+            options={WORD_KINDS.map((k) => ({
+              value: k,
+              label: t(`dictionary.kind.${k}`),
+            }))}
+          />
+          <p className="mt-1.5 text-[13px] text-text-3">
+            {t("dictionary.editor.kindHelp")}
           </p>
         </div>
 

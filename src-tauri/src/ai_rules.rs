@@ -191,12 +191,17 @@ pub struct PromptWord<'a> {
     /// Heard forms that are ordinary words too ("Neon" for "Inyon"): the
     /// model is told to change them only when the sentence means the word.
     pub ordinary: Vec<&'a str>,
+    /// What the word is ("a project name"), when the Dictionary says.
+    pub kind: Option<&'a str>,
 }
 
 /// One line of the word list: the word, how it's misheard, and which of
 /// those are real words to leave alone unless the sentence is about it.
 fn push_word(out: &mut String, word: &PromptWord) {
     out.push_str(word.text);
+    if let Some(kind) = word.kind {
+        out.push_str(&format!(", {kind}, kept exactly as written"));
+    }
     if !word.heard.is_empty() {
         out.push_str(" (misheard as: ");
         out.push_str(&word.heard.join(", "));
@@ -414,11 +419,13 @@ mod tests {
                 text: "Dokploy",
                 heard: &heard,
                 ordinary: vec![],
+                kind: None,
             },
             PromptWord {
                 text: "Karol",
                 heard: &[],
                 ordinary: vec![],
+                kind: None,
             },
         ];
         let request = correction_request(&words, "move it to doc ploy", true);
@@ -451,11 +458,13 @@ mod tests {
                 text: "Dokploy",
                 heard: &[],
                 ordinary: vec![],
+                kind: None,
             },
             PromptWord {
                 text: "Karol",
                 heard: &[],
                 ordinary: vec![],
+                kind: None,
             },
         ];
         let reps = vec![
@@ -503,6 +512,7 @@ mod tests {
             text: "Karol",
             heard: &[],
             ordinary: vec![],
+            kind: None,
         }];
         let (text, changes) = apply_replacements("hi Karol", &words, &reps);
         assert_eq!(text, "hi Karol");
@@ -520,6 +530,7 @@ mod tests {
             text: "$1",
             heard: &heard,
             ordinary: vec![],
+            kind: None,
         }];
         let (text, _) = apply_replacements("one dollar", &words, &reps);
         assert_eq!(text, "one $1");
@@ -533,16 +544,19 @@ mod tests {
                 text: "Inyon",
                 heard: &heard,
                 ordinary: vec![],
+                kind: None,
             },
             PromptWord {
                 text: "Netbird",
                 heard: &[],
                 ordinary: vec![],
+                kind: None,
             },
             PromptWord {
                 text: "Kubernetes",
                 heard: &[],
                 ordinary: vec![],
+                kind: None,
             },
         ];
         let rep = |from: &str, to: &str| Replacement {
@@ -575,6 +589,7 @@ mod tests {
             text: "Netbird",
             heard: &[],
             ordinary: vec![],
+            kind: None,
         }];
         assert!(invents_words(
             "the errors are back",
@@ -602,10 +617,20 @@ mod tests {
             text: "Inyon",
             heard: &heard,
             ordinary: vec!["neon"],
+            kind: None,
         }];
         let request = correction_request(&words, "the neon hub", false);
         assert!(request.contains(
             "- Inyon (misheard as: neon); neon is also an ordinary word: change it only where the sentence means Inyon\n"
         ));
+        // A name says what it is, so the model keeps it as written.
+        let words = [PromptWord {
+            text: "AIPS",
+            heard: &[],
+            ordinary: vec![],
+            kind: Some("a project name"),
+        }];
+        let request = correction_request(&words, "the IPS tab", false);
+        assert!(request.contains("- AIPS, a project name, kept exactly as written\n"));
     }
 }

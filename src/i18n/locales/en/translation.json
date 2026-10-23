@@ -1991,7 +1991,9 @@
       "testPlaceholder": "Type how it sounds, e.g. restart doc ploy on the arm box",
       "delete": "Delete",
       "cancel": "Cancel",
-      "save": "Save"
+      "save": "Save",
+      "kind": "What it is",
+      "kindHelp": "Names, projects and terms are kept exactly as written: the AI never turns them into a similar ordinary word, and notes summaries spell them this way."
     },
     "review": {
       "title": "Learned from your edits",
@@ -2030,6 +2032,13 @@
       "toast": {
         "ignored": "Won't suggest “{{word}}” again"
       }
+    },
+    "kind": {
+      "word": "Word",
+      "person": "Person",
+      "project": "Project",
+      "organisation": "Organisation",
+      "term": "Term"
     }
   },
   "transforms": {

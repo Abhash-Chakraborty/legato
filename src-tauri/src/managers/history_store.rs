@@ -425,6 +425,8 @@ pub static MIGRATIONS: &[M] = &[
         );
         CREATE INDEX idx_trash_deleted_at ON trash(deleted_at);",
     ),
+    // What a Dictionary word is: person, project, organisation or term.
+    M::up("ALTER TABLE dictionary_entry ADD COLUMN kind TEXT;"),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.
