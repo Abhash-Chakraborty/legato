@@ -484,7 +484,7 @@ function App() {
               className={`h-full overflow-y-auto px-5 pt-5 min-[1180px]:px-7 [scrollbar-gutter:stable] ${
                 // Notes is a split view that fits the window: its list and
                 // its note scroll on their own, not the page.
-                page === "notes"
+                page === "notes" || page === "scratchpad"
                   ? "flex flex-col pb-6 min-[1000px]:overflow-hidden"
                   : "pb-10"
               }`}
@@ -492,7 +492,7 @@ function App() {
               <ErrorBoundary key={page} context={page}>
                 <div
                   key={page}
-                  className={`view-enter ${page === "notes" ? "flex min-h-0 flex-1 flex-col" : ""}`}
+                  className={`view-enter ${page === "notes" || page === "scratchpad" ? "flex min-h-0 flex-1 flex-col" : ""}`}
                 >
                   {renderPage(page, setOnboardingPreview)}
                 </div>

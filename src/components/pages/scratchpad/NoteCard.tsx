@@ -56,7 +56,7 @@ export const NoteCard: React.FC<{
   return (
     <section
       aria-label={note.title || t("scratchpad.untitled")}
-      className="flex h-[520px] flex-col overflow-hidden rounded-[var(--r-lg)] border border-line bg-surface"
+      className="flex h-[520px] flex-col overflow-hidden rounded-[var(--r-lg)] border border-line bg-surface min-[1000px]:h-auto min-[1000px]:min-h-0 min-[1000px]:flex-1"
     >
       <div className="flex flex-none items-center gap-3 border-b border-line py-2 pe-3 ps-4">
         <input

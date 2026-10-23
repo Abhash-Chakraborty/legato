@@ -21,9 +21,6 @@ import { useNavStore } from "../../../stores/navStore";
 import { useScratchStore, watchScratch } from "../../../stores/scratchStore";
 import { Button } from "../../ui/Button";
 import { Dropdown } from "../../ui/Dropdown";
-import { SettingContainer } from "../../ui/SettingContainer";
-import { SettingsGroup } from "../../ui/SettingsGroup";
-import { ToggleSwitch } from "../../ui/ToggleSwitch";
 import { copyToClipboard } from "../home/clipboard";
 import { byUpdated, matchesQuery } from "../../scratchpad/notes";
 import { NoteCard } from "./NoteCard";
@@ -199,7 +196,7 @@ export const ScratchpadPage: React.FC = () => {
   const opensOn = t(`scratchpad.settings.opensOn.${openWith}`);
 
   return (
-    <div className="mx-auto w-full max-w-[1120px]">
+    <div className="mx-auto flex w-full max-w-[1120px] flex-col min-[1000px]:min-h-0 min-[1000px]:flex-1">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
         <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
           {t("scratchpad.title")}
@@ -244,9 +241,66 @@ export const ScratchpadPage: React.FC = () => {
         </button>
       </p>
 
-      <div className="grid items-start gap-8 min-[1000px]:grid-cols-[minmax(0,360px)_minmax(0,1fr)] min-[1000px]:gap-10">
-        <div className="min-w-0">
-          <div className="mb-2 flex items-end justify-between gap-3 border-b border-line">
+      {/* The list and the note fit the window: only the list scrolls. */}
+      <div className="grid gap-8 min-[1000px]:min-h-0 min-[1000px]:flex-1 min-[1000px]:grid-cols-[minmax(0,360px)_minmax(0,1fr)] min-[1000px]:gap-10">
+        <div className="flex min-w-0 flex-col min-[1000px]:min-h-0">
+          <div
+            role="group"
+            aria-label={t("scratchpad.settings.title")}
+            className="mb-4 flex-none divide-y divide-line rounded-[var(--r-lg)] border border-line"
+          >
+            <div className="flex h-11 items-center justify-between gap-3 pe-1.5 ps-3.5">
+              <span
+                className="text-[13px] text-text-2"
+                title={
+                  keyText
+                    ? t("scratchpad.settings.open.help", {
+                        keys: keyText,
+                        on: opensOn,
+                      })
+                    : t("scratchpad.settings.open.helpNoKey", { on: opensOn })
+                }
+              >
+                {t("scratchpad.settings.open.title")}
+              </span>
+              <Dropdown
+                className="w-[176px] [&_.select-btn]:h-8 [&_.select-btn]:min-w-0 [&_.select-btn]:text-[13px]"
+                menuClassName="right-0 w-[220px]"
+                ariaLabel={t("scratchpad.settings.open.title")}
+                selectedValue={openWith}
+                disabled={isUpdating("scratchpad_open")}
+                onSelect={(value) =>
+                  updateSetting("scratchpad_open", value as ScratchpadOpen)
+                }
+                options={OPENS.map((value) => ({
+                  value,
+                  label: t(`scratchpad.settings.open.options.${value}`),
+                }))}
+              />
+            </div>
+            <label
+              className="flex h-11 items-center justify-between gap-3 pe-3 ps-3.5 text-[13px] text-text-2"
+              title={t("scratchpad.keepOnTop.help")}
+            >
+              {t("scratchpad.keepOnTop.short")}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings?.scratchpad_keep_on_top ?? true}
+                aria-label={t("scratchpad.keepOnTop.title")}
+                aria-busy={isUpdating("scratchpad_keep_on_top") || undefined}
+                className="toggle"
+                onClick={() => {
+                  if (!isUpdating("scratchpad_keep_on_top"))
+                    updateSetting(
+                      "scratchpad_keep_on_top",
+                      !(settings?.scratchpad_keep_on_top ?? true),
+                    );
+                }}
+              />
+            </label>
+          </div>
+          <div className="mb-2 flex flex-none items-end justify-between gap-3 border-b border-line">
             <div
               role="tablist"
               aria-label={t("scratchpad.tabs.label")}
@@ -354,7 +408,7 @@ export const ScratchpadPage: React.FC = () => {
                 ref={listRef}
                 aria-label={t("scratchpad.listLabel")}
                 onKeyDown={onListKeyDown}
-                className="overflow-hidden rounded-[var(--r-lg)] border border-line bg-surface"
+                className="overflow-y-auto overscroll-contain rounded-[var(--r-lg)] border border-line bg-surface min-[1000px]:min-h-0 min-[1000px]:flex-1"
               >
                 {shown.map((note) => (
                   <NoteRow
@@ -372,7 +426,7 @@ export const ScratchpadPage: React.FC = () => {
                   />
                 ))}
               </ul>
-              <p className="mt-3 text-[13px] text-text-3">
+              <p className="mt-3 flex-none text-[13px] text-text-3">
                 {t("scratchpad.footer", {
                   notes: t("scratchpad.counts.notes", {
                     count: all.length,
@@ -385,7 +439,7 @@ export const ScratchpadPage: React.FC = () => {
           )}
         </div>
 
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-col min-[1000px]:min-h-0">
           {selected ? (
             <NoteCard
               key={selected.id}
@@ -393,45 +447,6 @@ export const ScratchpadPage: React.FC = () => {
               textareaRef={editorRef}
             />
           ) : null}
-
-          <div className={selected ? "mt-7" : ""}>
-            <SettingsGroup title={t("scratchpad.settings.title")}>
-              <SettingContainer
-                title={t("scratchpad.settings.open.title")}
-                description={
-                  keyText
-                    ? t("scratchpad.settings.open.help", {
-                        keys: keyText,
-                        on: opensOn,
-                      })
-                    : t("scratchpad.settings.open.helpNoKey", { on: opensOn })
-                }
-                grouped
-              >
-                <Dropdown
-                  ariaLabel={t("scratchpad.settings.open.title")}
-                  selectedValue={openWith}
-                  disabled={isUpdating("scratchpad_open")}
-                  onSelect={(value) =>
-                    updateSetting("scratchpad_open", value as ScratchpadOpen)
-                  }
-                  options={OPENS.map((value) => ({
-                    value,
-                    label: t(`scratchpad.settings.open.options.${value}`),
-                  }))}
-                />
-              </SettingContainer>
-              <ToggleSwitch
-                checked={settings?.scratchpad_keep_on_top ?? true}
-                onChange={(on) => updateSetting("scratchpad_keep_on_top", on)}
-                isUpdating={isUpdating("scratchpad_keep_on_top")}
-                label={t("scratchpad.keepOnTop.title")}
-                description={t("scratchpad.keepOnTop.help")}
-                descriptionMode="inline"
-                grouped
-              />
-            </SettingsGroup>
-          </div>
         </div>
       </div>
     </div>
