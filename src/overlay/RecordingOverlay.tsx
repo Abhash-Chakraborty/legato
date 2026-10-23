@@ -505,7 +505,11 @@ const RecordingOverlay: React.FC = () => {
             setMini(settings.data.overlay_style === "minimal");
             setCaptionTop(settings.data.live_caption === "top");
             setIsland(settings.data.bar_look === "island");
-            const autoId = settings.data.auto_transform_id;
+            // The transform after every dictation only runs, and only
+            // shows, while Transforms are on.
+            const autoId = settings.data.post_process_enabled
+              ? settings.data.auto_transform_id
+              : null;
             setAutoTransform(
               (autoId &&
                 settings.data.transforms?.find(
