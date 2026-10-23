@@ -3,7 +3,7 @@
 //! with no app state, like `history_store`; `DictionaryManager` wraps it with
 //! events and the snapshot the pipeline reads.
 
-use crate::audio_toolkit::text::{CompiledDictionary, DictionaryWord};
+use crate::audio_toolkit::text::{self, CompiledDictionary, DictionaryWord};
 use crate::learn_rules::{spelled_differently, Said, Spelling};
 use anyhow::{anyhow, Result};
 use rusqlite::{params, Connection, OptionalExtension, Row};
@@ -901,6 +901,15 @@ pub fn hint(entries: &[DictionaryEntry]) -> Vec<String> {
 
 /// The hint and the corrector for a set of words.
 pub fn compile(entries: &[DictionaryEntry]) -> (Vec<String>, CompiledDictionary) {
+    compile_with(entries, &HashMap::new())
+}
+
+/// The same, with each word's context words (by entry id) from
+/// `context_for`.
+pub fn compile_with(
+    entries: &[DictionaryEntry],
+    context: &HashMap<i64, Vec<String>>,
+) -> (Vec<String>, CompiledDictionary) {
     let hint = hint(entries);
     let words = entries
         .iter()
@@ -909,9 +918,68 @@ pub fn compile(entries: &[DictionaryEntry]) -> (Vec<String>, CompiledDictionary)
             heard: e.heard.clone(),
             case_sensitive: e.case_sensitive,
             in_hint: hint.contains(&e.text),
+            context: context.get(&e.id).cloned().unwrap_or_default(),
         })
         .collect();
     (hint, CompiledDictionary::new(words))
+}
+
+/// How many texts are read for context: those with the word, and the
+/// sample of everything they're compared with.
+const CONTEXT_TEXTS: u32 = 200;
+const CONTEXT_SAMPLE: u32 = 800;
+
+/// Context words for the entries that need them: those heard as a single
+/// ordinary word. They come from your own dictations and note lines that
+/// have the entry's word, compared with everything else you said, so they
+/// grow as you use the word.
+pub fn context_for(
+    conn: &Connection,
+    entries: &[DictionaryEntry],
+    is_word: &dyn Fn(&str) -> bool,
+) -> Result<HashMap<i64, Vec<String>>> {
+    let needy: Vec<&DictionaryEntry> = entries
+        .iter()
+        .filter(|e| {
+            e.heard
+                .iter()
+                .any(|h| !h.contains(char::is_whitespace) && is_word(h))
+        })
+        .collect();
+    let mut context = HashMap::new();
+    if needy.is_empty() {
+        return Ok(context);
+    }
+    let texts = |filter: &str, limit: u32, like: Option<&str>| -> Result<Vec<String>> {
+        let sql = format!(
+            "SELECT t FROM (
+                SELECT COALESCE(post_processed_text, transcription_text) AS t, timestamp AS at
+                FROM transcription_history
+                UNION ALL
+                SELECT l.text, n.started_at + l.at_ms / 1000
+                FROM note_line l JOIN note n ON n.id = l.note_id
+             ) WHERE t IS NOT NULL {filter} ORDER BY at DESC LIMIT {limit}"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = match like {
+            Some(like) => stmt
+                .query_map(params![like], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?,
+            None => stmt
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?,
+        };
+        Ok(rows)
+    };
+    let all = texts("", CONTEXT_SAMPLE, None)?;
+    for entry in needy {
+        let like = format!("%{}%", entry.text.replace(['%', '_'], ""));
+        let about = texts("AND t LIKE ?1", CONTEXT_TEXTS, Some(&like))?;
+        let mut skip: Vec<&str> = vec![entry.text.as_str()];
+        skip.extend(entry.heard.iter().map(String::as_str));
+        context.insert(entry.id, text::context_words(&about, &all, &skip));
+    }
+    Ok(context)
 }
 
 #[cfg(test)]

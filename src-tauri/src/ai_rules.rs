@@ -145,13 +145,7 @@ pub fn cleanup_request(words: &[PromptWord], transcript: &str) -> String {
         out.push_str("Words:\n");
         for word in words.iter().take(CORRECTION_WORD_LIMIT) {
             out.push_str("- ");
-            out.push_str(word.text);
-            if !word.heard.is_empty() {
-                out.push_str(" (misheard as: ");
-                out.push_str(&word.heard.join(", "));
-                out.push(')');
-            }
-            out.push('\n');
+            push_word(&mut out, word);
         }
         out.push('\n');
     }
@@ -194,6 +188,28 @@ pub fn invents_words(before: &str, after: &str, words: &[PromptWord]) -> bool {
 pub struct PromptWord<'a> {
     pub text: &'a str,
     pub heard: &'a [String],
+    /// Heard forms that are ordinary words too ("Neon" for "Inyon"): the
+    /// model is told to change them only when the sentence means the word.
+    pub ordinary: Vec<&'a str>,
+}
+
+/// One line of the word list: the word, how it's misheard, and which of
+/// those are real words to leave alone unless the sentence is about it.
+fn push_word(out: &mut String, word: &PromptWord) {
+    out.push_str(word.text);
+    if !word.heard.is_empty() {
+        out.push_str(" (misheard as: ");
+        out.push_str(&word.heard.join(", "));
+        out.push(')');
+    }
+    if !word.ordinary.is_empty() {
+        out.push_str(&format!(
+            "; {} is also an ordinary word: change it only where the sentence means {}",
+            word.ordinary.join(", "),
+            word.text
+        ));
+    }
+    out.push('\n');
 }
 
 /// The user message for the correction pass. `json_hint` spells out the
@@ -202,13 +218,7 @@ pub fn correction_request(words: &[PromptWord], transcript: &str, json_hint: boo
     let mut out = String::from("Words:\n");
     for word in words.iter().take(CORRECTION_WORD_LIMIT) {
         out.push_str("- ");
-        out.push_str(word.text);
-        if !word.heard.is_empty() {
-            out.push_str(" (misheard as: ");
-            out.push_str(&word.heard.join(", "));
-            out.push(')');
-        }
-        out.push('\n');
+        push_word(&mut out, word);
     }
     out.push_str("\n<transcript>\n");
     out.push_str(transcript);
@@ -403,10 +413,12 @@ mod tests {
             PromptWord {
                 text: "Dokploy",
                 heard: &heard,
+                ordinary: vec![],
             },
             PromptWord {
                 text: "Karol",
                 heard: &[],
+                ordinary: vec![],
             },
         ];
         let request = correction_request(&words, "move it to doc ploy", true);
@@ -438,10 +450,12 @@ mod tests {
             PromptWord {
                 text: "Dokploy",
                 heard: &[],
+                ordinary: vec![],
             },
             PromptWord {
                 text: "Karol",
                 heard: &[],
+                ordinary: vec![],
             },
         ];
         let reps = vec![
@@ -488,6 +502,7 @@ mod tests {
         let words = [PromptWord {
             text: "Karol",
             heard: &[],
+            ordinary: vec![],
         }];
         let (text, changes) = apply_replacements("hi Karol", &words, &reps);
         assert_eq!(text, "hi Karol");
@@ -504,6 +519,7 @@ mod tests {
         let words = [PromptWord {
             text: "$1",
             heard: &heard,
+            ordinary: vec![],
         }];
         let (text, _) = apply_replacements("one dollar", &words, &reps);
         assert_eq!(text, "one $1");
@@ -516,14 +532,17 @@ mod tests {
             PromptWord {
                 text: "Inyon",
                 heard: &heard,
+                ordinary: vec![],
             },
             PromptWord {
                 text: "Netbird",
                 heard: &[],
+                ordinary: vec![],
             },
             PromptWord {
                 text: "Kubernetes",
                 heard: &[],
+                ordinary: vec![],
             },
         ];
         let rep = |from: &str, to: &str| Replacement {
@@ -555,6 +574,7 @@ mod tests {
         let words = [PromptWord {
             text: "Netbird",
             heard: &[],
+            ordinary: vec![],
         }];
         assert!(invents_words(
             "the errors are back",
@@ -573,5 +593,19 @@ mod tests {
     fn cleanup_prompt_mentions_markers_only_with_snippets() {
         assert!(!cleanup_system_prompt(0).contains("[["));
         assert!(cleanup_system_prompt(1).contains("[[n]]"));
+    }
+
+    #[test]
+    fn ordinary_heard_forms_are_flagged_for_the_model() {
+        let heard = vec!["neon".to_string()];
+        let words = [PromptWord {
+            text: "Inyon",
+            heard: &heard,
+            ordinary: vec!["neon"],
+        }];
+        let request = correction_request(&words, "the neon hub", false);
+        assert!(request.contains(
+            "- Inyon (misheard as: neon); neon is also an ordinary word: change it only where the sentence means Inyon\n"
+        ));
     }
 }

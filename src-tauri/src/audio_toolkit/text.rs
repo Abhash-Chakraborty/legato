@@ -2,6 +2,7 @@ use natural::phonetics::soundex;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use strsim::levenshtein;
 
 /// Builds an n-gram string by cleaning and concatenating words
@@ -84,6 +85,55 @@ const EVERYDAY: &[&str] = &[
     "to", "too", "two", "up", "us", "very", "want", "was", "way", "we", "well", "were", "what",
     "when", "where", "which", "who", "why", "will", "with", "would", "yeah", "yes", "you", "your",
 ];
+
+/// At most this many context words are kept per Dictionary word.
+const CONTEXT_WORDS: usize = 40;
+
+/// The words that come up with a Dictionary word far more often than in
+/// everything else said: what a sentence about it sounds like. `about` are
+/// texts that have the word, `all` a sample of every text, `skip` the word
+/// and its heard forms.
+pub fn context_words(about: &[String], all: &[String], skip: &[&str]) -> Vec<String> {
+    let tokens = |text: &str| -> HashSet<String> {
+        text.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.chars().count() >= 3 && !w.chars().all(|c| c.is_ascii_digit()))
+            .map(str::to_lowercase)
+            .filter(|w| !EVERYDAY.contains(&w.as_str()))
+            .collect()
+    };
+    let skip: HashSet<String> = skip
+        .iter()
+        .flat_map(|s| s.split_whitespace())
+        .map(str::to_lowercase)
+        .collect();
+    let mut near: HashMap<String, usize> = HashMap::new();
+    for text in about {
+        for w in tokens(text) {
+            if !skip.contains(&w) {
+                *near.entry(w).or_default() += 1;
+            }
+        }
+    }
+    let mut overall: HashMap<String, usize> = HashMap::new();
+    for text in all {
+        for w in tokens(text) {
+            *overall.entry(w).or_default() += 1;
+        }
+    }
+    // With only a text or two to go on, one sighting is enough.
+    let least = if about.len() <= 2 { 1 } else { 2 };
+    let (a, n) = (about.len().max(1) as f64, all.len() as f64 + 1.0);
+    let mut found: Vec<(String, usize)> = near
+        .into_iter()
+        .filter(|(w, c)| {
+            let seen = overall.get(w).copied().unwrap_or(0) as f64 + 1.0;
+            *c >= least && (*c as f64 / a) >= 3.0 * (seen / n)
+        })
+        .collect();
+    found.sort_by(|x, y| y.1.cmp(&x.1).then_with(|| x.0.cmp(&y.0)));
+    found.truncate(CONTEXT_WORDS);
+    found.into_iter().map(|(w, _)| w).collect()
+}
 
 /// Whether every word of a phrase is an everyday word, so the Dictionary
 /// shouldn't take it for one of its own.
@@ -193,7 +243,15 @@ fn find_best_match(
 /// The corrected text with custom words applied
 pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -> String {
     let exact_case = vec![false; custom_words.len()];
-    correct_close_words(text, custom_words, &exact_case, &HashSet::new(), threshold).0
+    correct_close_words(
+        text,
+        custom_words,
+        &exact_case,
+        &HashSet::new(),
+        threshold,
+        None,
+    )
+    .0
 }
 
 /// The fuzzy matcher behind [`apply_custom_words`], reporting what it changed
@@ -206,6 +264,7 @@ fn correct_close_words(
     exact_case: &[bool],
     protected: &HashSet<String>,
     threshold: f64,
+    is_word: Option<&IsWord>,
 ) -> (String, Vec<(String, String)>) {
     if custom_words.is_empty() {
         return (text.to_string(), Vec::new());
@@ -256,6 +315,11 @@ fn correct_close_words(
                 continue;
             }
             if everyday_phrase(&ngram_words.join(" ")) {
+                continue;
+            }
+            // A real word on its own is what was said, not a close miss of
+            // a Dictionary word: "neon" stays though "Inyon" is near.
+            if n == 1 && is_word.is_some_and(|f| f(core)) {
                 continue;
             }
             let ngram = build_ngram(ngram_words);
@@ -314,7 +378,15 @@ pub struct DictionaryWord {
     pub case_sensitive: bool,
     /// Sent to the model in its vocabulary hint.
     pub in_hint: bool,
+    /// Words that come up around this one in what was said before, in
+    /// lower case. A heard form that is an ordinary word too ("Neon" for
+    /// "Inyon") is only replaced in a dictation that has one of them.
+    pub context: Vec<String>,
 }
+
+/// Whether a word is an ordinary word of the language (a spell checker's
+/// answer), for the platform to supply.
+pub type IsWord = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 
 /// A change the Dictionary made to a transcript.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -334,6 +406,7 @@ pub struct CompiledDictionary {
     /// Normalised heard form to an index into `words`.
     heard_index: HashMap<String, usize>,
     spelled: HashSet<String>,
+    is_word: Option<IsWord>,
 }
 
 /// Heard forms compare in lower case with single spaces.
@@ -406,7 +479,26 @@ impl CompiledDictionary {
             heard,
             heard_index,
             spelled,
+            is_word: None,
         }
+    }
+
+    /// Tells real words from misheard ones, so neither the heard forms nor
+    /// the close misses turn an ordinary word into a Dictionary word unless
+    /// the dictation is about it.
+    pub fn with_word_check(mut self, is_word: IsWord) -> Self {
+        self.is_word = Some(is_word);
+        self
+    }
+
+    /// Whether a heard form that's also a real word should be replaced here:
+    /// only when the dictation shares a word with the times this one was
+    /// said before.
+    fn about(&self, word: &DictionaryWord, found: &str, said: &HashSet<String>) -> bool {
+        let ordinary = !found.contains(char::is_whitespace)
+            && !found.eq_ignore_ascii_case(&word.text)
+            && self.is_word.as_ref().is_some_and(|f| f(found));
+        !ordinary || word.context.iter().any(|c| said.contains(c))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -422,6 +514,11 @@ impl CompiledDictionary {
         threshold: f64,
     ) -> (String, Vec<DictionaryCorrection>) {
         let mut corrections = Vec::new();
+        let said: HashSet<String> = text
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_lowercase)
+            .collect();
         let text = match &self.heard {
             Some(pattern) => pattern
                 .replace_all(text, |caps: &regex::Captures| {
@@ -430,6 +527,9 @@ impl CompiledDictionary {
                         return found.to_string();
                     };
                     let word = &self.words[*word];
+                    if !self.about(word, found, &said) {
+                        return found.to_string();
+                    }
                     let out = if word.case_sensitive {
                         word.text.clone()
                     } else {
@@ -458,7 +558,14 @@ impl CompiledDictionary {
         }
         let list: Vec<String> = candidates.iter().map(|w| w.text.clone()).collect();
         let exact: Vec<bool> = candidates.iter().map(|w| w.case_sensitive).collect();
-        let (text, changes) = correct_close_words(&text, &list, &exact, &self.spelled, threshold);
+        let (text, changes) = correct_close_words(
+            &text,
+            &list,
+            &exact,
+            &self.spelled,
+            threshold,
+            self.is_word.as_ref(),
+        );
         corrections.extend(changes.into_iter().map(|(from, to)| DictionaryCorrection {
             from,
             to,
@@ -1203,6 +1310,57 @@ mod tests {
             heard: heard.iter().map(|h| h.to_string()).collect(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn an_ordinary_heard_form_changes_only_in_context() {
+        let mut inyon = word("Inyon", &["neon", "in yon"]);
+        inyon.context = vec!["hub".into(), "agent".into()];
+        let is_word: IsWord = Arc::new(|w: &str| {
+            ["neon", "lights", "sign", "in", "yon"].contains(&w.to_lowercase().as_str())
+        });
+        let dict = CompiledDictionary::new(vec![inyon]).with_word_check(is_word);
+        let (text, _) = dict.apply("The neon sign was on.", false, 0.18);
+        assert_eq!(text, "The neon sign was on.");
+        let (text, _) = dict.apply("Then Neon asked on the hub.", false, 0.18);
+        assert_eq!(text, "Then Inyon asked on the hub.");
+        // Two words are rarely said for anything else.
+        let (text, _) = dict.apply("Open in yon today.", false, 0.18);
+        assert_eq!(text, "Open Inyon today.");
+        // Without the word check, heard forms apply as before.
+        let plain = CompiledDictionary::new(vec![word("Inyon", &["neon"])]);
+        assert_eq!(
+            plain.apply("The neon sign.", false, 0.18).0,
+            "The Inyon sign."
+        );
+    }
+
+    #[test]
+    fn context_is_what_sets_a_word_apart() {
+        let about: Vec<String> = [
+            "Inyon's hub paired with the laptop",
+            "the Inyon agent asked a question on the hub",
+            "pushed the Inyon release today",
+        ]
+        .map(String::from)
+        .to_vec();
+        let mut all = about.clone();
+        for i in 0..30 {
+            all.push(format!("pushed fix {i} today and wrote the release notes"));
+            all.push(format!("lunch today with the team, laptop budget {i}"));
+        }
+        let words = context_words(&about, &all, &["Inyon", "neon"]);
+        assert!(words.contains(&"hub".to_string()), "{words:?}");
+        assert!(!words.contains(&"today".to_string()), "{words:?}");
+        assert!(!words.contains(&"inyon".to_string()), "{words:?}");
+    }
+
+    #[test]
+    fn a_real_word_is_not_a_close_miss() {
+        let is_word: IsWord = Arc::new(|w: &str| w.eq_ignore_ascii_case("carol"));
+        let dict = CompiledDictionary::new(vec![word("Karol", &[])]).with_word_check(is_word);
+        assert_eq!(dict.apply("Ask Carol.", false, 0.18).0, "Ask Carol.");
+        assert_eq!(dict.apply("Ask Karoll.", false, 0.18).0, "Ask Karol.");
     }
 
     #[test]

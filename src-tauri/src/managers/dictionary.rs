@@ -10,7 +10,7 @@ use crate::audio_toolkit::text::{CompiledDictionary, DictionaryCorrection};
 use crate::learn_rules::Spelling;
 use anyhow::Result;
 use chrono::Utc;
-use log::{error, info};
+use log::{error, info, warn};
 use once_cell::sync::Lazy;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -97,8 +97,15 @@ impl DictionaryManager {
 
     /// Rebuilds the pipeline's snapshot from the database.
     fn refresh(&self) -> Result<()> {
-        let entries = store::list(&self.conn()?)?;
-        let (hint, corrector) = store::compile(&entries);
+        let conn = self.conn()?;
+        let entries = store::list(&conn)?;
+        let context = store::context_for(&conn, &entries, &crate::spelling::is_word)
+            .unwrap_or_else(|e| {
+                warn!("Couldn't gather the Dictionary's context words: {e}");
+                Default::default()
+            });
+        let (hint, corrector) = store::compile_with(&entries, &context);
+        let corrector = corrector.with_word_check(crate::spelling::checker());
         let lexicon = Arc::new(Lexicon { hint, corrector });
         match LEXICON.write() {
             Ok(mut slot) => *slot = lexicon,

@@ -47,6 +47,7 @@ mod shortcut;
 mod signal_handle;
 mod snippet_rules;
 mod speakers;
+mod spelling;
 mod style_rules;
 mod sync;
 mod transcription_coordinator;

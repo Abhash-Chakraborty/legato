@@ -575,6 +575,7 @@ pub async fn medium_pass(
         .map(|e| PromptWord {
             text: &e.text,
             heard: &e.heard,
+            ordinary: ordinary_forms(&e.heard),
         })
         .collect();
     let input = crate::snippet_rules::to_ai(text);
@@ -614,6 +615,15 @@ pub async fn medium_pass(
     Ok(Some(restored))
 }
 
+/// The single-word heard forms that are real words, for the prompt.
+fn ordinary_forms(heard: &[String]) -> Vec<&str> {
+    heard
+        .iter()
+        .map(String::as_str)
+        .filter(|h| crate::spelling::is_word(h))
+        .collect()
+}
+
 /// Lets the model fix misheard Dictionary words, when Settings › AI allows
 /// it. Ok(None) means the pass didn't run: it is off, the AI isn't set up,
 /// the Dictionary is empty or the dictation is short.
@@ -650,6 +660,7 @@ pub async fn correction_pass(
         .map(|e| PromptWord {
             text: &e.text,
             heard: &e.heard,
+            ordinary: ordinary_forms(&e.heard),
         })
         .collect();
 

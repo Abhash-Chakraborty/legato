@@ -378,10 +378,15 @@ impl NotesManager {
             .next()
         {
             Some(edit) => {
+                // A real word ("Neon" for "Inyon") isn't wrong everywhere it
+                // appears, so it isn't offered for every line; Find misheard
+                // words reads each sentence instead.
+                let ordinary = crate::spelling::is_word(edit.heard.trim());
                 let others = store::lines(&conn, line.note_id)?
                     .into_iter()
                     .filter(|l| {
-                        l.id != line_id
+                        !ordinary
+                            && l.id != line_id
                             && notes_rules::replace_words(&l.text, &edit.heard, &edit.word)
                                 .is_some()
                     })
