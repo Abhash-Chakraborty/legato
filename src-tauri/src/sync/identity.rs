@@ -368,7 +368,9 @@ mod tests {
         let hub = Identity::generate().unwrap();
         let pin = sha256_hex(&hub.cert_der());
         assert_eq!(pin.len(), 64);
-        assert!(pin.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+        assert!(pin
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
         // Whatever name the hub's certificate carries, and in either case.
         handshake(hub_client_config(&pin).unwrap(), &hub).unwrap();
         handshake(hub_client_config(&pin.to_uppercase()).unwrap(), &hub).unwrap();
