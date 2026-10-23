@@ -1,12 +1,52 @@
-# Legato
+<p align="center"><img src="src/assets/legato-icon.svg" width="88" height="88" alt=""></p>
 
-Legato is a dictation app for Windows, and its speech recognition runs locally on your computer. Hold a shortcut, speak, and the text appears where you're typing.
+<h1 align="center">Legato</h1>
 
-Status: in development. Legato is a public fork of Handy with my changes.
+<p align="center">
+  <b>Dictation and meeting notes for Windows, transcribed on your PC.</b><br>
+  Hold a shortcut, speak, and the text lands where you're typing.<br>
+  Record a meeting and get a transcript with each voice told apart.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Abhash-Chakraborty/legato/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/release/Abhash-Chakraborty/legato.svg?variant=secondary&mode=dark"><img alt="Latest release" src="https://shieldcn.dev/github/release/Abhash-Chakraborty/legato.svg?variant=secondary&mode=light"></picture></a>
+  <a href="#install"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Windows-x64%20%C2%B7%20ARM64.svg?variant=secondary&mode=dark"><img alt="Windows on x64 and ARM64" src="https://shieldcn.dev/badge/Windows-x64%20%C2%B7%20ARM64.svg?variant=secondary&mode=light"></picture></a>
+  <a href="LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/license/Abhash-Chakraborty/legato.svg?variant=secondary&mode=dark"><img alt="MIT licence" src="https://shieldcn.dev/github/license/Abhash-Chakraborty/legato.svg?variant=secondary&mode=light"></picture></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Abhash-Chakraborty/legato/releases/latest">Download</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#what-it-does">What it does</a> ·
+  <a href="docs/phone-sync.md">Phone sync</a>
+</p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/hero-dark.webp">
+  <img src="docs/hero-light.webp" alt="Legato's Notes page: a weekly meeting with its summary, topics, decisions, next steps with owners, and details that jump to the moment in the recording">
+</picture>
+
+Speech recognition runs on your computer, with models such as Parakeet and Whisper, on the GPU through Vulkan on x64. What you say stays on the PC. The steps that need a language model (summaries, transforms, Ask) use a provider you add yourself, and only then.
+
+Status: in development. Legato started as a fork of [Handy](https://github.com/cjpais/Handy) by CJ Pais and its contributors (MIT), with my changes on top.
+
+## What it does
+
+- **Dictation in any app.** Hold or tap a shortcut, speak, and Legato pastes the text. It drops filler words, tidies numbers and lists, and takes a tone and paste keys from the kind of app in front.
+- **Your words.** The Dictionary keeps names and terms spelled your way, with the ways the model mishears them, and learns from the words you fix. Snippets turn a trigger phrase into saved text.
+- **Transforms and Ask.** Rewrite the selection or your last dictation, or ask about the selection, with your own provider: Ollama, OpenAI, Anthropic, OpenRouter, Groq, Cerebras and others.
+- **Notes.** Record a meeting (one app's sound or everything) or a voice memo, with a live transcript. Voices are told apart, and a voice you name is recognised in later meetings. With a provider, the summary has topics, decisions, next steps with owners and details that play the moment they came from.
+- **Google Docs and calendars, no sign-in.** Save a note as a Word file that Google Docs opens formatted, or keep a Word copy of every note in your Google Drive or OneDrive folder. Schedule a follow-up and Google Calendar or Outlook opens filled in. Meetings and invitees come from a calendar's secret iCal address.
+- **Scratchpad and Insights.** A notes window to dictate drafts into, where a failed paste also lands, and your dictation in numbers.
+- **Always in reach.** The bar, an island at the top of the screen, or a bubble at the edge shows that Legato is listening.
+- **Other apps.** AI apps can read your dictations, notes and Dictionary over MCP (`legato --mcp`) once you allow it. [Inyon](https://github.com/Abhash-Chakraborty/inyon)'s coding agents can ask you questions on the bar, answered with a click or by voice.
+- **Your phone.** Legato for Android, in development, syncs the Dictionary, snippets, dictations, notes and the Scratchpad over Wi-Fi or Bluetooth, with no server in between ([how](docs/phone-sync.md)).
+
+Built with Tauri 2 (Rust and React), transcribe.cpp on GGML, Silero VAD and SQLite.
 
 ## Install
 
-Download `Legato_<version>_x64-setup.exe` (or `arm64` for Windows on Arm) and run it. It installs for your account only and needs no administrator rights. Setup then checks your microphone, picks a speech model for your languages and downloads it (0.5 to 1.6 GB).
+Download `Legato_<version>_x64-setup.exe` (or `arm64` for Windows on Arm) from the [latest release](https://github.com/Abhash-Chakraborty/legato/releases/latest) and run it. It installs for your account only and needs no administrator rights. Setup then checks your microphone, picks a speech model for your languages and downloads it (0.5 to 1.6 GB).
 
 The installer isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC". Choose More info, then Run anyway. To check the file first, see [Verify release signatures](#verify-release-signatures).
 
@@ -15,8 +55,6 @@ To use Legato in apps run as administrator (an admin terminal, say), install it 
 Uninstalling removes the app. Tick "Delete app data" to also remove your history, notes, settings and the keys Legato saved in Windows Credential Manager. Downloaded models stay in the shared Hugging Face cache (`%USERPROFILE%\.cache\huggingface`), since other tools may use them.
 
 To build it on Windows, see [BUILD.md](BUILD.md).
-
-Legato started as a fork of [Handy](https://github.com/cjpais/Handy) by CJ Pais and its contributors (MIT).
 
 ## Debug mode
 
