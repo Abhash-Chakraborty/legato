@@ -94,8 +94,10 @@ pub trait CoreListener: Send + Sync {
     fn on_unpaired(&self, why: String);
     /// Connects to the PC over Bluetooth ("AA:BB:CC:DD:EE:FF") when no
     /// network address answers, and returns a port on 127.0.0.1 that carries
-    /// the link, or 0 when it can't. It may block while it connects.
-    fn open_bluetooth(&self, address: String) -> u16;
+    /// the link, or 0 when it can't. It may block while it connects. The
+    /// port carries only the first connection that sends `token`; the core
+    /// sends it before anything else.
+    fn open_bluetooth(&self, address: String, token: String) -> u16;
     /// A text the PC copied, as it arrives; images stay in `clips`.
     /// `age_ms` is how long ago it was copied on the PC.
     fn on_clip(&self, text: String, from_app: Option<String>, age_ms: u64);
@@ -130,8 +132,9 @@ impl Core {
         let phone = Arc::new(Phone::open(Path::new(&dir), &name, say)?);
         *phone.bluetooth.lock().unwrap() = Some({
             let listener = listener.clone();
-            Arc::new(move |address: &str| {
-                Some(listener.open_bluetooth(address.to_string())).filter(|port| *port != 0)
+            Arc::new(move |address: &str, token: &str| {
+                Some(listener.open_bluetooth(address.to_string(), token.to_string()))
+                    .filter(|port| *port != 0)
             })
         });
         *phone.on_clip.lock().unwrap() = Some({

@@ -11,12 +11,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
-use super::identity::{fingerprint, server_name, Identity};
+use super::identity::{fingerprint, secret, server_name, Identity};
 use super::protocol::{self, Change, Clip, Hello, Message, Refusal, Welcome, PROTOCOL};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -85,9 +85,11 @@ pub enum Via {
 }
 
 /// The phone app's way to open Bluetooth: given the PC's Bluetooth address
-/// ("AA:BB:CC:DD:EE:FF"), it connects and returns a port on 127.0.0.1 that
-/// carries the link, or None. It blocks while it connects.
-pub type Dialer = Arc<dyn Fn(&str) -> Option<u16> + Send + Sync>;
+/// ("AA:BB:CC:DD:EE:FF") and a one-time token, it connects and returns a
+/// port on 127.0.0.1 that carries the link, or None. It blocks while it
+/// connects. The port carries only a connection that sends the token first,
+/// so another app on the phone that finds the port can't take the link.
+pub type Dialer = Arc<dyn Fn(&str, &str) -> Option<u16> + Send + Sync>;
 
 /// Transcribing a recording, which takes a while: run off the session.
 pub type TranscribeJob = Box<dyn FnOnce() -> std::result::Result<String, String> + Send>;
@@ -407,15 +409,24 @@ async fn reach(addrs: &[String], dial: Option<Dialer>) -> Result<(TcpStream, Via
     for addr in bluetooth {
         let mac = addr[protocol::BT_PREFIX.len()..].to_string();
         let dial = dial.clone();
-        let port = tokio::task::spawn_blocking(move || dial(&mac))
-            .await
-            .ok()
-            .flatten();
+        let token = secret();
+        let port = {
+            let token = token.clone();
+            tokio::task::spawn_blocking(move || dial(&mac, &token))
+                .await
+                .ok()
+                .flatten()
+        };
         let Some(port) = port else {
             last = anyhow!("{last:#}; Bluetooth didn't connect");
             continue;
         };
-        match TcpStream::connect(("127.0.0.1", port)).await {
+        let opened = async {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).await?;
+            stream.write_all(token.as_bytes()).await?;
+            std::io::Result::Ok(stream)
+        };
+        match opened.await {
             Ok(stream) => return Ok((stream, Via::Bluetooth)),
             Err(e) => last = anyhow!("Bluetooth: {e}"),
         }

@@ -140,8 +140,8 @@ class Legato(private val context: Context) : CoreListener {
         scope.launch { if (sendClip(text)) onLine("Sent your clipboard to ${state.value.pcName ?: "the PC"}") }
     }
 
-    override fun openBluetooth(address: String): UShort =
-        BluetoothLink.open(context, address).toUShort()
+    override fun openBluetooth(address: String, token: String): UShort =
+        BluetoothLink.open(context, address, token).toUShort()
 
     override fun onUnpaired(why: String) {
         onLine("Unpaired: $why")

@@ -8,12 +8,14 @@ import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import java.io.DataInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.security.MessageDigest
 import java.util.UUID
 import kotlin.concurrent.thread
 
@@ -21,6 +23,8 @@ import kotlin.concurrent.thread
  * Bluetooth to the PC, for when the phone and the PC share no network. The
  * core speaks the same TLS as over Wi-Fi to a socket on 127.0.0.1; this
  * carries that socket's bytes over RFCOMM to Legato's service on the PC.
+ * Any app on the phone can reach 127.0.0.1, so only a connection that first
+ * sends the core's one-time token is carried.
  */
 object BluetoothLink {
     /** Legato's sync service on the PC; protocol::BT_SERVICE in the core. */
@@ -37,9 +41,9 @@ object BluetoothLink {
     fun isOn(context: Context): Boolean =
         context.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled == true
 
-    /** Connects to the PC at [address] and returns the local port that carries it, or 0. */
+    /** Connects to the PC at [address] and returns the local port that carries it for [token], or 0. */
     @SuppressLint("MissingPermission")
-    fun open(context: Context, address: String): Int {
+    fun open(context: Context, address: String, token: String): Int {
         if (needsPermission(context)) return 0
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return 0
         if (!adapter.isEnabled) return 0
@@ -51,14 +55,14 @@ object BluetoothLink {
         val remote = connect(device) ?: return 0
         val server = try {
             // 127.0.0.1, where the core dials: Android's getLoopbackAddress() is ::1.
-            ServerSocket(0, 1, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))).apply { soTimeout = 10_000 }
+            ServerSocket(0, 4, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)))
         } catch (e: IOException) {
             runCatching { remote.close() }
             return 0
         }
         thread(name = "legato-bluetooth", isDaemon = true) {
             try {
-                server.accept().use { local ->
+                accept(server, token.toByteArray())?.use { local ->
                     local.tcpNoDelay = true
                     carry(local, remote)
                 }
@@ -69,6 +73,28 @@ object BluetoothLink {
             }
         }
         return server.localPort
+    }
+
+    /** The first connection within 10 s that starts with [token]; others are closed. */
+    private fun accept(server: ServerSocket, token: ByteArray): Socket? {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (true) {
+            val left = deadline - System.currentTimeMillis()
+            if (left <= 0) return null
+            server.soTimeout = left.toInt()
+            val socket = server.accept()
+            try {
+                socket.soTimeout = 2_000
+                val got = ByteArray(token.size)
+                DataInputStream(socket.getInputStream()).readFully(got)
+                if (MessageDigest.isEqual(got, token)) {
+                    socket.soTimeout = 0
+                    return socket
+                }
+            } catch (_: IOException) {
+            }
+            runCatching { socket.close() }
+        }
     }
 
     /** A phone already paired with the PC connects at once; otherwise try without pairing, then let Android ask once. */

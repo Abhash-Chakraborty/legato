@@ -405,6 +405,44 @@ async fn a_phone_pairs_syncs_both_ways_merges_and_shares_the_clipboard() {
     let _ = stop_phone.send(true);
 }
 
+/// Stands in for the app's Bluetooth bridge: a port on 127.0.0.1 that
+/// carries to `to` only the first connection that starts with `token`.
+/// Another app that finds the port first is turned away.
+fn bridge(to: u16, token: &str) -> u16 {
+    use std::io::Read;
+    use std::net::{Shutdown, TcpListener, TcpStream};
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = server.local_addr().unwrap().port();
+    // A stranger gets there first and sends nothing useful.
+    let mut stranger = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    std::io::Write::write_all(&mut stranger, b"GET / HTTP/1.1\r\n\r\n").unwrap();
+    let token = token.as_bytes().to_vec();
+    std::thread::spawn(move || {
+        for local in server.incoming() {
+            let Ok(mut local) = local else { return };
+            let mut got = vec![0; token.len()];
+            if local.read_exact(&mut got).is_err() || got != token {
+                continue;
+            }
+            let Ok(remote) = TcpStream::connect(("127.0.0.1", to)) else {
+                return;
+            };
+            let (mut up_from, mut up_to) =
+                (local.try_clone().unwrap(), remote.try_clone().unwrap());
+            std::thread::spawn(move || {
+                let _ = std::io::copy(&mut up_from, &mut up_to);
+                let _ = up_to.shutdown(Shutdown::Write);
+            });
+            let (mut local, mut remote) = (local, remote);
+            let _ = std::io::copy(&mut remote, &mut local);
+            let _ = local.shutdown(Shutdown::Both);
+            return;
+        }
+    });
+    drop(stranger);
+    port
+}
+
 /// With no network address that answers, the phone dials Bluetooth through
 /// the app. Here a localhost socket stands in for the radio, and the PC
 /// takes what comes in on it the way it takes an RFCOMM connection.
@@ -449,9 +487,9 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
     let dialled = Arc::new(Mutex::new(Vec::<String>::new()));
     let dial: Dialer = {
         let dialled = dialled.clone();
-        Arc::new(move |mac: &str| {
+        Arc::new(move |mac: &str, token: &str| {
             dialled.lock().unwrap().push(mac.to_string());
-            Some(radio_port)
+            Some(bridge(radio_port, token))
         })
     };
 
@@ -607,10 +645,10 @@ async fn a_pairing_finishes_once_the_pc_can_be_reached() {
     let tries = Arc::new(Mutex::new(0));
     let dial: Dialer = {
         let tries = tries.clone();
-        Arc::new(move |_mac: &str| {
+        Arc::new(move |_mac: &str, token: &str| {
             let mut n = tries.lock().unwrap();
             *n += 1;
-            (*n > 1).then_some(port)
+            (*n > 1).then(|| bridge(port, token))
         })
     };
     let secret = pc.hub.open_pairing();
@@ -654,7 +692,7 @@ async fn a_pairing_finishes_once_the_pc_can_be_reached() {
 async fn a_phone_on_bluetooth_moves_to_the_network_when_it_answers() {
     let (pc, _stop_pc) = start_pc().await;
     let port: u16 = pc.addr.rsplit(':').next().unwrap().parse().unwrap();
-    let dial: Dialer = Arc::new(move |_mac: &str| Some(port));
+    let dial: Dialer = Arc::new(move |_mac: &str, token: &str| Some(bridge(port, token)));
     let secret = pc.hub.open_pairing();
     // Where the PC says it is now; the phone only knew a stale address.
     pc.hub

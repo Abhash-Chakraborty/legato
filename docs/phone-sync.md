@@ -84,8 +84,11 @@ on the `bt:` address from the pairing link. RFCOMM carries a byte stream, so eve
 security: TLS with pinned certificates covers that. The phone tries without Bluetooth pairing
 first. If the PC won't accept that, Android asks to pair the two once.
 
-On Android, the app opens the RFCOMM socket and hands the core a socket on 127.0.0.1 that
-carries it, so the core's connection code stays the same for both wires.
+On Android, the app opens the RFCOMM socket and hands the core a port on 127.0.0.1 that
+carries it, so the core's connection code stays the same for both wires. Any app on the phone
+can reach that port, so the core makes a fresh random token for each link, and the bridge
+carries only the first connection that sends it before anything else, within 10 seconds.
+Another app that connects first is dropped and can't take the link.
 
 ### Frames
 
