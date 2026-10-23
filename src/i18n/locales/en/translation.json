@@ -192,7 +192,8 @@
           "inUse": "{{name}} already uses these keys. Choose others, or change {{name}} first.",
           "reset": "Failed to reset shortcut to original value"
         },
-        "notSet": "Not set"
+        "notSet": "Not set",
+        "shadowed": "{{name}} has the same keys, so this shortcut does nothing. Choose other keys."
       },
       "language": {
         "title": "Spoken language",

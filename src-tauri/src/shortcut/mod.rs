@@ -184,10 +184,20 @@ pub fn binding_is_active(settings: &AppSettings, id: &str, binding: &ShortcutBin
 /// Every binding that should be registered, with defaults for any the
 /// settings don't have yet.
 pub fn active_bindings(settings: &AppSettings) -> Vec<ShortcutBinding> {
+    resolve_bindings(settings).0
+}
+
+/// The active bindings, plus each one left out because an action earlier
+/// by id has the same keys, paired with that action. Two actions on one
+/// shortcut would both run on a single press, so the first keeps it.
+/// Settings saved before shortcuts were checked for this can still hold
+/// such a pair.
+fn resolve_bindings(settings: &AppSettings) -> (Vec<ShortcutBinding>, Vec<(String, String)>) {
     let defaults = settings::get_default_settings().bindings;
     let ids: std::collections::BTreeSet<&String> =
         defaults.keys().chain(settings.bindings.keys()).collect();
     let mut active: Vec<ShortcutBinding> = Vec::new();
+    let mut shadowed = Vec::new();
     for id in ids {
         let Some(binding) = settings.bindings.get(id).or_else(|| defaults.get(id)) else {
             continue;
@@ -195,9 +205,6 @@ pub fn active_bindings(settings: &AppSettings) -> Vec<ShortcutBinding> {
         if !binding_is_active(settings, id, binding) {
             continue;
         }
-        // Two actions on one shortcut would both run on a single press; the
-        // first (by id) keeps it. Settings saved before shortcuts were
-        // checked for this can still hold such a pair.
         if let Some(first) = active
             .iter()
             .find(|b| same_keys(&b.current_binding, &binding.current_binding))
@@ -206,11 +213,23 @@ pub fn active_bindings(settings: &AppSettings) -> Vec<ShortcutBinding> {
                 "'{}' has the same shortcut as '{}' ({}); only '{}' gets it",
                 id, first.id, binding.current_binding, first.id
             );
+            shadowed.push((id.clone(), first.id.clone()));
             continue;
         }
         active.push(binding.clone());
     }
-    active
+    (active, shadowed)
+}
+
+/// Shortcuts that do nothing because another action has the same keys,
+/// each with the action that has them, so Settings can say so.
+#[tauri::command]
+#[specta::specta]
+pub fn shadowed_shortcuts(app: AppHandle) -> std::collections::HashMap<String, String> {
+    resolve_bindings(&settings::get_settings(&app))
+        .1
+        .into_iter()
+        .collect()
 }
 
 /// Whether two shortcut strings name the same keys, whatever their order
@@ -1541,6 +1560,34 @@ mod tests {
         assert!(!super::same_keys("ctrl_left+super_left", "ctrl+super"));
         assert!(!super::same_keys("super+alt+3", "super+alt+4"));
         assert!(!super::same_keys("", ""));
+    }
+
+    #[test]
+    fn a_shortcut_another_action_has_is_left_out_and_named() {
+        let mut settings = crate::settings::get_default_settings();
+        settings.post_process_enabled = true;
+        for id in ["transcribe", "transcribe_with_post_process"] {
+            if let Some(b) = settings.bindings.get_mut(id) {
+                b.current_binding = "ctrl_left+super_left".into();
+            }
+        }
+        let (active, shadowed) = super::resolve_bindings(&settings);
+        assert!(active.iter().any(|b| b.id == "transcribe"));
+        assert!(!active
+            .iter()
+            .any(|b| b.id == "transcribe_with_post_process"));
+        assert_eq!(
+            shadowed,
+            vec![(
+                String::from("transcribe_with_post_process"),
+                String::from("transcribe")
+            )]
+        );
+
+        // With transforms off, Polish's shortcut isn't registered at all,
+        // so nothing is shadowed.
+        settings.post_process_enabled = false;
+        assert!(super::resolve_bindings(&settings).1.is_empty());
     }
 
     #[test]

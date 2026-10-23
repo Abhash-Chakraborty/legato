@@ -12,13 +12,22 @@ export function shortcutErrorText(
   if (!other) {
     return t("settings.general.shortcut.errors.set", { error: String(error) });
   }
-  const transformId = other.startsWith("transform:")
-    ? other.slice("transform:".length)
+  return t("settings.general.shortcut.errors.inUse", {
+    name: bindingName(t, other, transforms),
+  });
+}
+
+/** A binding's name as Settings shows it: a transform's own name, or the
+ *  translated name of a built-in action. */
+export function bindingName(
+  t: TFunction,
+  id: string,
+  transforms: Transform[] | undefined,
+): string {
+  const transformId = id.startsWith("transform:")
+    ? id.slice("transform:".length)
     : null;
-  const name = transformId
+  return transformId
     ? (transforms?.find((x) => x.id === transformId)?.name ?? transformId)
-    : t(`settings.general.shortcut.bindings.${other}.name`, {
-        defaultValue: other,
-      });
-  return t("settings.general.shortcut.errors.inUse", { name });
+    : t(`settings.general.shortcut.bindings.${id}.name`, { defaultValue: id });
 }

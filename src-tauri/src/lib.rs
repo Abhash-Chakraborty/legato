@@ -874,6 +874,7 @@ pub fn run(cli_args: CliArgs) {
         .commands(collect_commands![
             shortcut::change_binding,
             shortcut::reset_binding,
+            shortcut::shadowed_shortcuts,
             shortcut::change_shortcut_activation_setting,
             shortcut::change_hold_threshold_ms_setting,
             shortcut::change_audio_feedback_setting,

@@ -21,6 +21,13 @@ async resetBinding(id: string) : Promise<Result<BindingResponse, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Shortcuts that do nothing because another action has the same keys,
+ * each with the action that has them, so Settings can say so.
+ */
+async shadowedShortcuts() : Promise<Partial<{ [key in string]: string }>> {
+    return await TAURI_INVOKE("shadowed_shortcuts");
+},
 async changeShortcutActivationSetting(activation: ShortcutActivation) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_shortcut_activation_setting", { activation }) };
