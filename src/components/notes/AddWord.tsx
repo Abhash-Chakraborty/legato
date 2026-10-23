@@ -90,15 +90,17 @@ export const AddWordFromSelection: React.FC<{
     const onChange = () => {
       if (window.getSelection()?.isCollapsed) setPick(null);
     };
+    // The button sits where the words were; scrolling moves them.
+    const onScroll = () => setPick(null);
     document.addEventListener("mouseup", read);
     document.addEventListener("keyup", read);
     document.addEventListener("selectionchange", onChange);
-    window.addEventListener("scroll", onChange, true);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("mouseup", read);
       document.removeEventListener("keyup", read);
       document.removeEventListener("selectionchange", onChange);
-      window.removeEventListener("scroll", onChange, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [open, root]);
 
