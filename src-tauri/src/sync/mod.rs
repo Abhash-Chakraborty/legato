@@ -41,9 +41,13 @@ use protocol::{Clip, ClipKind, PairLink, Refusal};
 
 /// Credential Manager name of this PC's sync identity.
 const IDENTITY_SECRET: &str = "sync-identity";
-/// How often a connected phone is checked for local changes, besides right
-/// after the app reports one.
+/// How often the loop wakes to look after Bluetooth.
 const REFRESH_EVERY: Duration = Duration::from_secs(15);
+/// Local changes are looked for right after the app reports one, and when
+/// a phone connects. Exporting means hashing every dictation and note line,
+/// so the timer alone does it only this often, for a change nothing
+/// reported.
+const RESCAN_EVERY: Duration = Duration::from_secs(300);
 const STYLE_KINDS: [&str; 7] = [
     "personal",
     "work",
@@ -202,7 +206,7 @@ pub fn init(app: &AppHandle) {
         sync.listen();
     }
     // What the app reports changing is checked soon after, not only every
-    // REFRESH_EVERY.
+    // RESCAN_EVERY.
     for event in [
         "dictionary-changed",
         "snippets-changed",
@@ -424,14 +428,16 @@ impl SyncManager {
     }
 
     async fn refresh_loop(self: Arc<Self>) {
+        let mut scanned = std::time::Instant::now();
         loop {
-            tokio::select! {
-                _ = tokio::time::sleep(REFRESH_EVERY) => {}
+            let woken = tokio::select! {
+                _ = tokio::time::sleep(REFRESH_EVERY) => false,
                 _ = self.wake.notified() => {
                     // Let a burst of changes settle.
                     tokio::time::sleep(Duration::from_millis(700)).await;
+                    true
                 }
-            }
+            };
             // Bluetooth turned on since, or the radio came back.
             let off_bluetooth = self.port().is_some()
                 && self
@@ -450,9 +456,10 @@ impl SyncManager {
                     self.changed();
                 }
             }
-            if !self.any_online() {
+            if !self.any_online() || (!woken && scanned.elapsed() < RESCAN_EVERY) {
                 continue;
             }
+            scanned = std::time::Instant::now();
             let hub = self.hub.clone();
             let kinds = hub.config().kinds;
             match tauri::async_runtime::spawn_blocking(move || hub.engine.refresh(&kinds)).await {
@@ -1000,17 +1007,8 @@ impl hub::Events for AppEvents {
         }))
     }
 
-    fn pairing_failed(&self, reason: Refusal, closed: bool) {
-        log::warn!(
-            "A phone failed to pair ({reason:?}){}",
-            if closed { "; pairing closed" } else { "" }
-        );
-        if closed {
-            if let Some(sync) = self.sync() {
-                sync.listen_if_needed();
-            }
-        }
-        let _ = SyncChanged.emit(&self.0);
+    fn pairing_failed(&self, reason: Refusal) {
+        log::warn!("A phone failed to pair ({reason:?})");
     }
 }
 

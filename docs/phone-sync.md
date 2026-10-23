@@ -35,8 +35,8 @@ legato://pair?v=1&id=<pc device id>&name=<pc name>&fp=<pc fingerprint>
   Bluetooth is on. Older phones skip a `bt:` address because it doesn't connect. Only private,
   link-local and 100.64.0.0/10 addresses go in; the phone refuses a link that names any other
   address, since such a link came from someone else's computer.
-- `secret` is 16 random bytes in unpadded base64url. It works once, for 10 minutes. Five wrong
-  tries cancel it.
+- `secret` is 16 random bytes in unpadded base64url. It works once, for 10 minutes. Wrong tries don't
+  cancel it, so no one else on the network can end a pairing by guessing.
 - Values are percent-encoded.
 
 The phone tries the network addresses all at once and takes the first that answers; when

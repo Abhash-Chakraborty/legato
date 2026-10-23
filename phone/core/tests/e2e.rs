@@ -74,12 +74,8 @@ impl Events for Recorder {
             ))
         }))
     }
-    fn pairing_failed(&self, reason: Refusal, closed: bool) {
-        self.0
-             .0
-            .lock()
-            .unwrap()
-            .push(format!("failed {reason:?} {closed}"));
+    fn pairing_failed(&self, reason: Refusal) {
+        self.0 .0.lock().unwrap().push(format!("failed {reason:?}"));
     }
 }
 

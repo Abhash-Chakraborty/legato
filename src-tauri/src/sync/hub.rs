@@ -14,9 +14,10 @@ use super::ledger::{self, Peer};
 use super::link::{Host, TranscribeJob, Via};
 use super::protocol::{Change, Clip, Hello, Refusal, Welcome, PROTOCOL};
 
-/// How long a pairing code works, and how many wrong tries cancel it.
+/// How long a pairing code works. Wrong tries don't cancel it: 128 random
+/// bits can't be guessed, and a limit would let anyone on the network end
+/// someone else's pairing by sending a few wrong codes.
 pub const PAIRING_FOR: Duration = Duration::from_secs(10 * 60);
-pub const PAIRING_TRIES: u32 = 5;
 
 /// How a phone reaches an address: "netbird" for the 100.64.0.0/10 overlay
 /// range, "lan" for the rest; None for addresses a phone can't use.
@@ -47,8 +48,8 @@ pub trait Events: Send + Sync {
     fn synced(&self, _device_id: &str, _accepted: &Accepted) {}
     fn clip(&self, _peer: &Peer, _clip: Clip) {}
     fn forgotten(&self, _device_id: &str) {}
-    /// A pairing attempt failed or the code ran out of tries.
-    fn pairing_failed(&self, _reason: Refusal, _closed: bool) {}
+    /// A pairing attempt gave the wrong code.
+    fn pairing_failed(&self, _reason: Refusal) {}
     /// How to transcribe a phone's recording with this PC's model, for an
     /// app of the kind `app`.
     fn transcribe(
@@ -64,7 +65,6 @@ pub trait Events: Send + Sync {
 struct Pairing {
     secret: String,
     until: Instant,
-    wrong: u32,
 }
 
 pub struct Hub {
@@ -114,7 +114,6 @@ impl Hub {
         *self.pairing() = Some(Pairing {
             secret: secret.clone(),
             until: Instant::now() + PAIRING_FOR,
-            wrong: 0,
         });
         secret
     }
@@ -137,10 +136,10 @@ impl Hub {
         ledger::peer(&self.engine.conn()?, device_id)
     }
 
-    /// Checks a pairing secret, counting wrong ones.
+    /// Checks a pairing secret.
     fn check_secret(&self, given: &str) -> std::result::Result<(), Refusal> {
         let mut pairing = self.pairing();
-        let Some(open) = pairing.as_mut().filter(|p| p.until > Instant::now()) else {
+        let Some(open) = pairing.as_ref().filter(|p| p.until > Instant::now()) else {
             *pairing = None;
             return Err(Refusal::Expired);
         };
@@ -148,13 +147,8 @@ impl Hub {
             *pairing = None;
             return Ok(());
         }
-        open.wrong += 1;
-        let closed = open.wrong >= PAIRING_TRIES;
-        if closed {
-            *pairing = None;
-        }
         drop(pairing);
-        self.events.pairing_failed(Refusal::BadSecret, closed);
+        self.events.pairing_failed(Refusal::BadSecret);
         Err(Refusal::BadSecret)
     }
 }
