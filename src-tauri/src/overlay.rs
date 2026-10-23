@@ -632,10 +632,20 @@ pub fn show_bar<T: serde::Serialize>(
         let shown = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
         std::thread::sleep(std::time::Duration::from_millis(ms));
         // A panel under the pointer stays until it leaves, then a moment.
+        // Where the pointer is gets checked here too: the page can miss it
+        // leaving (once the island lets clicks through), which kept a
+        // transform's changes on screen for good.
         let mut held = false;
         while BAR_HELD.load(Ordering::SeqCst)
             && OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) == shown
         {
+            let on = handle
+                .get_webview_window("recording_overlay")
+                .is_some_and(|w| island_hit::pointer_on(&w));
+            if !on {
+                BAR_HELD.store(false, Ordering::SeqCst);
+                break;
+            }
             held = true;
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
@@ -1210,6 +1220,28 @@ pub mod island_hit {
             // it can't reach the island before the next look.
             std::thread::sleep(Duration::from_millis(if near { 33 } else { 120 }));
         }
+    }
+
+    /// Whether the pointer is on what the window shows: the island's shape
+    /// while the island is up, otherwise anywhere on the bar's window.
+    pub fn pointer_on(window: &tauri::webview::WebviewWindow) -> bool {
+        if ARMED.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+            return cursor_on_shape(window).0;
+        }
+        use windows::Win32::Foundation::{POINT, RECT};
+        use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
+        let Ok(hwnd) = window.hwnd() else {
+            return false;
+        };
+        let mut cursor = POINT::default();
+        let mut rect = RECT::default();
+        // SAFETY: plain queries into stack values on our own window.
+        let ok =
+            unsafe { GetCursorPos(&mut cursor).is_ok() && GetWindowRect(hwnd, &mut rect).is_ok() };
+        ok && cursor.x >= rect.left
+            && cursor.x < rect.right
+            && cursor.y >= rect.top
+            && cursor.y < rect.bottom
     }
 
     /// Whether the cursor is on the island's shape, and whether it's within

@@ -29,8 +29,10 @@ use tauri_specta::Event;
 const SELECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// How long the bar shows a transform's changes (already kept) before it
-/// closes, unless the pointer is on them.
-const CHANGES_MS: u64 = 9_000;
+/// closes, unless the pointer is on them: long enough to see that it
+/// worked, short enough not to sit over your work. Home keeps every Before
+/// and After.
+const CHANGES_MS: u64 = 2_000;
 /// How long the bar confirms a paste.
 const CONFIRM_MS: u64 = 2500;
 /// How long the bar shows a problem.

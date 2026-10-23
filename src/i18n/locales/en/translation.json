@@ -950,7 +950,7 @@
       },
       "showChanges": {
         "title": "Show changes after a transform",
-        "help": "The bar shows the text before and after a transform for a few seconds, with Undo. The change is kept unless you undo it. Each transform can turn this off."
+        "help": "For two seconds after a transform, the bar shows the text before and after, with Undo; point at it to keep it open. Turn this off and the bar shows nothing. Home keeps every Before and After either way."
       }
     },
     "output": {
