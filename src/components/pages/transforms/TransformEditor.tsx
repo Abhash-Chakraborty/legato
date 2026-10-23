@@ -211,7 +211,7 @@ export const TransformEditor: React.FC<TransformEditorProps> = ({
             value={draft.prompt}
             onChange={(e) => set({ prompt: e.target.value })}
             placeholder={t("transforms.editor.promptPlaceholder")}
-            className="input min-h-[150px] w-full resize-y py-2.5 leading-relaxed"
+            className="input min-h-[150px] w-full resize-none py-2.5 leading-relaxed"
             spellCheck={false}
           />
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[13px] text-text-3">

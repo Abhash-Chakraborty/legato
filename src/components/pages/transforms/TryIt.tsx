@@ -177,7 +177,7 @@ export const TryIt: React.FC<TryItProps> = ({
               }
             }}
             placeholder={t("transforms.try.placeholder")}
-            className="input min-h-[180px] flex-1 resize-y py-2.5 leading-relaxed"
+            className="input min-h-[180px] flex-1 resize-none py-2.5 leading-relaxed"
           />
           {noRecent && (
             <p className="mt-1.5 text-[13px] text-text-3">

@@ -305,7 +305,7 @@ export const SnippetEditor: React.FC<SnippetEditorProps> = ({
           <textarea
             id={textId}
             ref={textRef}
-            className={`input min-h-[120px] w-full resize-y py-2 leading-relaxed ${error?.field === "text" ? "invalid" : ""}`}
+            className={`input min-h-[120px] w-full resize-none py-2 leading-relaxed ${error?.field === "text" ? "invalid" : ""}`}
             value={text}
             maxLength={maxTextChars}
             onChange={(e) => setText(e.target.value)}

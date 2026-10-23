@@ -196,7 +196,13 @@ textarea.input {
   min-height: 96px;
   padding: 10px 12px;
   line-height: 1.5;
-  resize: vertical;
+  /* Grows with what's typed instead, up to a point, then scrolls. */
+  field-sizing: content;
+  max-height: 60vh;
+}
+/* Text boxes keep the size the layout gives them; none has a drag grip. */
+textarea {
+  resize: none;
 }
 .input::placeholder {
   color: var(--text-4);

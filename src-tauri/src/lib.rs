@@ -1305,7 +1305,12 @@ pub fn run(cli_args: CliArgs) {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_autostart::Builder::new().build())
+        // Started with Windows, Legato waits in the tray.
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .args(["--start-hidden"])
+                .build(),
+        )
         .plugin(window_state_plugin())
         .manage(cli_args.clone())
         .setup(move |app| {

@@ -14,7 +14,9 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) {
     // Disabling an entry that was never created fails with "file not found"
     // on Windows, which is nothing to warn about.
     let already = manager.is_enabled().unwrap_or(enabled);
-    if already == enabled {
+    // An entry that's on is written again, so one from before it carried
+    // --start-hidden gets the flag.
+    if already == enabled && !enabled {
         return;
     }
     let result = if enabled {

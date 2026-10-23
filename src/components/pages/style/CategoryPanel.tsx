@@ -241,7 +241,7 @@ export const CategoryPanel: React.FC<CategoryPanelProps> = ({
           </label>
           <textarea
             id={tryId}
-            className="input min-h-[96px] w-full resize-y py-2 leading-relaxed"
+            className="input min-h-[96px] w-full resize-none py-2 leading-relaxed"
             value={text}
             disabled={disabled}
             onChange={(e) => {

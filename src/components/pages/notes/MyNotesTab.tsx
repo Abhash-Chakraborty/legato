@@ -117,7 +117,7 @@ export const MyNotesTab: React.FC<{ note: Note; recording: boolean }> = ({
         onChange={(e) => setText(e.target.value)}
         aria-label={t("notes.detail.tab.mine")}
         placeholder={t("notes.mine.placeholder")}
-        className="input min-h-[220px] w-full resize-y py-2.5 leading-relaxed"
+        className="input min-h-[220px] w-full resize-none py-2.5 leading-relaxed"
       />
       <div className="mt-2 flex items-center gap-3">
         <Button
