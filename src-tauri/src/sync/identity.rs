@@ -331,6 +331,53 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// Runs a handshake between `client` and a server holding `id`'s
+    /// certificate, in memory.
+    fn handshake(client: ClientConfig, id: &Identity) -> Result<(), rustls::Error> {
+        let server = ServerConfig::builder_with_provider(provider())
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![id.cert_der()], id.key_der())
+            .unwrap();
+        let name = ServerName::try_from("hub.example").unwrap();
+        let mut client = rustls::ClientConnection::new(Arc::new(client), name).unwrap();
+        let mut server = rustls::ServerConnection::new(Arc::new(server)).unwrap();
+        for _ in 0..10 {
+            let mut bytes = Vec::new();
+            while client.wants_write() {
+                client.write_tls(&mut bytes).unwrap();
+            }
+            server.read_tls(&mut bytes.as_slice()).unwrap();
+            server.process_new_packets()?;
+            let mut bytes = Vec::new();
+            while server.wants_write() {
+                server.write_tls(&mut bytes).unwrap();
+            }
+            client.read_tls(&mut bytes.as_slice()).unwrap();
+            client.process_new_packets()?;
+            if !client.is_handshaking() && !server.is_handshaking() {
+                return Ok(());
+            }
+        }
+        panic!("the handshake didn't finish");
+    }
+
+    #[test]
+    fn a_hub_is_trusted_only_with_the_pinned_certificate() {
+        let hub = Identity::generate().unwrap();
+        let pin = sha256_hex(&hub.cert_der());
+        assert_eq!(pin.len(), 64);
+        assert!(pin.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+        // Whatever name the hub's certificate carries, and in either case.
+        handshake(hub_client_config(&pin).unwrap(), &hub).unwrap();
+        handshake(hub_client_config(&pin.to_uppercase()).unwrap(), &hub).unwrap();
+        let other = Identity::generate().unwrap();
+        let wrong = sha256_hex(&other.cert_der());
+        let refused = handshake(hub_client_config(&wrong).unwrap(), &hub).unwrap_err();
+        assert!(refused.to_string().contains("Inyon hub"), "{refused}");
+    }
+
     #[test]
     fn uuids_and_secrets_look_right() {
         let id = uuid();
