@@ -342,8 +342,10 @@ fn packaged_app_id(folder: &str, exe: &str, manifest: &str) -> Option<String> {
         .split("<Application ")
         .skip(1)
         .filter_map(|rest| {
-            let tag = &rest[..rest.find('>')?];
-            Some((attr(tag, "Id")?, attr(tag, "Executable")))
+            // The split ate the space before the first attribute; put it
+            // back so `Id` is found wherever it sits.
+            let tag = format!(" {}", &rest[..rest.find('>')?]);
+            Some((attr(&tag, "Id")?, attr(&tag, "Executable")))
         })
         .collect();
     let wanted = exe.replace('/', "\\").to_ascii_lowercase();
