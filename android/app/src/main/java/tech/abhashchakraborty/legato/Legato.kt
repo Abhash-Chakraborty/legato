@@ -182,10 +182,13 @@ class Legato(private val context: Context) : CoreListener {
             // keeps its own pastes out of the shared clipboard; a clip from the
             // PC is already there.
             if (description.label == DICTATION_CLIP || description.label == PC_CLIP) return
+            // Each copy has its own time; the one already sent doesn't go again.
             copied = description.timestamp
-            // The first time after this check arrived, take what's there as sent.
-            if (!prefs.contains(PREF_CLIP_SENT)) clipSent = copied
-            if (copied <= clipSent) return
+            if (copied != 0L) {
+                // The first time after this check arrived, take what's there as sent.
+                if (!prefs.contains(PREF_CLIP_SENT)) clipSent = copied
+                if (copied == clipSent) return
+            }
             clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
         }.getOrNull() ?: return
         scope.launch {
