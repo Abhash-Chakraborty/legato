@@ -543,9 +543,10 @@
       },
       "recordingRetention": {
         "title": "Keep recordings",
-        "description": "How long recordings stay on this PC before Legato deletes them.",
+        "description": "How long dictations and their recordings stay on this PC. The limit above still applies.",
         "never": "Never",
         "preserveLimit": "Keep latest {{count}}",
+        "hours48": "After 48 hours",
         "days3": "After 3 days",
         "weeks2": "After 2 weeks",
         "months3": "After 3 months",

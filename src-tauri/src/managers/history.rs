@@ -310,8 +310,11 @@ impl HistoryManager {
                 self.cleanup_by_count(limit)
             }
             _ => {
-                // Use time-based logic
-                self.cleanup_by_time(retention_period)
+                // Old entries go, and the limit still holds within the window:
+                // "48 hours or 500 entries", whichever comes first.
+                self.cleanup_by_time(retention_period)?;
+                let limit = crate::settings::get_history_limit(&self.app_handle);
+                self.cleanup_by_count(limit)
             }
         }
     }
@@ -405,6 +408,7 @@ impl HistoryManager {
         // Calculate cutoff timestamp (current time minus retention period)
         let now = Utc::now().timestamp();
         let cutoff_timestamp = match retention_period {
+            crate::settings::RecordingRetentionPeriod::Hours48 => now - (48 * 60 * 60),
             crate::settings::RecordingRetentionPeriod::Days3 => now - (3 * 24 * 60 * 60), // 3 days in seconds
             crate::settings::RecordingRetentionPeriod::Weeks2 => now - (2 * 7 * 24 * 60 * 60), // 2 weeks in seconds
             crate::settings::RecordingRetentionPeriod::Months3 => now - (3 * 30 * 24 * 60 * 60), // 3 months in seconds (approximate)

@@ -4287,7 +4287,7 @@ export type PostProcessApiFormat =
  */
 export type TaskModel = { provider_id: string; model: string }
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean; api_format?: PostProcessApiFormat }
-export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
+export type RecordingRetentionPeriod = "never" | "preserve_limit" | "hours48" | "days3" | "weeks2" | "months3"
 /**
  * A retired ONNX model found on disk.
  */

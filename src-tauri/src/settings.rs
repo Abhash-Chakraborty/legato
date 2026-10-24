@@ -559,6 +559,7 @@ pub enum AutoSubmitKey {
 pub enum RecordingRetentionPeriod {
     Never,
     PreserveLimit,
+    Hours48,
     Days3,
     Weeks2,
     Months3,
