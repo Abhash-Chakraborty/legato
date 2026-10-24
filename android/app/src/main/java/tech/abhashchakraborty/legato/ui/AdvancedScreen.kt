@@ -107,15 +107,15 @@ fun AdvancedScreen(onBack: () -> Unit) {
                     Hairline()
                     Detail("Writes up what you say", when {
                         state.online && state.pcTranscribes && legato.usePcModel -> "${state.pcName}'s speech model"
-                        model is ModelStatus.Loaded -> "The model on this ${legato.device}"
+                        model is ModelStatus.Loaded || model == ModelStatus.Downloaded -> "The model on this ${legato.device}"
                         else -> "Nothing yet: download the model or connect to your PC"
                     })
                     Hairline()
                     Detail("Speech model", when (val m = model) {
                         ModelStatus.Missing -> "Not downloaded"
                         is ModelStatus.Downloading -> "Downloading"
-                        ModelStatus.Downloaded -> "Downloaded, loading"
-                        is ModelStatus.Loaded -> "Moonshine Base, loaded (${m.arch})"
+                        ModelStatus.Downloaded -> "${legato.selectedModel.name}, downloaded"
+                        is ModelStatus.Loaded -> "${legato.selectedModel.name}, loaded (${m.arch})"
                     })
                     Hairline()
                     Detail("Core", coreVersion())

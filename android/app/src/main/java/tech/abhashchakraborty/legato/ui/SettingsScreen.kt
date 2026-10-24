@@ -74,6 +74,7 @@ import kotlinx.coroutines.withContext
 import tech.abhashchakraborty.legato.BluetoothLink
 import tech.abhashchakraborty.legato.Legato
 import tech.abhashchakraborty.legato.ModelStatus
+import tech.abhashchakraborty.legato.PhoneModels
 import tech.abhashchakraborty.legato.bubble.BubbleAccessibilityService
 import tech.abhashchakraborty.legato.core.coreVersion
 
@@ -358,39 +359,89 @@ private fun BluetoothRow(onAllowed: () -> Unit) {
     )
 }
 
-/** The speech model: download it, watch it come in, see that it's loaded. */
+/** The speech model: which one, download it, watch it come in; tap to choose another. */
 @Composable
 fun ModelRow(legato: Legato) {
     val model by legato.model.collectAsStateWithLifecycle()
     val state by legato.state.collectAsStateWithLifecycle()
+    var choosing by remember { mutableStateOf(false) }
     val pcWrites = state.online && state.pcTranscribes && legato.usePcModel
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+    val m = legato.selectedModel
+    Column(
+        Modifier.fillMaxWidth().clickable(enabled = model !is ModelStatus.Downloading) { choosing = true }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Speech model on this ${legato.device}", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    when (val m = model) {
+                    when (val s = model) {
                         ModelStatus.Missing ->
-                            if (pcWrites) "Optional while ${state.pcName ?: "your PC"} writes up what you say. Moonshine Base, about 60 MB, for when it's away."
-                            else "Moonshine Base, about 60 MB. Nothing you say leaves the ${legato.device}."
-                        is ModelStatus.Downloading -> if (m.percent >= 0) "Moonshine Base · downloading · ${m.percent}%" else "Moonshine Base · downloading"
-                        ModelStatus.Downloaded -> "Moonshine Base · loading"
-                        is ModelStatus.Loaded -> "Moonshine Base · ready"
+                            if (pcWrites) "Optional while ${state.pcName ?: "your PC"} writes up what you say. ${m.name}, ${m.size}, for when it's away."
+                            else "${m.name}, ${m.size}. Nothing you say leaves the ${legato.device}."
+                        is ModelStatus.Downloading -> if (s.percent >= 0) "${m.name} · downloading · ${s.percent}%" else "${m.name} · downloading"
+                        ModelStatus.Downloaded, is ModelStatus.Loaded -> "${m.name} · ready"
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = LocalStatus.current.faint,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            if (model == ModelStatus.Missing) {
-                Spacer(Modifier.size(12.dp))
-                Button(onClick = { legato.fetchModel() }) { Text("Download") }
-            }
+            Spacer(Modifier.size(12.dp))
+            if (model == ModelStatus.Missing) Button(onClick = { legato.fetchModel() }) { Text("Download") }
+            else if (model !is ModelStatus.Downloading) Chevron()
         }
-        (model as? ModelStatus.Downloading)?.let { m ->
+        (model as? ModelStatus.Downloading)?.let { s ->
             Spacer(Modifier.height(10.dp))
-            if (m.percent >= 0) LinearProgressIndicator(progress = { m.percent / 100f }, modifier = Modifier.fillMaxWidth())
+            if (s.percent >= 0) LinearProgressIndicator(progress = { s.percent / 100f }, modifier = Modifier.fillMaxWidth())
             else LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+    }
+    if (choosing) ModelSheet(legato, onDismiss = { choosing = false })
+}
+
+/**
+ * The models this device can run, small to large. Picking one that isn't
+ * here downloads it; the others downloaded can be deleted for the space.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModelSheet(legato: Legato, onDismiss: () -> Unit) {
+    val version by legato.version.collectAsStateWithLifecycle()
+    val selected = legato.selectedModel.id
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
+            Text("Speech model", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 4.dp))
+            Text(
+                "Writes up what you say when your PC doesn't. Bigger models are more accurate and use more space, memory and battery. It's put away after five minutes unused.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = LocalStatus.current.faint,
+                modifier = Modifier.padding(4.dp, 4.dp, 4.dp, 8.dp),
+            )
+            PhoneModels.all.forEach { m ->
+                val here = remember(version) { legato.isDownloaded(m) }
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        .selectable(selected = m.id == selected, role = Role.RadioButton) { legato.selectModel(m); onDismiss() }
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    RadioButton(selected = m.id == selected, onClick = null)
+                    Column(Modifier.weight(1f)) {
+                        Text(m.name, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            m.blurb + " " + if (here) "${m.size}, on this ${legato.device}." else "${m.size} to download.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = LocalStatus.current.faint,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    if (here && m.id != selected) {
+                        TextButton(onClick = { legato.deleteModel(m) }) { Text("Delete") }
+                    }
+                }
+            }
         }
     }
 }

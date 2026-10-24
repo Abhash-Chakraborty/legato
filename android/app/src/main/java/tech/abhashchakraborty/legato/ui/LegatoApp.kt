@@ -81,7 +81,8 @@ fun LegatoApp(recorder: Recorder, pairingLink: String?) {
     // Failures from anywhere; the connection chatter stays in Advanced.
     LaunchedEffect(Unit) { legato.notices.collect { snackbar.showSnackbar(it) } }
     // A model downloaded on an earlier run loads in the background.
-    LaunchedEffect(Unit) { if (legato.model.value is ModelStatus.Downloaded) legato.loadModel() }
+    // Ready for the first recording, unless the PC writes them up; put away again after a while unused.
+    LaunchedEffect(Unit) { if (legato.model.value is ModelStatus.Downloaded && !legato.pcWillTranscribe()) legato.loadModel() }
     LaunchedEffect(pairingLink) {
         if (pairingLink != null) nav.navigate("pair?link=${android.net.Uri.encode(pairingLink)}")
     }
