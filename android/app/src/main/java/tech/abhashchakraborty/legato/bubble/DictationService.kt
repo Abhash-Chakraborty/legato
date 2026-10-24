@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -139,7 +140,9 @@ class DictationService : Service() {
             withContext(Dispatchers.Main) {
                 pending--
                 if (text.isNotBlank() && mine > cancelled) {
-                    val typed = BubbleAccessibilityService.instance?.insert(text) ?: false
+                    val service = BubbleAccessibilityService.instance
+                    if (service == null) Log.w(BubbleAccessibilityService.TAG, "The bubble's service isn't connected")
+                    val typed = service?.insert(text) ?: false
                     if (!typed) {
                         // The field went away while the text was written up; keep it.
                         getSystemService(ClipboardManager::class.java)

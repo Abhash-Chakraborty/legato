@@ -27,6 +27,7 @@ class BubbleAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        Log.i(TAG, "Connected")
         instance = this
         running.value = true
         overlay = BubbleOverlay(this)
@@ -42,6 +43,7 @@ class BubbleAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        Log.i(TAG, "Destroyed")
         overlay?.hide()
         overlay = null
         if (instance === this) instance = null
@@ -164,7 +166,7 @@ class BubbleAccessibilityService : AccessibilityService() {
     }
 
     companion object {
-        private const val TAG = "LegatoBubble"
+        const val TAG = "LegatoBubble"
         @Volatile var instance: BubbleAccessibilityService? = null
             private set
 
