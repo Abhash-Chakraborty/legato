@@ -51,6 +51,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -126,6 +127,8 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
                 Hairline()
                 PcModelRow(legato, state.paired, state.pcName)
             }
+
+            Group("Transforms") { TransformRows(legato) }
 
             Group("Bubble over Gboard") { BubbleRows() }
 
@@ -439,6 +442,103 @@ private fun ModelSheet(legato: Legato, onDismiss: () -> Unit) {
                     }
                     if (here && m.id != selected) {
                         TextButton(onClick = { legato.deleteModel(m) }) { Text("Delete") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The PC's transforms on the phone: one run on every dictation, and where
+ * they run (the PC while connected, else the provider it shared, with the key
+ * kept sealed on the phone).
+ */
+@Composable
+private fun TransformRows(legato: Legato) {
+    val state by legato.state.collectAsStateWithLifecycle()
+    val version by legato.version.collectAsStateWithLifecycle()
+    var picking by remember { mutableStateOf(false) }
+    var after by remember { mutableStateOf(legato.afterDictation) }
+    val pc = state.pcName ?: "your PC"
+    val transforms = remember(version, state.paired) { runCatching { legato.core.transforms() }.getOrDefault(emptyList()) }
+    val providers = remember(version, state.online) { legato.core.aiProviders() }
+    LaunchedEffect(state.online) {
+        if (state.online) withContext(Dispatchers.Default) { runCatching { legato.core.pullAi() } }
+    }
+    val chosen = transforms.firstOrNull { it.id == after }
+    SettingRow(
+        "After each dictation",
+        when {
+            !state.paired -> "Pair with your PC to use its transforms."
+            transforms.isEmpty() -> "No transforms yet. Switch some on in Legato on $pc."
+            chosen != null -> "${chosen.name} rewrites what you say before it's typed."
+            else -> "Typed as you said it. Pick a transform to rewrite every dictation."
+        },
+        enabled = state.paired && transforms.isNotEmpty(),
+        onClick = { picking = true },
+        trailing = { Text(chosen?.name ?: "None", style = MaterialTheme.typography.bodyMedium, color = LocalStatus.current.faint) },
+    )
+    Hairline()
+    val provider = providers.firstOrNull()
+    SettingRow(
+        "Where they run",
+        when {
+            !state.paired -> "On your PC, or with the AI provider it shares."
+            state.online && legato.core.pcTransforms() -> "On $pc while connected. Its AI key stays there."
+            provider != null && legato.hasKey(provider.id) -> "Away from $pc: ${provider.label} · ${provider.model}. The key is sealed in this ${legato.device}'s secure hardware."
+            provider != null -> "Away from $pc: ${provider.label} · ${provider.model}."
+            else -> "Only while connected. To run them away, turn on Share AI keys with your phone on $pc."
+        },
+    )
+    Hairline()
+    SettingRow(
+        "On selected text",
+        "Select text in any app, then pick Transform from its menu.",
+    )
+    if (picking) {
+        AfterDictationSheet(
+            transforms = transforms,
+            selected = after,
+            onPick = { after = it; legato.afterDictation = it },
+            onDismiss = { picking = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AfterDictationSheet(
+    transforms: List<tech.abhashchakraborty.legato.core.TransformItem>,
+    selected: String?,
+    onPick: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
+            Text("After each dictation", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 4.dp))
+            Text(
+                "The transform rewrites what you say before it's typed. If it can't run, your words are typed as you said them.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = LocalStatus.current.faint,
+                modifier = Modifier.padding(4.dp, 4.dp, 4.dp, 8.dp),
+            )
+            val options = listOf<Pair<String?, Pair<String, String>>>(null to ("None" to "Typed as you said it.")) +
+                transforms.map { it.id to (it.name to it.description) }
+            options.forEach { (id, text) ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        .selectable(selected = id == selected, role = Role.RadioButton) { onPick(id); onDismiss() }
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    RadioButton(selected = id == selected, onClick = null)
+                    Column(Modifier.weight(1f)) {
+                        Text(text.first, style = MaterialTheme.typography.bodyLarge)
+                        if (text.second.isNotBlank()) {
+                            Text(text.second, style = MaterialTheme.typography.bodyMedium, color = LocalStatus.current.faint, modifier = Modifier.padding(top = 2.dp))
+                        }
                     }
                 }
             }

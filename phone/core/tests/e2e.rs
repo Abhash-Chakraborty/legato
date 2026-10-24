@@ -11,7 +11,7 @@ use legato_phone::sync::hub::{Config, Events, Hub};
 use legato_phone::sync::identity::{uuid, Identity};
 use legato_phone::sync::ledger::{self, Peer};
 use legato_phone::sync::link::{self, Command, Dialer, Host, Sessions, Via};
-use legato_phone::sync::protocol::{Clip, ClipKind, Refusal};
+use legato_phone::sync::protocol::{AiShare, Clip, ClipKind, Refusal, SharedProvider};
 use legato_phone::{PairedPc, Phone};
 use rusqlite::Connection;
 use rusqlite_migration::Migrations;
@@ -76,6 +76,36 @@ impl Events for Recorder {
     }
     fn pairing_failed(&self, reason: Refusal) {
         self.0 .0.lock().unwrap().push(format!("failed {reason:?}"));
+    }
+    fn ai_share(&self, _device_id: &str) -> Option<AiShare> {
+        Some(AiShare {
+            providers: vec![SharedProvider {
+                id: "openai".into(),
+                label: "OpenAI".into(),
+                base_url: "https://api.openai.com/v1".into(),
+                api_format: "openai".into(),
+                model: "gpt-5-nano".into(),
+                key: Some("sk-test".into()),
+            }],
+            own_models: Vec::new(),
+        })
+    }
+    fn transform(
+        &self,
+        _device_id: &str,
+        transform_id: String,
+        text: String,
+        app: Option<String>,
+    ) -> Option<link::TransformJob> {
+        Some(Box::new(move || match transform_id.as_str() {
+            "shout" => Ok(Some(format!(
+                "{} ({})",
+                text.to_uppercase(),
+                app.unwrap_or_default()
+            ))),
+            "same" => Ok(None),
+            _ => Err("no such transform".into()),
+        }))
     }
 }
 
@@ -498,6 +528,12 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
     pc.hub
         .set_addrs(vec!["10.0.0.9:47613".into(), "bt:AA:BB:CC:DD:EE:FF".into()]);
     let pixel = phone("Pixel 8");
+    type Keys = Vec<(String, Option<String>)>;
+    let keys: Arc<Mutex<Keys>> = Arc::default();
+    {
+        let keys = keys.clone();
+        *pixel.on_ai_keys.lock().unwrap() = Some(Box::new(move |k| *keys.lock().unwrap() = k));
+    }
     pixel.add_word("Bluetooth").unwrap();
     pixel
         .add_memo(
@@ -596,6 +632,16 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
     };
     assert_eq!(text, "heard 16000 samples for email");
 
+    // A live link answers its check at once.
+    {
+        let (pixel, sessions) = (pixel.clone(), phone_sessions.clone());
+        assert!(tokio::task::spawn_blocking(move || {
+            pixel.link_alive(&sessions, Duration::from_secs(2), Duration::ZERO)
+        })
+        .await
+        .unwrap());
+    }
+
     // Starting to listen asks the PC to load its model, with an empty recording.
     assert!(pixel.warm_pc(&phone_sessions));
     until("the PC is asked to load its model", || {
@@ -606,6 +652,51 @@ async fn a_phone_with_no_network_in_common_pairs_over_bluetooth() {
             .contains(&"transcribe 0".to_string())
     })
     .await;
+
+    // The PC shared its AI provider on connecting: the key went to the
+    // app's hook, and only the rest was kept on disk.
+    until("the AI provider arrives", || {
+        keys.lock()
+            .unwrap()
+            .iter()
+            .any(|(id, key)| id == "openai" && key.as_deref() == Some("sk-test"))
+    })
+    .await;
+    let share = pixel.ai_share();
+    assert_eq!(share.providers[0].model, "gpt-5-nano");
+    assert_eq!(share.providers[0].key, None);
+    assert!(pixel.pull_ai(&phone_sessions));
+
+    // The PC runs its transforms on the phone's text.
+    assert!(pixel.pc_transforms());
+    let run = |id: &'static str| {
+        let (pixel, sessions) = (pixel.clone(), phone_sessions.clone());
+        tokio::task::spawn_blocking(move || {
+            pixel.transform_on_pc(
+                &sessions,
+                id,
+                "see you soon",
+                Duration::from_secs(5),
+                Some("email"),
+            )
+        })
+    };
+    assert_eq!(
+        run("shout").await.unwrap().unwrap().as_deref(),
+        Some("SEE YOU SOON (email)")
+    );
+    assert_eq!(run("same").await.unwrap().unwrap(), None);
+    assert!(run("missing")
+        .await
+        .unwrap()
+        .unwrap_err()
+        .to_string()
+        .contains("no such transform"));
+
+    // Unpairing forgets the provider and tells the app to drop the keys.
+    pixel.forget_pc().unwrap();
+    assert!(pixel.ai_share().providers.is_empty());
+    assert!(keys.lock().unwrap().is_empty());
 }
 
 /// A PC that's off, asleep or behind a firewall answers with "connection

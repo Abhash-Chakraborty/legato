@@ -359,7 +359,7 @@ fn problem_notice(name: &str, problem: &AiProblem) -> BarNotice {
 }
 
 /// The problem in the words Recent runs shows.
-fn problem_text(problem: &AiProblem) -> String {
+pub(crate) fn problem_text(problem: &AiProblem) -> String {
     let name = if problem.provider_id == "custom" {
         "Your server".to_string()
     } else {

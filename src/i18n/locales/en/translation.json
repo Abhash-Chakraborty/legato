@@ -1222,6 +1222,10 @@
         "add": "Add",
         "placeholder": "App file name, like Signal.exe"
       },
+      "shareAi": {
+        "title": "Share AI keys with your phone",
+        "help": "So {{name}} can run your transforms away from this PC. Keys go only over the encrypted link to a paired phone, which keeps them encrypted and never shows them. Off, it forgets them."
+      },
       "pill": {
         "title": "Show From phone on the Legato bar",
         "help": "A short note on the bar when a clip from {{name}} lands on the clipboard."

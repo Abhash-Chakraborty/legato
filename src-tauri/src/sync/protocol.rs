@@ -98,6 +98,46 @@ pub struct Welcome {
     /// its own speech model.
     #[serde(default)]
     pub transcribe: bool,
+    /// The PC runs its transforms on text the phone sends (`run_transform`).
+    #[serde(default)]
+    pub transforms: bool,
+}
+
+/// The AI providers the PC's transforms run on, so the phone can run them
+/// itself while the PC is away (the transforms themselves sync as the
+/// `transforms` kind). Keys travel only inside this TLS link, and only when
+/// the PC shares them; a provider without a key tells the phone to forget
+/// the one it holds.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AiShare {
+    /// The first runs every transform without a model of its own.
+    #[serde(default)]
+    pub providers: Vec<SharedProvider>,
+    /// Transforms with a provider and model of their own.
+    #[serde(default)]
+    pub own_models: Vec<TransformModel>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TransformModel {
+    pub transform_id: String,
+    /// One of `providers` by id.
+    pub provider_id: String,
+    pub model: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SharedProvider {
+    pub id: String,
+    pub label: String,
+    pub base_url: String,
+    /// "openai" (chat completions) or "anthropic" (messages).
+    pub api_format: String,
+    /// The model transforms use on this provider unless they name one.
+    pub model: String,
+    /// The API key, when the PC shares keys and the provider needs one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -147,6 +187,29 @@ pub enum Message {
     },
     /// The PC's answer to `transcribe`: the text, or why there is none.
     Transcript {
+        id: String,
+        #[serde(default)]
+        text: Option<String>,
+        #[serde(default)]
+        error: Option<String>,
+    },
+    /// The AI providers the PC's transforms use (`AiShare`): sent after
+    /// welcome and in answer to `ai_pull`.
+    Ai(AiShare),
+    /// The phone asks for the PC's `ai` again.
+    AiPull,
+    /// Text for one of the PC's transforms to rewrite, for an app of the kind
+    /// `app`.
+    RunTransform {
+        id: String,
+        transform_id: String,
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app: Option<String>,
+    },
+    /// The PC's answer to `run_transform`: the new text, or why there is
+    /// none (no text means the model had nothing to change).
+    Transformed {
         id: String,
         #[serde(default)]
         text: Option<String>,

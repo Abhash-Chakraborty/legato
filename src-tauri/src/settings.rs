@@ -297,6 +297,10 @@ pub struct SyncSettings {
     /// A clip from the phone shows "From phone" on the Legato bar.
     #[serde(default)]
     pub phone_pill: bool,
+    /// Paired phones get the AI keys transforms use, so they can run them
+    /// while away from this PC. Off, phones forget the keys they hold.
+    #[serde(default = "default_true")]
+    pub share_ai: bool,
 }
 
 fn default_sync_kinds() -> Vec<String> {
@@ -326,6 +330,7 @@ impl Default for SyncSettings {
             clipboard_never: default_clipboard_never(),
             clipboard_paused_until: None,
             phone_pill: false,
+            share_ai: true,
         }
     }
 }

@@ -103,6 +103,7 @@ import {
   RecentClipsRow,
   SendClipboardRow,
   SharedClipboardRow,
+  ShareAiRow,
   SYNC_KINDS,
   SyncKindRow,
   SyncStatusRow,
@@ -1412,6 +1413,14 @@ export const buildSections = (
             id: "never-syncs",
             searchKeys: ["settings.devices.never"],
             render: () => <NeverSyncsRow />,
+          },
+          {
+            id: "share-ai",
+            searchKeys: [
+              "settings.devices.shareAi.title",
+              "settings.devices.shareAi.help",
+            ],
+            render: () => <ShareAiRow />,
           },
         ],
       },

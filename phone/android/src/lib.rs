@@ -14,7 +14,7 @@ use std::time::Duration;
 use legato_phone::sync::identity::uuid;
 use legato_phone::sync::link::{Command, Sessions};
 use legato_phone::sync::protocol::{Clip, ClipKind, PairLink};
-use legato_phone::{LinkEnd, PairedPc, Phone};
+use legato_phone::{KeySeal, LinkEnd, PairedPc, Phone};
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
@@ -85,6 +85,43 @@ pub struct ClipItem {
     pub age_ms: u64,
 }
 
+/// One of the PC's transforms, as the phone lists it.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct TransformItem {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+}
+
+/// What the app needs to run a transform itself while the PC is away: the
+/// prompt and where to send it. The key isn't here; the app keeps it sealed
+/// under `provider_id`.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct TransformRequest {
+    pub system: String,
+    pub provider_id: String,
+    pub provider_label: String,
+    pub base_url: String,
+    /// "openai" (chat completions) or "anthropic" (messages).
+    pub api_format: String,
+    pub model: String,
+}
+
+/// An AI provider the PC shared, for the words in Settings; never its key.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ProviderInfo {
+    pub id: String,
+    pub label: String,
+    pub model: String,
+}
+
+/// An AI key the PC shared, or None to forget the one kept for `provider_id`.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ProviderKey {
+    pub provider_id: String,
+    pub key: Option<String>,
+}
+
 /// What the Kotlin side hears from the core.
 #[uniffi::export(with_foreign)]
 pub trait CoreListener: Send + Sync {
@@ -101,6 +138,14 @@ pub trait CoreListener: Send + Sync {
     /// A text the PC copied, as it arrives; images stay in `clips`.
     /// `age_ms` is how long ago it was copied on the PC.
     fn on_clip(&self, text: String, from_app: Option<String>, age_ms: u64);
+    /// The keys the PC shares for its AI providers, all of them each time:
+    /// keep these sealed, forget those with no key and any not listed.
+    fn on_ai_keys(&self, keys: Vec<ProviderKey>);
+    /// Seals this phone's private key with a key that never leaves the
+    /// phone's secure hardware; None when it can't.
+    fn seal(&self, plain: Vec<u8>) -> Option<Vec<u8>>;
+    /// Opens what `seal` sealed; None when it can't.
+    fn unseal(&self, sealed: Vec<u8>) -> Option<Vec<u8>>;
 }
 
 /// The phone's core. One per app process.
@@ -129,7 +174,17 @@ impl Core {
             let listener = listener.clone();
             Box::new(move |line: String| listener.on_line(line))
         };
-        let mut phone = Phone::open(Path::new(&dir), &name, say)?;
+        let seal = KeySeal {
+            seal: Box::new({
+                let listener = listener.clone();
+                move |plain| listener.seal(plain)
+            }),
+            open: Box::new({
+                let listener = listener.clone();
+                move |sealed| listener.unseal(sealed)
+            }),
+        };
+        let mut phone = Phone::open_sealed(Path::new(&dir), &name, say, Some(seal))?;
         phone.app_version = env!("CARGO_PKG_VERSION").to_string();
         let phone = Arc::new(phone);
         *phone.bluetooth.lock().unwrap() = Some({
@@ -145,6 +200,16 @@ impl Core {
                 if let Some(text) = clip.text.clone().filter(|t| !t.trim().is_empty()) {
                     listener.on_clip(text, clip.from_app.clone(), clip.age_ms);
                 }
+            })
+        });
+        *phone.on_ai_keys.lock().unwrap() = Some({
+            let listener = listener.clone();
+            Box::new(move |keys: Vec<(String, Option<String>)>| {
+                listener.on_ai_keys(
+                    keys.into_iter()
+                        .map(|(provider_id, key)| ProviderKey { provider_id, key })
+                        .collect(),
+                );
             })
         });
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -398,6 +463,98 @@ impl Core {
         Ok(self
             .phone
             .transcribe_on_pc(&self.sessions, &samples, wait, app)?)
+    }
+
+    /// The PC's transforms that are switched on, in its order.
+    pub fn transforms(&self) -> Result<Vec<TransformItem>, CoreError> {
+        Ok(legato_phone::transforms::list(&self.phone.conn()?)?
+            .into_iter()
+            .map(|t| TransformItem {
+                id: t.id,
+                name: t.name,
+                description: t.description,
+            })
+            .collect())
+    }
+
+    /// The AI providers the PC shared for its transforms, the default first.
+    pub fn ai_providers(&self) -> Vec<ProviderInfo> {
+        self.phone
+            .ai_share()
+            .providers
+            .into_iter()
+            .map(|p| ProviderInfo {
+                id: p.id,
+                label: p.label,
+                model: p.model,
+            })
+            .collect()
+    }
+
+    /// Connected to a PC that runs its transforms for the phone.
+    pub fn pc_transforms(&self) -> bool {
+        self.phone.pc_transforms()
+    }
+
+    /// Asks the PC for its AI providers again. False when not connected.
+    pub fn pull_ai(&self) -> bool {
+        self.phone.pull_ai(&self.sessions)
+    }
+
+    /// Runs transform `transform_id` on `text` on the PC, for the app
+    /// `package`. None: the model had nothing to change. Blocks.
+    pub fn transform_on_pc(
+        &self,
+        transform_id: String,
+        text: String,
+        package: String,
+    ) -> Result<Option<String>, CoreError> {
+        let app = (!package.is_empty()).then(|| legato_phone::finish::category_of(&package));
+        Ok(self.phone.transform_on_pc(
+            &self.sessions,
+            &transform_id,
+            &text,
+            Duration::from_secs(75),
+            app,
+        )?)
+    }
+
+    /// The prompt and provider to run `transform_id` here, for text in the
+    /// app `package`; None when the PC shared no provider this phone can
+    /// reach. `clipboard` is read only by prompts that ask for it.
+    pub fn transform_request(
+        &self,
+        transform_id: String,
+        package: String,
+        clipboard: Option<String>,
+    ) -> Result<Option<TransformRequest>, CoreError> {
+        let share = self.phone.ai_share();
+        let Some((provider, model)) = legato_phone::transforms::provider_for(&share, &transform_id)
+        else {
+            return Ok(None);
+        };
+        let kind = (!package.is_empty()).then(|| legato_phone::finish::category_of(&package));
+        let words = kind.and_then(legato_phone::transform_rules::phone_app_words);
+        let system = legato_phone::transforms::system_prompt(
+            &self.phone.conn()?,
+            &transform_id,
+            words,
+            clipboard.as_deref(),
+        )?;
+        Ok(Some(TransformRequest {
+            system,
+            provider_id: provider.id.clone(),
+            provider_label: provider.label.clone(),
+            base_url: provider.base_url.clone(),
+            api_format: provider.api_format.clone(),
+            model,
+        }))
+    }
+
+    /// Reads a provider's answer as the PC does: None when it's empty or
+    /// talks about its instructions instead of giving the text.
+    pub fn read_transform_answer(&self, answer: String, input: String) -> Option<String> {
+        legato_phone::transforms::read_answer(&answer, &input)
     }
 
     /// Text from this device's model, finished as the PC finishes a dictation

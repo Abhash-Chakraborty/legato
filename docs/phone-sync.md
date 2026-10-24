@@ -21,6 +21,12 @@ Each device has:
 A device is known by its **fingerprint**, the SHA-256 of its certificate's DER bytes, written
 as unpadded base64url (43 characters). Names are labels only. Trust comes from the fingerprint.
 
+On the phone, the private key is sealed with AES-256-GCM by a key held in the Android Keystore
+(in StrongBox when the phone has it) and kept as `identity.sealed`; a plain `identity.json` from
+an older version is moved into it on first start. A copy of the app's files can't pose as the
+phone. If the Keystore key is gone (the phone was reset), the phone makes a new identity and has
+to pair again. Neither file is backed up or carried to a new phone.
+
 ## Pairing
 
 On the PC, Settings › Devices › Pair a phone shows a QR code holding a pairing link:
@@ -200,13 +206,84 @@ model then, if it had put it away, so the recording doesn't wait for it, and ans
 empty `text` that the phone ignores.
 
 Either side keeps syncing while a recording is being written up. A phone that gets an error, or
-no answer, uses its own model if it has one. The recording isn't kept on the PC, and the
+no answer, uses its own model if it has one. The phone's model takes a long recording in pieces
+of up to 30 seconds, each cut at its quietest moment, since small models give up past that. The recording isn't kept on the PC, and the
 phone records the dictation in its history, which syncs as usual.
+
+### Transforms
+
+A `welcome` with `"transforms": true` means the PC runs its transforms for the phone. The
+transforms themselves sync as the `transforms` kind, so the phone lists them away from the PC too.
+While connected the phone sends:
+
+```json
+{
+  "type": "run_transform",
+  "id": "…",
+  "transform_id": "polish",
+  "text": "…",
+  "app": "email"
+}
+```
+
+and the PC runs it with its own AI provider and key, exactly as on the PC, answering:
+
+```json
+{"type":"transformed","id":"…","text":"…"}
+{"type":"transformed","id":"…"}
+{"type":"transformed","id":"…","error":"The AI provider turned the key down"}
+```
+
+No `text` and no `error` means the model had nothing to change.
+
+To run transforms away from the PC, the phone needs the provider. Right after `welcome`, and
+again when the setting changes, the PC sends:
+
+```json
+{
+  "type": "ai",
+  "providers": [
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "base_url": "https://api.openai.com/v1",
+      "api_format": "openai",
+      "model": "gpt-5-nano",
+      "key": "…"
+    }
+  ],
+  "own_models": [
+    {
+      "transform_id": "polish",
+      "provider_id": "anthropic",
+      "model": "claude-haiku-4-5"
+    }
+  ]
+}
+```
+
+- The first provider is the one Settings › AI picks for transforms; `own_models` lists transforms
+  that use a model of their own.
+- Providers on this PC only (a local server) are left out.
+- `key` is there only while Settings › Devices › Share AI keys with your phone is on (the
+  default). Turning it off sends the list again without keys, and the phone drops the ones it
+  kept. So does unpairing.
+- `{"type":"ai_pull"}` asks for the list again.
+
+The phone hands the keys to the app, which seals them with the Android Keystore (AES-256-GCM)
+and never shows them again; only the rest of the list is written to disk. Away from the PC, the
+phone builds the same prompt as the PC and calls the provider itself, over HTTPS only and without
+following redirects, so a key can't be sent anywhere but its provider.
 
 ### Keeping the connection
 
 - `{"type":"ping"}` every 30 seconds, answered with `{"type":"pong"}`. Close after 90
   seconds of silence.
+- Before a recording or a transform goes to the PC, the phone sends a `ping` and waits up to 4
+  seconds for anything to come back. Android freezes an app in the background, so a link can look
+  open on the phone long after the PC gave up on it. A link that doesn't answer is closed and
+  dialled again at once, and the recording waits up to 8 seconds for it before the phone writes
+  it up with its own model.
 - `{"type":"bye","reason":"unpaired"}` means the other side forgot you. Forget it too and close.
 - When the PC can't be reached the phone waits 2 seconds before trying again, doubling each
   time up to 5 minutes, give or take a fifth so phones on one network don't all try at once.

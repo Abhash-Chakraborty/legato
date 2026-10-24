@@ -56,6 +56,7 @@ const DEFAULTS: Required<SyncSettings> = {
   clipboard_never: ["KeePassXC.exe", "Bitwarden.exe", "1Password.exe"],
   clipboard_paused_until: null,
   phone_pill: false,
+  share_ai: true,
 };
 
 /** Settings › Devices, with the defaults filled in, and a setter for one
@@ -861,6 +862,26 @@ export const PhonePillRow: React.FC = () => {
       isUpdating={busy}
       label={t("settings.devices.pill.title")}
       description={t("settings.devices.pill.help", {
+        name: listNames(phones, t),
+      })}
+      descriptionMode="inline"
+      grouped
+    />
+  );
+};
+
+/** Whether paired phones get the AI keys transforms use. */
+export const ShareAiRow: React.FC = () => {
+  const { t } = useTranslation();
+  const { phones } = usePhone();
+  const { sync, set, busy } = useSyncSettings();
+  return (
+    <ToggleSwitch
+      checked={sync.share_ai}
+      onChange={(on) => set("share_ai", on)}
+      isUpdating={busy}
+      label={t("settings.devices.shareAi.title")}
+      description={t("settings.devices.shareAi.help", {
         name: listNames(phones, t),
       })}
       descriptionMode="inline"

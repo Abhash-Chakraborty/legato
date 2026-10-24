@@ -8,6 +8,7 @@ pub mod finish;
 pub mod managers;
 pub mod pieces;
 pub mod sync;
+pub mod transforms;
 
 // The app's pure text rules, compiled here as they are in the app.
 #[path = "../../../src-tauri/src/cleanup_rules.rs"]
@@ -18,6 +19,8 @@ pub mod learn_rules;
 pub mod snippet_rules;
 #[path = "../../../src-tauri/src/style_rules.rs"]
 pub mod style_rules;
+#[path = "../../../src-tauri/src/transform_rules.rs"]
+pub mod transform_rules;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -35,7 +38,7 @@ use sync::engine::{now_s, Engine, Extra};
 use sync::identity::Identity;
 use sync::ledger::{self, Item, Peer};
 use sync::link::{self, Dialer, Host, Sessions, Via};
-use sync::protocol::{Change, Clip, Hello, Refusal, Welcome, KINDS, PROTOCOL};
+use sync::protocol::{AiShare, Change, Clip, Hello, Refusal, Welcome, KINDS, PROTOCOL};
 use tokio::sync::watch;
 
 /// The PC this phone is paired with, as the pairing link gave it.
@@ -45,6 +48,58 @@ pub struct PairedPc {
     pub name: String,
     pub fingerprint: String,
     pub addrs: Vec<String>,
+}
+
+/// How long the PC has to answer a check before a recording goes to it.
+const LINK_CHECK: Duration = Duration::from_secs(4);
+/// How long a recording waits for a link dialled again after a failed check.
+const RECONNECT_WAIT: Duration = Duration::from_secs(8);
+
+/// Seals the phone's private key at rest. The Android app hands over the
+/// Keystore, so a copy of the app's files can't pose as this phone. Either
+/// returns None when it can't.
+pub struct KeySeal {
+    pub seal: Box<dyn Fn(Vec<u8>) -> Option<Vec<u8>> + Send + Sync>,
+    pub open: Box<dyn Fn(Vec<u8>) -> Option<Vec<u8>> + Send + Sync>,
+}
+
+/// The phone's identity: sealed in `identity.sealed` when there's a seal
+/// (moving a plain `identity.json` into it), else plain as the stand-in
+/// keeps it.
+fn load_identity(dir: &Path, seal: Option<&KeySeal>, say: &dyn Fn(String)) -> Result<Identity> {
+    let plain = dir.join("identity.json");
+    let Some(seal) = seal else {
+        return Identity::load_or_create(&plain);
+    };
+    let sealed = dir.join("identity.sealed");
+    if let Ok(bytes) = std::fs::read(&sealed) {
+        match (seal.open)(bytes).and_then(|b| serde_json::from_slice::<Identity>(&b).ok()) {
+            Some(identity) => {
+                let _ = std::fs::remove_file(&plain);
+                return Ok(identity);
+            }
+            None => say("This phone's key couldn't be opened; pair with your PC again.".into()),
+        }
+    }
+    let identity = match std::fs::read_to_string(&plain)
+        .ok()
+        .and_then(|t| serde_json::from_str::<Identity>(&t).ok())
+    {
+        Some(identity) => identity,
+        None => Identity::generate()?,
+    };
+    match (seal.seal)(serde_json::to_vec(&identity)?) {
+        Some(bytes) => {
+            let part = dir.join("identity.sealed.part");
+            std::fs::write(&part, bytes)?;
+            std::fs::rename(&part, &sealed)?;
+            let _ = std::fs::remove_file(&plain);
+        }
+        // No Keystore to seal with: keep it plain rather than lose the pairing.
+        None if !plain.exists() => std::fs::write(&plain, serde_json::to_string(&identity)?)?,
+        None => {}
+    }
+    Ok(identity)
 }
 
 pub struct Phone {
@@ -59,7 +114,7 @@ pub struct Phone {
     pc_kinds: Mutex<Vec<String>>,
     pub clips: Mutex<Vec<Clip>>,
     /// Hears each clip the PC sends, as it arrives.
-    pub on_clip: Mutex<Option<Box<dyn Fn(&Clip) + Send + Sync>>>,
+    pub on_clip: Mutex<Option<ClipHook>>,
     /// Connected to the PC right now.
     online: AtomicBool,
     /// How: "lan", "netbird" or "bluetooth".
@@ -72,11 +127,26 @@ pub struct Phone {
     pub network_check_ms: std::sync::atomic::AtomicU64,
     /// Recordings sent to the PC, waiting for their text, by request id.
     waiting: Mutex<HashMap<String, std::sync::mpsc::Sender<Result<String, String>>>>,
+    /// The PC said it runs its transforms for the phone.
+    pc_transforms: AtomicBool,
+    /// Texts sent to the PC's transforms, waiting for their answer.
+    transforming: Mutex<HashMap<String, std::sync::mpsc::Sender<TransformResult>>>,
+    /// Hears the keys in each AI share from the PC, by provider id (None:
+    /// forget it), so the app can keep them sealed. Keys never touch disk here.
+    pub on_ai_keys: Mutex<Option<KeysHook>>,
     say: Box<dyn Fn(String) + Send + Sync>,
     /// Cuts the wait before the next try short (the app came to the front,
     /// the network changed).
     wake: tokio::sync::Notify,
 }
+
+/// A transform's answer: new text, None when nothing changed, or why it failed.
+pub type TransformResult = Result<Option<String>, String>;
+/// See `Phone::on_ai_keys`.
+/// Hears each clip the PC sends.
+pub type ClipHook = Box<dyn Fn(&Clip) + Send + Sync>;
+
+pub type KeysHook = Box<dyn Fn(Vec<(String, Option<String>)>) + Send + Sync>;
 
 /// How long to wait before the next try after `failures` failed ones: from
 /// 2 s, doubling, to 5 minutes, give or take a fifth so phones on one
@@ -152,8 +222,18 @@ impl Extra for ExtraTable {
 impl Phone {
     /// Opens (or makes) a phone in `dir`. `say` hears what happens.
     pub fn open(dir: &Path, name: &str, say: Box<dyn Fn(String) + Send + Sync>) -> Result<Self> {
+        Self::open_sealed(dir, name, say, None)
+    }
+
+    /// Opens a phone whose private key `seal` keeps sealed.
+    pub fn open_sealed(
+        dir: &Path,
+        name: &str,
+        say: Box<dyn Fn(String) + Send + Sync>,
+        seal: Option<KeySeal>,
+    ) -> Result<Self> {
         std::fs::create_dir_all(dir)?;
-        let identity = Identity::load_or_create(&dir.join("identity.json"))?;
+        let identity = load_identity(dir, seal.as_ref(), &say)?;
         let db = dir.join("phone.db");
         let mut conn = Connection::open(&db)?;
         Migrations::new(managers::history_store::MIGRATIONS.to_vec())
@@ -182,6 +262,9 @@ impl Phone {
             pc_transcribes: AtomicBool::new(false),
             network_check_ms: std::sync::atomic::AtomicU64::new(30_000),
             waiting: Mutex::new(HashMap::new()),
+            pc_transforms: AtomicBool::new(false),
+            transforming: Mutex::new(HashMap::new()),
+            on_ai_keys: Mutex::new(None),
             say,
             wake: tokio::sync::Notify::new(),
         })
@@ -201,6 +284,36 @@ impl Phone {
         self.is_online() && self.pc_transcribes.load(Ordering::Relaxed)
     }
 
+    /// Whether the PC answers on the link within `within`. A link that
+    /// doesn't (Android froze the app and the PC gave up on it) is dropped
+    /// and dialled again at once; this waits up to `reconnect` for the new
+    /// one. Blocks.
+    pub fn link_alive(&self, sessions: &Sessions, within: Duration, reconnect: Duration) -> bool {
+        let Some(pc) = self.paired_pc() else {
+            return false;
+        };
+        if self.is_online() {
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            if sessions.send(&pc.device_id, link::Command::Check(tx))
+                && rx.recv_timeout(within).is_ok()
+            {
+                return true;
+            }
+            self.say(format!("{} stopped answering; connecting again.", pc.name));
+            self.online.store(false, Ordering::Relaxed);
+            sessions.close(&pc.device_id);
+        }
+        let until = std::time::Instant::now() + reconnect;
+        while std::time::Instant::now() < until {
+            if self.is_online() && sessions.connected(&pc.device_id) {
+                return true;
+            }
+            self.wake();
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        false
+    }
+
     /// Sends a recording (16 kHz mono) to the PC and waits for its text,
     /// styled for `app`, a kind of app as Style names it ("personal", "email").
     /// Blocks; Err when not connected, on the PC's error, or after `wait`.
@@ -212,6 +325,9 @@ impl Phone {
         app: Option<&str>,
     ) -> Result<String> {
         let pc = self.paired_pc().context("not paired with a PC")?;
+        if !self.link_alive(sessions, LINK_CHECK, RECONNECT_WAIT) {
+            anyhow::bail!("not connected to {}", pc.name);
+        }
         let id = sync::identity::uuid();
         let (tx, rx) = std::sync::mpsc::channel();
         self.waiting.lock().unwrap().insert(id.clone(), tx);
@@ -395,7 +511,71 @@ impl Phone {
             ledger::remove_peer(&self.conn()?, &pc.device_id)?;
         }
         let _ = std::fs::remove_file(self.dir.join("pc.json"));
+        // The PC's AI providers, and the keys the app sealed, go with it.
+        let _ = std::fs::remove_file(self.dir.join("ai.json"));
+        if let Some(hook) = self.on_ai_keys.lock().unwrap().as_ref() {
+            hook(Vec::new());
+        }
         Ok(())
+    }
+
+    /// The PC's AI providers as it last shared them, keys left out.
+    pub fn ai_share(&self) -> AiShare {
+        std::fs::read_to_string(self.dir.join("ai.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
+    }
+
+    /// Whether the PC runs its transforms for this phone (while connected).
+    pub fn pc_transforms(&self) -> bool {
+        self.is_online() && self.pc_transforms.load(Ordering::Relaxed)
+    }
+
+    /// Asks the PC for its AI providers again. False when not connected.
+    pub fn pull_ai(&self, sessions: &Sessions) -> bool {
+        let Some(pc) = self.paired_pc() else {
+            return false;
+        };
+        sessions.send(
+            &pc.device_id,
+            link::Command::Send(sync::protocol::Message::AiPull),
+        )
+    }
+
+    /// Runs one of the PC's transforms on `text` there, for an app of the
+    /// kind `app`. Ok(None): the model had nothing to change.
+    pub fn transform_on_pc(
+        &self,
+        sessions: &Sessions,
+        transform_id: &str,
+        text: &str,
+        wait: Duration,
+        app: Option<&str>,
+    ) -> Result<Option<String>> {
+        let pc = self.paired_pc().context("not paired with a PC")?;
+        if !self.link_alive(sessions, LINK_CHECK, RECONNECT_WAIT) {
+            anyhow::bail!("not connected to {}", pc.name);
+        }
+        let id = sync::identity::uuid();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.transforming.lock().unwrap().insert(id.clone(), tx);
+        let message = sync::protocol::Message::RunTransform {
+            id: id.clone(),
+            transform_id: transform_id.to_string(),
+            text: text.to_string(),
+            app: app.map(str::to_string),
+        };
+        let sent = sessions.send(&pc.device_id, link::Command::Send(message));
+        let result = if sent {
+            rx.recv_timeout(wait)
+                .map_err(|_| anyhow::anyhow!("{} didn't answer in time", pc.name))
+                .and_then(|r| r.map_err(|e| anyhow::anyhow!(e)))
+        } else {
+            Err(anyhow::anyhow!("not connected to {}", pc.name))
+        };
+        self.transforming.lock().unwrap().remove(&id);
+        result
     }
 
     /// Records local edits so the PC can pull them.
@@ -541,6 +721,7 @@ impl Host for Phone {
             clipboard: true,
             addrs: Vec::new(),
             transcribe: false,
+            transforms: false,
         }
     }
 
@@ -552,6 +733,8 @@ impl Host for Phone {
         *self.pc_kinds.lock().unwrap() = welcome.kinds.clone();
         self.pc_transcribes
             .store(welcome.transcribe, Ordering::Relaxed);
+        self.pc_transforms
+            .store(welcome.transforms, Ordering::Relaxed);
         // Keep where the PC is now (a new Wi-Fi address, Bluetooth turned on
         // since pairing) for the next connection.
         if let Some(mut pc) = self.paired_pc() {
@@ -691,10 +874,62 @@ impl Host for Phone {
         let _ = self.forget_pc();
         self.say("The PC unpaired this phone");
     }
+
+    fn shared_ai(&self, peer: &str, mut share: AiShare) {
+        if self.paired_pc().is_none_or(|pc| pc.device_id != peer) {
+            return;
+        }
+        let keys: Vec<(String, Option<String>)> = share
+            .providers
+            .iter_mut()
+            .map(|p| (p.id.clone(), p.key.take()))
+            .collect();
+        if let Ok(text) = serde_json::to_string(&share) {
+            let _ = std::fs::write(self.dir.join("ai.json"), text);
+        }
+        if let Some(hook) = self.on_ai_keys.lock().unwrap().as_ref() {
+            hook(keys);
+        }
+    }
+
+    fn transformed(&self, _peer: &str, id: &str, result: TransformResult) {
+        if let Some(tx) = self.transforming.lock().unwrap().remove(id) {
+            let _ = tx.send(result);
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_key_moves_into_its_seal_and_stays_there() {
+        use super::*;
+        let dir = std::env::temp_dir().join(format!("legato-seal-{}", sync::identity::uuid()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let plain = Identity::load_or_create(&dir.join("identity.json")).unwrap();
+        let flip = |b: Vec<u8>| Some(b.into_iter().map(|x| x ^ 0x5a).collect::<Vec<u8>>());
+        let seal = || KeySeal {
+            seal: Box::new(flip),
+            open: Box::new(flip),
+        };
+        let quiet = |_: String| {};
+        let sealed = load_identity(&dir, Some(&seal()), &quiet).unwrap();
+        assert_eq!(sealed.fingerprint(), plain.fingerprint());
+        assert!(!dir.join("identity.json").exists());
+        let on_disk = std::fs::read(dir.join("identity.sealed")).unwrap();
+        assert!(!String::from_utf8_lossy(&on_disk).contains("device_id"));
+        let again = load_identity(&dir, Some(&seal()), &quiet).unwrap();
+        assert_eq!(again.device_id, plain.device_id);
+        // A seal that can't open it (the Keystore was reset) makes a new key.
+        let broken = KeySeal {
+            seal: Box::new(flip),
+            open: Box::new(|_| None),
+        };
+        let fresh = load_identity(&dir, Some(&broken), &quiet).unwrap();
+        assert_ne!(fresh.device_id, plain.device_id);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     use super::*;
 
     #[test]

@@ -17,7 +17,7 @@ use tokio::sync::{mpsc, watch};
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
 use super::identity::{fingerprint, secret, server_name, Identity};
-use super::protocol::{self, Change, Clip, Hello, Message, Refusal, Welcome, PROTOCOL};
+use super::protocol::{self, AiShare, Change, Clip, Hello, Message, Refusal, Welcome, PROTOCOL};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Connections allowed to be in their handshake at once; more are dropped
@@ -94,6 +94,10 @@ pub type Dialer = Arc<dyn Fn(&str, &str) -> Option<u16> + Send + Sync>;
 /// Transcribing a recording, which takes a while: run off the session.
 pub type TranscribeJob = Box<dyn FnOnce() -> std::result::Result<String, String> + Send>;
 
+/// A transform to run off the session's task: the new text, None when the
+/// model had nothing to change, or why it failed.
+pub type TransformJob = Box<dyn FnOnce() -> std::result::Result<Option<String>, String> + Send>;
+
 /// What a device does with what arrives. Methods are quick database work and
 /// run on the session's task.
 pub trait Host: Send + Sync + 'static {
@@ -136,6 +140,32 @@ pub trait Host: Send + Sync + 'static {
     }
     /// The phone's side: the answer to a `transcribe` it sent.
     fn transcript(&self, _peer: &str, _id: &str, _result: std::result::Result<String, String>) {}
+    /// The PC's side: its transforms and AI provider for `peer`, sent after
+    /// welcome and whenever `peer` asks again.
+    fn ai_share(&self, _peer: &str) -> Option<AiShare> {
+        None
+    }
+    /// The phone's side: the PC's transforms and AI provider arrived.
+    fn shared_ai(&self, _peer: &str, _share: AiShare) {}
+    /// The PC's side: how to run transform `transform_id` on `peer`'s text,
+    /// for an app of the kind `app`; the session runs it and sends the answer.
+    fn transform(
+        &self,
+        _peer: &str,
+        _transform_id: String,
+        _text: String,
+        _app: Option<String>,
+    ) -> Option<TransformJob> {
+        None
+    }
+    /// The phone's side: the answer to a `run_transform` it sent.
+    fn transformed(
+        &self,
+        _peer: &str,
+        _id: &str,
+        _result: std::result::Result<Option<String>, String>,
+    ) {
+    }
 }
 
 /// Something to send down a live session.
@@ -152,6 +182,11 @@ pub enum Command {
     Bye(String),
     /// Send this message as it is.
     Send(Message),
+    /// Hear from the other side (a ping answered, or anything else) and
+    /// say so here: a link left for dead by a phone Android froze looks up
+    /// until something goes down it.
+    #[allow(dead_code)] // Only the phone checks its link.
+    Check(std::sync::mpsc::SyncSender<()>),
 }
 
 /// Live sessions by device ID, each with a number so a session that ends
@@ -341,6 +376,9 @@ where
     }
     drop(pending);
     protocol::write(&mut tls, &Message::Welcome(host.describe())).await?;
+    if let Some(share) = host.ai_share(&hello.device_id) {
+        protocol::write(&mut tls, &Message::Ai(share)).await?;
+    }
     let session = sessions.insert(&hello.device_id);
     host.online(&hello.device_id, Some(via));
     let result = run(
@@ -530,6 +568,7 @@ where
     // edits on the other side don't fetch the same changes three times.
     let mut pulling = true;
     let mut pull_again = false;
+    let mut checks: Vec<std::sync::mpsc::SyncSender<()>> = Vec::new();
     protocol::write(&mut wr, &pull(&host)).await?;
     let result: Result<()> = async {
         loop {
@@ -538,6 +577,9 @@ where
                     let Some(message) = message else { return Ok(()) };
                     let message = message?;
                     heard = Instant::now();
+                    for check in checks.drain(..) {
+                        let _ = check.try_send(());
+                    }
                     match message {
                         Message::Pull { after, kinds, limit } => {
                             let limit = limit.unwrap_or(protocol::PULL_LIMIT).clamp(1, protocol::PULL_LIMIT);
@@ -593,6 +635,37 @@ where
                             let result = text.ok_or_else(|| error.unwrap_or_else(|| "No text".into()));
                             host.transcript(peer, &id, result);
                         }
+                        Message::Ai(share) => host.shared_ai(peer, share),
+                        Message::AiPull => {
+                            if let Some(share) = host.ai_share(peer) {
+                                protocol::write(&mut wr, &Message::Ai(share)).await?;
+                            }
+                        }
+                        Message::RunTransform { id, transform_id, text, app } => {
+                            match host.transform(peer, transform_id, text, app) {
+                                Some(job) => {
+                                    let (sessions, peer) = (sessions.clone(), peer.to_string());
+                                    tokio::task::spawn_blocking(move || {
+                                        let (text, error) = match job() {
+                                            Ok(text) => (text, None),
+                                            Err(e) => (None, Some(e)),
+                                        };
+                                        sessions.send(&peer, Command::Send(Message::Transformed { id, text, error }));
+                                    });
+                                }
+                                None => {
+                                    let error = Some("This device doesn't run transforms".to_string());
+                                    protocol::write(&mut wr, &Message::Transformed { id, text: None, error }).await?;
+                                }
+                            }
+                        }
+                        Message::Transformed { id, text, error } => {
+                            let result = match error {
+                                Some(e) => Err(e),
+                                None => Ok(text),
+                            };
+                            host.transformed(peer, &id, result);
+                        }
                         Message::Pong | Message::Hello(_) | Message::Refused { .. } | Message::Unknown => {}
                     }
                 }
@@ -615,6 +688,10 @@ where
                             return Ok(());
                         }
                         Command::Send(message) => protocol::write(&mut wr, &message).await?,
+                        Command::Check(check) => {
+                            checks.push(check);
+                            protocol::write(&mut wr, &Message::Ping).await?;
+                        }
                     }
                 }
                 _ = ping.tick() => {

@@ -48,6 +48,8 @@ class Legato(private val context: Context) : CoreListener {
     /** Failures worth a snackbar, as opposed to the chatter in [lines]. */
     val notices = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val prefs: SharedPreferences = context.getSharedPreferences("legato", Context.MODE_PRIVATE)
+    /** API keys the PC shared, sealed by the Android Keystore. Before the core, which may hand some over at once. */
+    val vault = Vault(context)
 
     val core: Core = Core(
         File(context.filesDir, "phone").absolutePath,
@@ -151,7 +153,48 @@ class Legato(private val context: Context) : CoreListener {
 
     override fun onUnpaired(why: String) {
         onLine("Unpaired: $why")
+        vault.replace(KEY_PREFIX, emptyMap())
         refresh()
+    }
+
+    // ---- transforms ------------------------------------------------------
+
+    override fun onAiKeys(keys: List<tech.abhashchakraborty.legato.core.ProviderKey>) {
+        vault.replace(KEY_PREFIX, keys.mapNotNull { k -> k.key?.let { KEY_PREFIX + k.providerId to it } }.toMap())
+        bump()
+    }
+
+    // This phone's TLS key, sealed by the Keystore so a copy of the files can't pose as it.
+    override fun seal(plain: ByteArray): ByteArray? = vault.sealBytes(plain)
+
+    override fun unseal(sealed: ByteArray): ByteArray? = vault.openBytes(sealed)
+
+    /** Whether a key for `providerId` is kept here (never what it is). */
+    fun hasKey(providerId: String): Boolean = vault.has(KEY_PREFIX + providerId)
+
+    /** The transform run on every dictation before it's typed, if any. */
+    var afterDictation: String?
+        get() = prefs.getString(PREF_AFTER, null)
+        set(value) { prefs.edit().apply { if (value == null) remove(PREF_AFTER) else putString(PREF_AFTER, value) }.apply() }
+
+    /**
+     * Runs transform `id` on `text`, for the app `app`: on the PC while
+     * connected (its key never leaves it), else here with the provider and
+     * key it shared. Null when the model had nothing to change. Blocks.
+     */
+    fun transform(id: String, text: String, app: String? = null): String? {
+        if (core.pcTransforms()) {
+            try {
+                return core.transformOnPc(id, text, app ?: "")
+            } catch (e: Exception) {
+                if (core.transformRequest(id, app ?: "", null) == null) throw e
+                onLine("${state.value.pcName ?: "The PC"} couldn't run the transform (${e.message}); ran it here")
+            }
+        }
+        val request = core.transformRequest(id, app ?: "", null)
+            ?: error("Connect to ${state.value.pcName ?: "your PC"} to run this, or turn on Share AI keys with your phone there")
+        val answer = LlmClient.complete(request, vault.get(KEY_PREFIX + request.providerId), text)
+        return core.readTransformAnswer(answer, text)
     }
 
     fun refresh() {
@@ -385,6 +428,8 @@ class Legato(private val context: Context) : CoreListener {
 
     companion object {
         const val PREF_PC_MODEL = "pc_model"
+        const val PREF_AFTER = "after_dictation_transform"
+        private const val KEY_PREFIX = "ai:"
         const val PREF_MODEL = "speech_model"
         const val PREF_AUTO_CLIP = "auto_clipboard"
         /** The label on clips the bubble writes, so they aren't sent to the PC. */

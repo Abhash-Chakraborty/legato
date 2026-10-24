@@ -11,8 +11,8 @@ use anyhow::Result;
 use super::engine::{now_s, Accepted, Engine};
 use super::identity::{same_secret, secret};
 use super::ledger::{self, Peer};
-use super::link::{Host, TranscribeJob, Via};
-use super::protocol::{Change, Clip, Hello, Refusal, Welcome, PROTOCOL};
+use super::link::{Host, TranscribeJob, TransformJob, Via};
+use super::protocol::{AiShare, Change, Clip, Hello, Refusal, Welcome, PROTOCOL};
 
 /// How long a pairing code works. Wrong tries don't cancel it: 128 random
 /// bits can't be guessed, and a limit would let anyone on the network end
@@ -58,6 +58,20 @@ pub trait Events: Send + Sync {
         _samples: Vec<f32>,
         _app: Option<String>,
     ) -> Option<TranscribeJob> {
+        None
+    }
+    /// This PC's transforms and AI provider, for a phone.
+    fn ai_share(&self, _device_id: &str) -> Option<AiShare> {
+        None
+    }
+    /// How to run one of this PC's transforms on a phone's text.
+    fn transform(
+        &self,
+        _device_id: &str,
+        _transform_id: String,
+        _text: String,
+        _app: Option<String>,
+    ) -> Option<TransformJob> {
         None
     }
 }
@@ -166,6 +180,7 @@ impl Host for Hub {
             clipboard: config.clipboard,
             addrs: self.addrs.lock().unwrap_or_else(|e| e.into_inner()).clone(),
             transcribe: true,
+            transforms: true,
         }
     }
 
@@ -267,6 +282,22 @@ impl Host for Hub {
         // Only for a paired phone.
         self.peer(peer).ok().flatten()?;
         self.events.transcribe(peer, samples, app)
+    }
+
+    fn ai_share(&self, peer: &str) -> Option<AiShare> {
+        self.peer(peer).ok().flatten()?;
+        self.events.ai_share(peer)
+    }
+
+    fn transform(
+        &self,
+        peer: &str,
+        transform_id: String,
+        text: String,
+        app: Option<String>,
+    ) -> Option<TransformJob> {
+        self.peer(peer).ok().flatten()?;
+        self.events.transform(peer, transform_id, text, app)
     }
 
     fn forgotten(&self, peer: &str) {

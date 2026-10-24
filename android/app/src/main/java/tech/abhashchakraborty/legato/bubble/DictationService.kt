@@ -135,7 +135,16 @@ class DictationService : Service() {
         val wake = awake()
         scope.launch {
             val text = runCatching {
-                withContext(Dispatchers.Default) { legato.transcribe(samples, app) }
+                withContext(Dispatchers.Default) {
+                    val heard = legato.transcribe(samples, app)
+                    // The transform picked for every dictation; the words as heard when it can't run.
+                    val after = legato.afterDictation?.takeIf { heard.isNotBlank() }
+                    if (after == null) heard
+                    else runCatching { legato.transform(after, heard, app) ?: heard }.getOrElse { e ->
+                        legato.onLine("The transform after dictation didn't run: ${e.message}")
+                        heard
+                    }
+                }
             }.getOrElse { e ->
                 val why = e.message ?: "Transcription failed"
                 legato.onLine(why)
@@ -154,7 +163,7 @@ class DictationService : Service() {
                         getSystemService(ClipboardManager::class.java)
                             .setPrimaryClip(ClipData.newPlainText(Legato.DICTATION_CLIP, text))
                         Toast.makeText(this@DictationService, getString(R.string.not_typed), Toast.LENGTH_LONG).show()
-                        legato.onLine("Couldn't type into this field, so it's on the clipboard: $text")
+                        legato.onLine("Couldn't type into this field, so the text is on the clipboard")
                     }
                     legato.run { dictate(text) }
                 }

@@ -2848,7 +2848,12 @@ clipboard_paused_until?: number | null;
 /**
  * A clip from the phone shows "From phone" on the Legato bar.
  */
-phone_pill?: boolean }
+phone_pill?: boolean; 
+/**
+ * Paired phones get the AI keys transforms use, so they can run them
+ * while away from this PC. Off, phones forget the keys they hold.
+ */
+share_ai?: boolean }
 /**
  * Everything Settings › Devices shows.
  */

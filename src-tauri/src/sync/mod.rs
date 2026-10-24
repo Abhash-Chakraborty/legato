@@ -622,6 +622,11 @@ impl SyncManager {
                 }
             }
         }
+        if before.sync.share_ai != after.sync.share_ai {
+            // Phones take the keys, or forget them, at once.
+            self.sessions
+                .broadcast(Command::Send(protocol::Message::Ai(ai_share(after))));
+        }
         let config = config(&self.app);
         if config != self.hub.config() {
             self.hub.set_config(config);
@@ -884,6 +889,55 @@ impl SyncManager {
 }
 
 /// What the hub reports, turned into app events.
+/// The AI providers this PC's transforms run on, for a phone. Keys go only
+/// while Settings › Devices shares them. A provider only this PC can reach
+/// (Ollama, a local address) stays out: its transforms run on the phone
+/// only through this PC.
+fn ai_share(settings: &AppSettings) -> protocol::AiShare {
+    use crate::ai::AiConfig;
+    use crate::settings::{AiTask, PostProcessApiFormat};
+    let mut share = protocol::AiShare::default();
+    let add = |config: &AiConfig, share: &mut protocol::AiShare| -> bool {
+        if crate::ai::is_local(&config.provider) {
+            return false;
+        }
+        if !share.providers.iter().any(|p| p.id == config.provider.id) {
+            let key = config.api_key.trim();
+            share.providers.push(protocol::SharedProvider {
+                id: config.provider.id.clone(),
+                label: config.provider.label.clone(),
+                base_url: config.provider.base_url.clone(),
+                api_format: match config.provider.api_format {
+                    PostProcessApiFormat::Anthropic => "anthropic",
+                    PostProcessApiFormat::OpenAi => "openai",
+                }
+                .into(),
+                model: config.model.clone(),
+                key: (settings.sync.share_ai && !key.is_empty()).then(|| key.to_string()),
+            });
+        }
+        true
+    };
+    if let Some(config) = AiConfig::for_task(settings, AiTask::Transforms) {
+        add(&config, &mut share);
+    }
+    for transform in settings.transforms.iter().filter(|t| t.enabled) {
+        if transform.provider_id.is_none() || transform.model.is_none() {
+            continue;
+        }
+        if let Some(config) = AiConfig::for_transform(settings, transform) {
+            if add(&config, &mut share) {
+                share.own_models.push(protocol::TransformModel {
+                    transform_id: transform.id.clone(),
+                    provider_id: config.provider.id.clone(),
+                    model: config.model.clone(),
+                });
+            }
+        }
+    }
+    share
+}
+
 struct AppEvents(AppHandle);
 
 impl AppEvents {
@@ -1004,6 +1058,48 @@ impl hub::Events for AppEvents {
                 started.elapsed().as_secs_f32()
             );
             Ok(processed.final_text)
+        }))
+    }
+
+    fn ai_share(&self, _device_id: &str) -> Option<protocol::AiShare> {
+        Some(ai_share(&get_settings(&self.0)))
+    }
+
+    fn transform(
+        &self,
+        device_id: &str,
+        transform_id: String,
+        text: String,
+        app: Option<String>,
+    ) -> Option<link::TransformJob> {
+        let handle = self.0.clone();
+        let device = device_id.to_string();
+        Some(Box::new(move || {
+            let settings = get_settings(&handle);
+            let transform = settings
+                .transforms
+                .iter()
+                .find(|t| t.id == transform_id && t.enabled)
+                .cloned()
+                .ok_or("That transform isn't switched on on the PC")?;
+            let started = std::time::Instant::now();
+            let where_ = app
+                .as_deref()
+                .and_then(crate::transform_rules::phone_app_words);
+            let result = tauri::async_runtime::block_on(crate::transforms::apply(
+                &handle,
+                &settings,
+                &transform,
+                &text,
+                where_,
+                Duration::from_secs(60),
+            ));
+            log::info!(
+                "Ran '{}' for {device} in {:.1} s",
+                transform.name,
+                started.elapsed().as_secs_f32()
+            );
+            result.map_err(|p| crate::transforms::problem_text(&p))
         }))
     }
 

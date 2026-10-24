@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- HTTPS only, trusting the system's certificates and never ones a user
+     added. The link to the PC doesn't go through this: it is TLS 1.3 pinned
+     to the PC's own certificate, in the core. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
