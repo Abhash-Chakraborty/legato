@@ -5,4 +5,19 @@
         <!-- Legato's background before Compose draws, so opening it doesn't flash white or grey. -->
         <item name="android:windowBackground">@color/legato_bg</item>
     </style>
+    <!-- Send to PC: no window of its own, only the question in Legato's colours. -->
+    <style name="Theme.Legato.Send" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:alertDialogTheme">@style/Legato.Dialog</item>
+    </style>
+    <style name="Legato.Dialog" parent="android:Theme.Material.Light.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg</item>
+        <item name="android:colorAccent">@color/legato_accent</item>
+        <item name="android:textColorPrimary">@color/legato_text</item>
+        <item name="android:textColorSecondary">@color/legato_text_2</item>
+        <item name="android:fontFamily">@font/figtree</item>
+    </style>
 </resources>

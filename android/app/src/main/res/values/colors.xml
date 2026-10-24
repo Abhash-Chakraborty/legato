@@ -1,4 +1,9 @@
 <resources>
     <color name="legato_teal">#1A5C5C</color>
     <color name="legato_bg">#F3F2EE</color>
+    <!-- The Send to PC dialog, drawn outside Compose: the palette in ui/Theme.kt. -->
+    <color name="legato_accent">#1A5C5C</color>
+    <color name="legato_card">#FCFCFB</color>
+    <color name="legato_text">#1A1A1A</color>
+    <color name="legato_text_2">#4A4845</color>
 </resources>

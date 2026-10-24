@@ -1,3 +1,7 @@
 <resources>
     <color name="legato_bg">#151615</color>
+    <color name="legato_accent">#66B8AD</color>
+    <color name="legato_card">#242624</color>
+    <color name="legato_text">#F1F0EC</color>
+    <color name="legato_text_2">#C7C5BF</color>
 </resources>
