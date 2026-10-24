@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -57,8 +58,27 @@ class BubbleAccessibilityService : AccessibilityService() {
 
     private data class Field(val app: String, val password: Boolean, val numeric: Boolean)
 
+    /**
+     * The field with the cursor. Web content (Chrome) doesn't always answer
+     * an input-focus search, so the window in front is searched for its
+     * focused editable node as well.
+     */
+    private fun inputNode(): AccessibilityNodeInfo? {
+        findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { return it }
+        val root = rootInActiveWindow ?: return null
+        val queue = ArrayDeque(listOf(root))
+        var seen = 0
+        while (queue.isNotEmpty() && seen < 2000) {
+            val node = queue.removeFirst()
+            seen++
+            if (node.isFocused && node.isEditable) return node
+            for (i in 0 until node.childCount) node.getChild(i)?.let { queue.addLast(it) }
+        }
+        return null
+    }
+
     private fun focusedField(): Field? {
-        val node = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return null
+        val node = inputNode() ?: return null
         try {
             if (!node.isEditable) return null
             val numeric = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
@@ -72,7 +92,7 @@ class BubbleAccessibilityService : AccessibilityService() {
     }
 
     /** The app of the focused field, for Style's kind of app. */
-    fun focusedApp(): String? = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.packageName?.toString()
+    fun focusedApp(): String? = inputNode()?.packageName?.toString()
 
     /**
      * Puts `text` at the cursor of the focused field (replacing a selection),
@@ -80,8 +100,10 @@ class BubbleAccessibilityService : AccessibilityService() {
      * Falls back to a paste through the clipboard when the field refuses.
      */
     fun insert(text: String): Boolean {
-        val node = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
-        if (!node.isEditable) return false
+        val node = inputNode() ?: return false.also { Log.w(TAG, "No field has the cursor") }
+        // The cached node can be a moment old; ask the app for it afresh.
+        node.refresh()
+        if (!node.isEditable) return false.also { Log.w(TAG, "The focused node isn't editable (${node.packageName})") }
         val current = typedText(node)
         val start = node.textSelectionStart.takeIf { it >= 0 } ?: current.length
         val end = node.textSelectionEnd.takeIf { it >= 0 } ?: start
@@ -109,6 +131,7 @@ class BubbleAccessibilityService : AccessibilityService() {
         cm.setPrimaryClip(ClipData.newPlainText("Legato", piece))
         val pasted = node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
         main.postDelayed({ keep?.let { cm.setPrimaryClip(it) } }, 400)
+        if (!pasted) Log.w(TAG, "${node.packageName} refused both set-text and paste")
         return pasted
     }
 
@@ -125,6 +148,7 @@ class BubbleAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        private const val TAG = "LegatoBubble"
         @Volatile var instance: BubbleAccessibilityService? = null
             private set
 
