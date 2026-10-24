@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tech.abhashchakraborty.legato.core.Core
@@ -39,7 +40,9 @@ val Context.legato: Legato get() = (applicationContext as LegatoApplication).leg
  * the screens read. Everything the core says lands in [lines].
  */
 class Legato(private val context: Context) : CoreListener {
-    val lines = MutableStateFlow<List<String>>(emptyList())
+    /** The log, kept on the phone across restarts so it still tells what happened after Android stopped Legato. */
+    private val logFile = File(context.filesDir, "log.txt")
+    val lines = MutableStateFlow(runCatching { logFile.readLines().takeLast(LOG_LINES) }.getOrDefault(emptyList()))
     val state = MutableStateFlow(PhoneState(paired = false, pcName = null, online = false, via = null, pcTranscribes = false, lastSync = null))
     val model = MutableStateFlow<ModelStatus>(ModelStatus.Missing)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -58,6 +61,7 @@ class Legato(private val context: Context) : CoreListener {
     )
 
     init {
+        logCrashes()
         refresh()
         // Before the chooser, Moonshine Base lived under a name of its own.
         File(modelsDir(), "moonshine-base.gguf").takeIf { it.exists() }
@@ -79,9 +83,24 @@ class Legato(private val context: Context) : CoreListener {
     }
 
     override fun onLine(line: String) {
-        lines.update { (it + line).takeLast(60) }
+        val stamp = java.text.SimpleDateFormat("MMM d HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+        val all = lines.updateAndGet { (it + "$stamp  $line").takeLast(LOG_LINES) }
+        scope.launch(Dispatchers.IO) { synchronized(logFile) { runCatching { logFile.writeText(all.joinToString("\n", postfix = "\n")) } } }
         refresh()
         bump()
+    }
+
+    /** A crash goes in the log before Android closes Legato. */
+    private fun logCrashes() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, e ->
+            runCatching {
+                val stamp = java.text.SimpleDateFormat("MMM d HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                val where = e.stackTrace.take(4).joinToString(" < ") { "${it.fileName}:${it.lineNumber}" }
+                synchronized(logFile) { logFile.appendText("$stamp  Crashed on ${thread.name}: $e at $where\n") }
+            }
+            previous?.uncaughtException(thread, e)
+        }
     }
 
     fun bump() {
@@ -274,9 +293,14 @@ class Legato(private val context: Context) : CoreListener {
     fun transcribe(samples: FloatArray, app: String? = null): String {
         if (!readyToTranscribe() && pcMayTranscribe()) error("Couldn't reach ${state.value.pcName ?: "your PC"} to write this up")
         val pcm = pcm16(samples)
+        val seconds = "%.1f".format(samples.size / 16_000f)
+        val started = System.currentTimeMillis()
+        fun took() = "%.1f".format((System.currentTimeMillis() - started) / 1000f)
         if (pcWillTranscribe()) {
             try {
-                return core.transcribeOnPc(pcm, app ?: "")
+                return core.transcribeOnPc(pcm, app ?: "").also {
+                    onLine("${state.value.pcName ?: "The PC"} wrote up $seconds s in ${took()} s" + if (it.isBlank()) ", and heard no words" else "")
+                }
             } catch (e: Exception) {
                 if (!modelFile().exists()) throw e
                 onLine("The PC couldn't transcribe (${e.message}); used this device's model")
@@ -286,6 +310,7 @@ class Legato(private val context: Context) : CoreListener {
             ensureModel()
             try { core.transcribe(pcm, selectedModel.language()) } finally { idleUnload() }
         }
+        onLine("${selectedModel.name} wrote up $seconds s in ${took()} s" + if (heard.isBlank()) ", and heard no words" else "")
         // The PC's text comes finished; this device's is finished here, for the app.
         if (app == null || heard.isBlank()) return heard
         return runCatching { core.finishDictation(heard, app) }.getOrElse { e ->
@@ -435,6 +460,7 @@ class Legato(private val context: Context) : CoreListener {
         /** The label on clips the bubble writes, so they aren't sent to the PC. */
         const val DICTATION_CLIP = "Legato dictation"
         private const val IDLE_UNLOAD_MS = 5 * 60 * 1000L
+        private const val LOG_LINES = 300
 
         /** A recording as signed 16-bit little-endian PCM, which crosses to the core in one copy. */
         fun pcm16(samples: FloatArray): ByteArray {

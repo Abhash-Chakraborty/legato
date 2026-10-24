@@ -55,7 +55,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
 import tech.abhashchakraborty.legato.ModelStatus
-import tech.abhashchakraborty.legato.Recorder
 
 /** The five tabs and the screens behind them. */
 sealed class Tab(val route: String, val label: String, val icon: ImageVector, val iconOn: ImageVector) {
@@ -72,7 +71,7 @@ sealed class Tab(val route: String, val label: String, val icon: ImageVector, va
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun LegatoApp(recorder: Recorder, pairingLink: String?) {
+fun LegatoApp(pairingLink: String?) {
     val nav = rememberNavController()
     val legato = rememberLegato()
     val state by legato.state.collectAsStateWithLifecycle()
@@ -152,7 +151,7 @@ fun LegatoApp(recorder: Recorder, pairingLink: String?) {
                     composable(Tab.Words.route) { WordsScreen() }
                     composable(Tab.Scratchpad.route) { ScratchpadScreen(onOpen = { id -> nav.navigate("scratch/$id") }) }
                     composable("scratch/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) {
-                        ScratchEditScreen(id = it.arguments?.getLong("id") ?: -1L, recorder = recorder, onBack = { nav.popBackStack() })
+                        ScratchEditScreen(id = it.arguments?.getLong("id") ?: -1L, onBack = { nav.popBackStack() })
                     }
                     composable(Tab.Notes.route) { NotesScreen(onOpen = { id -> nav.navigate("note/$id") }) }
                     composable("note/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) {

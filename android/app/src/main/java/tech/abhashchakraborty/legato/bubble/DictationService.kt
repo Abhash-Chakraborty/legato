@@ -39,7 +39,15 @@ object Dictation {
         data object Transcribing : State()
     }
 
+    /** Where the words go: typed into the field by the bubble, or handed to a Legato screen. */
+    enum class Target { Field, Screen }
+
     val state = kotlinx.coroutines.flow.MutableStateFlow<State>(State.Idle)
+    /** Words for the Legato screen that asked for them, waiting until it takes them. */
+    val forScreen = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    /** Where the dictation under way goes. */
+    @Volatile var target = Target.Field
+        internal set
     val listeners = CopyOnWriteArrayList<(State) -> Unit>()
 
     internal fun set(s: State) {
@@ -47,7 +55,12 @@ object Dictation {
         listeners.forEach { it(s) }
     }
 
-    fun start(context: Context) = send(context, DictationService.ACTION_START)
+    fun start(context: Context, target: Target = Target.Field) =
+        context.startForegroundService(
+            Intent(context, DictationService::class.java)
+                .setAction(DictationService.ACTION_START)
+                .putExtra(DictationService.EXTRA_TARGET, target.name),
+        )
     fun finish(context: Context) = send(context, DictationService.ACTION_FINISH)
     fun cancel(context: Context) = send(context, DictationService.ACTION_CANCEL)
 
@@ -85,14 +98,16 @@ class DictationService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> start()
+            ACTION_START -> start(
+                runCatching { Dictation.Target.valueOf(intent.getStringExtra(EXTRA_TARGET) ?: "") }.getOrDefault(Dictation.Target.Field),
+            )
             ACTION_FINISH -> finish()
             ACTION_CANCEL -> cancel()
         }
         return START_NOT_STICKY
     }
 
-    private fun start() {
+    private fun start(target: Dictation.Target) {
         if (recorder.isRecording) return
         val notification = notification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -116,6 +131,7 @@ class DictationService : Service() {
         }
         recorder.start()
         session++
+        Dictation.target = target
         legato.warmPc()
         Dictation.set(Dictation.State.Listening(0f))
         main.post(tick)
@@ -129,7 +145,9 @@ class DictationService : Service() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(listening = false))
         val legato = applicationContext.legato
         val mine = session
-        val app = BubbleAccessibilityService.instance?.focusedApp() ?: ""
+        val target = Dictation.target
+        // A Legato screen takes the words as they were said, with no app's Style.
+        val app = if (target == Dictation.Target.Screen) null else BubbleAccessibilityService.instance?.focusedApp() ?: ""
         pending++
         // The screen may be off by now; keep the CPU up until the text is written.
         val wake = awake()
@@ -138,7 +156,7 @@ class DictationService : Service() {
                 withContext(Dispatchers.Default) {
                     val heard = legato.transcribe(samples, app)
                     // The transform picked for every dictation; the words as heard when it can't run.
-                    val after = legato.afterDictation?.takeIf { heard.isNotBlank() }
+                    val after = legato.afterDictation?.takeIf { heard.isNotBlank() && target == Dictation.Target.Field }
                     if (after == null) heard
                     else runCatching { legato.transform(after, heard, app) ?: heard }.getOrElse { e ->
                         legato.onLine("The transform after dictation didn't run: ${e.message}")
@@ -154,7 +172,9 @@ class DictationService : Service() {
             withContext(Dispatchers.Main) {
                 if (wake.isHeld) wake.release()
                 pending--
-                if (text.isNotBlank() && mine > cancelled) {
+                if (text.isNotBlank() && mine > cancelled && target == Dictation.Target.Screen) {
+                    Dictation.forScreen.value = listOfNotNull(Dictation.forScreen.value, text).joinToString(" ")
+                } else if (text.isNotBlank() && mine > cancelled) {
                     val service = BubbleAccessibilityService.instance
                     if (service == null) Log.w(BubbleAccessibilityService.TAG, "The bubble's service isn't connected")
                     val typed = service?.insert(text) ?: false
@@ -241,6 +261,7 @@ class DictationService : Service() {
         const val ACTION_START = "tech.abhashchakraborty.legato.START"
         const val ACTION_FINISH = "tech.abhashchakraborty.legato.FINISH"
         const val ACTION_CANCEL = "tech.abhashchakraborty.legato.CANCEL"
+        const val EXTRA_TARGET = "target"
         private const val CHANNEL = "dictation"
         private const val NOTIFICATION_ID = 1
     }

@@ -1,5 +1,6 @@
 package tech.abhashchakraborty.legato.ui
 
+import tech.abhashchakraborty.legato.bubble.Dictation
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -67,7 +68,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -90,7 +90,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import tech.abhashchakraborty.legato.Legato
 import tech.abhashchakraborty.legato.ModelStatus
-import tech.abhashchakraborty.legato.Recorder
 import tech.abhashchakraborty.legato.core.ScratchNote
 
 private fun ScratchNote.heading(): String =
@@ -213,7 +212,7 @@ private class NoteSaver(private val legato: Legato, var id: Long?) {
 /** One Scratchpad note: a title, the text, and the mic to dictate at the cursor. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ScratchEditScreen(id: Long, recorder: Recorder, onBack: () -> Unit) {
+fun ScratchEditScreen(id: Long, onBack: () -> Unit) {
     val legato = rememberLegato()
     val context = LocalContext.current
     val model by legato.model.collectAsStateWithLifecycle()
@@ -221,9 +220,14 @@ fun ScratchEditScreen(id: Long, recorder: Recorder, onBack: () -> Unit) {
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf(TextFieldValue("")) }
     var loaded by remember { mutableStateOf(id <= 0) }
-    var recording by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var level by remember { mutableFloatStateOf(0f) }
+    // The dictation service holds the microphone, so talking goes on with
+    // Legato in the background or the notification shade open.
+    val dictation by Dictation.state.collectAsStateWithLifecycle()
+    var mine by remember { mutableStateOf(Dictation.target == Dictation.Target.Screen && dictation !is Dictation.State.Idle) }
+    val recording = mine && dictation is Dictation.State.Listening
+    val busy = mine && dictation is Dictation.State.Transcribing
+    val level = (dictation as? Dictation.State.Listening)?.level?.takeIf { mine } ?: 0f
+    val heard by Dictation.forScreen.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -247,16 +251,8 @@ fun ScratchEditScreen(id: Long, recorder: Recorder, onBack: () -> Unit) {
     val latest by androidx.compose.runtime.rememberUpdatedState(title to body.text)
     DisposableEffect(Unit) {
         onDispose {
-            if (recording) recorder.stop()
             if (loaded) saver.save(latest.first, latest.second)
         }
-    }
-    LaunchedEffect(recording) {
-        while (recording) {
-            level = recorder.level
-            delay(50)
-        }
-        level = 0f
     }
 
     fun insert(words: String) {
@@ -271,29 +267,31 @@ fun ScratchEditScreen(id: Long, recorder: Recorder, onBack: () -> Unit) {
         body = TextFieldValue(before + piece + v.text.substring(end), TextRange(start + piece.length))
     }
 
-    fun finish() {
-        recording = false
-        busy = true
-        scope.launch {
-            val samples = withContext(Dispatchers.Default) { recorder.stop() }
-            val text = withContext(Dispatchers.Default) {
-                runCatching { legato.transcribe(samples) }.getOrElse { e ->
-                    legato.notice(e.message ?: "Transcription failed"); ""
-                }
-            }
-            insert(text)
-            busy = false
-        }
+    // Words that came while the note loaded, or Legato was in the background, go in once it can take them.
+    LaunchedEffect(heard, loaded) {
+        val words = heard ?: return@LaunchedEffect
+        if (!loaded || !mine) return@LaunchedEffect
+        Dictation.forScreen.value = null
+        insert(words)
+        if (dictation is Dictation.State.Idle) mine = false
+    }
+    LaunchedEffect(dictation) { if (dictation is Dictation.State.Idle && heard == null) mine = false }
+
+    fun listen() {
+        Dictation.forScreen.value = null
+        mine = true
+        Dictation.start(context, Dictation.Target.Screen)
     }
 
     val mic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) { recorder.start(); recording = true }
+        if (ok) listen()
     }
 
     fun talk() {
         when {
-            recording -> finish()
+            recording -> Dictation.finish(context)
             busy -> Unit
+            dictation !is Dictation.State.Idle -> scope.launch { snackbar.showSnackbar("Finish the dictation under way first.") }
             !legato.canTranscribe() && !legato.pcMayTranscribe() -> scope.launch {
                 snackbar.showSnackbar(
                     when (model) {
@@ -303,7 +301,7 @@ fun ScratchEditScreen(id: Long, recorder: Recorder, onBack: () -> Unit) {
                     },
                 )
             }
-            micGranted(context) -> { recorder.start(); recording = true }
+            micGranted(context) -> listen()
             else -> mic.launch(Manifest.permission.RECORD_AUDIO)
         }
     }

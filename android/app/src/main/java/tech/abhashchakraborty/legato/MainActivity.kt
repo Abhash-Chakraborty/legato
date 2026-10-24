@@ -13,7 +13,6 @@ import tech.abhashchakraborty.legato.ui.LegatoTheme
 
 /** Opens Legato's screens, and hands them any pairing link it was opened with. */
 class MainActivity : ComponentActivity() {
-    private val recorder = Recorder()
     /** A pairing link this activity was opened with, now or later. */
     private var link by mutableStateOf<String?>(null)
 
@@ -25,7 +24,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) link = pairingLink(intent)
         setContent {
             LegatoTheme {
-                LegatoApp(recorder, link)
+                LegatoApp(link)
             }
         }
     }
