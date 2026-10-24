@@ -3,6 +3,7 @@ package tech.abhashchakraborty.legato.bubble
 import android.accessibilityservice.AccessibilityService
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -53,10 +54,15 @@ class BubbleAccessibilityService : AccessibilityService() {
 
     /** Shows the bubble when a keyboard is open over a field it may type into. */
     private fun refresh() {
-        val keyboard = windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-        val field = if (keyboard) focusedField() else null
+        val keyboard = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        val field = if (keyboard != null) focusedField() else null
         val allowed = field != null && !field.password && !field.numeric && field.app !in Excluded.packages
-        if (allowed) overlay?.show() else overlay?.hide()
+        if (allowed) {
+            val top = Rect().also { keyboard?.getBoundsInScreen(it) }.top
+            overlay?.show(top.takeIf { it > 0 })
+        } else {
+            overlay?.hide()
+        }
     }
 
     private data class Field(val app: String, val password: Boolean, val numeric: Boolean)

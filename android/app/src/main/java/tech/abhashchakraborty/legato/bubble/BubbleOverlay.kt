@@ -57,9 +57,23 @@ class BubbleOverlay(private val context: Context) {
 
     val shown: Boolean get() = root != null
 
-    fun show() {
+    /**
+     * Shows the bubble at its place on the edge, kept above the keyboard
+     * when `keyboardTop` (in screen pixels) is known: a landscape tablet's
+     * keyboard reaches higher than the default place. A shown bubble moves
+     * up when the keyboard grows.
+     */
+    fun show(keyboardTop: Int? = null) {
         if (System.currentTimeMillis() < snoozedUntil) return
-        if (root != null) return
+        root?.let { frame ->
+            val lp = params ?: return
+            val y = above(lp.y, keyboardTop)
+            if (y != lp.y && !dragging) {
+                lp.y = y
+                runCatching { wm.updateViewLayout(frame, lp) }
+            }
+            return
+        }
         val type = if (Settings.canDrawOverlays(context)) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -76,7 +90,7 @@ class BubbleOverlay(private val context: Context) {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = Position.x(context, dpi(40f))
-            y = Position.y(context)
+            y = above(Position.y(context), keyboardTop)
             noMoveAnimation()
         }
         dockX = lp.x
@@ -97,6 +111,12 @@ class BubbleOverlay(private val context: Context) {
         Dictation.listeners.add(onState)
         render(Dictation.state.value)
         armDot()
+    }
+
+    /** `y`, moved up if the bubble or its bar would cover the keyboard. */
+    private fun above(y: Int, keyboardTop: Int?): Int {
+        val top = keyboardTop ?: return y
+        return y.coerceAtMost(top - dpi(56f)).coerceAtLeast(dpi(80f))
     }
 
     fun hide() {
