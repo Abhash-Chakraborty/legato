@@ -15,6 +15,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
@@ -82,6 +83,20 @@ class DictationService : Service() {
     private val tick = object : Runnable {
         override fun run() {
             if (recorder.isRecording) {
+                // A dictation left listening (the bubble forgotten, the phone
+                // put away) is written up rather than recording all evening.
+                val now = SystemClock.elapsedRealtime()
+                if (recorder.level > SPEECH_LEVEL) heardAt = now
+                val why = when {
+                    now - heardAt > QUIET_LIMIT_MS -> "Stopped listening after 2 minutes without speech"
+                    now - startedAt > LONGEST_MS -> "Stopped listening at 20 minutes"
+                    else -> null
+                }
+                if (why != null) {
+                    applicationContext.legato.onLine(why)
+                    finish()
+                    return
+                }
                 Dictation.set(Dictation.State.Listening(recorder.level))
                 main.postDelayed(this, 60)
             }
@@ -91,6 +106,8 @@ class DictationService : Service() {
     // Main thread only. A recording that's still being written up when the
     // next starts, or when ✕ is tapped, mustn't stop or type over that one.
     private var session = 0
+    private var startedAt = 0L
+    private var heardAt = 0L
     private var cancelled = 0
     private var pending = 0
 
@@ -130,6 +147,8 @@ class DictationService : Service() {
             }
         }
         recorder.start()
+        startedAt = SystemClock.elapsedRealtime()
+        heardAt = startedAt
         session++
         Dictation.target = target
         legato.warmPc()
@@ -138,7 +157,12 @@ class DictationService : Service() {
     }
 
     private fun finish() {
-        if (!recorder.isRecording) { stopSelf(); return }
+        // Done again while the text is written up mustn't end the service,
+        // which would throw that text away.
+        if (!recorder.isRecording) {
+            if (pending == 0) stopSelf()
+            return
+        }
         main.removeCallbacks(tick)
         val samples = recorder.stop()
         Dictation.set(Dictation.State.Transcribing)
@@ -268,6 +292,9 @@ class DictationService : Service() {
     }
 
     companion object {
+        private const val SPEECH_LEVEL = 0.03f
+        private const val QUIET_LIMIT_MS = 2 * 60_000L
+        private const val LONGEST_MS = 20 * 60_000L
         const val ACTION_START = "tech.abhashchakraborty.legato.START"
         const val ACTION_FINISH = "tech.abhashchakraborty.legato.FINISH"
         const val ACTION_CANCEL = "tech.abhashchakraborty.legato.CANCEL"
