@@ -221,16 +221,8 @@ pub fn set_settings(app: &AppHandle, calls: CallSettings) {
 fn app_path(app: CallApp, browser: Option<&(String, CallApp)>) -> Option<String> {
     crate::loopback::audio_apps()
         .into_iter()
-        .find(|a| owns(app, browser, &a.exe_path))
+        .find(|a| rules::carries_call(&a.exe_path, app, browser))
         .map(|a| a.exe_path)
-}
-
-fn owns(app: CallApp, browser: Option<&(String, CallApp)>, exe_path: &str) -> bool {
-    match rules::holder_for_exe(exe_path) {
-        Holder::App(a) => a == app,
-        Holder::Browser(exe) => browser.is_some_and(|(b, a)| *a == app && *b == exe),
-        _ => false,
-    }
 }
 
 fn show_card(app: &AppHandle, card: Option<CallCard>) {
@@ -391,7 +383,7 @@ fn start_notes(app: &AppHandle, call: CallApp) {
     let browser = lock().call_browser.clone();
     let app_pid = crate::loopback::audio_apps()
         .into_iter()
-        .find(|a| owns(call, browser.as_ref(), &a.exe_path))
+        .find(|a| rules::carries_call(&a.exe_path, call, browser.as_ref()))
         .map(|a| a.pid);
     let result = notes::start(
         app,
@@ -712,9 +704,14 @@ fn holding(settings: &CallSettings) -> Vec<CallApp> {
 
 fn holding_among(settings: &CallSettings, users: &[(String, bool)]) -> Vec<CallApp> {
     let mut found = Vec::new();
+    let mut in_app = Vec::new();
+    let mut in_tab = None;
     for (entry, packaged) in users.iter().cloned() {
         match rules::holder_for_entry(&entry, packaged) {
-            Holder::App(call) if settings.watched.contains(&call) => found.push(call),
+            Holder::App(call) if settings.watched.contains(&call) => {
+                in_app.push(call);
+                found.push(call);
+            }
             Holder::Browser(exe) if settings.browser_titles => {
                 // The tab only names the call while it's in front; once the
                 // call is going, the browser keeping the microphone is
@@ -730,12 +727,24 @@ fn holding_among(settings: &CallSettings, users: &[(String, bool)]) -> Vec<CallA
                     going.or_else(|| browser_call(&exe).filter(|c| settings.watched.contains(c)));
                 if let Some(call) = call {
                     lock().call_browser = Some((exe, call));
+                    in_tab = Some(call);
                     found.push(call);
                 }
             }
             _ => {}
         }
     }
+    // The call has moved to its app (or a new one started there): its
+    // sound comes from the app now, not the tab it was in before.
+    let mut st = lock();
+    if st
+        .call_browser
+        .as_ref()
+        .is_some_and(|(_, call)| in_app.contains(call) && in_tab != Some(*call))
+    {
+        st.call_browser = None;
+    }
+    drop(st);
     found.sort_by_key(|a| CallApp::ALL.iter().position(|b| b == a));
     found.dedup();
     found

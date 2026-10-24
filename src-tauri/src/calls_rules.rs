@@ -146,6 +146,18 @@ pub fn holder_for_exe(exe: &str) -> Holder {
     }
 }
 
+/// Whether the program at `exe` carries `call`: the browser the call was
+/// found in when it's in a tab, else the call app itself. The desktop app
+/// idling in the background doesn't stand in for a call in the browser, nor
+/// the browser for a call in the app.
+pub fn carries_call(exe: &str, call: CallApp, browser: Option<&(String, CallApp)>) -> bool {
+    match (holder_for_exe(exe), browser.filter(|(_, c)| *c == call)) {
+        (Holder::Browser(b), Some((tab_in, _))) => b == *tab_in,
+        (Holder::App(a), None) => a == call,
+        _ => false,
+    }
+}
+
 /// Who an entry is: a packaged app by its family name, such as
 /// "MSTeams_8wekyb3d8bbwe", or a desktop app by its path.
 pub fn holder_for_entry(key: &str, packaged: bool) -> Holder {
@@ -331,6 +343,26 @@ mod tests {
             holder_for_entry("Microsoft.WindowsSoundRecorder_8wekyb3d8bbwe", true),
             Holder::Other
         );
+    }
+
+    #[test]
+    fn the_call_is_recorded_where_it_is() {
+        let teams = "C:\\Program Files\\WindowsApps\\MSTeams\\ms-teams.exe";
+        let edge = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
+        let in_edge = ("msedge.exe".to_string(), CallApp::Teams);
+        // A Teams call in an Edge tab: Edge's sound, not the idle app's.
+        assert!(carries_call(edge, CallApp::Teams, Some(&in_edge)));
+        assert!(!carries_call(teams, CallApp::Teams, Some(&in_edge)));
+        // In the app: the app, not a browser playing something else.
+        assert!(carries_call(teams, CallApp::Teams, None));
+        assert!(!carries_call(edge, CallApp::Teams, None));
+        // A tab with another call doesn't count for this one.
+        assert!(carries_call(
+            teams,
+            CallApp::Teams,
+            Some(&("msedge.exe".into(), CallApp::Zoom))
+        ));
+        assert!(!carries_call("chrome.exe", CallApp::Teams, Some(&in_edge)));
     }
 
     #[test]
