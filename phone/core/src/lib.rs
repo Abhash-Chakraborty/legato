@@ -50,6 +50,9 @@ pub struct Phone {
     pub engine: Engine,
     pub identity: Identity,
     pub name: String,
+    /// What the PC shows as this app's version: the Android app sets its
+    /// own; the command-line stand-in keeps "stand-in".
+    pub app_version: String,
     dir: PathBuf,
     /// What the PC said it syncs.
     pc_kinds: Mutex<Vec<String>>,
@@ -167,6 +170,7 @@ impl Phone {
             },
             identity,
             name: name.to_string(),
+            app_version: "stand-in".into(),
             dir: dir.to_path_buf(),
             pc_kinds: Mutex::new(Vec::new()),
             clips: Mutex::new(Vec::new()),
@@ -531,7 +535,7 @@ impl Host for Phone {
             device_id: self.identity.device_id.clone(),
             name: self.name.clone(),
             platform: "android".into(),
-            app_version: "stand-in".into(),
+            app_version: self.app_version.clone(),
             kinds: KINDS.iter().map(|k| k.to_string()).collect(),
             clipboard: true,
             addrs: Vec::new(),

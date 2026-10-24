@@ -129,7 +129,9 @@ impl Core {
             let listener = listener.clone();
             Box::new(move |line: String| listener.on_line(line))
         };
-        let phone = Arc::new(Phone::open(Path::new(&dir), &name, say)?);
+        let mut phone = Phone::open(Path::new(&dir), &name, say)?;
+        phone.app_version = env!("CARGO_PKG_VERSION").to_string();
+        let phone = Arc::new(phone);
         *phone.bluetooth.lock().unwrap() = Some({
             let listener = listener.clone();
             Arc::new(move |address: &str, token: &str| {
