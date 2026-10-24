@@ -416,12 +416,21 @@ private fun ModelSheet(legato: Legato, onDismiss: () -> Unit) {
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
             Text("Speech model", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 4.dp))
             Text(
-                "Writes up what you say when your PC doesn't. Bigger models are more accurate and use more space, memory and battery. It's put away after five minutes unused.",
+                "Writes up what you say when your PC doesn't. Bigger models are more accurate and use more space, memory and battery. Each holds about its size in memory while it's loaded. It's put away after five minutes unused.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = LocalStatus.current.faint,
                 modifier = Modifier.padding(4.dp, 4.dp, 4.dp, 8.dp),
             )
-            PhoneModels.all.forEach { m ->
+            PhoneModels.all.forEachIndexed { i, m ->
+                val heavy = m.bytes >= PhoneModels.HEAVY_BYTES
+                if (i == 0 || heavy != (PhoneModels.all[i - 1].bytes >= PhoneModels.HEAVY_BYTES)) {
+                    Text(
+                        if (heavy) "Heavier and more accurate" else "Light and quick",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp),
+                    )
+                }
                 val here = remember(version) { legato.isDownloaded(m) }
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
@@ -486,6 +495,7 @@ private fun TransformRows(legato: Legato) {
         when {
             !state.paired -> "On your PC, or with the AI provider it shares."
             state.online && legato.core.pcTransforms() -> "On $pc while connected. Its AI key stays there."
+            state.online && provider == null -> "Update Legato on $pc to run them from this ${legato.device}."
             provider != null && legato.hasKey(provider.id) -> "Away from $pc: ${provider.label} · ${provider.model}. The key is sealed in this ${legato.device}'s secure hardware."
             provider != null -> "Away from $pc: ${provider.label} · ${provider.model}."
             else -> "Only while connected. To run them away, turn on Share AI keys with your phone on $pc."
