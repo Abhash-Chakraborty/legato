@@ -121,9 +121,17 @@ impl Engine {
     ) -> Result<Accepted> {
         let mut conn = self.conn()?;
         let mut done = Accepted::default();
-        for change in items {
+        for mut change in items {
             if !enabled.contains(&change.kind) {
                 continue;
+            }
+            // A dictation or note keeps the name of the device it came
+            // from when it's passed on to a third one.
+            if matches!(change.kind.as_str(), "history" | "notes") {
+                if let Some(Value::Object(body)) = change.body.as_mut() {
+                    body.entry("device")
+                        .or_insert_with(|| Value::String(peer.name.clone()));
+                }
             }
             let verdict = ledger::judge(&conn, &self.me, peer.sent_upto, &change)?;
             let merged = match verdict {

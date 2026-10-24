@@ -48,6 +48,26 @@ fn int(body: &Value, field: &str) -> Option<i64> {
     body[field].as_i64()
 }
 
+/// Names the device a row came from, when it came from another one, so a
+/// third device passed it on by this one doesn't credit this one. Only
+/// when set, so this device's own rows hash as they always did.
+fn with_origin(body: &mut Value, device: Option<String>) {
+    if let Some(device) = device {
+        body["device"] = json!(device);
+    }
+}
+
+/// Keeps the name of the device another device's row came from current.
+fn relabel(conn: &Connection, kind: &str, key: &str, device: &str, me: &str) -> Result<()> {
+    if !is_own(key, me) {
+        conn.execute(
+            "UPDATE sync_local SET device = ?1 WHERE kind = ?2 AND key = ?3",
+            params![device, kind, key],
+        )?;
+    }
+    Ok(())
+}
+
 /// Every item of a database kind as it is now.
 pub fn export(conn: &Connection, kind: &str, me: &str) -> Result<Vec<Item>> {
     match kind {
@@ -314,7 +334,7 @@ fn export_history(conn: &Connection, me: &str) -> Result<Vec<Item>> {
     let mut stmt = conn.prepare(
         "SELECT h.id, l.key, h.transcription_text, h.post_processed_text, h.heard_text,
             h.timestamp, h.title, h.app_name, h.category, h.word_count, h.speech_ms,
-            h.model_name, h.transform
+            h.model_name, h.transform, l.device
          FROM transcription_history h
          LEFT JOIN sync_local l ON l.kind = 'history' AND l.local_id = h.id
          WHERE h.status IS NOT 'failed'
@@ -324,9 +344,7 @@ fn export_history(conn: &Connection, me: &str) -> Result<Vec<Item>> {
         let id: i64 = r.get(0)?;
         let key: Option<String> = r.get(1)?;
         let at: i64 = r.get(5)?;
-        Ok(Item {
-            key: key.unwrap_or_else(|| format!("{me}:{id}")),
-            body: json!({
+        let mut body = json!({
                 "text": r.get::<_, String>(2)?,
                 "processed": r.get::<_, Option<String>>(3)?,
                 "heard": r.get::<_, Option<String>>(4)?,
@@ -338,7 +356,11 @@ fn export_history(conn: &Connection, me: &str) -> Result<Vec<Item>> {
                 "speech_ms": r.get::<_, Option<i64>>(10)?,
                 "model": r.get::<_, Option<String>>(11)?,
                 "transform": r.get::<_, Option<String>>(12)?,
-            }),
+        });
+        with_origin(&mut body, r.get(13)?);
+        Ok(Item {
+            key: key.unwrap_or_else(|| format!("{me}:{id}")),
+            body,
             at: seconds_to_ms(at),
         })
     })?;
@@ -353,6 +375,8 @@ fn apply_history(
     me: &str,
 ) -> Result<Applied> {
     let local = ledger::local_id(conn, "history", key, me)?;
+    let origin = body.and_then(|b| opt_text(b, "device"));
+    let device = origin.as_deref().unwrap_or(device);
     let row: Option<(i64, String)> = match local {
         Some(id) => conn
             .query_row(
@@ -401,6 +425,7 @@ fn apply_history(
                 ),
                 fields,
             )?;
+            relabel(conn, "history", key, device, me)?;
         }
         // One of ours that's gone here (deleted, or past the history limit)
         // doesn't come back.
@@ -493,7 +518,7 @@ fn export_notes(conn: &Connection, me: &str) -> Result<Vec<Item>> {
     }
     let mut stmt = conn.prepare(
         "SELECT n.id, l.key, n.title, n.kind, n.started_at, n.duration_ms, n.app, n.my_notes,
-            n.summary, n.decisions
+            n.summary, n.decisions, l.device
          FROM note n LEFT JOIN sync_local l ON l.kind = 'notes' AND l.local_id = n.id
          WHERE n.status = 'ready' ORDER BY n.id",
     )?;
@@ -509,12 +534,24 @@ fn export_notes(conn: &Connection, me: &str) -> Result<Vec<Item>> {
             r.get::<_, String>(7)?,
             r.get::<_, String>(8)?,
             r.get::<_, String>(9)?,
+            r.get::<_, Option<String>>(10)?,
         ))
     })?;
     let mut items = Vec::new();
     for row in rows {
-        let (id, key, title, kind, started_at, duration_ms, app, my_notes, summary, decisions) =
-            row?;
+        let (
+            id,
+            key,
+            title,
+            kind,
+            started_at,
+            duration_ms,
+            app,
+            my_notes,
+            summary,
+            decisions,
+            origin,
+        ) = row?;
         let decisions: Value = serde_json::from_str(&decisions).unwrap_or_else(|_| json!([]));
         let mut body = json!({
             "title": title, "kind": kind, "started_at": started_at,
@@ -528,6 +565,7 @@ fn export_notes(conn: &Connection, me: &str) -> Result<Vec<Item>> {
         if let Some(names) = speakers.remove(&id) {
             body["speakers"] = json!(names);
         }
+        with_origin(&mut body, origin);
         items.push(Item {
             key: key.unwrap_or_else(|| format!("{me}:{id}")),
             body,
@@ -545,6 +583,8 @@ fn apply_note(
     me: &str,
 ) -> Result<Applied> {
     let local = ledger::local_id(conn, "notes", key, me)?;
+    let origin = body.and_then(|b| opt_text(b, "device"));
+    let device = origin.as_deref().unwrap_or(device);
     let row: Option<(i64, Option<String>)> = match local {
         Some(id) => conn
             .query_row("SELECT id, audio_file FROM note WHERE id = ?1", [id], |r| {
@@ -611,6 +651,7 @@ fn apply_note(
                 ),
                 fields,
             )?;
+            relabel(conn, "notes", key, device, me)?;
             clear(id)?;
             id
         }
@@ -822,9 +863,16 @@ mod tests {
                 .unwrap();
             }
             let back = export(&phone, kind, "phone").unwrap();
+            // Rows from the PC name it on the phone; the hash ignores that.
             let strip = |v: &[Item]| {
                 v.iter()
-                    .map(|i| (i.key.clone(), i.body.clone()))
+                    .map(|i| {
+                        let mut body = i.body.clone();
+                        if let Some(map) = body.as_object_mut() {
+                            map.remove("device");
+                        }
+                        (i.key.clone(), body)
+                    })
                     .collect::<Vec<_>>()
             };
             assert_eq!(strip(&back), strip(&items), "{kind}");
@@ -856,6 +904,56 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM note_line", [], |r| r.get(0))
             .unwrap();
         assert_eq!(lines, 1);
+    }
+
+    /// A phone's dictation the PC passes on to a tablet is the phone's on
+    /// the tablet too, not the PC's.
+    #[test]
+    fn a_passed_on_row_keeps_the_device_it_came_from() {
+        let mut pc = db();
+        let body = json!({"text": "Book the room", "at": 1, "title": "t", "device": "Pixel 8"});
+        apply(
+            &mut pc,
+            "history",
+            "phone:7",
+            Some(&body),
+            "Pixel 8",
+            "pc",
+            2,
+        )
+        .unwrap();
+        let items = export(&pc, "history", "pc").unwrap();
+        assert_eq!(items[0].body["device"], "Pixel 8");
+        let mut tablet = db();
+        apply(
+            &mut tablet,
+            "history",
+            &items[0].key,
+            Some(&items[0].body),
+            "Desk PC",
+            "tablet",
+            3,
+        )
+        .unwrap();
+        let device: String = tablet
+            .query_row(
+                "SELECT device FROM sync_local WHERE kind = 'history'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(device, "Pixel 8");
+        // The PC's own rows go out unnamed, so their hash is what it was.
+        pc.execute(
+            "INSERT INTO transcription_history (file_name, transcription_text, timestamp, title)
+             VALUES ('', 'Mine', 4, 't')",
+            [],
+        )
+        .unwrap();
+        let mine = export(&pc, "history", "pc").unwrap();
+        assert!(mine
+            .iter()
+            .any(|i| i.key.starts_with("pc:") && i.body.get("device").is_none()));
     }
 
     #[test]

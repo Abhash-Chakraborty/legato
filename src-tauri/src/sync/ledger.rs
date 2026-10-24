@@ -68,8 +68,19 @@ fn hash_text(text: Option<&str>) -> String {
     }
 }
 
+/// The name of the device a row came from rides along with it (see
+/// `kinds::with_origin`) but isn't part of what changed: two devices that
+/// disagree on it, one of them older than the field, must not keep sending
+/// the row back and forth.
 pub fn hash(body: Option<&Value>) -> String {
-    hash_text(body.map(canonical).as_deref())
+    match body {
+        Some(Value::Object(map)) if map.contains_key("device") => {
+            let mut map = map.clone();
+            map.remove("device");
+            hash_text(Some(&canonical(&Value::Object(map))))
+        }
+        _ => hash_text(body.map(canonical).as_deref()),
+    }
 }
 
 struct Row {
@@ -683,6 +694,13 @@ mod tests {
 
     fn kinds() -> Vec<String> {
         ALL.iter().map(|k| k.to_string()).collect()
+    }
+
+    #[test]
+    fn the_device_a_row_came_from_is_not_a_change() {
+        let row = json!({"text": "Book the room", "at": 1});
+        let named = json!({"text": "Book the room", "at": 1, "device": "Pixel 8"});
+        assert_eq!(hash(Some(&row)), hash(Some(&named)));
     }
 
     #[test]

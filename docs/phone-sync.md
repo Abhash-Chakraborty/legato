@@ -247,6 +247,10 @@ Rules per kind:
 - **History** only spreads deletes the person made. When the PC trims old dictations to its
   history limit, the phone keeps them. Dictations from the phone show on Home with its name and
   don't count in Insights, which measures this PC.
+- **History and notes** from another device carry `device`, that device's name, so a phone's
+  dictation the PC passes on to a tablet shows the phone's name there too. A device sets it to
+  the sender's name when a row arrives without one, and own rows go out without it. The ledger's
+  hash leaves `device` out, so a device older than the field can't start a row bouncing.
 - **Notes** sync once they're ready (not while recording or transcribing). The phone records
   voice memos too: `kind` is `memo`, each stretch of about 30 seconds is a line with `who` set to
   `you`, and the recording itself stays on the phone only until it's written up. Once the
