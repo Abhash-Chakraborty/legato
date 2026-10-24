@@ -67,8 +67,13 @@ class BubbleOverlay(private val context: Context) {
         if (System.currentTimeMillis() < snoozedUntil) return
         root?.let { frame ->
             val lp = params ?: return
+            if (dragging || listening) return
+            // Turned to landscape or back: back to its edge, above the keyboard.
+            val x = Position.x(context, dpi(40f))
             val y = above(lp.y, keyboardTop)
-            if (y != lp.y && !dragging) {
+            if (x != dockX || y != lp.y) {
+                dockX = x
+                lp.x = x
                 lp.y = y
                 runCatching { wm.updateViewLayout(frame, lp) }
             }
