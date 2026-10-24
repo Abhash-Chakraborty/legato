@@ -155,6 +155,9 @@ pub struct Core {
     rt: Runtime,
     sessions: Sessions,
     stop: Mutex<Option<watch::Sender<bool>>>,
+    /// Held while `connect` checks for a connection and starts one, so two
+    /// callers at startup don't open two (and refresh the database at once).
+    connecting: Mutex<()>,
     listener: Arc<dyn CoreListener>,
     #[cfg(feature = "speech")]
     speech: speech::Speech,
@@ -222,6 +225,7 @@ impl Core {
             rt,
             sessions: Sessions::default(),
             stop: Mutex::new(None),
+            connecting: Mutex::new(()),
             listener,
             #[cfg(feature = "speech")]
             speech: speech::Speech::default(),
@@ -293,6 +297,7 @@ impl Core {
         if self.phone.paired_pc().is_none() {
             return Err(CoreError::Failed("Not paired with a PC yet".into()));
         }
+        let _connecting = self.connecting.lock().unwrap();
         if self.stop.lock().unwrap().is_some() {
             // Already trying: try now instead of after the backoff.
             self.phone.wake();
