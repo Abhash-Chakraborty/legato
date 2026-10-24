@@ -3,8 +3,8 @@
 //! managers mark theirs) and apps on the never-share list stay here.
 
 use std::io::Cursor;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Result};
@@ -31,6 +31,31 @@ const IDLE_POLL: Duration = Duration::from_secs(5);
 /// so the watcher doesn't send it back.
 static WROTE: AtomicU32 = AtomicU32::new(0);
 
+/// A paste is putting text on the clipboard right now.
+static PASTING: AtomicBool = AtomicBool::new(false);
+/// The clipboard sequence numbers right after Legato's last few paste writes.
+static PASTED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+/// Runs `write`, a paste putting a dictation on the clipboard or putting the
+/// person's copy back after it, so the watcher doesn't send it to the phone:
+/// the phone would get every dictation, and the copy it had already.
+pub fn paste_write<T>(write: impl FnOnce() -> T) -> T {
+    PASTING.store(true, Ordering::SeqCst);
+    let out = write();
+    let seq = win::sequence();
+    if let Ok(mut pasted) = PASTED.lock() {
+        pasted.push(seq);
+        let over = pasted.len().saturating_sub(8);
+        pasted.drain(..over);
+    }
+    PASTING.store(false, Ordering::SeqCst);
+    out
+}
+
+fn pasted(seq: u32) -> bool {
+    PASTING.load(Ordering::SeqCst) || PASTED.lock().is_ok_and(|p| p.contains(&seq))
+}
+
 /// Whether `exe` (a path or file name) is on the never-share list.
 pub fn never_shares(settings: &SyncSettings, exe: &str) -> bool {
     let name = exe.rsplit(['\\', '/']).next().unwrap_or(exe);
@@ -55,7 +80,7 @@ pub fn watch(app: AppHandle) {
             }
             last = seq;
             let seen = Instant::now();
-            if seq == WROTE.load(Ordering::SeqCst) {
+            if seq == WROTE.load(Ordering::SeqCst) || pasted(seq) {
                 continue;
             }
             let Some(sync) = app.try_state::<Arc<SyncManager>>() else {

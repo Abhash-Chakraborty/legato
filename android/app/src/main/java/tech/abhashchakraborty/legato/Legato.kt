@@ -42,7 +42,12 @@ val Context.legato: Legato get() = (applicationContext as LegatoApplication).leg
 class Legato(private val context: Context) : CoreListener {
     /** The log, kept on the phone across restarts so it still tells what happened after Android stopped Legato. */
     private val logFile = File(context.filesDir, "log.txt")
-    val lines = MutableStateFlow(runCatching { logFile.readLines().takeLast(LOG_LINES) }.getOrDefault(emptyList()))
+    val lines = MutableStateFlow(
+        runCatching {
+            // Builds before this one logged what each clip from the PC said; those lines go.
+            logFile.readLines().filterNot { "Clip from the PC: “" in it }.takeLast(LOG_LINES)
+        }.getOrDefault(emptyList()),
+    )
     val state = MutableStateFlow(PhoneState(paired = false, pcName = null, online = false, via = null, pcTranscribes = false, lastSync = null))
     val model = MutableStateFlow<ModelStatus>(ModelStatus.Missing)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

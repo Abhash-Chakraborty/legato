@@ -29,7 +29,7 @@ fn write_text_to_clipboard(app_handle: &AppHandle, text: &str) -> Result<(), Str
     // the Scratchpad instead of pasting it.
     let mut error = String::new();
     for attempt in 1..=6 {
-        match app_handle.clipboard().write_text(text) {
+        match crate::sync::clipboard::paste_write(|| app_handle.clipboard().write_text(text)) {
             Ok(()) => return Ok(()),
             Err(e) => error = e.to_string(),
         }
@@ -92,7 +92,7 @@ fn paste_via_clipboard(
             let _ = write_text_to_clipboard(app_handle, &clipboard_content);
         } else if let Some(image) = saved_image {
             info!("Restoring image to clipboard");
-            let _ = clipboard.write_image(&image);
+            let _ = crate::sync::clipboard::paste_write(|| clipboard.write_image(&image));
         } else {
             // Nothing was there to begin with — don't leave the transcription behind.
             let _ = clipboard.clear();

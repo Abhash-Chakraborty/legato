@@ -823,8 +823,9 @@ impl Host for Phone {
     }
 
     fn clip(&self, _peer: &str, clip: Clip) {
+        // The log says what kind of clip came, never what it says.
         let what = match (&clip.text, &clip.png) {
-            (Some(text), _) => format!("“{text}”"),
+            (Some(text), _) => format!("text ({} characters)", text.chars().count()),
             (_, Some(png)) => format!("an image ({} base64 bytes)", png.len()),
             _ => "an empty clip".into(),
         };
