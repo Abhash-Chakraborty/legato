@@ -117,6 +117,9 @@ pub fn max_seq(conn: &Connection) -> Result<u64> {
 
 fn put(conn: &Connection, change: &Change, seq: i64) -> Result<()> {
     let body = change.body.as_ref().map(canonical);
+    // The hash `refresh` and `judge` compare with, which leaves out the
+    // device; hashing the body as stored made every row from another device
+    // look edited at each refresh, so the two sent it back and forth forever.
     conn.execute(
         "INSERT INTO sync_item (kind, key, hash, body, changed_at, origin, seq)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
@@ -125,7 +128,7 @@ fn put(conn: &Connection, change: &Change, seq: i64) -> Result<()> {
         params![
             change.kind,
             change.key,
-            hash_text(body.as_deref()),
+            hash(change.body.as_ref()),
             body,
             change.changed_at,
             change.origin,
@@ -751,6 +754,24 @@ mod tests {
         // A tombstone isn't recorded twice.
         assert_eq!(
             refresh(&mut conn, "dictionary", &edited, true, &[], "pc", 4000).unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn a_row_from_another_device_isnt_recorded_again() {
+        let mut conn = db();
+        let said = json!({"text": "Ship it", "device": "Pixel"});
+        adopt(&conn, &change("pixel:7", Some(said.clone()), 1000, "phone")).unwrap();
+        let rows = vec![item("pixel:7", said)];
+        assert_eq!(
+            refresh(&mut conn, "dictionary", &rows, false, &[], "pc", 2000).unwrap(),
+            0
+        );
+        let mut renamed = rows.clone();
+        renamed[0].body["device"] = json!("Pixel 9");
+        assert_eq!(
+            refresh(&mut conn, "dictionary", &renamed, false, &[], "pc", 3000).unwrap(),
             0
         );
     }
