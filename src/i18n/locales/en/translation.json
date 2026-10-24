@@ -986,14 +986,18 @@
           "zoom": "Zoom.exe",
           "meet": "meet.google.com",
           "slack": "slack.exe",
-          "discord": "Discord.exe"
+          "discord": "Discord.exe",
+          "whatsapp": "WhatsApp.exe",
+          "telegram": "Telegram.exe"
         },
         "what": {
           "teams": ", or teams.microsoft.com in a browser",
           "zoom": ", or Zoom in a browser",
           "meet": " in any browser tab",
           "slack": ", huddles",
-          "discord": ", voice channels"
+          "discord": ", voice channels",
+          "whatsapp": ", once a call passes 20 seconds, so voice messages don't count",
+          "telegram": ", once a call passes 20 seconds, so voice messages don't count"
         }
       },
       "last": {
