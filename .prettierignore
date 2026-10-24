@@ -11,6 +11,8 @@ target
 # Tauri
 src-tauri/target
 src-tauri/gen
+# WiX installer source; Prettier takes .wxs for JavaScript
+src-tauri/wix
 
 # Generated files
 src/bindings.ts
