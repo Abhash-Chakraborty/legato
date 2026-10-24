@@ -121,6 +121,11 @@ a {
 .note-editor:focus-visible {
   outline: none;
 }
+/* A dialog takes focus itself when it opens, for screen readers; a ring
+   around the whole dialog says nothing, and its controls keep theirs. */
+[role="dialog"][tabindex="-1"]:focus-visible {
+  outline: none;
+}
 /* Rows in clipped lists draw their ring inside, or only one edge shows. */
 .ring-inside:focus-visible {
   outline-offset: -2px;
