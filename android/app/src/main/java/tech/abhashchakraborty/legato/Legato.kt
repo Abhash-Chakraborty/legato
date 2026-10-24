@@ -135,6 +135,15 @@ class Legato(private val context: Context) : CoreListener {
 
     /** The last text that went either way, so a clip never bounces back. */
     @Volatile private var lastClip: String? = null
+
+    /**
+     * When the clip last sent from here was copied, kept across restarts:
+     * Android restarts Legato often, and the same old clip mustn't go to the
+     * PC again over something copied there since.
+     */
+    private var clipSent: Long
+        get() = prefs.getLong(PREF_CLIP_SENT, 0)
+        set(value) { prefs.edit().putLong(PREF_CLIP_SENT, value).apply() }
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
 
     override fun onClip(text: String, fromApp: String?, ageMs: ULong) {
@@ -146,7 +155,7 @@ class Legato(private val context: Context) : CoreListener {
         main.post {
             runCatching {
                 context.getSystemService(android.content.ClipboardManager::class.java)
-                    .setPrimaryClip(android.content.ClipData.newPlainText("Legato", text))
+                    .setPrimaryClip(android.content.ClipData.newPlainText(PC_CLIP, text))
             }
         }
     }
@@ -163,17 +172,27 @@ class Legato(private val context: Context) : CoreListener {
     /** Called when Legato comes to the front: in Automatic, sends what's new on the clipboard. */
     fun clipboardOnFocus() {
         if (!autoClipboard || !state.value.online) return
+        var copied = 0L
         val text = runCatching {
             val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+            val description = clipboard.primaryClipDescription ?: return
             // Password managers mark what they copy; that stays on the phone.
-            val extras = clipboard.primaryClipDescription?.extras
-            if (extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true) return
+            if (description.extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true) return
             // A dictation the bubble couldn't type stays on the phone, as the PC
-            // keeps its own pastes out of the shared clipboard.
-            if (clipboard.primaryClipDescription?.label == DICTATION_CLIP) return
+            // keeps its own pastes out of the shared clipboard; a clip from the
+            // PC is already there.
+            if (description.label == DICTATION_CLIP || description.label == PC_CLIP) return
+            copied = description.timestamp
+            // The first time after this check arrived, take what's there as sent.
+            if (!prefs.contains(PREF_CLIP_SENT)) clipSent = copied
+            if (copied <= clipSent) return
             clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
         }.getOrNull() ?: return
-        scope.launch { if (sendClip(text)) onLine("Sent your clipboard to ${state.value.pcName ?: "the PC"}") }
+        scope.launch {
+            if (sendClip(text)) onLine("Sent your clipboard to ${state.value.pcName ?: "the PC"}")
+            // Sent now or already on the PC; one that didn't go tries again next time.
+            if (text.trim() == lastClip?.trim()) clipSent = copied
+        }
     }
 
     override fun openBluetooth(address: String, token: String): UShort =
@@ -466,6 +485,9 @@ class Legato(private val context: Context) : CoreListener {
         private const val KEY_PREFIX = "ai:"
         const val PREF_MODEL = "speech_model"
         const val PREF_AUTO_CLIP = "auto_clipboard"
+        private const val PREF_CLIP_SENT = "clip_sent_copied_at"
+        /** The label on clips that came from the PC, so they aren't sent back. */
+        private const val PC_CLIP = "Legato from the PC"
         /** The label on clips the bubble writes, so they aren't sent to the PC. */
         const val DICTATION_CLIP = "Legato dictation"
         private const val IDLE_UNLOAD_MS = 5 * 60 * 1000L
