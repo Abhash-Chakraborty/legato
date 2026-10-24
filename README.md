@@ -97,7 +97,7 @@ To verify a release manually, set `$Artifact` to the filename you downloaded, sa
 
 ```powershell
 # Replace with the file you downloaded
-$Artifact = "Legato_0.9.8_x64-setup.exe"
+$Artifact = "Legato_0.9.9_x64-setup.exe"
 
 $pub = (Get-Content legato.pub.b64 -Raw).Trim()
 [IO.File]::WriteAllBytes("$PWD\legato.pub", [Convert]::FromBase64String($pub))
