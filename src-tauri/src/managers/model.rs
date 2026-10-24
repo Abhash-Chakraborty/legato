@@ -1316,8 +1316,9 @@ impl ModelManager {
                 None => continue,
             };
 
-            // Skip hidden files
-            if filename.starts_with('.') {
+            // Skip hidden files, and the speaker model Notes keeps here: it
+            // tells voices apart and can't transcribe.
+            if filename.starts_with('.') || filename == crate::speakers::FILE {
                 continue;
             }
 

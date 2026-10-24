@@ -30,7 +30,7 @@ use tauri_specta::Event;
 /// checked against its hash.
 const REPO: &str = "handy-computer/diar_streaming_sortformer_4spk-v2.1-gguf";
 const REVISION: &str = "60ebab3ef7cae9869be0abcde13360347e96ba03";
-const FILE: &str = "diar_streaming_sortformer_4spk-v2.1-Q8_0.gguf";
+pub const FILE: &str = "diar_streaming_sortformer_4spk-v2.1-Q8_0.gguf";
 const SIZE: u64 = 139_310_336;
 const SHA256: &str = "a5dacdc650790266c7a362e54e6bf51952015487edaa606c4e11632bc32442a9";
 
