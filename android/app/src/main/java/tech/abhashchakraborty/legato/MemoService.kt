@@ -174,8 +174,11 @@ class MemoService : Service() {
 
     private fun notification(): Notification {
         val nm = getSystemService(NotificationManager::class.java)
+        // Default importance, still silent: some phones (Nothing OS) fold low ones
+        // into a row of icons, hiding the buttons. The old low channel goes.
+        nm.deleteNotificationChannel(OLD_CHANNEL)
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, getString(R.string.memo_channel), NotificationManager.IMPORTANCE_LOW).apply {
+            NotificationChannel(CHANNEL, getString(R.string.memo_channel), NotificationManager.IMPORTANCE_DEFAULT).apply {
                 setSound(null, null)
                 enableVibration(false)
             },
@@ -192,13 +195,15 @@ class MemoService : Service() {
             .setContentIntent(open)
             .addAction(Notification.Action.Builder(null, getString(R.string.memo_stop), stop).build())
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .build()
     }
 
     companion object {
         const val ACTION_START = "tech.abhashchakraborty.legato.MEMO_START"
         const val ACTION_FINISH = "tech.abhashchakraborty.legato.MEMO_FINISH"
-        private const val CHANNEL = "memo"
+        private const val CHANNEL = "memo_shown"
+        private const val OLD_CHANNEL = "memo"
         private const val NOTIFICATION_ID = 2
     }
 }

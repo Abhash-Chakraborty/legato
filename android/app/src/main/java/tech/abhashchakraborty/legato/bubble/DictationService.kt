@@ -206,7 +206,10 @@ class DictationService : Service() {
     private fun cancel() {
         main.removeCallbacks(tick)
         cancelled = session
-        if (recorder.isRecording) recorder.stop()
+        if (recorder.isRecording) {
+            recorder.stop()
+            applicationContext.legato.onLine("Dictation cancelled")
+        }
         Dictation.set(Dictation.State.Idle)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -214,7 +217,10 @@ class DictationService : Service() {
 
     override fun onDestroy() {
         main.removeCallbacks(tick)
-        if (recorder.isRecording) recorder.stop()
+        if (recorder.isRecording) {
+            recorder.stop()
+            applicationContext.legato.onLine("Dictation stopped: Android ended the recording")
+        }
         scope.cancel()
         if (Dictation.state.value !is Dictation.State.Idle) Dictation.set(Dictation.State.Idle)
         super.onDestroy()
@@ -227,8 +233,11 @@ class DictationService : Service() {
      */
     private fun notification(listening: Boolean = true): Notification {
         val nm = getSystemService(NotificationManager::class.java)
+        // Default importance, still silent: some phones (Nothing OS) fold low ones
+        // into a row of icons, hiding the buttons. The old low channel goes.
+        nm.deleteNotificationChannel(OLD_CHANNEL)
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW).apply {
+            NotificationChannel(CHANNEL, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_DEFAULT).apply {
                 setSound(null, null)
                 enableVibration(false)
             },
@@ -246,6 +255,7 @@ class DictationService : Service() {
             .setSmallIcon(R.drawable.ic_bubble)
             .setContentIntent(open)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
         if (!listening) return builder.setContentTitle(getString(R.string.writing_up)).build()
         return builder
             .setContentTitle(getString(R.string.listening))
@@ -262,7 +272,8 @@ class DictationService : Service() {
         const val ACTION_FINISH = "tech.abhashchakraborty.legato.FINISH"
         const val ACTION_CANCEL = "tech.abhashchakraborty.legato.CANCEL"
         const val EXTRA_TARGET = "target"
-        private const val CHANNEL = "dictation"
+        private const val CHANNEL = "dictation_shown"
+        private const val OLD_CHANNEL = "dictation"
         private const val NOTIFICATION_ID = 1
     }
 }
