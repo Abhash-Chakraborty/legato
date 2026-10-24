@@ -35,6 +35,9 @@
       "nsis": {
         "template": "nsis/installer.nsi",
         "installerIcon": "icons/icon.ico"
+      },
+      "wix": {
+        "template": "wix/main.wxs"
       }
     }
   },
