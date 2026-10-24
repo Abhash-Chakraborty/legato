@@ -12,6 +12,7 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import tech.abhashchakraborty.legato.Legato
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -125,13 +126,28 @@ class BubbleAccessibilityService : AccessibilityService() {
             )
             return true
         }
-        // Some apps (rich editors, web views) ignore set-text; paste instead.
+        // Web views (Chrome) refuse set-text. From Android 13 the service can
+        // type through the keyboard's connection to the field, as a keyboard does.
+        if (Build.VERSION.SDK_INT >= 33) {
+            val connection = inputMethod?.currentInputConnection
+            if (connection != null) {
+                connection.commitText(piece, 1, null)
+                return true
+            }
+            Log.w(TAG, "${node.packageName} refused set-text and no keyboard connection is open")
+        }
+        // Older Android: paste through the clipboard instead.
         val cm = getSystemService(ClipboardManager::class.java)
+        // In the background this reads as nothing (Android 10+), so the
+        // dictation is cleared afterwards rather than left on the clipboard.
         val keep = cm.primaryClip
-        cm.setPrimaryClip(ClipData.newPlainText("Legato", piece))
+        cm.setPrimaryClip(ClipData.newPlainText(Legato.DICTATION_CLIP, piece))
         val pasted = node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-        main.postDelayed({ keep?.let { cm.setPrimaryClip(it) } }, 400)
-        if (!pasted) Log.w(TAG, "${node.packageName} refused both set-text and paste")
+        if (pasted) {
+            main.postDelayed({ if (keep != null) cm.setPrimaryClip(keep) else cm.clearPrimaryClip() }, 400)
+        } else {
+            Log.w(TAG, "${node.packageName} refused both set-text and paste")
+        }
         return pasted
     }
 

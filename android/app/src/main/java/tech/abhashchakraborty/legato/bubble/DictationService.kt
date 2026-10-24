@@ -21,6 +21,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import tech.abhashchakraborty.legato.Legato
 import tech.abhashchakraborty.legato.MainActivity
 import tech.abhashchakraborty.legato.ModelStatus
 import tech.abhashchakraborty.legato.R
@@ -142,7 +143,7 @@ class DictationService : Service() {
                     if (!typed) {
                         // The field went away while the text was written up; keep it.
                         getSystemService(ClipboardManager::class.java)
-                            .setPrimaryClip(ClipData.newPlainText("Legato", text))
+                            .setPrimaryClip(ClipData.newPlainText(Legato.DICTATION_CLIP, text))
                         Toast.makeText(this@DictationService, getString(R.string.not_typed), Toast.LENGTH_LONG).show()
                         legato.onLine("Couldn't type into this field, so it's on the clipboard: $text")
                     }

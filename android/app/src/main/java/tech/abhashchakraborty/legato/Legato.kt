@@ -135,6 +135,9 @@ class Legato(private val context: Context) : CoreListener {
             // Password managers mark what they copy; that stays on the phone.
             val extras = clipboard.primaryClipDescription?.extras
             if (extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true) return
+            // A dictation the bubble couldn't type stays on the phone, as the PC
+            // keeps its own pastes out of the shared clipboard.
+            if (clipboard.primaryClipDescription?.label == DICTATION_CLIP) return
             clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
         }.getOrNull() ?: return
         scope.launch { if (sendClip(text)) onLine("Sent your clipboard to ${state.value.pcName ?: "the PC"}") }
@@ -306,6 +309,8 @@ class Legato(private val context: Context) : CoreListener {
         const val MODEL_FILE = "moonshine-base.gguf"
         const val PREF_PC_MODEL = "pc_model"
         const val PREF_AUTO_CLIP = "auto_clipboard"
+        /** The label on clips the bubble writes, so they aren't sent to the PC. */
+        const val DICTATION_CLIP = "Legato dictation"
         const val MODEL_URL = "https://huggingface.co/handy-computer/moonshine-base-gguf/resolve/main/moonshine-base-Q8_0.gguf"
     }
 }
