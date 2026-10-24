@@ -329,6 +329,33 @@ pub fn clean_answer(answer: &str, input: &str) -> String {
     out
 }
 
+/// Phrases a model uses when it talks about its instructions rather than
+/// answering. GPT-5 nano at its lowest effort sometimes writes its reasoning
+/// after the answer ("Wait we should output cleaned text only…").
+const REASONING_TELLS: &[&str] = &[
+    "the instruction says",
+    "the instructions say",
+    "the user wants",
+    "the user asked",
+    "we should output",
+    "let's output",
+    "let me output",
+    "i should output",
+    "no extra commentary",
+    "cleaned text only",
+    "the system prompt",
+];
+
+/// Whether an answer carries the model's reasoning about its instructions:
+/// one of the tells, where the text it was given has none.
+pub fn leaks_reasoning(answer: &str, input: &str) -> bool {
+    let fold = |s: &str| s.to_lowercase().replace('\u{2019}', "'");
+    let (answer, input) = (fold(answer), fold(input));
+    REASONING_TELLS
+        .iter()
+        .any(|tell| answer.contains(tell) && !input.contains(tell))
+}
+
 pub fn word_count(text: &str) -> usize {
     text.split_whitespace().count()
 }
@@ -453,6 +480,24 @@ mod tests {
         assert!(wants_clipboard("{{clipboard}}"));
         assert!(!wants_clipboard("{{text}}"));
         assert!(system_prompt("Hi {{app}}", &PromptContext::default()).contains("Hi the app"));
+    }
+
+    #[test]
+    fn reasoning_after_the_answer_is_caught() {
+        let input = "On Thursday also book the Pyxel test device";
+        assert!(leaks_reasoning(
+            "On Thursday, also book the Pyxel test device.\" Wait we should output cleaned text only. The instruction says if question, don't answer. Let\u{2019}s output single sentence. Done.",
+            input
+        ));
+        assert!(!leaks_reasoning(
+            "On Thursday, also book the Pyxel test device.",
+            input
+        ));
+        // Said in the dictation itself, it's the person's words.
+        assert!(!leaks_reasoning(
+            "The user wants a dark mode, so let's output both themes.",
+            "the user wants a dark mode so let's output both themes"
+        ));
     }
 
     #[test]

@@ -635,6 +635,12 @@ pub async fn medium_pass(
     };
     report(app, &config, AiStatusKind::Ok);
     let cleaned = crate::transform_rules::clean_answer(&answer, &input);
+    if crate::transform_rules::leaks_reasoning(&cleaned, &input) {
+        warn!(
+            "Cleanup at Medium: the answer carried the model's reasoning, kept the rule-based text"
+        );
+        return Ok(None);
+    }
     if !ai_rules::plausible_cleanup(&input, &cleaned) {
         warn!("Cleanup at Medium: the answer changed too much, kept the rule-based text");
         return Ok(None);

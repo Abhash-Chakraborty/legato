@@ -433,6 +433,13 @@ pub async fn apply(
     );
     let answer = ai::run(app, &config, &system, text.to_string(), timeout).await?;
     let answer = rules::clean_answer(&answer, text);
+    if rules::leaks_reasoning(&answer, text) {
+        warn!(
+            "Transform '{}': {} wrote its reasoning into the answer, kept the text as it was",
+            transform.id, config.model
+        );
+        return Ok(None);
+    }
     Ok((!answer.is_empty()).then_some(answer))
 }
 
