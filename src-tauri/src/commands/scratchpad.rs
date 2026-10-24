@@ -1,6 +1,6 @@
 //! Commands behind the Scratchpad window and page.
 
-use crate::managers::scratch_store::{DeletedNote, NewNote, ScratchNote, ScratchVersion};
+use crate::managers::scratch_store::{DeletedNote, ScratchNote, ScratchVersion};
 use crate::scratchpad::{self, ScratchpadManager, ScratchpadState, SendTarget};
 use crate::settings::{get_settings, write_settings, ScratchpadOpen};
 use std::sync::Arc;
@@ -28,7 +28,7 @@ pub fn get_scratchpad_state(app: AppHandle) -> Result<ScratchpadState, String> {
 #[tauri::command]
 #[specta::specta]
 pub fn new_scratch_note(app: AppHandle, notes: Notes<'_>) -> Result<ScratchNote, String> {
-    let note = text(notes.create(&NewNote::default()))?;
+    let note = text(notes.blank_or_new())?;
     scratchpad::set_active(&app, Some(note.id));
     Ok(note)
 }

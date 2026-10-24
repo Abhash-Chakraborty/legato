@@ -202,6 +202,18 @@ pub fn close_tab(conn: &mut Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// Removes notes nobody wrote in: no text, no name, not pinned, no versions
+/// and not open in a tab. Kept, they pile up as "Untitled" rows in the list.
+pub fn prune_blank(conn: &Connection) -> Result<usize> {
+    Ok(conn.execute(
+        "DELETE FROM scratch_note
+         WHERE tab IS NULL AND pinned = 0 AND title = ''
+           AND trim(text, ' ' || char(9) || char(10) || char(13)) = ''
+           AND id NOT IN (SELECT note_id FROM scratch_version)",
+        [],
+    )?)
+}
+
 /// Moves an open tab to a position, counted from the left.
 pub fn move_tab(conn: &mut Connection, id: i64, to: usize) -> Result<()> {
     let tx = conn.transaction()?;
@@ -458,6 +470,24 @@ mod tests {
             now,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn closed_blank_notes_are_pruned() {
+        let mut conn = db();
+        let blank = note(&mut conn, "", 1);
+        let spaces = note(&mut conn, " \n ", 2);
+        let open = note(&mut conn, "", 3);
+        let written = note(&mut conn, "Datev integration", 4);
+        let pinned = note(&mut conn, "", 5);
+        set_pinned(&conn, pinned.id, true).unwrap();
+        for id in [blank.id, spaces.id, written.id, pinned.id] {
+            close_tab(&mut conn, id).unwrap();
+        }
+        assert_eq!(prune_blank(&conn).unwrap(), 2);
+        let left: Vec<i64> = list(&conn).unwrap().into_iter().map(|n| n.id).collect();
+        assert!(left.contains(&open.id) && left.contains(&written.id) && left.contains(&pinned.id));
+        assert!(!left.contains(&blank.id) && !left.contains(&spaces.id));
     }
 
     #[test]

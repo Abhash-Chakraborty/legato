@@ -16,7 +16,7 @@ use crate::transcription_coordinator::TranscriptionCoordinator;
 use crate::transforms::BarNotice;
 use anyhow::Result;
 use chrono::Utc;
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -129,10 +129,16 @@ impl ScratchpadManager {
     /// Opens the notes in the history database, which `HistoryManager` has
     /// already migrated.
     pub fn new(app: &AppHandle) -> Result<Self> {
-        Ok(Self {
+        let manager = Self {
             app: app.clone(),
             db_path: crate::portable::app_data_dir(app)?.join("history.db"),
-        })
+        };
+        match manager.conn().and_then(|c| store::prune_blank(&c)) {
+            Ok(0) => {}
+            Ok(n) => info!("Removed {n} empty Scratchpad notes"),
+            Err(e) => warn!("Couldn't remove empty Scratchpad notes: {e}"),
+        }
+        Ok(manager)
     }
 
     fn conn(&self) -> Result<Connection> {
@@ -256,10 +262,26 @@ impl ScratchpadManager {
         Ok(())
     }
 
+    /// Closes a tab; a note left empty goes with it.
     pub fn close_tab(&self, id: i64) -> Result<()> {
-        store::close_tab(&mut self.conn()?, id)?;
+        let mut conn = self.conn()?;
+        store::close_tab(&mut conn, id)?;
+        store::prune_blank(&conn)?;
         self.changed();
         Ok(())
+    }
+
+    /// A blank tab already open, or a new note, so New note doesn't pile
+    /// up empty ones.
+    pub fn blank_or_new(&self) -> Result<ScratchNote> {
+        let blank = self
+            .tabs()?
+            .into_iter()
+            .find(|n| n.text.trim().is_empty() && n.title.is_empty());
+        match blank {
+            Some(note) => Ok(note),
+            None => self.create(&NewNote::default()),
+        }
     }
 
     pub fn move_tab(&self, id: i64, to: usize) -> Result<()> {
@@ -442,16 +464,7 @@ pub fn show(app: &AppHandle, note: Option<i64>) -> Result<()> {
 /// Opens the window on a new note, or on a blank tab already open, so
 /// repeated clicks on the jump list's New note don't pile up empty notes.
 pub fn show_new(app: &AppHandle) -> Result<()> {
-    let m = manager(app);
-    let blank = m
-        .tabs()?
-        .into_iter()
-        .find(|n| n.text.trim().is_empty() && n.title.is_empty())
-        .map(|n| n.id);
-    let id = match blank {
-        Some(id) => id,
-        None => m.create(&NewNote::default())?.id,
-    };
+    let id = manager(app).blank_or_new()?.id;
     show(app, Some(id))
 }
 
