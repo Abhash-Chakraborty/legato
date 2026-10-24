@@ -7,6 +7,9 @@
     <string name="bubble_tap">Dictate with Legato</string>
     <string name="bubble_cancel">Cancel</string>
     <string name="bubble_finish">Insert the text</string>
+    <string name="notification_done">Done</string>
+    <string name="listening_hint">Keeps listening in other apps. Tap Done to write it up.</string>
+    <string name="writing_up">Writing up what you said</string>
     <string name="no_model">Download the speech model in Legato first</string>
     <string name="memo_channel">Voice memos</string>
     <string name="memo_recording">Recording a memo</string>

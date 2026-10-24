@@ -65,6 +65,7 @@ class BubbleOverlay(private val context: Context) {
      */
     fun show(keyboardTop: Int? = null) {
         if (System.currentTimeMillis() < snoozedUntil) return
+        hideWhenIdle = false
         root?.let { frame ->
             val lp = params ?: return
             if (dragging || listening) return
@@ -124,18 +125,31 @@ class BubbleOverlay(private val context: Context) {
         return y.coerceAtMost(top - dpi(56f)).coerceAtLeast(dpi(80f))
     }
 
-    fun hide() {
+    /**
+     * Hides the bubble once nothing is going on. While you talk, or while
+     * the text is written up, it stays where it is: switching apps, pulling
+     * down the notification shade or the screen timing out closes the
+     * keyboard, and none of that should stop a dictation. It goes when the
+     * dictation ends, unless a keyboard is open by then.
+     */
+    fun hide(force: Boolean = false) {
         val frame = root ?: return
+        if (!force && Dictation.state.value !is Dictation.State.Idle) {
+            hideWhenIdle = true
+            return
+        }
+        hideWhenIdle = false
         Dictation.listeners.remove(onState)
         main.removeCallbacks(toDot)
-        // Listening stops with the keyboard; words already being written up still arrive.
-        if (Dictation.state.value is Dictation.State.Listening) Dictation.cancel(context)
         runCatching { wm.removeView(frame) }
         root = null
         params = null
         listening = false
         dotted = false
     }
+
+    /** A keyboard closed during the dictation: hide once it's over. */
+    private var hideWhenIdle = false
 
     private fun armDot() {
         main.removeCallbacks(toDot)
@@ -243,6 +257,21 @@ class BubbleOverlay(private val context: Context) {
         }
         if (state is Dictation.State.Listening) wave.level = state.level
         if (state is Dictation.State.Transcribing) wave.busy = true else wave.busy = false
+        keepScreenOn(state is Dictation.State.Listening)
+        if (state is Dictation.State.Idle && hideWhenIdle) hide()
+    }
+
+    /**
+     * Holds the screen on while you talk: a paragraph takes longer than most
+     * screen timeouts, and nobody touches the phone while speaking.
+     */
+    private fun keepScreenOn(on: Boolean) {
+        val frame = root ?: return
+        val lp = params ?: return
+        val flag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        if ((lp.flags and flag != 0) == on) return
+        lp.flags = if (on) lp.flags or flag else lp.flags and flag.inv()
+        runCatching { wm.updateViewLayout(frame, lp) }
     }
 
     private val easeOut = DecelerateInterpolator(2f)
@@ -334,7 +363,7 @@ class BubbleOverlay(private val context: Context) {
 
     private fun snooze() {
         snoozedUntil = System.currentTimeMillis() + 10 * 60 * 1000
-        hide()
+        hide(force = true)
     }
 
     /** Remembers which edge and how high the bubble sits. */

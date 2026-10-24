@@ -3,7 +3,15 @@
 use std::path::Path;
 use std::sync::{Mutex, Once};
 
-use transcribe_cpp::{Model, RunOptions, Session};
+use legato_phone::pieces;
+use transcribe_cpp::{Model, RunOptions, Session, SessionOptions};
+
+/// CPU threads for the model. Phones pair a few fast cores with slow ones;
+/// past four, more threads cost battery and heat for little speed.
+fn threads() -> i32 {
+    let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+    cores.clamp(2, 4) as i32
+}
 
 use crate::CoreError;
 
@@ -28,20 +36,52 @@ impl Speech {
             .map_err(|e| CoreError::Failed(format!("Couldn't load the model: {e}")))?;
         let arch = model.arch();
         let session = model
-            .session()
+            .session_with(&SessionOptions {
+                n_threads: threads(),
+                ..SessionOptions::default()
+            })
             .map_err(|e| CoreError::Failed(format!("Couldn't start the model: {e}")))?;
         *self.session.lock().unwrap() = Some(session);
         Ok(arch)
     }
 
-    pub fn transcribe(&self, samples: &[f32]) -> Result<String, CoreError> {
+    /// Lets go of the model, for the memory and the battery; the next
+    /// recording loads it again.
+    pub fn unload(&self) {
+        *self.session.lock().unwrap() = None;
+    }
+
+    pub fn loaded(&self) -> bool {
+        self.session.lock().unwrap().is_some()
+    }
+
+    /// The recording's text. A long one goes in pieces cut at its pauses: the
+    /// small models stop writing after half a minute or so of speech and
+    /// silently drop the rest.
+    pub fn transcribe(
+        &self,
+        samples: &[f32],
+        language: Option<String>,
+    ) -> Result<String, CoreError> {
         let mut guard = self.session.lock().unwrap();
         let session = guard
             .as_mut()
             .ok_or_else(|| CoreError::Failed("No speech model loaded".into()))?;
-        let transcript = session
-            .run(samples, &RunOptions::default())
-            .map_err(|e| CoreError::Failed(format!("Transcription failed: {e}")))?;
-        Ok(transcript.text.trim().to_string())
+        let options = RunOptions {
+            language,
+            ..RunOptions::default()
+        };
+        let mut texts = Vec::new();
+        for range in pieces::pieces(samples) {
+            let piece = &samples[range];
+            if pieces::quiet(piece) {
+                continue;
+            }
+            let transcript = session
+                .run(piece, &options)
+                .map_err(|e| CoreError::Failed(format!("Transcription failed: {e}")))?;
+            texts.push(transcript.text);
+        }
+        Ok(pieces::join(&texts))
     }
 }

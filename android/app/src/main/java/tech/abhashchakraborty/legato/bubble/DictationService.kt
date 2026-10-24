@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
@@ -100,8 +101,9 @@ class DictationService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
         val legato = applicationContext.legato
-        if (!legato.canTranscribe()) {
+        if (!legato.pcWillTranscribe()) {
             when {
+                // Loads while you talk (it's let go after a while unused).
                 legato.modelFile().exists() -> legato.loadModel()
                 // The PC is being reached while you talk; transcribe() waits for it.
                 legato.pcMayTranscribe() -> legato.run { connect() }
@@ -124,10 +126,13 @@ class DictationService : Service() {
         main.removeCallbacks(tick)
         val samples = recorder.stop()
         Dictation.set(Dictation.State.Transcribing)
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(listening = false))
         val legato = applicationContext.legato
         val mine = session
         val app = BubbleAccessibilityService.instance?.focusedApp() ?: ""
         pending++
+        // The screen may be off by now; keep the CPU up until the text is written.
+        val wake = awake()
         scope.launch {
             val text = runCatching {
                 withContext(Dispatchers.Default) { legato.transcribe(samples, app) }
@@ -138,6 +143,7 @@ class DictationService : Service() {
                 ""
             }
             withContext(Dispatchers.Main) {
+                if (wake.isHeld) wake.release()
                 pending--
                 if (text.isNotBlank() && mine > cancelled) {
                     val service = BubbleAccessibilityService.instance
@@ -163,6 +169,11 @@ class DictationService : Service() {
         }
     }
 
+    private fun awake(): PowerManager.WakeLock =
+        getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "legato:dictation")
+            .apply { acquire(5 * 60_000L) }
+
     private fun cancel() {
         main.removeCallbacks(tick)
         cancelled = session
@@ -180,7 +191,12 @@ class DictationService : Service() {
         super.onDestroy()
     }
 
-    private fun notification(): Notification {
+    /**
+     * The ongoing notification: Done and Cancel while listening, so a
+     * dictation started in one app can be finished from anywhere, the
+     * notification shade included.
+     */
+    private fun notification(listening: Boolean = true): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW).apply {
@@ -194,12 +210,21 @@ class DictationService : Service() {
         val stop = PendingIntent.getService(
             this, 1, Intent(this, DictationService::class.java).setAction(ACTION_CANCEL), PendingIntent.FLAG_IMMUTABLE,
         )
-        return Notification.Builder(this, CHANNEL)
+        val done = PendingIntent.getService(
+            this, 3, Intent(this, DictationService::class.java).setAction(ACTION_FINISH), PendingIntent.FLAG_IMMUTABLE,
+        )
+        val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_bubble)
-            .setContentTitle(getString(R.string.listening))
             .setContentIntent(open)
-            .addAction(Notification.Action.Builder(null, getString(R.string.bubble_cancel), stop).build())
             .setOngoing(true)
+        if (!listening) return builder.setContentTitle(getString(R.string.writing_up)).build()
+        return builder
+            .setContentTitle(getString(R.string.listening))
+            .setContentText(getString(R.string.listening_hint))
+            .setUsesChronometer(true)
+            .setWhen(System.currentTimeMillis())
+            .addAction(Notification.Action.Builder(null, getString(R.string.notification_done), done).build())
+            .addAction(Notification.Action.Builder(null, getString(R.string.bubble_cancel), stop).build())
             .build()
     }
 

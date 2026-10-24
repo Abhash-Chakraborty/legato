@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -90,6 +91,10 @@ class MemoService : Service() {
         val samples = recorder.stop()
         Memo.state.value = Memo.State(writing = "Writing up")
         val legato = applicationContext.legato
+        // A long memo takes a while to write up, often with the screen off.
+        val wake = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "legato:memo")
+            .apply { acquire(15 * 60_000L) }
         legato.scope.launch {
             try {
                 if (!legato.readyToTranscribe()) {
@@ -119,6 +124,7 @@ class MemoService : Service() {
             } catch (e: Exception) {
                 legato.notice(e.message ?: "Couldn't save the memo")
             } finally {
+                if (wake.isHeld) wake.release()
                 main.post { done() }
             }
         }

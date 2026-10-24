@@ -57,6 +57,9 @@ class Legato(private val context: Context) : CoreListener {
 
     init {
         refresh()
+        // Before the chooser, Moonshine Base lived under a name of its own.
+        File(modelsDir(), "moonshine-base.gguf").takeIf { it.exists() }
+            ?.renameTo(File(modelsDir(), PhoneModels.byId(PhoneModels.DEFAULT).file))
         if (modelFile().exists()) model.value = ModelStatus.Downloaded
         // Whatever woke this process (the bubble, a memo, a share) may need the
         // PC, and Android restarts it in the background without the app open.
@@ -187,8 +190,12 @@ class Legato(private val context: Context) : CoreListener {
     /** Paired and set to use the PC's model, so it can write up what you say once it's reached. */
     fun pcMayTranscribe(): Boolean = usePcModel && state.value.paired
 
-    /** Something can turn speech into text: the PC, or the model on this device. */
-    fun canTranscribe(): Boolean = pcWillTranscribe() || model.value is ModelStatus.Loaded
+    /**
+     * Something can turn speech into text: the PC, or the model on this
+     * device (loaded, or put away while unused and loaded again for it).
+     */
+    fun canTranscribe(): Boolean = pcWillTranscribe() || model.value is ModelStatus.Loaded ||
+        (model.value is ModelStatus.Downloaded && modelFile().exists())
 
     /**
      * Waits a moment for a PC that's still reconnecting (Android had stopped
@@ -223,15 +230,19 @@ class Legato(private val context: Context) : CoreListener {
      */
     fun transcribe(samples: FloatArray, app: String? = null): String {
         if (!readyToTranscribe() && pcMayTranscribe()) error("Couldn't reach ${state.value.pcName ?: "your PC"} to write this up")
+        val pcm = pcm16(samples)
         if (pcWillTranscribe()) {
             try {
-                return core.transcribeOnPc(samples.toList(), app ?: "")
+                return core.transcribeOnPc(pcm, app ?: "")
             } catch (e: Exception) {
-                if (model.value !is ModelStatus.Loaded) throw e
+                if (!modelFile().exists()) throw e
                 onLine("The PC couldn't transcribe (${e.message}); used this device's model")
             }
         }
-        val heard = core.transcribe(samples.toList())
+        val heard = synchronized(modelLock) {
+            ensureModel()
+            try { core.transcribe(pcm, selectedModel.language()) } finally { idleUnload() }
+        }
         // The PC's text comes finished; this device's is finished here, for the app.
         if (app == null || heard.isBlank()) return heard
         return runCatching { core.finishDictation(heard, app) }.getOrElse { e ->
@@ -240,20 +251,51 @@ class Legato(private val context: Context) : CoreListener {
         }
     }
 
-    fun modelFile(): File = File(File(context.filesDir, "models").apply { mkdirs() }, MODEL_FILE)
+    private fun modelsDir(): File = File(context.filesDir, "models").apply { mkdirs() }
 
-    /** Downloads the model once, then loads it. Progress goes to [model]. */
+    /** The model this device writes up with when the PC doesn't. */
+    val selectedModel: PhoneModel get() = PhoneModels.byId(prefs.getString(PREF_MODEL, null))
+
+    fun modelFile(m: PhoneModel = selectedModel): File = File(modelsDir(), m.file)
+
+    fun isDownloaded(m: PhoneModel): Boolean = modelFile(m).exists()
+
+    /**
+     * Makes `m` the model this device uses. The one in memory goes; `m`
+     * loads when you next talk, or downloads now if it isn't here yet.
+     */
+    fun selectModel(m: PhoneModel) {
+        if (m.id == selectedModel.id || model.value is ModelStatus.Downloading) return
+        prefs.edit().putString(PREF_MODEL, m.id).apply()
+        scope.launch {
+            synchronized(modelLock) { if (core.modelLoaded()) core.unloadModel() }
+            model.value = if (isDownloaded(m)) ModelStatus.Downloaded else ModelStatus.Missing
+            if (isDownloaded(m)) loadModel() else fetchModel()
+        }
+    }
+
+    /** Deletes a model that isn't the one in use, for the space. */
+    fun deleteModel(m: PhoneModel) {
+        if (m.id == selectedModel.id) return
+        modelFile(m).delete()
+        bump()
+    }
+
+    /** Downloads the chosen model once, then loads it. Progress goes to [model]. */
     fun fetchModel() {
         if (model.value is ModelStatus.Downloading) return
+        val m = selectedModel
         scope.launch {
             try {
-                val file = modelFile()
-                if (!file.exists()) download(file)
+                val file = modelFile(m)
+                if (!file.exists()) download(m, file)
+                if (m.id != selectedModel.id) return@launch
                 model.value = ModelStatus.Downloaded
                 loadModel()
             } catch (e: Exception) {
                 model.value = ModelStatus.Missing
                 onLine("Model download failed: ${e.message}")
+                notice("${m.name} didn't download: ${e.message}")
             }
         }
     }
@@ -261,38 +303,75 @@ class Legato(private val context: Context) : CoreListener {
     fun loadModel() {
         scope.launch {
             try {
-                val arch = core.loadModel(modelFile().absolutePath)
-                model.value = ModelStatus.Loaded(arch)
-                onLine("Speech model loaded ($arch)")
+                synchronized(modelLock) { ensureModel() }
+                idleUnload()
             } catch (e: Exception) {
                 onLine(e.message ?: e.toString())
             }
         }
     }
 
-    private suspend fun download(file: File) = withContext(Dispatchers.IO) {
+    private val modelLock = Any()
+    private var unloadJob: kotlinx.coroutines.Job? = null
+
+    /** Loads the model if it isn't in memory. Blocks; hold [modelLock]. */
+    private fun ensureModel() {
+        if (core.modelLoaded()) return
+        if (!modelFile().exists()) error("No speech model on this $device yet")
+        val arch = core.loadModel(modelFile().absolutePath)
+        model.value = ModelStatus.Loaded(arch)
+    }
+
+    /**
+     * Lets go of the model after five minutes unused: it holds hundreds of
+     * megabytes, and loading it again takes a second or two.
+     */
+    private fun idleUnload() {
+        unloadJob?.cancel()
+        unloadJob = scope.launch {
+            delay(IDLE_UNLOAD_MS)
+            synchronized(modelLock) {
+                if (core.modelLoaded()) {
+                    core.unloadModel()
+                    model.value = ModelStatus.Downloaded
+                }
+            }
+        }
+    }
+
+    /**
+     * Downloads `m` from its pinned revision over HTTPS and keeps it only if
+     * its SHA-256 matches the catalog's: a changed or damaged file never loads.
+     */
+    private suspend fun download(m: PhoneModel, file: File) = withContext(Dispatchers.IO) {
         val tmp = File(file.path + ".part")
-        val conn = (URL(MODEL_URL).openConnection() as HttpURLConnection).apply {
+        val conn = (URL(m.url).openConnection() as HttpURLConnection).apply {
             instanceFollowRedirects = true
             connectTimeout = 15_000
             readTimeout = 30_000
         }
         try {
             if (conn.responseCode !in 200..299) error("HTTP ${conn.responseCode}")
-            val total = conn.contentLengthLong
+            val total = conn.contentLengthLong.takeIf { it > 0 } ?: m.bytes
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
             conn.inputStream.use { input ->
                 tmp.outputStream().use { out ->
                     val buf = ByteArray(256 * 1024)
                     var done = 0L
+                    var shown = -1
                     while (true) {
                         val n = input.read(buf)
                         if (n < 0) break
                         out.write(buf, 0, n)
+                        digest.update(buf, 0, n)
                         done += n
-                        model.value = ModelStatus.Downloading(if (total > 0) (done * 100 / total).toInt() else -1)
+                        val percent = (done * 100 / total).toInt().coerceAtMost(100)
+                        if (percent != shown) { shown = percent; model.value = ModelStatus.Downloading(percent) }
                     }
                 }
             }
+            val sum = digest.digest().joinToString("") { "%02x".format(it) }
+            if (!sum.equals(m.sha256, ignoreCase = true)) error("the file didn't match its checksum, so it was thrown away")
             if (!tmp.renameTo(file)) error("couldn't move the model into place")
         } finally {
             conn.disconnect()
@@ -305,13 +384,23 @@ class Legato(private val context: Context) : CoreListener {
             ?: "${Build.MANUFACTURER} ${Build.MODEL}".trim()
 
     companion object {
-        /** Moonshine Base: small and quick on a phone, English. Swapped for a chooser later. */
-        const val MODEL_FILE = "moonshine-base.gguf"
         const val PREF_PC_MODEL = "pc_model"
+        const val PREF_MODEL = "speech_model"
         const val PREF_AUTO_CLIP = "auto_clipboard"
         /** The label on clips the bubble writes, so they aren't sent to the PC. */
         const val DICTATION_CLIP = "Legato dictation"
-        const val MODEL_URL = "https://huggingface.co/handy-computer/moonshine-base-gguf/resolve/main/moonshine-base-Q8_0.gguf"
+        private const val IDLE_UNLOAD_MS = 5 * 60 * 1000L
+
+        /** A recording as signed 16-bit little-endian PCM, which crosses to the core in one copy. */
+        fun pcm16(samples: FloatArray): ByteArray {
+            val out = ByteArray(samples.size * 2)
+            for (i in samples.indices) {
+                val v = (samples[i].coerceIn(-1f, 1f) * 32767f).toInt()
+                out[2 * i] = v.toByte()
+                out[2 * i + 1] = (v shr 8).toByte()
+            }
+            return out
+        }
     }
 }
 

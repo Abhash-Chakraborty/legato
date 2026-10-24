@@ -385,18 +385,19 @@ impl Core {
             .collect()
     }
 
-    /// Turns 16 kHz mono samples into text with the PC's speech model, over
-    /// the sync link, styled for the app `package` (empty when none). Blocks
-    /// until the PC answers.
-    pub fn transcribe_on_pc(
-        &self,
-        samples: Vec<f32>,
-        package: String,
-    ) -> Result<String, CoreError> {
+    /// Turns a recording (16 kHz mono, signed 16-bit little-endian) into text
+    /// with the PC's speech model, over the sync link, styled for the app
+    /// `package` (empty when none). Blocks until the PC answers.
+    pub fn transcribe_on_pc(&self, pcm: Vec<u8>, package: String) -> Result<String, CoreError> {
+        let samples = legato_phone::pieces::from_pcm16(&pcm);
         let app = (!package.is_empty()).then(|| legato_phone::finish::category_of(&package));
+        // A minute for the PC to answer, plus time for a long recording to
+        // travel (slowly, over Bluetooth) and be written up.
+        let seconds = samples.len() as u64 / legato_phone::pieces::RATE as u64;
+        let wait = Duration::from_secs(60 + 2 * seconds);
         Ok(self
             .phone
-            .transcribe_on_pc(&self.sessions, &samples, Duration::from_secs(120), app)?)
+            .transcribe_on_pc(&self.sessions, &samples, wait, app)?)
     }
 
     /// Text from this device's model, finished as the PC finishes a dictation
@@ -424,16 +425,39 @@ impl Core {
         }
     }
 
-    /// Turns 16 kHz mono samples (-1..1) into text with the loaded model.
-    pub fn transcribe(&self, samples: Vec<f32>) -> Result<String, CoreError> {
+    /// Turns a recording (16 kHz mono, signed 16-bit little-endian) into text
+    /// with the loaded model.
+    /// `language` is an ISO code for a model that's told what to expect, or
+    /// None for one that works it out.
+    pub fn transcribe(&self, pcm: Vec<u8>, language: Option<String>) -> Result<String, CoreError> {
         #[cfg(feature = "speech")]
         {
-            self.speech.transcribe(&samples)
+            self.speech
+                .transcribe(&legato_phone::pieces::from_pcm16(&pcm), language)
         }
         #[cfg(not(feature = "speech"))]
         {
-            let _ = samples;
+            let _ = (pcm, language);
             Err(CoreError::Failed("built without speech".into()))
+        }
+    }
+
+    /// Lets go of the speech model after a while unused; `load_model` again
+    /// before the next `transcribe`.
+    pub fn unload_model(&self) {
+        #[cfg(feature = "speech")]
+        self.speech.unload();
+    }
+
+    /// Whether a speech model is in memory.
+    pub fn model_loaded(&self) -> bool {
+        #[cfg(feature = "speech")]
+        {
+            self.speech.loaded()
+        }
+        #[cfg(not(feature = "speech"))]
+        {
+            false
         }
     }
 }

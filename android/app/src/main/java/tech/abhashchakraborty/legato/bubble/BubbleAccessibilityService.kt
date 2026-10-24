@@ -36,6 +36,10 @@ class BubbleAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        // The cursor moves with every key typed. With the bubble already up
+        // the field is known, so skip the search (a walk through the page
+        // in Chrome) and spare the battery; focus and window changes still look.
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED && overlay?.shown == true) return
         // Windows settle a moment after the event; look once they have.
         main.removeCallbacks(recheck)
         main.postDelayed(recheck, 120)
@@ -45,7 +49,7 @@ class BubbleAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         Log.i(TAG, "Destroyed")
-        overlay?.hide()
+        overlay?.hide(force = true)
         overlay = null
         if (instance === this) instance = null
         running.value = false

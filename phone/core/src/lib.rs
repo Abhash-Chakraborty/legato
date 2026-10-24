@@ -6,6 +6,7 @@
 pub mod audio_toolkit;
 pub mod finish;
 pub mod managers;
+pub mod pieces;
 pub mod sync;
 
 // The app's pure text rules, compiled here as they are in the app.
