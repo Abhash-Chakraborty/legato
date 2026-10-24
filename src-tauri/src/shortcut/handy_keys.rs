@@ -420,6 +420,7 @@ pub fn init_shortcuts(app: &AppHandle) -> Result<(), String> {
     let state = HandyKeysState::new(app.clone())?;
 
     let user_settings = settings::load_or_create_app_settings(app);
+    super::warn_shadowed(&user_settings);
 
     // Every binding whose feature is on, transforms included; cancel is
     // registered while recording.

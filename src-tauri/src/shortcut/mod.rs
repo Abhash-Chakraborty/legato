@@ -209,16 +209,20 @@ fn resolve_bindings(settings: &AppSettings) -> (Vec<ShortcutBinding>, Vec<(Strin
             .iter()
             .find(|b| same_keys(&b.current_binding, &binding.current_binding))
         {
-            warn!(
-                "'{}' has the same shortcut as '{}' ({}); only '{}' gets it",
-                id, first.id, binding.current_binding, first.id
-            );
             shadowed.push((id.clone(), first.id.clone()));
             continue;
         }
         active.push(binding.clone());
     }
     (active, shadowed)
+}
+
+/// Logs each shortcut left out for a clash. Only at startup: the bindings
+/// are resolved on every settings change and for each row of Settings.
+pub fn warn_shadowed(settings: &AppSettings) {
+    for (id, first) in resolve_bindings(settings).1 {
+        warn!("'{id}' has the same shortcut as '{first}'; only '{first}' gets it");
+    }
 }
 
 /// Shortcuts that do nothing because another action has the same keys,

@@ -14,6 +14,7 @@ use super::handler::handle_shortcut_event;
 /// Initialize shortcuts using Tauri's global-shortcut plugin
 pub fn init_shortcuts(app: &AppHandle) {
     let user_settings = settings::load_or_create_app_settings(app);
+    super::warn_shadowed(&user_settings);
 
     // Every binding whose feature is on, transforms included; cancel is
     // registered while recording.
