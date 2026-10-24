@@ -164,6 +164,45 @@ class BubbleAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Replaces `original` in the focused field with `replacement`, for a
+     * transform on selected text whose app dropped the result (Chrome does
+     * once the selection is gone). The occurrence around the cursor wins,
+     * else the last one. False when the field no longer holds `original`.
+     */
+    fun replaceText(original: String, replacement: String): Boolean {
+        val node = inputNode() ?: return false
+        node.refresh()
+        if (!node.isEditable) return false
+        val current = typedText(node)
+        // The app took the result itself.
+        if (replacement in current) return false
+        val caret = node.textSelectionEnd
+        var at = current.indexOf(original)
+        var chosen = -1
+        while (at >= 0) {
+            chosen = at
+            if (caret in at..at + original.length) break
+            at = current.indexOf(original, at + 1)
+        }
+        if (chosen < 0) return false
+        val args = Bundle().apply {
+            putCharSequence(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                current.substring(0, chosen) + replacement + current.substring(chosen + original.length),
+            )
+        }
+        if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return true
+        // Web views refuse set-text: select the old text through the keyboard's connection and type over it.
+        if (Build.VERSION.SDK_INT >= 33) {
+            val connection = inputMethod?.currentInputConnection ?: return false
+            connection.setSelection(chosen, chosen + original.length)
+            connection.commitText(replacement, 1, null)
+            return true
+        }
+        return false
+    }
+
+    /**
      * What's typed in the field. An empty field reports its grey hint ("Ask
      * Google about this…") as its text, which would end up in front of the
      * dictation, so a hint counts as nothing typed.

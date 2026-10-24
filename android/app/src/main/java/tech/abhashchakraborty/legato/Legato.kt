@@ -70,7 +70,11 @@ class Legato(private val context: Context) : CoreListener {
         refresh()
         // Before the chooser, Moonshine Base lived under a name of its own.
         File(modelsDir(), "moonshine-base.gguf").takeIf { it.exists() }
-            ?.renameTo(File(modelsDir(), PhoneModels.byId(PhoneModels.DEFAULT).file))
+            ?.renameTo(File(modelsDir(), PhoneModels.byId("moonshine-base").file))
+        // Moonshine Base was the default until Parakeet 110M; whoever has it keeps it.
+        if (!prefs.contains(PREF_MODEL) && File(modelsDir(), PhoneModels.byId("moonshine-base").file).exists()) {
+            prefs.edit().putString(PREF_MODEL, "moonshine-base").apply()
+        }
         if (modelFile().exists()) model.value = ModelStatus.Downloaded
         // Whatever woke this process (the bubble, a memo, a share) may need the
         // PC, and Android restarts it in the background without the app open.

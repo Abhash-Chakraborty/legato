@@ -6,11 +6,14 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import tech.abhashchakraborty.legato.bubble.BubbleAccessibilityService
 
 /**
  * "Transform" on selected text in any app: pick one of your PC's transforms
@@ -55,8 +58,16 @@ class TransformActivity : Activity() {
         working = true
         val wait = AlertDialog.Builder(this).setMessage("$name…").setCancelable(false).show()
         val legato = legato
+        val started = System.currentTimeMillis()
         legato.scope.launch {
             val result = runCatching { legato.transform(id, text, app) }
+            val took = "%.1f".format((System.currentTimeMillis() - started) / 1000f)
+            legato.onLine(
+                result.fold(
+                    { out -> if (out == null || out == text) "$name on selected text: nothing to change ($took s)" else "$name on selected text: done in $took s" },
+                    { e -> "$name on selected text didn't run: ${e.message}" },
+                ),
+            )
             withContext(Dispatchers.Main) {
                 wait.dismiss()
                 result.fold(
@@ -70,6 +81,13 @@ class TransformActivity : Activity() {
                             else -> {
                                 setResult(RESULT_OK, Intent().putExtra(Intent.EXTRA_PROCESS_TEXT, out))
                                 finish()
+                                // Chrome drops the result once the selection is gone, and the
+                                // picker over it clears the selection; then Legato puts it in.
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    if (BubbleAccessibilityService.instance?.replaceText(text, out) == true) {
+                                        legato.onLine("$name: put the result in the field")
+                                    }
+                                }, 700)
                             }
                         }
                     },

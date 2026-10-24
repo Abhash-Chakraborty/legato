@@ -38,7 +38,7 @@ data class PhoneModel(
 
 /** Small to large: each step costs more space, memory and battery for better text. */
 object PhoneModels {
-    const val DEFAULT = "moonshine-base"
+    const val DEFAULT = "parakeet-tdt_ctc-110m"
 
     /** From this size up a model is one of the heavier, more accurate ones. */
     const val HEAVY_BYTES = 400_000_000L
