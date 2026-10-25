@@ -184,6 +184,10 @@
           "toggle_notes": {
             "name": "Start or stop notes",
             "description": "Starts recording a meeting with the call app you're in, or stops the recording."
+          },
+          "talk_to_companion": {
+            "name": "Talk to the companion",
+            "description": "Hold and speak to Inyon's companion agent, which looks after your other sessions. Its reply shows on the bar."
           }
         },
         "errors": {
@@ -740,7 +744,8 @@
       "recordings": "Recordings",
       "features": "What Legato does",
       "featuresOther": "Other apps",
-      "inyon": "Inyon"
+      "inyon": "Inyon",
+      "companion": "Inyon companion"
     },
     "requires": {
       "tray": "Needs the tray icon, or there would be no way to open the window.",
@@ -761,7 +766,8 @@
       "bubble": "Turn on Bubble on the desktop first.",
       "islandOff": "The island stands in for the bubble. Choose the Bar shape above to use the bubble.",
       "notesFeature": "Notes are off in Settings › Features.",
-      "scratchpadFeature": "The Scratchpad is off in Settings › Features."
+      "scratchpadFeature": "The Scratchpad is off in Settings › Features.",
+      "inyonPaired": "Pair Legato with Inyon in Settings › Connections first."
     },
     "privacy": {
       "rememberApp": {
@@ -1353,7 +1359,8 @@
           "help": "An agent waiting for you shows with its question and options, after any dictation or call. Off keeps the pairing but stops listening."
         },
         "removedThere": "Inyon removed Legato. Pair again with a new code.",
-        "insecure": "Not connected: this address is plain http, so Legato won't send its token there. Remove it and pair over https or a NetBird or Tailscale address."
+        "insecure": "Not connected: this address is plain http, so Legato won't send its token there. Remove it and pair over https or a NetBird or Tailscale address.",
+        "companion": "companion running"
       }
     },
     "speakers": {
@@ -1582,7 +1589,11 @@
       "fromPhone": "From {{name}} · on your clipboard",
       "fromPhoneImage": "Image from {{name}} · on your clipboard",
       "agent_done": "{{agent}} finished: {{title}}",
-      "agent_sent": "Answer sent to {{agent}}"
+      "agent_sent": "Answer sent to {{agent}}",
+      "companion_thinking": "Companion is thinking…",
+      "companion_missing": "No companion is running. Start it in Inyon › Settings.",
+      "companion_offline": "Inyon isn't reachable, so the companion can't hear you.",
+      "companion_unpaired": "Pair Legato with Inyon in Settings › Connections to talk to the companion."
     },
     "working": "{{name}}…",
     "undo": "Undo",
@@ -1653,6 +1664,15 @@
       "more_other": "{{count}} more",
       "voice": "Answer by voice",
       "voiceHelp": "Say an option, like “yes” or “two”, or what to do instead. Press again to send."
+    },
+    "companion": {
+      "title": "Companion",
+      "error": "The companion stopped",
+      "more": "Show all",
+      "less": "Show less",
+      "reply": "Reply",
+      "replyHelp": "Speak your reply; press again to send",
+      "dismiss": "Dismiss"
     }
   },
   "titleBar": {

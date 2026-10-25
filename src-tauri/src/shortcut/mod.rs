@@ -172,6 +172,7 @@ pub fn binding_is_active(settings: &AppSettings, id: &str, binding: &ShortcutBin
         "toggle_notes" => settings.notes_enabled,
         "open_scratchpad" => settings.scratchpad_enabled,
         "ask" => transforms_on && settings.ask_enabled,
+        crate::inyon::COMPANION_BINDING => settings.inyon.hub.is_some(),
         _ => match crate::transform_rules::transform_id_of(id) {
             Some(transform_id) => {
                 transforms_on && settings.transform(transform_id).is_some_and(|t| t.enabled)

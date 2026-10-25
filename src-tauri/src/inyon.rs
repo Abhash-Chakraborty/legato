@@ -4,7 +4,7 @@
 //! rules (frames, the queue, addresses) are in `inyon_rules.rs`; the
 //! contract is Inyon's companion contract, version 1.
 
-use crate::inyon_rules::{self as rules, Frame, PaneRef, VoiceAnswer, Waiting};
+use crate::inyon_rules::{self as rules, CompanionReply, Frame, PaneRef, VoiceAnswer, Waiting};
 use crate::settings::{get_settings, write_settings};
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, info, warn};
@@ -30,6 +30,10 @@ const PING_EVERY: Duration = Duration::from_secs(30);
 
 /// The binding a dictation for an agent runs under; it has no shortcut.
 pub const DICTATE_BINDING: &str = "inyon_dictate";
+/// The shortcut that talks to Inyon's companion agent: hold it and speak.
+pub const COMPANION_BINDING: &str = "talk_to_companion";
+/// How long "Companion is thinking…" stays up without a reply.
+const THINKING_FOR: Duration = Duration::from_secs(180);
 
 static WAITING: Mutex<Option<Waiting>> = Mutex::new(None);
 /// Where the dictation running for an agent goes.
@@ -43,7 +47,14 @@ struct VoiceTarget {
     key: Option<String>,
     options: Vec<rules::PromptOption>,
     free_text: Option<u32>,
+    /// Words for the companion agent; its reply comes back on the bar.
+    companion: bool,
 }
+/// Companion replies shown already, newest last, so a repeat shows once.
+static SEEN_REPLIES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// The companion shortcut was pressed with no companion running: its
+/// release is dropped too.
+static COMPANION_SWALLOWED: AtomicBool = AtomicBool::new(false);
 /// Frames for the hub, while connected.
 static OUTBOX: Mutex<Option<mpsc::UnboundedSender<String>>> = Mutex::new(None);
 static CONNECTED: AtomicBool = AtomicBool::new(false);
@@ -88,6 +99,8 @@ pub struct InyonStatus {
     /// The hub's address is plain http off this PC and off a VPN, so Legato
     /// won't send its token there.
     pub insecure: bool,
+    /// Inyon's companion agent runs, so the companion shortcut can talk to it.
+    pub companion: bool,
 }
 
 pub fn status(app: &AppHandle) -> InyonStatus {
@@ -102,6 +115,7 @@ pub fn status(app: &AppHandle) -> InyonStatus {
         waiting,
         removed: REMOVED.load(Ordering::SeqCst),
         insecure: INSECURE.load(Ordering::SeqCst),
+        companion: CONNECTED.load(Ordering::SeqCst) && with_waiting(|w| w.companion()).is_some(),
     }
 }
 
@@ -327,8 +341,88 @@ fn handle(app: &AppHandle, frame: Frame) {
                 crate::overlay::show_agent_done(app, &n.agent, &n.title);
             }
         }
+        Frame::CompanionReply(reply) => companion_reply(app, reply),
         Frame::Notify(_) | Frame::Info { .. } | Frame::Pong => {}
     }
+}
+
+/// Shows what the companion said, once per reply.
+fn companion_reply(app: &AppHandle, reply: CompanionReply) {
+    {
+        let mut seen = SEEN_REPLIES.lock().unwrap_or_else(|e| e.into_inner());
+        if seen.contains(&reply.id) {
+            return;
+        }
+        seen.push(reply.id.clone());
+        let extra = seen.len().saturating_sub(50);
+        seen.drain(..extra);
+    }
+    if reply.text.is_empty() {
+        crate::overlay::companion_done(app);
+        return;
+    }
+    info!(
+        "Inyon: the companion replied ({} characters{})",
+        reply.text.chars().count(),
+        if reply.error { ", an error" } else { "" }
+    );
+    crate::overlay::show_companion_reply(app, &reply);
+}
+
+/// The companion shortcut went down or up. Points the dictation at the
+/// companion on the way down; false when there's none to talk to, and the
+/// bar says how to start one.
+pub fn companion_input(app: &AppHandle, pressed: bool) -> bool {
+    let recording = app
+        .try_state::<std::sync::Arc<crate::managers::audio::AudioRecordingManager>>()
+        .is_some_and(|a| a.is_recording());
+    if !pressed {
+        return !COMPANION_SWALLOWED.swap(false, Ordering::SeqCst);
+    }
+    if recording {
+        // A second press stops a dictation that toggled on.
+        return true;
+    }
+    let companion = CONNECTED
+        .load(Ordering::SeqCst)
+        .then(|| with_waiting(|w| w.companion()))
+        .flatten();
+    let Some(companion) = companion else {
+        COMPANION_SWALLOWED.store(true, Ordering::SeqCst);
+        let reason = if get_settings(app).inyon.hub.is_none() {
+            "companion_unpaired"
+        } else if CONNECTED.load(Ordering::SeqCst) {
+            "companion_missing"
+        } else {
+            "companion_offline"
+        };
+        crate::overlay::show_overlay_notice(app, &serde_json::json!({ "kind": reason }));
+        return false;
+    };
+    COMPANION_SWALLOWED.store(false, Ordering::SeqCst);
+    *VOICE.lock().unwrap_or_else(|e| e.into_inner()) = Some(VoiceTarget {
+        pane: companion.pane,
+        agent: companion.agent,
+        key: None,
+        options: Vec::new(),
+        free_text: None,
+        companion: true,
+    });
+    true
+}
+
+/// Reply on the companion's card: a dictation for the companion, started
+/// and stopped like the agent card's mic.
+pub fn talk_to_companion(app: &AppHandle) {
+    let Some(coordinator) =
+        app.try_state::<crate::transcription_coordinator::TranscriptionCoordinator>()
+    else {
+        return;
+    };
+    if companion_input(app, true) {
+        coordinator.send_external_input(DICTATE_BINDING, "inyon");
+    }
+    COMPANION_SWALLOWED.store(false, Ordering::SeqCst);
 }
 
 /// Hands the agent waiting longest to the bar, or takes the card away.
@@ -512,12 +606,15 @@ pub async fn pair(app: &AppHandle, hub: &str, code: &str) -> Result<InyonStatus,
         me.get("hub")?.get("name")?.as_str().map(str::to_string)
     }
     .await;
-    let mut settings = get_settings(app);
+    let before = get_settings(app);
+    let mut settings = before.clone();
     settings.inyon.hub = Some(hub.clone());
     settings.inyon.hub_id = Some(claimed.hub_id);
     settings.inyon.hub_name = hub_name;
     settings.inyon.tls_fingerprint = pin;
-    write_settings(app, settings);
+    write_settings(app, settings.clone());
+    // The companion shortcut works while paired.
+    crate::shortcut::sync_bindings(app, &before, &settings);
     info!("Paired with Inyon at {hub}");
     REMOVED.store(false, Ordering::SeqCst);
     INSECURE.store(false, Ordering::SeqCst);
@@ -531,12 +628,14 @@ pub fn unpair(app: &AppHandle) {
     if let Err(e) = crate::secrets::delete_secret(TOKEN) {
         warn!("Couldn't remove Inyon's token: {e}");
     }
-    let mut settings = get_settings(app);
+    let before = get_settings(app);
+    let mut settings = before.clone();
     settings.inyon.hub = None;
     settings.inyon.hub_id = None;
     settings.inyon.hub_name = None;
     settings.inyon.tls_fingerprint = None;
-    write_settings(app, settings);
+    write_settings(app, settings.clone());
+    crate::shortcut::sync_bindings(app, &before, &settings);
     REMOVED.store(false, Ordering::SeqCst);
     INSECURE.store(false, Ordering::SeqCst);
     restart();
@@ -695,6 +794,7 @@ pub fn dictate(app: &AppHandle, host: &str, pane: &str) {
                 key: alert.as_ref().and_then(|a| a.key.clone()),
                 free_text: alert.as_ref().and_then(|a| a.free_text),
                 options: alert.map(|a| a.options).unwrap_or_default(),
+                companion: false,
             });
         }
     }
@@ -725,6 +825,7 @@ pub fn receive(app: &AppHandle, text: String) {
             key,
             options,
             free_text,
+            companion,
         } = target;
         let result = if options.is_empty() {
             send_text(&app, &pane, &text).await.map(|_| ())
@@ -739,13 +840,17 @@ pub fn receive(app: &AppHandle, text: String) {
                 None => Err("notAnOption".to_string()),
             }
         };
+        if let Err(reason) = &result {
+            info!("Inyon: a spoken answer didn't go through ({reason})");
+        }
+        if companion && result.is_ok() {
+            crate::overlay::show_companion_thinking(&app, THINKING_FOR);
+            return;
+        }
         let notice = match &result {
             Ok(()) => serde_json::json!({ "kind": "agent_sent", "agent": agent }),
             Err(reason) => serde_json::json!({ "kind": "agent_failed", "reason": reason }),
         };
-        if let Err(reason) = &result {
-            info!("Inyon: a spoken answer didn't go through ({reason})");
-        }
         crate::overlay::show_overlay_notice(&app, &notice);
     });
 }

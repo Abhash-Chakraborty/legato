@@ -57,8 +57,9 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
         "notes" => (OVERLAY_NOTES_WIDTH, OVERLAY_HEIGHT),
         // The call card: offer notes, or say the call ended.
         "call" => (OVERLAY_CALL_WIDTH, OVERLAY_CALL_HEIGHT),
-        // An agent waiting on Inyon: its question and options.
-        "agent" => (OVERLAY_AGENT_WIDTH, OVERLAY_AGENT_HEIGHT),
+        // An agent waiting on Inyon: its question and options; or what
+        // Inyon's companion agent replied.
+        "agent" | "companion" => (OVERLAY_AGENT_WIDTH, OVERLAY_AGENT_HEIGHT),
         _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
 }
@@ -827,6 +828,48 @@ pub fn show_agent_done(app_handle: &AppHandle, agent: &str, title: &str) {
             &serde_json::json!({ "kind": "agent_done", "agent": agent, "title": title }),
         );
     }
+}
+
+/// "Companion is thinking…" is on the bar, until its reply replaces it.
+static COMPANION_THINKING: AtomicBool = AtomicBool::new(false);
+
+/// Your words reached Inyon's companion agent: the bar says it's thinking
+/// for up to `wait`, or until the reply comes.
+pub fn show_companion_thinking(app_handle: &AppHandle, wait: std::time::Duration) {
+    COMPANION_THINKING.store(true, Ordering::SeqCst);
+    show_overlay_notice_for(
+        app_handle,
+        &serde_json::json!({ "kind": "companion_thinking" }),
+        wait.as_millis() as u64,
+    );
+}
+
+/// The companion finished with nothing to say: "thinking" goes away.
+pub fn companion_done(app_handle: &AppHandle) {
+    let thinking = COMPANION_THINKING.swap(false, Ordering::SeqCst);
+    if thinking && SHOWN.lock().unwrap_or_else(|e| e.into_inner()).as_deref() == Some("notice") {
+        hide_recording_overlay(app_handle);
+    }
+}
+
+/// What Inyon's companion agent replied, for long enough to read it; the
+/// pointer on it keeps it up. A dictation or a call card keeps the bar.
+pub fn show_companion_reply<T: serde::Serialize>(app_handle: &AppHandle, reply: &T) {
+    COMPANION_THINKING.store(false, Ordering::SeqCst);
+    if call_card().is_some() || dictating(app_handle) {
+        log::info!("The companion's reply came while the bar was busy; not shown");
+        return;
+    }
+    let chars = serde_json::to_value(reply)
+        .ok()
+        .and_then(|v| {
+            v.get("text")
+                .and_then(|t| t.as_str())
+                .map(|t| t.chars().count())
+        })
+        .unwrap_or(0) as u64;
+    let ms = (6_000 + chars * 60).min(30_000);
+    show_bar(app_handle, "companion", "bar-companion", reply, Some(ms));
 }
 
 /// Keeps the bar out of screen sharing and recordings while it shows the

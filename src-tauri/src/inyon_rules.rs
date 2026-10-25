@@ -278,8 +278,26 @@ pub enum Frame {
         title: Option<String>,
     },
     Notify(Notify),
+    /// Inyon's companion agent finished a turn.
+    CompanionReply(CompanionReply),
     Pong,
 }
+
+/// What Inyon's companion agent said at the end of a turn.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct CompanionReply {
+    /// Unique per reply, so one seen twice (after a reconnect) shows once.
+    pub id: String,
+    pub host: String,
+    pub pane: String,
+    /// Plain text, up to about 2000 characters.
+    pub text: String,
+    /// The turn stopped on an error; `text` says why.
+    pub error: bool,
+}
+
+/// The longest companion reply kept, past the hub's own limit.
+const MAX_REPLY_CHARS: usize = 4000;
 
 /// A pane with an agent, from the overview.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -289,6 +307,10 @@ pub struct AgentPane {
     pub waiting: bool,
     /// The session or window name, to tell agents apart.
     pub label: String,
+    /// Inyon's companion agent, the one you talk to about the others.
+    pub companion: bool,
+    /// Busy with a turn.
+    pub working: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -333,6 +355,17 @@ pub fn parse_frame(text: &str) -> Option<Frame> {
             body: s(&v, "body").unwrap_or_default(),
             agent: s(&v, "agent").unwrap_or_default(),
         })),
+        "companion.reply" => {
+            let mut text = s(&v, "text").unwrap_or_default();
+            clip(&mut text, MAX_REPLY_CHARS);
+            Some(Frame::CompanionReply(CompanionReply {
+                id: s(&v, "id")?,
+                host: s(&v, "host")?,
+                pane: s(&v, "pane")?,
+                text: text.trim().to_string(),
+                error: v.get("error").and_then(|e| e.as_bool()).unwrap_or(false),
+            }))
+        }
         "pong" => Some(Frame::Pong),
         _ => None,
     }
@@ -418,6 +451,8 @@ fn agent_panes(v: &serde_json::Value) -> Vec<AgentPane> {
                         agent: name.to_string(),
                         waiting: state == "waiting",
                         label,
+                        companion: pane.get("companion").and_then(|c| c.as_bool()) == Some(true),
+                        working: state == "working",
                     });
                 }
             }
@@ -551,6 +586,11 @@ impl Waiting {
     /// Every pane running an agent, for Send to.
     pub fn agents(&self) -> Vec<AgentPane> {
         self.panes.values().cloned().collect()
+    }
+
+    /// Inyon's companion agent, when one runs. A hub runs at most one.
+    pub fn companion(&self) -> Option<AgentPane> {
+        self.panes.values().find(|p| p.companion).cloned()
     }
 
     /// The hub went away: nothing waits any more.
@@ -727,6 +767,8 @@ mod tests {
             agent: "claude".into(),
             waiting,
             label: "legato".into(),
+            companion: false,
+            working: false,
         }
     }
 
@@ -747,6 +789,28 @@ mod tests {
             key: Some(key.into()),
             free_text: None,
         }
+    }
+
+    #[test]
+    fn the_companion_pane_is_found_in_the_overview() {
+        let overview = r#"{"t":"overview","hosts":[{"config":{"id":"box"},"sessions":[{"name":"companion","windows":[{"name":"companion","panes":[{"id":"%12","companion":true,"agent":{"kind":"claude","state":"working"}}]}]},{"name":"legato","windows":[{"name":"legato","panes":[{"id":"%3","agent":{"kind":"codex","state":"idle"}}]}]}]}]}"#;
+        let Some(Frame::Overview(panes)) = parse_frame(overview) else {
+            panic!("no overview");
+        };
+        let mut waiting = Waiting::default();
+        waiting.overview(panes);
+        let companion = waiting.companion().expect("a companion");
+        assert_eq!(
+            companion.pane,
+            PaneRef {
+                host: "box".into(),
+                pane: "%12".into()
+            }
+        );
+        assert!(companion.working);
+        assert_eq!(waiting.agents().iter().filter(|a| a.companion).count(), 1);
+        waiting.clear();
+        assert!(waiting.companion().is_none());
     }
 
     #[test]
@@ -980,6 +1044,24 @@ mod tests {
         );
 
         assert_eq!(parse_frame(r#"{"t":"pong"}"#), Some(Frame::Pong));
+        let reply = r#"{"t":"companion.reply","id":"r7","host":"abhash-arm","pane":"%12","text":" Two sessions wait for you. ","at":1792866545000}"#;
+        assert_eq!(
+            parse_frame(reply),
+            Some(Frame::CompanionReply(CompanionReply {
+                id: "r7".into(),
+                host: "abhash-arm".into(),
+                pane: "%12".into(),
+                text: "Two sessions wait for you.".into(),
+                error: false,
+            }))
+        );
+        let failed = r#"{"t":"companion.reply","id":"r8","host":"h","pane":"%1","text":"Not signed in","error":true}"#;
+        assert!(matches!(parse_frame(failed), Some(Frame::CompanionReply(r)) if r.error));
+        // A reply without an id can't be told from a repeat.
+        assert_eq!(
+            parse_frame(r#"{"t":"companion.reply","host":"h","pane":"%1","text":"x"}"#),
+            None
+        );
         assert_eq!(parse_frame(r#"{"t":"something.new"}"#), None);
         assert_eq!(parse_frame("not json"), None);
     }

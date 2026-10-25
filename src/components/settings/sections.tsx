@@ -540,6 +540,26 @@ export const buildSections = (
         ],
       },
       {
+        id: "companion",
+        titleKey: "settings.groups.companion",
+        rows: [
+          {
+            id: "talk-to-companion",
+            searchKeys: [
+              "settings.general.shortcut.bindings.talk_to_companion.name",
+              "settings.general.shortcut.bindings.talk_to_companion.description",
+            ],
+            render: () => (
+              <ShortcutInput shortcutId="talk_to_companion" grouped />
+            ),
+            requires: ({ settings }) =>
+              settings?.inyon?.hub
+                ? null
+                : { reasonKey: "settings.requires.inyonPaired" },
+          },
+        ],
+      },
+      {
         id: "last-dictation",
         titleKey: "settings.groups.lastDictation",
         rows: [

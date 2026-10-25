@@ -1246,3 +1246,32 @@
 ::-webkit-scrollbar-thumb:hover {
   background-color: color-mix(in srgb, currentColor 38%, transparent);
 }
+
+/* Inyon's companion agent replying (the "companion" state, sized like the
+   agent card): teal marks a reply, amber a turn that stopped on an error.
+   Long replies fold to four lines and open with Show all. */
+.companioncard .sagent-dot {
+  background: var(--s-accent);
+}
+.companioncard .sagent-dot.warn {
+  background: var(--warn, #c98a1a);
+}
+.companioncard .sagent-voice + .sagent-voice {
+  margin-left: 0;
+}
+.scompanion-text {
+  max-height: 210px;
+  overflow-y: auto;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.scompanion-text.folded {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.scompanion-more {
+  align-self: flex-start;
+}

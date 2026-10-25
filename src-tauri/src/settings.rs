@@ -1617,6 +1617,12 @@ pub fn get_default_settings() -> AppSettings {
             "Starts recording a meeting, or stops the recording.",
             "super+alt+m",
         ),
+        (
+            crate::inyon::COMPANION_BINDING,
+            "Talk to the companion",
+            "Hold it and speak to Inyon's companion agent; its reply shows on the bar.",
+            "super+alt+i",
+        ),
     ] {
         bindings.insert(
             id.to_string(),

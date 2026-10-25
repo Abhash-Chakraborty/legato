@@ -72,7 +72,11 @@ export const InyonCard: React.FC = () => {
     return (
       <SettingContainer
         title={status.hub_name ?? t("settings.connections.inyon.title")}
-        description={`${status.hub ?? ""} · ${state}`}
+        description={`${status.hub ?? ""} · ${state}${
+          status.connected && status.companion
+            ? ` · ${t("settings.connections.inyon.companion")}`
+            : ""
+        }`}
         grouped
       >
         <Button

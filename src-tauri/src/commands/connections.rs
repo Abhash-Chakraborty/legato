@@ -82,6 +82,13 @@ pub fn inyon_dictate(app: AppHandle, host: String, pane: String) {
     crate::inyon::dictate(&app, &host, &pane);
 }
 
+/// Reply on the companion's card: speak to Inyon's companion agent.
+#[tauri::command]
+#[specta::specta]
+pub fn inyon_companion_dictate(app: AppHandle) {
+    crate::inyon::talk_to_companion(&app);
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn calendar_list(app: AppHandle) -> Vec<CalendarStatus> {

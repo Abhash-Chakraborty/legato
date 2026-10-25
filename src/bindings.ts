@@ -656,6 +656,12 @@ async inyonSend(host: string, pane: string, text: string) : Promise<Result<strin
 async inyonDictate(host: string, pane: string) : Promise<void> {
     await TAURI_INVOKE("inyon_dictate", { host, pane });
 },
+/**
+ * Reply on the companion's card: speak to Inyon's companion agent.
+ */
+async inyonCompanionDictate() : Promise<void> {
+    await TAURI_INVOKE("inyon_companion_dictate");
+},
 async calendarList() : Promise<CalendarStatus[]> {
     return await TAURI_INVOKE("calendar_list");
 },
@@ -4266,7 +4272,11 @@ removed: boolean;
  * The hub's address is plain http off this PC and off a VPN, so Legato
  * won't send its token there.
  */
-insecure: boolean }
+insecure: boolean; 
+/**
+ * Inyon's companion agent runs, so the companion shortcut can talk to it.
+ */
+companion: boolean }
 /**
  * A whole feature, switched in Settings › Features.
  */

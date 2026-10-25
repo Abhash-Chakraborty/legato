@@ -1,5 +1,5 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { AudioLines, Mic, NotebookPen } from "lucide-react";
+import { AudioLines, Mic, NotebookPen, X } from "lucide-react";
 import { agentName } from "@/lib/utils/agents";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -37,7 +37,8 @@ type OverlayState =
   | "call"
   | "caption"
   | "rest"
-  | "agent";
+  | "agent"
+  | "companion";
 
 type AiProblemKind =
   | "none"
@@ -91,6 +92,13 @@ type OverlayNotice =
   | { kind: "agent_done"; agent: string; title: string }
   | { kind: "agent_sent"; agent: string }
   | { kind: "agent_failed"; reason: string }
+  | {
+      kind:
+        | "companion_thinking"
+        | "companion_missing"
+        | "companion_offline"
+        | "companion_unpaired";
+    }
   | {
       kind: "transform_failed";
       name: string;
@@ -224,7 +232,22 @@ const WARN_NOTICES = new Set([
   "transform_failed",
   "saved_to_scratchpad",
   "notes_failed",
+  "companion_missing",
+  "companion_offline",
+  "companion_unpaired",
 ]);
+
+/** What Inyon's companion agent said at the end of a turn. */
+type CompanionReply = {
+  id: string;
+  host: string;
+  pane: string;
+  text: string;
+  error: boolean;
+};
+
+/** Replies longer than this start folded, with Show all. */
+const COMPANION_FOLD = 220;
 
 const NOTES_BARS = 5;
 
@@ -379,6 +402,8 @@ const RecordingOverlay: React.FC = () => {
     at: number;
   } | null>(null);
   const [agentCard, setAgentCard] = useState<AgentCard | null>(null);
+  const [companion, setCompanion] = useState<CompanionReply | null>(null);
+  const [companionOpen, setCompanionOpen] = useState(false);
   // Why the last answer didn't go through, shown under the options.
   const [agentError, setAgentError] = useState<string | null>(null);
   const [answering, setAnswering] = useState<number | null>(null);
@@ -555,6 +580,14 @@ const RecordingOverlay: React.FC = () => {
         setAnswering(null);
       });
 
+      const unlistenCompanion = await listen<CompanionReply>(
+        "bar-companion",
+        (event) => {
+          setCompanion(event.payload);
+          setCompanionOpen(false);
+        },
+      );
+
       const unlistenNotesTick = await events.notesTick.listen((event) =>
         setNotesTick(event.payload),
       );
@@ -677,6 +710,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenNotesTick();
         unlistenCall();
         unlistenAgent();
+        unlistenCompanion();
         unlistenLabel();
         unlistenStage();
         unlistenWorkSince();
@@ -1255,6 +1289,66 @@ const RecordingOverlay: React.FC = () => {
         )}
       </div>,
       `agent-${card.host}-${card.pane}-${card.key ?? ""}`,
+    );
+  }
+
+  // ---- Companion: what Inyon's companion agent replied, with Reply by voice.
+  if (state === "companion" && companion) {
+    const reply = companion;
+    const long = reply.text.length > COMPANION_FOLD;
+    const title = reply.error
+      ? t("overlay.companion.error")
+      : t("overlay.companion.title");
+    return frame(
+      <div
+        className="scard agentcard companioncard"
+        role="status"
+        aria-label={title}
+        onMouseEnter={() => commands.barHold(true)}
+        onMouseLeave={() => commands.barHold(false)}
+      >
+        <div className="sagent-hd">
+          <span
+            className={`sagent-dot ${reply.error ? "warn" : ""}`}
+            aria-hidden="true"
+          />
+          <span className="sagent-title">{title}</span>
+          <button
+            type="button"
+            className="sagent-voice"
+            aria-label={t("overlay.companion.reply")}
+            title={t("overlay.companion.replyHelp")}
+            onClick={() => commands.inyonCompanionDictate()}
+          >
+            <Mic size={14} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="sagent-voice"
+            aria-label={t("overlay.companion.dismiss")}
+            onClick={() => commands.barDismiss()}
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        </div>
+        <div
+          className={`scompanion-text ${long && !companionOpen ? "folded" : ""}`}
+        >
+          {reply.text}
+        </div>
+        {long && (
+          <button
+            type="button"
+            className="sbtn ghost scompanion-more"
+            onClick={() => setCompanionOpen((open) => !open)}
+          >
+            {companionOpen
+              ? t("overlay.companion.less")
+              : t("overlay.companion.more")}
+          </button>
+        )}
+      </div>,
+      `companion-${reply.id}`,
     );
   }
 

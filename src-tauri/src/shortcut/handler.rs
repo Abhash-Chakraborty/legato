@@ -51,6 +51,23 @@ pub fn handle_shortcut_event(
         return;
     }
 
+    // Talk to Inyon's companion: a dictation for its pane, held or toggled
+    // like any other.
+    if binding_id == crate::inyon::COMPANION_BINDING {
+        if crate::inyon::companion_input(app, is_pressed) {
+            if let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() {
+                coordinator.send_input(
+                    crate::inyon::DICTATE_BINDING,
+                    hotkey_string,
+                    is_pressed,
+                    settings.shortcut_activation,
+                    std::time::Duration::from_millis(settings.hold_threshold_ms),
+                );
+            }
+        }
+        return;
+    }
+
     // Transcribe bindings are handled by the coordinator.
     if is_transcribe_binding(binding_id) {
         if let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() {
