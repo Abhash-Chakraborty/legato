@@ -33,6 +33,10 @@ export const SpeakerTag: React.FC<{
   const speakers = useNotesStore(
     (s) => s.notes?.find((n) => n.id === line.note_id)?.speakers,
   );
+  // Who was invited or seen in the call window, offered while typing a name.
+  const people = useNotesStore(
+    (s) => s.notes?.find((n) => n.id === line.note_id)?.attendees,
+  );
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   // Esc ends the edit; the blur that follows mustn't save it.
@@ -65,30 +69,45 @@ export const SpeakerTag: React.FC<{
       });
   };
 
+  const unnamed = (people ?? []).filter(
+    (p) => !speakers?.some((s) => s.name === p),
+  );
+  const listId = `note-people-${line.note_id}`;
+
   if (editing)
     return (
-      <input
-        autoFocus
-        value={draft}
-        maxLength={60}
-        placeholder={voice === THEM_SIDE ? names.them : names.voice(voice)}
-        aria-label={t("notes.speakers.renameLabel", { name: label })}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={save}
-        onFocus={(e) => e.currentTarget.select()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            e.currentTarget.blur();
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            e.stopPropagation();
-            open.current = false;
-            setEditing(false);
-          }
-        }}
-        className={`${className} -mx-1 min-w-0 rounded-[var(--r-xs)] border border-teal-600 bg-surface px-1 font-medium outline-none`}
-      />
+      <>
+        <input
+          autoFocus
+          list={unnamed.length ? listId : undefined}
+          value={draft}
+          maxLength={60}
+          placeholder={voice === THEM_SIDE ? names.them : names.voice(voice)}
+          aria-label={t("notes.speakers.renameLabel", { name: label })}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={save}
+          onFocus={(e) => e.currentTarget.select()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              open.current = false;
+              setEditing(false);
+            }
+          }}
+          className={`${className} -mx-1 min-w-0 rounded-[var(--r-xs)] border border-teal-600 bg-surface px-1 font-medium outline-none`}
+        />
+        {unnamed.length > 0 && (
+          <datalist id={listId}>
+            {unnamed.map((p) => (
+              <option key={p} value={p} />
+            ))}
+          </datalist>
+        )}
+      </>
     );
 
   return (

@@ -1216,6 +1216,9 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
     );
     spawn_ticker(app, Arc::clone(&shared), meeting, max);
     spawn_speaker_passes(app, note.id, meeting, Arc::clone(&shared));
+    if meeting {
+        spawn_call_people(app, note.id, Arc::clone(&shared));
+    }
     *slot = Some(Session {
         info,
         shared,
@@ -1398,6 +1401,57 @@ fn spawn_speaker_passes(app: &AppHandle, note_id: i64, meeting: bool, shared: Ar
                 heard = lines;
                 since = Instant::now();
                 wait = SPEAKERS_EVERY.max(started.elapsed() * 2);
+            }
+        });
+}
+
+/// How often a meeting's note reads who is in the Meet call.
+const PEOPLE_EVERY: Duration = Duration::from_secs(20);
+
+/// While a meeting records, adds the people a Meet window shows to the
+/// note's attendees: the summary names them, and naming a voice offers them.
+fn spawn_call_people(app: &AppHandle, note_id: i64, shared: Arc<Shared>) {
+    let app = app.clone();
+    let _ = std::thread::Builder::new()
+        .name("notes-people".into())
+        .spawn(move || {
+            let m = manager(&app);
+            let mut seen: Vec<String> = Vec::new();
+            let mut last: Option<Instant> = None;
+            while !shared.stop_ticker.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_secs(1));
+                if last.is_some_and(|t| t.elapsed() < PEOPLE_EVERY) {
+                    continue;
+                }
+                last = Some(Instant::now());
+                let found = crate::call_people::in_meet();
+                if found
+                    .iter()
+                    .all(|p| seen.iter().any(|s| s.eq_ignore_ascii_case(p)))
+                {
+                    continue;
+                }
+                seen = notes_rules::merge_people([seen, found].iter().map(Vec::as_slice));
+                let Ok(conn) = m.conn() else {
+                    continue;
+                };
+                let Ok(Some(note)) = store::get(&conn, note_id) else {
+                    continue;
+                };
+                let people = notes_rules::merge_people(
+                    [note.attendees.clone(), seen.clone()]
+                        .iter()
+                        .map(Vec::as_slice),
+                );
+                if people != note.attendees {
+                    match store::set_attendees(&conn, note_id, &people) {
+                        Ok(()) => {
+                            info!("{} people seen in the Meet call", seen.len());
+                            m.changed();
+                        }
+                        Err(e) => warn!("Couldn't keep who is in the call: {e}"),
+                    }
+                }
             }
         });
 }

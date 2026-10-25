@@ -309,9 +309,84 @@ pub fn offer_again_at(now_ms: u64, minutes: u32) -> Option<u64> {
     (minutes > 0).then(|| now_ms + minutes as u64 * 60_000)
 }
 
+/// The labels Google Meet gives a participant's controls, around the name:
+/// "More options for Priya Shah", "Pin Priya Shah to your main screen".
+const MEET_LABELS: &[(&str, &str)] = &[
+    ("More options for ", ""),
+    ("More actions for ", ""),
+    ("Pin ", " to your main screen"),
+    ("Unpin ", " from your main screen"),
+    ("Mute ", "'s microphone"),
+    ("Remove ", " from the call"),
+    ("Remove ", " from the meeting"),
+];
+
+/// What Meet adds after a name: a shared screen, yourself, the host.
+const MEET_SUFFIXES: &[&str] = &[" (Presentation)", " (You)", " (Meeting host)", " (Host)"];
+
+/// Who is in a Meet call, each once, in the order first seen: the names
+/// in the People panel's "Participants" list, then any a tile's controls
+/// carry among the names the window shows to screen readers. A tile that
+/// says only "You" is left out.
+pub fn meet_people(listed: &[String], labels: &[String]) -> Vec<String> {
+    let from_labels = labels.iter().filter_map(|label| {
+        let label = label.trim();
+        MEET_LABELS.iter().find_map(|(before, after)| {
+            label
+                .strip_prefix(before)
+                .and_then(|rest| rest.strip_suffix(after))
+        })
+    });
+    let mut out: Vec<String> = Vec::new();
+    for mut name in listed.iter().map(|n| n.trim()).chain(from_labels) {
+        for suffix in MEET_SUFFIXES {
+            name = name.strip_suffix(suffix).unwrap_or(name);
+        }
+        let name = name.trim();
+        let plausible = !name.is_empty()
+            && name.chars().count() <= 60
+            && !name.eq_ignore_ascii_case("you")
+            && !name.eq_ignore_ascii_case("yourself");
+        if plausible && !out.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+            out.push(name.to_string());
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn meet_people_from_control_labels() {
+        let names: Vec<String> = [
+            "Meet - abc-defg-hij",
+            "More options for Priya Shah",
+            "Pin Priya Shah to your main screen",
+            "Pin Karol Nowak (Presentation) to your main screen",
+            "More options for You",
+            "Mute Samir's microphone",
+            "Leave call",
+            "Priya Shah",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let listed = vec![
+            "Abhash Chakraborty".to_string(),
+            "Priya Shah (Presentation)".to_string(),
+        ];
+        assert_eq!(
+            meet_people(&listed, &names),
+            ["Abhash Chakraborty", "Priya Shah", "Karol Nowak", "Samir"]
+        );
+        assert_eq!(
+            meet_people(&[], &names),
+            ["Priya Shah", "Karol Nowak", "Samir"]
+        );
+        assert!(meet_people(&[], &["Pin  to your main screen".to_string()]).is_empty());
+    }
 
     #[test]
     fn entries_map_to_apps() {

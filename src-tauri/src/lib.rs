@@ -9,6 +9,7 @@ mod bubble;
 mod bubble_rules;
 mod calendar;
 mod calendar_rules;
+mod call_people;
 mod calls;
 mod calls_rules;
 mod catalog;
