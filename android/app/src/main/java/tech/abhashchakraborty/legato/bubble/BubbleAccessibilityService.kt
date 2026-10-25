@@ -72,16 +72,32 @@ class BubbleAccessibilityService : AccessibilityService() {
     private data class Field(val app: String, val password: Boolean, val numeric: Boolean)
 
     /**
-     * The field with the cursor. Web content (Chrome) doesn't always answer
-     * an input-focus search, so the window in front is searched for its
-     * focused editable node as well.
+     * The field with the cursor. An input-focus search answers first, but
+     * Compose apps (ChatGPT) and search screens often give a container that
+     * isn't marked editable, and web content (Chrome) doesn't always answer
+     * at all, so the windows on screen are searched for a focused editable
+     * node too: the active one first, then the rest (a search page can sit
+     * in a window of its own).
      */
     private fun inputNode(): AccessibilityNodeInfo? {
-        findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { return it }
-        val root = rootInActiveWindow ?: return null
+        val focus = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (focus != null && focus.isEditable) return focus
+        focus?.let { search(it) }?.let { return it }
+        val roots = buildList {
+            rootInActiveWindow?.let { add(it) }
+            windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION && !it.isActive }
+                .sortedByDescending { it.isFocused }
+                .forEach { w -> w.root?.let { add(it) } }
+        }
+        for (root in roots) search(root)?.let { return it }
+        return null
+    }
+
+    /** A focused editable node at or under `root`. */
+    private fun search(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         val queue = ArrayDeque(listOf(root))
         var seen = 0
-        while (queue.isNotEmpty() && seen < 2000) {
+        while (queue.isNotEmpty() && seen < 3000) {
             val node = queue.removeFirst()
             seen++
             if (node.isFocused && node.isEditable) return node
@@ -91,9 +107,8 @@ class BubbleAccessibilityService : AccessibilityService() {
     }
 
     private fun focusedField(): Field? {
-        val node = inputNode() ?: return null
+        val node = inputNode() ?: return editorField()
         try {
-            if (!node.isEditable) return null
             val numeric = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
                 (node.inputType and InputType.TYPE_MASK_CLASS).let {
                     it == InputType.TYPE_CLASS_NUMBER || it == InputType.TYPE_CLASS_PHONE
@@ -104,8 +119,30 @@ class BubbleAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * The field the keyboard is typing into, as the keyboard sees it (Android
+     * 13+). Some apps hide their fields from accessibility altogether; the
+     * keyboard always knows the app and the kind of field, and the bubble can
+     * type through the same connection.
+     */
+    private fun editorField(): Field? {
+        if (Build.VERSION.SDK_INT < 33) return null
+        val method = inputMethod ?: return null
+        if (!method.currentInputStarted) return null
+        val info = method.currentInputEditorInfo ?: return null
+        val type = info.inputType
+        val kind = type and InputType.TYPE_MASK_CLASS
+        val variation = type and InputType.TYPE_MASK_VARIATION
+        val password = (kind == InputType.TYPE_CLASS_TEXT && variation in PASSWORD_VARIATIONS) ||
+            (kind == InputType.TYPE_CLASS_NUMBER && variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
+        // A keyboard open with no text field behind it (TYPE_NULL) has nothing to type into.
+        if (type == InputType.TYPE_NULL) return null
+        val numeric = kind == InputType.TYPE_CLASS_NUMBER || kind == InputType.TYPE_CLASS_PHONE
+        return Field(info.packageName ?: "", password, numeric)
+    }
+
     /** The app of the focused field, for Style's kind of app. */
-    fun focusedApp(): String? = inputNode()?.packageName?.toString()
+    fun focusedApp(): String? = inputNode()?.packageName?.toString() ?: editorField()?.app
 
     /**
      * Puts `text` at the cursor of the focused field (replacing a selection),
@@ -113,7 +150,7 @@ class BubbleAccessibilityService : AccessibilityService() {
      * Falls back to a paste through the clipboard when the field refuses.
      */
     fun insert(text: String): Boolean {
-        val node = inputNode() ?: return false.also { Log.w(TAG, "No field has the cursor") }
+        val node = inputNode() ?: return typeThroughKeyboard(text)
         // The cached node can be a moment old; ask the app for it afresh.
         node.refresh()
         if (!node.isEditable) return false.also { Log.w(TAG, "The focused node isn't editable (${node.packageName})") }
@@ -161,6 +198,25 @@ class BubbleAccessibilityService : AccessibilityService() {
             Log.w(TAG, "${node.packageName} refused both set-text and paste")
         }
         return pasted
+    }
+
+    /**
+     * Types into a field accessibility can't see, through the keyboard's
+     * connection (Android 13+). The text before the cursor decides the space.
+     */
+    private fun typeThroughKeyboard(text: String): Boolean {
+        if (Build.VERSION.SDK_INT < 33) return false.also { Log.w(TAG, "No field has the cursor") }
+        val method = inputMethod
+        val connection = method?.currentInputConnection
+        if (method == null || connection == null || !method.currentInputStarted) {
+            return false.also { Log.w(TAG, "No field has the cursor and no keyboard connection is open") }
+        }
+        val around = connection.getSurroundingText(1, 0, 0)
+        val before = around?.let { it.text.subSequence(0, it.selectionStart.coerceIn(0, it.text.length)) }?.toString().orEmpty()
+        val lead = if (before.isNotEmpty() && !before.last().isWhitespace()) " " else ""
+        connection.commitText(lead + text, 1, null)
+        Log.i(TAG, "Typed through the keyboard connection (${method.currentInputEditorInfo?.packageName})")
+        return true
     }
 
     /**
@@ -218,6 +274,13 @@ class BubbleAccessibilityService : AccessibilityService() {
         const val TAG = "LegatoBubble"
         @Volatile var instance: BubbleAccessibilityService? = null
             private set
+
+        /** Text field kinds that hold a password. */
+        private val PASSWORD_VARIATIONS = setOf(
+            InputType.TYPE_TEXT_VARIATION_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
+        )
 
         /** True while the user has the service switched on. */
         val running = MutableStateFlow(false)
