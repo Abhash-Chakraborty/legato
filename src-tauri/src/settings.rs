@@ -893,6 +893,14 @@ pub struct AppSettings {
     pub auto_submit: bool,
     #[serde(default)]
     pub auto_submit_key: AutoSubmitKey,
+    /// Saying "press enter" at the end of a dictation presses Enter after
+    /// pasting it.
+    #[serde(default)]
+    pub press_enter_by_voice: bool,
+    /// In chat apps, each paragraph of a dictation is sent as its own
+    /// message.
+    #[serde(default)]
+    pub stacked_messages: bool,
     #[serde(default = "default_post_process_enabled")]
     pub post_process_enabled: bool,
     #[serde(default = "default_post_process_provider_id")]
@@ -1686,6 +1694,8 @@ pub fn get_default_settings() -> AppSettings {
         clipboard_handling: ClipboardHandling::default(),
         auto_submit: default_auto_submit(),
         auto_submit_key: AutoSubmitKey::default(),
+        press_enter_by_voice: false,
+        stacked_messages: false,
         post_process_enabled: default_post_process_enabled(),
         post_process_provider_id: default_post_process_provider_id(),
         post_process_providers: default_post_process_providers(),

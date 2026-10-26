@@ -1410,6 +1410,26 @@ pub fn change_append_trailing_space_setting(app: AppHandle, enabled: bool) -> Re
     Ok(())
 }
 
+/// Settings › Output: saying "press enter" at the end sends the dictation.
+#[tauri::command]
+#[specta::specta]
+pub fn change_press_enter_by_voice_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.press_enter_by_voice = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Settings › Output: a message per paragraph in chat apps.
+#[tauri::command]
+#[specta::specta]
+pub fn change_stacked_messages_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.stacked_messages = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_lazy_stream_close_setting(app: AppHandle, enabled: bool) -> Result<(), String> {

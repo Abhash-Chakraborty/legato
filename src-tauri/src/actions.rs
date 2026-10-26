@@ -995,20 +995,41 @@ impl ShortcutAction for TranscribeAction {
                             } else {
                                 let ah_clone = ah.clone();
                                 let paste_time = Instant::now();
-                                let final_text = processed.final_text;
+                                let settings_now = get_settings(&ah);
+                                // "…, press enter" at the end sends the text.
+                                let (final_text, enter_said) = if settings_now.press_enter_by_voice
+                                {
+                                    crate::style_rules::spoken_enter(&processed.final_text)
+                                } else {
+                                    (processed.final_text, false)
+                                };
+                                let category = app_info.as_ref().map(|a| a.category.as_str());
+                                // Stacked messages: a paragraph per message in chat apps.
+                                let stacked = if settings_now.stacked_messages
+                                    && category.is_some_and(crate::style_rules::sends_messages)
+                                {
+                                    crate::style_rules::stack_messages(&final_text)
+                                } else {
+                                    Vec::new()
+                                };
+                                let stacked_sent = stacked.len() > 1;
                                 let words = crate::transform_rules::word_count(&final_text);
                                 let ai_problem = processed.ai_problem;
                                 let transform_run = processed.transform_run;
                                 let rm_for_paste = Arc::clone(&rm);
                                 let hm_for_paste = Arc::clone(&hm);
-                                let paste_overrides =
+                                let mut paste_overrides =
                                     crate::clipboard::PasteOverrides::for_category(
-                                        &get_settings(&ah),
-                                        app_info.as_ref().map(|a| a.category.as_str()),
+                                        &settings_now,
+                                        category,
                                     );
+                                if enter_said {
+                                    paste_overrides.after_paste =
+                                        Some(crate::settings::AfterPaste::Enter);
+                                }
                                 let not_pasted = paste_overrides
                                     .paste_method
-                                    .unwrap_or(get_settings(&ah).paste_method)
+                                    .unwrap_or(settings_now.paste_method)
                                     == PasteMethod::None;
                                 ah.run_on_main_thread(move || {
                                     if rm_for_paste.was_cancelled_since(cancel_generation) && is_current(session) {
@@ -1037,6 +1058,15 @@ impl ShortcutAction for TranscribeAction {
                                         Err(format!(
                                             "{name} runs as administrator, so Windows blocks typing into it from Legato. The text is on the clipboard."
                                         ))
+                                    } else if final_text.is_empty() && enter_said {
+                                        // "Press enter" on its own.
+                                        crate::clipboard::press_enter(&ah_clone)
+                                    } else if stacked.len() > 1 {
+                                        crate::clipboard::paste_stacked(
+                                            stacked,
+                                            ah_clone.clone(),
+                                            paste_overrides,
+                                        )
                                     } else {
                                         crate::clipboard::paste_dictation(
                                             final_text,
@@ -1045,7 +1075,8 @@ impl ShortcutAction for TranscribeAction {
                                         )
                                     };
                                     let pasted = paste_result.is_ok() && !not_pasted;
-                                    if pasted {
+                                    // A sent message leaves nothing to read back.
+                                    if pasted && !enter_said && !stacked_sent {
                                         // Learn from my edits reads the field
                                         // again in ten seconds.
                                         crate::edit_reader::watch(

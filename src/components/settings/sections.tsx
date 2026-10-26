@@ -56,6 +56,7 @@ import { ReliablePasteToggle } from "./debug/ReliablePaste";
 import { ClipboardHandlingSetting } from "./ClipboardHandling";
 import { FailedPastes } from "./FailedPastes";
 import { AutoSubmit } from "./AutoSubmit";
+import { PressEnterByVoice, StackedMessages } from "./SendByVoice";
 import { AppendTrailingSpace } from "./AppendTrailingSpace";
 import {
   AiPrivacyNote,
@@ -881,6 +882,22 @@ export const buildSections = (
               "settings.advanced.autoSubmit.description",
             ],
             render: () => <AutoSubmit grouped />,
+          },
+          {
+            id: "press-enter-by-voice",
+            searchKeys: [
+              "settings.advanced.pressEnterByVoice.label",
+              "settings.advanced.pressEnterByVoice.description",
+            ],
+            render: () => <PressEnterByVoice grouped />,
+          },
+          {
+            id: "stacked-messages",
+            searchKeys: [
+              "settings.advanced.stackedMessages.label",
+              "settings.advanced.stackedMessages.description",
+            ],
+            render: () => <StackedMessages grouped />,
           },
           {
             id: "trailing-space",

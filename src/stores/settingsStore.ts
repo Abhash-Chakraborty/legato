@@ -198,6 +198,10 @@ const settingUpdaters: {
     commands.changeBackgroundAudioSetting(value as BackgroundAudio),
   append_trailing_space: (value) =>
     commands.changeAppendTrailingSpaceSetting(value as boolean),
+  press_enter_by_voice: (value) =>
+    commands.changePressEnterByVoiceSetting(value as boolean),
+  stacked_messages: (value) =>
+    commands.changeStackedMessagesSetting(value as boolean),
   log_level: (value) => commands.setLogLevel(value as any),
   theme: (value) => commands.changeThemeSetting(value as string),
   experimental_enabled: (value) =>

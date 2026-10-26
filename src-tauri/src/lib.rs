@@ -914,6 +914,8 @@ pub fn run(cli_args: CliArgs) {
             shortcut::resume_all_bindings,
             shortcut::change_background_audio_setting,
             shortcut::change_append_trailing_space_setting,
+            shortcut::change_press_enter_by_voice_setting,
+            shortcut::change_stacked_messages_setting,
             shortcut::change_lazy_stream_close_setting,
             shortcut::change_vad_enabled_setting,
             shortcut::change_long_form_chunking_setting,

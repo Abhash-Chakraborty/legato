@@ -396,6 +396,14 @@
           "copyToClipboard": "Copy to Clipboard"
         }
       },
+      "pressEnterByVoice": {
+        "label": "Say “press enter” to send",
+        "description": "Ending a dictation with “press enter” pastes it without those words, then presses Enter."
+      },
+      "stackedMessages": {
+        "label": "A message per paragraph in chat apps",
+        "description": "In apps Style calls personal or work messages, each paragraph is sent on its own."
+      },
       "autoSubmit": {
         "title": "Auto-submit after paste",
         "description": "Presses a key after pasting, to send a message or a prompt.",

@@ -229,6 +229,41 @@ pub fn paste_dictation(
     paste_with(text, app_handle, true, overrides)
 }
 
+/// Stacked messages: pastes and sends each part, then the last one with the
+/// paste settings of the app. Stops at the first part that fails.
+pub fn paste_stacked(
+    parts: Vec<String>,
+    app_handle: AppHandle,
+    overrides: PasteOverrides,
+) -> Result<(), String> {
+    let last = parts.len().saturating_sub(1);
+    for (i, part) in parts.into_iter().enumerate() {
+        let send = PasteOverrides {
+            after_paste: Some(AfterPaste::Enter),
+            trailing_space: Some(false),
+            ..overrides
+        };
+        paste_with(
+            part,
+            app_handle.clone(),
+            true,
+            if i == last { overrides } else { send },
+        )?;
+        if i != last {
+            // The chat app clears its box after sending.
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    }
+    Ok(())
+}
+
+/// Presses Enter in the app in front: "press enter" said on its own.
+pub fn press_enter(app_handle: &AppHandle) -> Result<(), String> {
+    with_enigo(app_handle, |enigo| {
+        send_return_key(enigo, AutoSubmitKey::Enter)
+    })
+}
+
 /// Pastes a transform's result: no trailing space and no auto-submit, since
 /// it replaces text the person is still working on.
 pub fn paste_plain(text: String, app_handle: AppHandle) -> Result<(), String> {

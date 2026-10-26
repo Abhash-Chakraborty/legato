@@ -498,6 +498,51 @@ pub fn apply(text: &str, category: &str, tone: Tone) -> String {
     }
 }
 
+/// The spoken commands that press Enter at the end of a dictation.
+const ENTER_COMMANDS: [&str; 2] = ["press enter", "hit enter"];
+
+/// "…, press enter." at the end of a dictation: the text without the
+/// command, and whether it was there. Cleanup may have capitalised it or
+/// added a period, so case and punctuation around it don't matter.
+pub fn spoken_enter(text: &str) -> (String, bool) {
+    let body = text.trim_end_matches(|c: char| c.is_whitespace() || ".!?,;:".contains(c));
+    let lower = body.to_lowercase();
+    for command in ENTER_COMMANDS {
+        if !lower.ends_with(command) {
+            continue;
+        }
+        let cut = body.len() - command.len();
+        // A whole word: "repress enter" isn't the command.
+        if !body.is_char_boundary(cut)
+            || body[..cut]
+                .chars()
+                .last()
+                .is_some_and(char::is_alphanumeric)
+        {
+            continue;
+        }
+        let kept = body[..cut].trim_end_matches(|c: char| c.is_whitespace() || ",;:-".contains(c));
+        return (kept.to_string(), true);
+    }
+    (text.to_string(), false)
+}
+
+/// Stacked messages: a dictation for a chat app, one message per
+/// paragraph. A single line break (a list) stays inside its message.
+pub fn stack_messages(text: &str) -> Vec<String> {
+    text.replace("\r\n", "\n")
+        .split("\n\n")
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// The kinds of app whose text boxes send messages.
+pub fn sends_messages(category: &str) -> bool {
+    matches!(category, "personal" | "work")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -653,5 +698,39 @@ mod tests {
         let styled = apply(&marked.text, "work", Tone::Formal);
         assert!(crate::snippet_rules::ends_with_placeholder(&styled));
         assert!(styled.starts_with("Here is "));
+    }
+
+    #[test]
+    fn press_enter_at_the_end_is_a_command() {
+        assert_eq!(
+            spoken_enter("Sounds good, see you at six, press enter."),
+            ("Sounds good, see you at six".to_string(), true)
+        );
+        assert_eq!(
+            spoken_enter("On my way. Press Enter."),
+            ("On my way.".to_string(), true)
+        );
+        assert_eq!(spoken_enter("hit enter"), (String::new(), true));
+        // In the middle, or part of a word, it's just words.
+        assert!(!spoken_enter("Press enter to send it, then wait.").1);
+        assert!(!spoken_enter("They repress enter").1);
+        assert_eq!(
+            spoken_enter("No command here."),
+            ("No command here.".to_string(), false)
+        );
+    }
+
+    #[test]
+    fn paragraphs_become_separate_messages() {
+        assert_eq!(
+            stack_messages("Hey Samir!\n\nAre we still on for lunch?\n\n"),
+            vec!["Hey Samir!", "Are we still on for lunch?"]
+        );
+        // A list stays one message.
+        assert_eq!(
+            stack_messages("Get:\n- milk\n- eggs"),
+            vec!["Get:\n- milk\n- eggs"]
+        );
+        assert!(sends_messages("work") && !sends_messages("email"));
     }
 }
