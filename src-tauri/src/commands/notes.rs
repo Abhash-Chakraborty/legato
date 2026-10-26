@@ -218,6 +218,13 @@ pub fn get_notes_session() -> Option<SessionInfo> {
     notes::session()
 }
 
+/// Writes the summary again as the kind of conversation you picked.
+#[tauri::command]
+#[specta::specta]
+pub async fn summarise_note_as(app: AppHandle, id: i64, kind: String) -> Result<(), String> {
+    notes::resummarise_as(&app, id, &kind).await
+}
+
 /// Writes the note's summary again. Errors are codes the page words.
 #[tauri::command]
 #[specta::specta]

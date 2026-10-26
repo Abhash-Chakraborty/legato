@@ -406,6 +406,7 @@ async fn run_json(
 
 /// Summarises a note's transcript: in one request, or part by part and then
 /// combined when it's long.
+#[allow(clippy::too_many_arguments)]
 pub async fn summarise_note(
     app: &AppHandle,
     config: &AiConfig,
@@ -414,6 +415,7 @@ pub async fn summarise_note(
     people: &[String],
     words: &[String],
     you: Option<&str>,
+    kind: Option<&str>,
 ) -> Result<notes_rules::NotesSummary, AiProblem> {
     let json_hint = !config.provider.supports_structured_output
         || config.provider.api_format == PostProcessApiFormat::Anthropic;
@@ -442,6 +444,7 @@ pub async fn summarise_note(
             people,
             words,
             you,
+            kind,
         ))
         .await;
     }
@@ -456,6 +459,7 @@ pub async fn summarise_note(
                 people,
                 words,
                 you,
+                kind,
             ))
             .await?,
         );
@@ -466,6 +470,7 @@ pub async fn summarise_note(
         tags_in_use,
         words,
         you,
+        kind,
     ))
     .await?;
     // Each part's details keep their own times; the combined answer's

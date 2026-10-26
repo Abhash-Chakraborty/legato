@@ -2167,6 +2167,18 @@ async summariseNote(id: number) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Writes the summary again for the kind of meeting you picked, and keeps
+ * that kind for later summaries.
+ */
+async summariseNoteAs(id: number, kind: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("summarise_note_as", { id, kind }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Misheard words your AI found in the note, for review. Errors are codes
  * the page words.
  */
@@ -3073,7 +3085,20 @@ export type NoteAction = { id: number; owner: string; text: string; done: boolea
  * A summary's longer parts: who took part, a short paragraph per topic,
  * and details tied to the moment in the recording they come from.
  */
-export type NoteOutline = { people?: string[]; topics?: OutlineTopic[]; details?: OutlineDetail[] }
+export type NoteOutline = { people?: string[]; topics?: OutlineTopic[]; details?: OutlineDetail[]; 
+/**
+ * The kind of meeting, one of `MEETING_KINDS`, such as "sales".
+ */
+kind?: string | null; 
+/**
+ * You picked the kind, so later summaries keep it.
+ */
+kind_by_you?: boolean; 
+/**
+ * The two sections the kind adds, such as Questions and Concerns.
+ */
+sections?: OutlineSection[] }
+export type OutlineSection = { heading: string; points: string[] }
 export type OutlineTopic = { heading: string; text: string }
 export type OutlineDetail = { heading: string; text: string; 
 /**

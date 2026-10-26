@@ -3030,7 +3030,20 @@
       "details": "Details",
       "people": "People",
       "playFrom": "Play from {{time}}",
-      "copyDocs": "Copy for Google Docs"
+      "copyDocs": "Copy for Google Docs",
+      "kind": "Kind of meeting",
+      "kinds": {
+        "team": "Team meeting",
+        "one_on_one": "One-on-one",
+        "sales": "Sales call",
+        "interview": "Interview",
+        "client": "Client call",
+        "executive": "Executive meeting",
+        "lecture": "Lecture",
+        "catch_up": "Catch-up",
+        "memo": "Memo",
+        "other": "Other"
+      }
     },
     "ask": {
       "title": "Ask about this note",

@@ -777,6 +777,15 @@ pub fn set_attendees(conn: &Connection, id: i64, people: &[String]) -> Result<()
     Ok(())
 }
 
+/// Saves the summary's outline on its own: the kind you chose.
+pub fn set_outline(conn: &Connection, id: i64, outline: &NoteOutline) -> Result<()> {
+    conn.execute(
+        "UPDATE note SET outline = ?2 WHERE id = ?1",
+        params![id, serde_json::to_string(outline)?],
+    )?;
+    Ok(())
+}
+
 pub fn set_summary_error(conn: &Connection, id: i64, error: Option<&str>) -> Result<()> {
     conn.execute(
         "UPDATE note SET summary_error = ?2 WHERE id = ?1",
@@ -1081,6 +1090,13 @@ pub fn markdown(note: &Note, lines: &[NoteLine], you: &str, them: &str) -> Strin
         }
         out.push('\n');
     }
+    for section in &note.outline.sections {
+        out.push_str(&format!("## {}\n\n", section.heading));
+        for point in &section.points {
+            out.push_str(&format!("- {point}\n"));
+        }
+        out.push('\n');
+    }
     if !note.actions.is_empty() {
         out.push_str("## Next steps\n\n");
         for a in &note.actions {
@@ -1164,6 +1180,12 @@ fn blocks(note: &Note, when: &str, transcript: Option<(&[NoteLine], &str, &str)>
         out.push(Block::Heading("Decisions".into()));
         for d in &note.decisions {
             out.push(Block::Bullet(tidy(item(String::new(), d))));
+        }
+    }
+    for section in &note.outline.sections {
+        out.push(Block::Heading(section.heading.clone()));
+        for point in &section.points {
+            out.push(Block::Bullet(vec![Run::plain(point.as_str())]));
         }
     }
     if !note.actions.is_empty() {

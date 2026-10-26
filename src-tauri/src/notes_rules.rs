@@ -842,6 +842,63 @@ pub const SUMMARY_SYSTEM: &str = "You summarise one recorded conversation for th
 /// At most this many tags are suggested for a note.
 pub const TAG_MAX: usize = 3;
 
+/// The kinds of conversation a summary shapes itself to, each with what it
+/// is (for the model) and the two sections it adds. `other` adds none.
+pub const MEETING_KINDS: [(&str, &str, [&str; 2]); 10] = [
+    ("team", "a team meeting", ["Updates", "Still open"]),
+    (
+        "one_on_one",
+        "two people, such as a manager and a report",
+        ["Blockers", "Feedback"],
+    ),
+    ("sales", "selling to a prospect", ["Questions", "Concerns"]),
+    ("interview", "a job interview", ["Background", "Answers"]),
+    (
+        "client",
+        "with a client or partner about their work",
+        ["Issue", "Status"],
+    ),
+    (
+        "executive",
+        "with investors, a board or leadership",
+        ["Questions", "Feedback"],
+    ),
+    (
+        "lecture",
+        "a class or a talk",
+        ["Key ideas", "Terms explained"],
+    ),
+    (
+        "catch_up",
+        "friends or colleagues catching up",
+        ["News", "Plans"],
+    ),
+    (
+        "memo",
+        "one person thinking aloud",
+        ["Ideas", "To remember"],
+    ),
+    ("other", "anything else", ["", ""]),
+];
+
+/// A kind's id as the model or the page gave it, when it's one of ours.
+pub fn meeting_kind(id: &str) -> Option<&'static str> {
+    let id = id.trim().to_lowercase().replace(['-', ' '], "_");
+    MEETING_KINDS
+        .iter()
+        .find(|(k, _, _)| *k == id)
+        .map(|(k, _, _)| *k)
+}
+
+/// The two section headings a kind adds; none for `other`.
+pub fn kind_sections(kind: &str) -> Vec<&'static str> {
+    MEETING_KINDS
+        .iter()
+        .find(|(k, _, _)| *k == kind)
+        .map(|(_, _, s)| s.iter().copied().filter(|h| !h.is_empty()).collect())
+        .unwrap_or_default()
+}
+
 /// The request for one transcript, or one part of a long one. `tags_in_use`
 /// are the tags on other notes, offered first so the same topic keeps one
 /// name.
@@ -852,6 +909,7 @@ pub fn summary_request(
     people: &[String],
     words: &[String],
     you: Option<&str>,
+    kind: Option<&str>,
 ) -> String {
     let mut request = String::from(
         "Summarise this transcript.\n\n\
@@ -865,6 +923,31 @@ pub fn summary_request(
          details: one entry per topic or notable exchange, in order, each with a heading, three to six sentences on who said what (by name when known, with the numbers, names and reasons given), and at: the time in square brackets of the first line it draws on, copied from the transcript, such as 5:48.\n\
          Spell names, products and organisations the way the people list and the transcript's corrected lines do.\n",
     );
+    request.push_str("kind: what kind of conversation this was, one of: ");
+    let kinds: Vec<String> = MEETING_KINDS
+        .iter()
+        .map(|(id, what, _)| format!("{id} ({what})"))
+        .collect();
+    request.push_str(&kinds.join(", "));
+    request.push_str(".\nsections: for the kind, these headings, each with two to five short points from the transcript; leave a heading out when nothing fits, and give none for other: ");
+    let sections: Vec<String> = MEETING_KINDS
+        .iter()
+        .filter(|(_, _, s)| !s[0].is_empty())
+        .map(|(id, _, s)| format!("{id}: {} and {}", s[0], s[1]))
+        .collect();
+    request.push_str(&sections.join("; "));
+    request.push_str(".\n");
+    if let Some(kind) = kind.and_then(meeting_kind) {
+        let headings = kind_sections(kind);
+        let sections = if headings.is_empty() {
+            "no sections".to_string()
+        } else {
+            format!("the sections {}", headings.join(" and "))
+        };
+        request.push_str(&format!(
+            "The person who recorded says this conversation is {kind}; answer with that kind and {sections}.\n"
+        ));
+    }
     if let Some(name) = you.map(str::trim).filter(|n| !n.is_empty()) {
         request.push_str(&format!(
             "The person who recorded is {name}; their lines say You. When someone speaks to or about {name}, they mean the person who recorded: tasks for {name} have the owner \"You\", and {name} isn't listed in people.\n"
@@ -890,7 +973,7 @@ pub fn summary_request(
     if json_hint {
         request.push_str(
             "\nAnswer exactly like this, with no other text:\n\
-             {\"title\": \"…\", \"tags\": [\"…\"], \"summary\": \"…\", \"people\": [\"…\"], \"topics\": [{\"heading\": \"…\", \"text\": \"…\"}], \"decisions\": [\"Title: …\"], \"actions\": [{\"owner\": \"You\", \"text\": \"Title: …\"}], \"details\": [{\"heading\": \"…\", \"text\": \"…\", \"at\": \"5:48\"}]}\n",
+             {\"title\": \"…\", \"tags\": [\"…\"], \"summary\": \"…\", \"people\": [\"…\"], \"topics\": [{\"heading\": \"…\", \"text\": \"…\"}], \"decisions\": [\"Title: …\"], \"actions\": [{\"owner\": \"You\", \"text\": \"Title: …\"}], \"details\": [{\"heading\": \"…\", \"text\": \"…\", \"at\": \"5:48\"}], \"kind\": \"team\", \"sections\": [{\"heading\": \"Still open\", \"points\": [\"…\"]}]}\n",
         );
     }
     request.push_str("\nTranscript:\n");
@@ -905,6 +988,7 @@ pub fn combine_request(
     tags_in_use: &[String],
     words: &[String],
     you: Option<&str>,
+    kind: Option<&str>,
 ) -> String {
     let mut text = String::new();
     for (i, part) in parts.iter().enumerate() {
@@ -918,9 +1002,14 @@ pub fn combine_request(
         for (owner, task) in &part.actions {
             text.push_str(&format!("Action ({owner}): {task}\n"));
         }
+        for section in &part.outline.sections {
+            for point in &section.points {
+                text.push_str(&format!("{}: {point}\n", section.heading));
+            }
+        }
     }
     let people: Vec<String> = merge_people(parts.iter().map(|p| p.outline.people.as_slice()));
-    summary_request(&text, json_hint, tags_in_use, &people, words, you).replace(
+    summary_request(&text, json_hint, tags_in_use, &people, words, you, kind).replace(
         "Summarise this transcript.",
         "These are summaries of consecutive parts of one long conversation. Combine them into one summary, removing repeats; details may stay empty, since each part keeps its own.",
     )
@@ -1000,9 +1089,25 @@ pub fn summary_schema() -> serde_json::Value {
                     "required": ["heading", "text", "at"],
                     "additionalProperties": false
                 }
+            },
+            "kind": {
+                "type": "string",
+                "enum": MEETING_KINDS.iter().map(|(id, _, _)| *id).collect::<Vec<_>>()
+            },
+            "sections": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "heading": { "type": "string" },
+                        "points": { "type": "array", "items": { "type": "string" } }
+                    },
+                    "required": ["heading", "points"],
+                    "additionalProperties": false
+                }
             }
         },
-        "required": ["title", "tags", "summary", "people", "topics", "decisions", "actions", "details"],
+        "required": ["title", "tags", "summary", "people", "topics", "decisions", "actions", "details", "kind", "sections"],
         "additionalProperties": false
     })
 }
@@ -1031,6 +1136,24 @@ pub struct NoteOutline {
     pub topics: Vec<OutlineTopic>,
     #[serde(default)]
     pub details: Vec<OutlineDetail>,
+    /// What kind of conversation it was (`MEETING_KINDS`), from the model
+    /// or from you.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// You chose the kind, so the next summary keeps it.
+    #[serde(default)]
+    pub kind_by_you: bool,
+    /// The kind's own sections, such as Blockers in a 1:1.
+    #[serde(default)]
+    pub sections: Vec<OutlineSection>,
+}
+
+#[derive(
+    Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type,
+)]
+pub struct OutlineSection {
+    pub heading: String,
+    pub points: Vec<String>,
 }
 
 #[derive(
@@ -1138,6 +1261,33 @@ pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
                 at_ms: at.as_deref().and_then(parse_clock),
             })
             .collect(),
+        kind: value
+            .get("kind")
+            .and_then(|k| k.as_str())
+            .and_then(meeting_kind)
+            .map(str::to_string),
+        kind_by_you: false,
+        sections: value
+            .get("sections")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|item| {
+                        let heading = item.get("heading")?.as_str()?.trim().to_string();
+                        let points: Vec<String> = item
+                            .get("points")?
+                            .as_array()?
+                            .iter()
+                            .filter_map(|p| p.as_str())
+                            .map(|p| p.trim().to_string())
+                            .filter(|p| !p.is_empty())
+                            .collect();
+                        (!heading.is_empty() && !points.is_empty())
+                            .then_some(OutlineSection { heading, points })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     };
     (!summary.is_empty()).then_some(NotesSummary {
         title,
@@ -1741,7 +1891,7 @@ mod tests {
             "AIPS (a project name; misheard as IPS, IPES)"
         );
         assert_eq!(describe_word("Datev", None, &[]), "Datev");
-        assert!(summary_request("You: hi", false, &[], &[], &["AIPS (a project name)".into()], None)
+        assert!(summary_request("You: hi", false, &[], &[], &["AIPS (a project name)".into()], None, None)
             .contains("spelled right (the transcript may have them misheard; write them this way): AIPS (a project name)"));
         let r = summary_request(
             "You: hi",
@@ -1750,19 +1900,29 @@ mod tests {
             &[],
             &[],
             None,
+            None,
         );
         assert!(r.contains("Tags already in use, to pick from when one fits: backend, clients"));
-        assert!(!summary_request("You: hi", false, &[], &[], &[], None).contains("already in use"));
-        assert!(summary_request("You: hi", true, &[], &[], &[], None).contains("\"title\""));
         assert!(
-            summary_request("You: hi", false, &[], &["Sahil Khan".into()], &[], None)
-                .contains("People invited to the meeting: Sahil Khan\n")
+            !summary_request("You: hi", false, &[], &[], &[], None, None)
+                .contains("already in use")
         );
-        let mine = summary_request("You: hi", false, &[], &[], &[], Some(" Abhash "));
+        assert!(summary_request("You: hi", true, &[], &[], &[], None, None).contains("\"title\""));
+        assert!(summary_request(
+            "You: hi",
+            false,
+            &[],
+            &["Sahil Khan".into()],
+            &[],
+            None,
+            None
+        )
+        .contains("People invited to the meeting: Sahil Khan\n"));
+        let mine = summary_request("You: hi", false, &[], &[], &[], Some(" Abhash "), None);
         assert!(mine.contains("The person who recorded is Abhash; their lines say You."));
         assert!(mine.contains("tasks for Abhash have the owner \"You\""));
         assert!(
-            !summary_request("You: hi", false, &[], &[], &[], Some("  "))
+            !summary_request("You: hi", false, &[], &[], &[], Some("  "), None)
                 .contains("person who recorded is")
         );
     }
@@ -2150,5 +2310,33 @@ mod tests {
         // You talked for a while: a real recording.
         assert!(!looks_accidental(true, 50, 0, 300_000));
         assert!(!looks_accidental(true, 80, 0, 60_000));
+    }
+
+    #[test]
+    fn the_summary_takes_a_kind_and_its_sections() {
+        let request = summary_request("You: hi", false, &[], &[], &[], None, Some("1:1"));
+        assert!(request.contains("one_on_one: Blockers and Feedback"));
+        // An unknown kind isn't forced.
+        assert!(!request.contains("says this conversation is"));
+        let forced = summary_request("You: hi", false, &[], &[], &[], None, Some("one-on-one"));
+        assert!(forced.contains("says this conversation is one_on_one; answer with that kind and the sections Blockers and Feedback"));
+        assert_eq!(kind_sections("sales"), vec!["Questions", "Concerns"]);
+        assert!(kind_sections("other").is_empty());
+
+        let answer = r#"{"summary": "Weekly sync.", "kind": "Team",
+            "sections": [{"heading": "Still open", "points": ["Who owns the release", " "]},
+                         {"heading": "Updates", "points": []}]}"#;
+        let parsed = parse_summary(answer).unwrap();
+        assert_eq!(parsed.outline.kind.as_deref(), Some("team"));
+        assert_eq!(parsed.outline.sections.len(), 1);
+        assert_eq!(
+            parsed.outline.sections[0].points,
+            vec!["Who owns the release"]
+        );
+        // Older answers without a kind still parse.
+        assert_eq!(
+            parse_summary(r#"{"summary": "Hi."}"#).unwrap().outline.kind,
+            None
+        );
     }
 }

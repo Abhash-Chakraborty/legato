@@ -4,6 +4,7 @@ import type { TFunction } from "i18next";
 import { toast } from "sonner";
 import {
   ArrowUp,
+  ChevronDown,
   Copy,
   FileText,
   Loader2,
@@ -23,6 +24,7 @@ import { describeAi } from "../../../lib/utils/aiStatus";
 import { useAiStore, watchAi } from "../../../stores/aiStore";
 import { useNavStore } from "../../../stores/navStore";
 import { Button } from "../../ui/Button";
+import { ActionMenu } from "../../ui/ActionMenu";
 import { answerParts } from "../../notes/notes";
 
 /** "Switch the workers: the code predates…" as a bold title and the rest. */
@@ -63,6 +65,69 @@ const peopleOf = (note: Note): string[] => {
     if (key && !known) out.push(name.trim());
   }
   return out;
+};
+
+/** The kinds of meeting a summary can be shaped for, as in
+ *  `notes_rules::MEETING_KINDS`. */
+const KINDS = [
+  "team",
+  "one_on_one",
+  "sales",
+  "interview",
+  "client",
+  "executive",
+  "lecture",
+  "catch_up",
+  "memo",
+  "other",
+] as const;
+
+/** The kind the summary was written for, and a menu to write it again for
+ *  another. */
+const KindPicker: React.FC<{
+  kind: string;
+  disabled: boolean;
+  onPick: (kind: string) => void;
+}> = ({ kind, disabled, onPick }) => {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const opener = useRef<HTMLButtonElement>(null);
+  return (
+    <div className="relative mb-3 inline-block">
+      <button
+        ref={opener}
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={t("notes.summary.kind")}
+        className="inline-flex h-7 items-center gap-1 rounded-full border border-line px-3 text-[13px] text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:text-text hover:duration-0 active:scale-[0.97] disabled:opacity-60"
+      >
+        {t(`notes.summary.kinds.${kind}`)}
+        <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+      {open && (
+        <ActionMenu
+          label={t("notes.summary.kind")}
+          items={KINDS.map((id) => ({
+            id,
+            label: t(`notes.summary.kinds.${id}`),
+            checked: id === kind,
+            onSelect: () => {
+              setOpen(false);
+              if (id !== kind) onPick(id);
+            },
+          }))}
+          onClose={(restore) => {
+            setOpen(false);
+            if (restore) opener.current?.focus();
+          }}
+          className="start-0 top-full mt-1"
+        />
+      )}
+    </div>
+  );
 };
 
 const clock = (ms: number) => {
@@ -299,6 +364,19 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
       });
   };
 
+  const rewriteAs = async (kind: string) => {
+    if (regenerating) return;
+    setRegenerating(true);
+    const result = await commands
+      .summariseNoteAs(note.id, kind)
+      .catch((e) => ({ status: "error" as const, error: String(e) }));
+    setRegenerating(false);
+    if (result.status === "error" && !/^[a-z_]+$/.test(result.error))
+      toast.error(t("notes.toast.summaryFailed"), {
+        description: result.error,
+      });
+  };
+
   const draft = async () => {
     if (drafting) return;
     setDrafting(true);
@@ -326,6 +404,10 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
   const people = peopleOf(note);
   const topics = note.outline?.topics ?? [];
   const details = note.outline?.details ?? [];
+  const sections = (note.outline?.sections ?? []).filter(
+    (s) => s.points.length > 0,
+  );
+  const kind = note.outline?.kind;
   const canAsk = enabled && hasAi && note.lines > 0;
   // Lines were corrected after the summary was written.
   const stale =
@@ -369,6 +451,13 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
               </button>
             </p>
           )}
+          {kind && (KINDS as readonly string[]).includes(kind) && (
+            <KindPicker
+              kind={kind}
+              disabled={!enabled || !hasAi || summarising}
+              onPick={rewriteAs}
+            />
+          )}
           {people.length > 0 && (
             <p className="mb-3 flex items-start gap-2 text-[13px] text-text-2">
               <Users
@@ -393,6 +482,22 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
               ))}
             </div>
           )}
+          {sections.map((section, i) => (
+            <section key={i} className="mt-6">
+              <h3 className="mb-2 text-sm font-medium">{section.heading}</h3>
+              <ul className="grid select-text gap-1.5 ps-1 text-sm">
+                {section.points.map((point, j) => (
+                  <li key={j} className="flex gap-2.5">
+                    <span
+                      aria-hidden="true"
+                      className="mt-[9px] h-1 w-1 flex-none rounded-full bg-text-3"
+                    />
+                    <Titled text={point} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
           {note.decisions.length > 0 && (
             <section className="mt-6">
               <h3 className="mb-2 text-sm font-medium">

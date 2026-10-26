@@ -2246,10 +2246,29 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
     let words = dictionary_for_ai(app, SUMMARY_WORDS);
     let you = get_settings(app).your_name;
     let you = Some(you.trim()).filter(|n| !n.is_empty());
-    match crate::ai::summarise_note(app, &config, &prompt, &tags_in_use, &people, &words, you).await
+    // A kind you chose stays for every summary after.
+    let chosen = note
+        .as_ref()
+        .filter(|n| n.outline.kind_by_you)
+        .and_then(|n| n.outline.kind.clone());
+    match crate::ai::summarise_note(
+        app,
+        &config,
+        &prompt,
+        &tags_in_use,
+        &people,
+        &words,
+        you,
+        chosen.as_deref(),
+    )
+    .await
     {
         Ok(mut summary) => {
             summary.outline.fit_to(last_ms);
+            if chosen.is_some() {
+                summary.outline.kind = chosen;
+                summary.outline.kind_by_you = true;
+            }
             let local = if crate::ai::is_local(&config.provider) {
                 "local"
             } else {
@@ -2323,6 +2342,25 @@ pub async fn resummarise(app: &AppHandle, note_id: i64) -> Result<(), String> {
         Some(code) => Err(code),
         None => Ok(()),
     }
+}
+
+/// Writes the summary again as the kind of conversation you picked, and
+/// keeps that kind for later summaries.
+pub async fn resummarise_as(app: &AppHandle, note_id: i64, kind: &str) -> Result<(), String> {
+    let kind = notes_rules::meeting_kind(kind).ok_or_else(|| "kind".to_string())?;
+    let m = manager(app);
+    let note = m
+        .get(note_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "gone".to_string())?;
+    let mut outline = note.outline;
+    outline.kind = Some(kind.to_string());
+    outline.kind_by_you = true;
+    m.conn()
+        .and_then(|c| store::set_outline(&c, note_id, &outline))
+        .map_err(|e| e.to_string())?;
+    m.changed();
+    resummarise(app, note_id).await
 }
 
 /// Answers a question from the note's transcript. Errors are codes the page
