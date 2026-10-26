@@ -257,6 +257,14 @@ pub async fn ask_note(app: AppHandle, id: i64, question: String) -> Result<Strin
     notes::ask(&app, id, &question).await
 }
 
+/// Ask across notes, from the Notes page. Errors are codes, as for Ask;
+/// "nosummaries" when no note has a summary yet.
+#[tauri::command]
+#[specta::specta]
+pub async fn ask_all_notes(app: AppHandle, question: String) -> Result<String, String> {
+    notes::ask_all(&app, &question).await
+}
+
 /// What did I miss? in the Notes side panel: the last few minutes of the
 /// recording, recapped. Errors are codes, as for Ask.
 #[tauri::command]

@@ -2412,6 +2412,51 @@ pub async fn ask(app: &AppHandle, note_id: i64, question: &str) -> Result<String
     ask_about(app, note_id, question, None).await
 }
 
+/// Ask across notes, from the Notes page: the summaries, decisions and
+/// next steps of every summarised note. Errors are codes, as for Ask.
+pub async fn ask_all(app: &AppHandle, question: &str) -> Result<String, String> {
+    let config = notes_ai(app)?;
+    let mut notes = manager(app).list().map_err(|e| e.to_string())?;
+    notes.retain(|n| !n.summary.trim().is_empty());
+    if notes.is_empty() {
+        return Err("nosummaries".to_string());
+    }
+    notes.sort_by_key(|n| std::cmp::Reverse(n.started_at));
+    let digests: Vec<notes_rules::NoteDigest> = notes
+        .iter()
+        .map(|n| {
+            let sections: Vec<(String, Vec<String>)> = n
+                .outline
+                .sections
+                .iter()
+                .map(|s| (s.heading.clone(), s.points.clone()))
+                .collect();
+            let actions: Vec<(&str, &str, bool)> = n
+                .actions
+                .iter()
+                .map(|a| (a.owner.as_str(), a.text.as_str(), a.done))
+                .collect();
+            notes_rules::NoteDigest {
+                id: n.id,
+                title: &n.title,
+                when: when(n),
+                body: notes_rules::digest_body(&n.summary, &sections, &n.decisions, &actions),
+            }
+        })
+        .collect();
+    let today = chrono::Local::now().format("%A, %b %-d, %Y").to_string();
+    let answer = crate::ai::run(
+        app,
+        &config,
+        notes_rules::ASK_ALL_SYSTEM,
+        notes_rules::ask_all_request(&digests, question, &today),
+        config.notes_timeout,
+    )
+    .await
+    .map_err(|p| problem_code(p.kind))?;
+    Ok(answer.trim().to_string())
+}
+
 /// What did I miss? from the side panel: the last few minutes of the
 /// recording, recapped. Errors are codes, as for Ask.
 pub async fn what_did_i_miss(app: &AppHandle, note_id: i64) -> Result<String, String> {

@@ -16,6 +16,7 @@ import {
   voiceColour,
   THEM_SIDE,
   summaryText,
+  notesAnswerParts,
   taskGroups,
   voiceChoices,
   voicesIn,
@@ -261,4 +262,18 @@ assert.equal(voiceColour(lines[0]), "var(--teal-700)");
   assert.equal(taskGroups([older, newer], "everyone", "priya").length, 1);
   assert.equal(taskGroups([older, newer], "mine", "pricing")[0].note.id, 11);
 }
+// Ask across notes cites notes to open.
+assert.deepEqual(
+  notesAnswerParts("Send the deck [note 12]. Done [Note 3, note 7]"),
+  [
+    { kind: "text", text: "Send the deck " },
+    { kind: "note", id: 12 },
+    { kind: "text", text: ". Done " },
+    { kind: "note", id: 3 },
+    { kind: "note", id: 7 },
+  ],
+);
+assert.deepEqual(notesAnswerParts("Nothing about that."), [
+  { kind: "text", text: "Nothing about that." },
+]);
 console.log("notes: ok");

@@ -1612,6 +1612,81 @@ pub fn ask_transcript(lines: &[PromptLine<'_>], question: &str) -> String {
     render(&keep)
 }
 
+/// Ask across notes reads at most this many words of notes.
+pub const ASK_ALL_WORDS: usize = 6_000;
+
+pub const ASK_ALL_SYSTEM: &str = "You answer questions about someone's recorded meetings and voice memos, using only the notes given. Each note starts with a line like [note 12] Title, then when it was recorded. Next steps owned by You belong to the person asking. After each statement, put the note it comes from in square brackets, like [note 12]. If the notes don't answer the question, say so in one sentence. Answer in two to five sentences, or a short list when the question asks for one, in the question's language, as plain text.";
+
+/// One note as Ask across notes reads it: its summary, decisions and next
+/// steps, already written out.
+pub struct NoteDigest<'a> {
+    pub id: i64,
+    pub title: &'a str,
+    /// When it was recorded, in words.
+    pub when: String,
+    pub body: String,
+}
+
+/// A note's summary, sections, decisions and next steps as plain lines.
+/// `actions` are (owner, text, done).
+pub fn digest_body(
+    summary: &str,
+    sections: &[(String, Vec<String>)],
+    decisions: &[String],
+    actions: &[(&str, &str, bool)],
+) -> String {
+    let mut out = summary.trim().to_string();
+    for (heading, points) in sections {
+        if !points.is_empty() {
+            out.push_str(&format!("\n{heading}: {}", points.join("; ")));
+        }
+    }
+    if !decisions.is_empty() {
+        out.push_str(&format!("\nDecided: {}", decisions.join("; ")));
+    }
+    for (owner, text, done) in actions {
+        let state = if *done { "done" } else { "open" };
+        out.push_str(&format!("\nNext step ({owner}, {state}): {text}"));
+    }
+    out
+}
+
+/// The request for Ask across notes. `digests` come newest first; notes
+/// that share words with the question go in first, then the newest, until
+/// the word budget is spent, and they're written out newest first.
+pub fn ask_all_request(digests: &[NoteDigest<'_>], question: &str, today: &str) -> String {
+    let wanted = keywords(question);
+    let mut order: Vec<(usize, usize)> = digests
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let words = keywords(&format!("{} {}", d.title, d.body));
+            (i, wanted.iter().filter(|w| words.contains(w)).count())
+        })
+        .collect();
+    // Most matches first; among equals, the newer note.
+    order.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let mut keep = vec![false; digests.len()];
+    let mut words = 0;
+    for (i, _) in order {
+        let size = word_count(digests[i].title) + word_count(&digests[i].body);
+        if words > 0 && words + size > ASK_ALL_WORDS {
+            continue;
+        }
+        keep[i] = true;
+        words += size;
+    }
+    let mut out = format!("Today is {today}.\nNotes:\n");
+    for (d, _) in digests.iter().zip(&keep).filter(|(_, &k)| k) {
+        out.push_str(&format!(
+            "[note {}] {}\nRecorded {}\n{}\n\n",
+            d.id, d.title, d.when, d.body
+        ));
+    }
+    out.push_str(&format!("Question: {}", question.trim()));
+    out
+}
+
 /// What did I miss? looks back this far from the newest line.
 pub const MISSED_MS: i64 = 5 * 60_000;
 
@@ -2326,6 +2401,42 @@ mod tests {
         // You talked for a while: a real recording.
         assert!(!looks_accidental(true, 50, 0, 300_000));
         assert!(!looks_accidental(true, 80, 0, 60_000));
+    }
+
+    #[test]
+    fn ask_across_notes_reads_matching_notes_first() {
+        let digest = |id, title, body: &str| NoteDigest {
+            id,
+            title,
+            when: "Oct 26, 2026".into(),
+            body: body.into(),
+        };
+        let body = digest_body(
+            "Pricing for the Pro plan.",
+            &[("Concerns".into(), vec!["Too expensive".into()])],
+            &["Keep the trial".into()],
+            &[
+                ("You", "Send the deck", false),
+                ("Priya", "Book a room", true),
+            ],
+        );
+        assert!(body.contains("Concerns: Too expensive"));
+        assert!(body.contains("Decided: Keep the trial"));
+        assert!(body.contains("Next step (You, open): Send the deck"));
+        assert!(body.contains("Next step (Priya, done): Book a room"));
+        let filler = "word ".repeat(ASK_ALL_WORDS);
+        let digests = [
+            digest(3, "Standup", &filler),
+            digest(2, "Pricing call", &body),
+            digest(1, "Old memo", "groceries"),
+        ];
+        let request = ask_all_request(&digests, "What did we decide on pricing?", "Monday");
+        // The matching note goes in even though a newer one is huge.
+        assert!(request.contains("[note 2] Pricing call"));
+        assert!(!request.contains("[note 3]"));
+        assert!(request.contains("[note 1] Old memo"));
+        assert!(request.starts_with("Today is Monday."));
+        assert!(request.ends_with("Question: What did we decide on pricing?"));
     }
 
     #[test]

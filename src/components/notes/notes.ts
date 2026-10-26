@@ -68,6 +68,28 @@ export const answerParts = (answer: string): AnswerPart[] => {
   return parts;
 };
 
+export type NotesAnswerPart =
+  | { kind: "text"; text: string }
+  | { kind: "note"; id: number };
+
+/** An Ask across notes answer with its "[note 12]" citations as notes to
+ *  open; "[note 3, note 7]" cites both. */
+export const notesAnswerParts = (answer: string): NotesAnswerPart[] => {
+  const parts: NotesAnswerPart[] = [];
+  const re = /\[(note \d+(?:\s*,\s*note \d+)*)\]/gi;
+  let last = 0;
+  for (const match of answer.matchAll(re)) {
+    const at = match.index ?? 0;
+    if (at > last) parts.push({ kind: "text", text: answer.slice(last, at) });
+    for (const id of match[1].match(/\d+/g) ?? [])
+      parts.push({ kind: "note", id: Number(id) });
+    last = at + match[0].length;
+  }
+  if (last < answer.length)
+    parts.push({ kind: "text", text: answer.slice(last) });
+  return parts;
+};
+
 /** The transcript as text, for Copy transcript. */
 /** What transcripts call each side, and a voice the speaker model found. */
 export interface SpeakerNames {

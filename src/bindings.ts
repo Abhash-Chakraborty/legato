@@ -2245,6 +2245,18 @@ async notesWhatDidIMiss(id: number) : Promise<Result<string, string>> {
 }
 },
 /**
+ * Ask across notes, from the Notes page. Errors are codes, as for Ask;
+ * "nosummaries" when no note has a summary yet.
+ */
+async askAllNotes(question: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("ask_all_notes", { question }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Tries a note's failed lines again from its audio. Each line waits for
  * the speech model, so it runs off the main thread.
  */

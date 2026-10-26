@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import {
   CalendarPlus,
   ListChecks,
+  MessageCircleQuestion,
   ChevronDown,
   Search,
   Settings2,
@@ -38,6 +39,7 @@ import { ScheduleDialog } from "../../notes/ScheduleDialog";
 import { RecordingStrip } from "./RecordingStrip";
 import { CallStrip } from "./CallStrip";
 import { TasksView } from "./TasksView";
+import { AskNotes } from "./AskNotes";
 import { ConfirmDelete } from "../../shared/ConfirmDelete";
 import {
   RecentlyDeleted,
@@ -122,6 +124,7 @@ export const NotesPage: React.FC = () => {
   const [matches, setMatches] = useState<Matches | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [tasks, setTasks] = useState(false);
+  const [askingAll, setAskingAll] = useState(false);
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [dialog, setDialog] = useState<NoteKind | null>(null);
   const [scheduling, setScheduling] = useState(false);
@@ -382,6 +385,15 @@ export const NotesPage: React.FC = () => {
           </button>
           <button
             type="button"
+            onClick={() => setAskingAll(true)}
+            aria-label={t("notes.askAll.title")}
+            title={t("notes.askAll.title")}
+            className="grid h-9 w-9 place-items-center rounded-[var(--r-md)] border border-line-strong bg-surface text-text-2 shadow-[var(--shadow-1)] transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:text-text hover:duration-0 active:scale-[0.97]"
+          >
+            <MessageCircleQuestion className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
             onClick={() => setScheduling(true)}
             aria-label={t("notes.schedule.button")}
             title={t("notes.schedule.button")}
@@ -638,6 +650,20 @@ export const NotesPage: React.FC = () => {
       )}
 
       <ScheduleDialog open={scheduling} onClose={() => setScheduling(false)} />
+
+      <AskNotes
+        open={askingAll}
+        notes={all}
+        onClose={() => setAskingAll(false)}
+        onOpen={(id) => {
+          setAskingAll(false);
+          setTasks(false);
+          setQuery("");
+          setFilter("all");
+          setTag(null);
+          setSelectedId(id);
+        }}
+      />
 
       <RecordDialog
         open={dialog !== null}

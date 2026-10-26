@@ -3257,6 +3257,19 @@
       "emptyBody": "Next steps come from your notes' summaries.",
       "noResults": "No next step matches “{{query}}”",
       "noResultsBody": "Search covers the steps, who owns them and the notes' titles."
+    },
+    "askAll": {
+      "title": "Ask your notes",
+      "description": "One question across every summarised meeting and memo.",
+      "placeholder": "What did we decide about pricing?",
+      "reading": "Reading your notes…",
+      "noSummaries": "No note has a summary yet. Summaries come after a recording ends.",
+      "note": "Note {{id}}",
+      "q": {
+        "week": "Recap my week",
+        "promised": "What did I promise people?",
+        "open": "What's still open?"
+      }
     }
   },
   "calls": {
