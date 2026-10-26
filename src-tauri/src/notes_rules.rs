@@ -1612,6 +1612,22 @@ pub fn ask_transcript(lines: &[PromptLine<'_>], question: &str) -> String {
     render(&keep)
 }
 
+/// What did I miss? looks back this far from the newest line.
+pub const MISSED_MS: i64 = 5 * 60_000;
+
+/// The question What did I miss? asks about the last few minutes.
+pub const MISSED_QUESTION: &str = "What did I miss? Recap these last minutes for someone who looked away: what was said, anything decided, and anything asked of You.";
+
+/// The lines of the last `window_ms`, counted back from the newest line.
+pub fn recent_lines<'a, 'b>(lines: &'b [PromptLine<'a>], window_ms: i64) -> &'b [PromptLine<'a>] {
+    let Some(last) = lines.last() else {
+        return lines;
+    };
+    let from = last.at_ms - window_ms;
+    let start = lines.iter().position(|l| l.at_ms >= from).unwrap_or(0);
+    &lines[start..]
+}
+
 pub fn ask_request(transcript: &str, question: &str) -> String {
     format!("Transcript:\n{transcript}\nQuestion: {}", question.trim())
 }
@@ -2310,6 +2326,25 @@ mod tests {
         // You talked for a while: a real recording.
         assert!(!looks_accidental(true, 50, 0, 300_000));
         assert!(!looks_accidental(true, 80, 0, 60_000));
+    }
+
+    #[test]
+    fn what_did_i_miss_reads_the_last_minutes() {
+        let line = |at_ms, text| PromptLine {
+            at_ms,
+            who: "Them",
+            text,
+        };
+        let lines = [
+            line(0, "hello"),
+            line(400_000, "budget"),
+            line(600_000, "launch"),
+            line(700_000, "who owns it"),
+        ];
+        let recent = recent_lines(&lines, MISSED_MS);
+        assert_eq!(recent.len(), 3);
+        assert_eq!(recent[0].text, "budget");
+        assert!(recent_lines(&[], MISSED_MS).is_empty());
     }
 
     #[test]

@@ -7,10 +7,20 @@ import React, {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { Check, Loader2, Mic, Pause, Play, Square, X } from "lucide-react";
+import {
+  Check,
+  History,
+  Loader2,
+  Mic,
+  Pause,
+  Play,
+  Square,
+  X,
+} from "lucide-react";
 import { commands, events, type NoteLine } from "@/bindings";
 import { LineText } from "@/components/notes/LineText";
 import {
+  answerParts,
   clock,
   longClock,
   voiceChoices,
@@ -36,7 +46,11 @@ const Line: React.FC<{
   voices: Voice[];
 }> = ({ line, preview, voices }) => (
   // A preview changes as the words come; the screen reader hears the line.
-  <li className="py-1.5" aria-hidden={preview || undefined}>
+  <li
+    className="py-1.5"
+    aria-hidden={preview || undefined}
+    data-at={preview ? undefined : line.at_ms}
+  >
     <div className="flex items-baseline gap-2 text-xs">
       <SpeakerTag line={line} />
       <span className="tabular-nums text-text-3">{clock(line.at_ms)}</span>
@@ -51,6 +65,109 @@ const Line: React.FC<{
     </div>
   </li>
 );
+
+/** Why What did I miss? has no answer, in words. */
+const missedProblem = (code: string): string =>
+  code === "off"
+    ? "notes.summary.off"
+    : code === "none"
+      ? "notes.summary.none"
+      : code === "empty"
+        ? "notes.ask.empty"
+        : "notesPanel.missedFailed";
+
+/** What did I miss?: a recap of the last few minutes, whose times show
+ *  their lines. */
+const Missed: React.FC<{
+  noteId: number;
+  onTime: (ms: number) => void;
+}> = ({ noteId, onTime }) => {
+  const { t } = useTranslation();
+  const [busy, setBusy] = useState(false);
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const ask = async () => {
+    if (busy) return;
+    setBusy(true);
+    setAnswer(null);
+    setProblem(null);
+    const r = await commands
+      .notesWhatDidIMiss(noteId)
+      .catch((e) => ({ status: "error" as const, error: String(e) }));
+    setBusy(false);
+    if (r.status === "ok") setAnswer(r.data);
+    else setProblem(r.error);
+  };
+
+  const open = busy || answer !== null || problem !== null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={ask}
+        disabled={busy}
+        className="inline-flex h-7 items-center gap-1.5 rounded-[var(--r-sm)] px-2 text-[13px] font-normal text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0 disabled:opacity-60"
+      >
+        <History className="h-3.5 w-3.5" aria-hidden="true" />
+        {t("notesPanel.missed")}
+      </button>
+      {open && (
+        <div className="absolute inset-x-3 top-10 z-10 rounded-[var(--r-md)] border border-line bg-surface-2 px-3.5 py-3 shadow-md">
+          <div className="flex items-start gap-2">
+            <p
+              aria-live="polite"
+              className="min-w-0 flex-1 select-text text-sm font-normal leading-relaxed text-text"
+            >
+              {busy ? (
+                <span className="inline-flex items-center gap-2 text-text-3">
+                  <Loader2
+                    className="h-3.5 w-3.5 animate-spin"
+                    aria-hidden="true"
+                  />
+                  {t("notesPanel.missedReading")}
+                </span>
+              ) : problem !== null ? (
+                <span className="text-danger">{t(missedProblem(problem))}</span>
+              ) : (
+                answerParts(answer ?? "").map((part, i) =>
+                  part.kind === "text" ? (
+                    <span key={i} className="whitespace-pre-wrap">
+                      {part.text}
+                    </span>
+                  ) : (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => onTime(part.ms)}
+                      title={t("notes.ask.jump", { time: part.label })}
+                      className="mx-0.5 rounded-[var(--r-xs)] bg-teal-50 px-1 text-[13px] font-medium tabular-nums text-teal-700 hover:bg-teal-100"
+                    >
+                      {part.label}
+                    </button>
+                  ),
+                )
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setAnswer(null);
+                setProblem(null);
+              }}
+              disabled={busy}
+              aria-label={t("notesPanel.missedClose")}
+              title={t("notesPanel.missedClose")}
+              className="grid h-6 w-6 flex-none place-items-center rounded-[var(--r-xs)] text-text-3 hover:bg-surface-3 hover:text-text"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
 
 /** Your notes on the recording, saved as you type; dictated words land at
  *  the cursor. */
@@ -221,6 +338,19 @@ export const NotesPanel: React.FC = () => {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  /** Scrolls the transcript to the line at `ms`. */
+  const showAt = (ms: number) => {
+    const list = listRef.current;
+    if (!list) return;
+    const rows = Array.from(list.querySelectorAll<HTMLElement>("[data-at]"));
+    const row =
+      rows.find((r) => Number(r.dataset.at) >= ms - 999) ??
+      rows[rows.length - 1];
+    if (!row) return;
+    setPinned(false);
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+
   const run = async (fn: () => Promise<{ status: string; error?: string }>) => {
     if (busy) return;
     setBusy(true);
@@ -298,9 +428,18 @@ export const NotesPanel: React.FC = () => {
       )}
 
       <section className="relative flex min-h-0 flex-1 flex-col border-t border-line">
-        <h2 className="flex-none px-4 pb-1 pt-2.5 text-xs font-semibold text-text-2">
-          {t("notes.strip.live")}
-        </h2>
+        <div className="flex flex-none items-center gap-2 px-4 pb-1 pt-1.5">
+          <h2 className="flex-1 text-xs font-semibold text-text-2">
+            {t("notes.strip.live")}
+          </h2>
+          {session && live.length > 0 && (
+            <Missed
+              key={session.note_id}
+              noteId={session.note_id}
+              onTime={showAt}
+            />
+          )}
+        </div>
         {live.length ? (
           <ol
             ref={listRef}

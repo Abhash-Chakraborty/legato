@@ -257,6 +257,14 @@ pub async fn ask_note(app: AppHandle, id: i64, question: String) -> Result<Strin
     notes::ask(&app, id, &question).await
 }
 
+/// What did I miss? in the Notes side panel: the last few minutes of the
+/// recording, recapped. Errors are codes, as for Ask.
+#[tauri::command]
+#[specta::specta]
+pub async fn notes_what_did_i_miss(app: AppHandle, id: i64) -> Result<String, String> {
+    notes::what_did_i_miss(&app, id).await
+}
+
 /// Misheard words your AI found in the note, for review. Errors are codes
 /// the page words.
 #[tauri::command]

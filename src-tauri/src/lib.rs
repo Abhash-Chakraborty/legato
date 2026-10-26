@@ -1174,6 +1174,7 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::summarise_note,
             commands::notes::summarise_note_as,
             commands::notes::ask_note,
+            commands::notes::notes_what_did_i_miss,
             commands::notes::retry_note_lines,
             commands::sync::get_sync_state,
             commands::sync::start_pairing,

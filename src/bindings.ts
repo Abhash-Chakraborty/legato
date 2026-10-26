@@ -2233,6 +2233,18 @@ async askNote(id: number, question: string) : Promise<Result<string, string>> {
 }
 },
 /**
+ * What did I miss? in the Notes side panel: the last few minutes of the
+ * recording, recapped. Errors are codes, as for Ask.
+ */
+async notesWhatDidIMiss(id: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("notes_what_did_i_miss", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Tries a note's failed lines again from its audio. Each line waits for
  * the speech model, so it runs off the main thread.
  */

@@ -3714,7 +3714,11 @@
     "none": "Start notes from the bubble to see the transcript here.",
     "close": "Close the panel; notes keep recording",
     "closeHint": "Close this and notes keep recording.",
-    "minePlaceholder": "Type while you listen"
+    "minePlaceholder": "Type while you listen",
+    "missed": "What did I miss?",
+    "missedReading": "Reading the last few minutes…",
+    "missedFailed": "Couldn't get a recap. Try again in a moment.",
+    "missedClose": "Close the recap"
   },
   "inyon": {
     "reason": {

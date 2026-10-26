@@ -2409,6 +2409,28 @@ pub async fn resummarise_as(app: &AppHandle, note_id: i64, kind: &str) -> Result
 /// Answers a question from the note's transcript. Errors are codes the page
 /// words: "off", "none", "empty", or how the provider answered.
 pub async fn ask(app: &AppHandle, note_id: i64, question: &str) -> Result<String, String> {
+    ask_about(app, note_id, question, None).await
+}
+
+/// What did I miss? from the side panel: the last few minutes of the
+/// recording, recapped. Errors are codes, as for Ask.
+pub async fn what_did_i_miss(app: &AppHandle, note_id: i64) -> Result<String, String> {
+    ask_about(
+        app,
+        note_id,
+        notes_rules::MISSED_QUESTION,
+        Some(notes_rules::MISSED_MS),
+    )
+    .await
+}
+
+/// Asks about the note's transcript, or only its last `window_ms`.
+async fn ask_about(
+    app: &AppHandle,
+    note_id: i64,
+    question: &str,
+    window_ms: Option<i64>,
+) -> Result<String, String> {
     let config = notes_ai(app)?;
     let lines = manager(app).lines(note_id).map_err(|e| e.to_string())?;
     if lines.is_empty() {
@@ -2419,7 +2441,12 @@ pub async fn ask(app: &AppHandle, note_id: i64, question: &str) -> Result<String
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "gone".to_string())?;
     let labels = speaker_labels(&note, &lines);
-    crate::ai::ask_note(app, &config, &prompt_lines(&lines, &labels), question)
+    let all = prompt_lines(&lines, &labels);
+    let asked = match window_ms {
+        Some(window) => notes_rules::recent_lines(&all, window),
+        None => &all[..],
+    };
+    crate::ai::ask_note(app, &config, asked, question)
         .await
         .map_err(|p| problem_code(p.kind))
 }
