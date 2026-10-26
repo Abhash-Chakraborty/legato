@@ -16,6 +16,7 @@ import {
   voiceColour,
   THEM_SIDE,
   summaryText,
+  taskGroups,
   voiceChoices,
   voicesIn,
   transcriptText,
@@ -220,4 +221,44 @@ assert.equal(voiceColour({ ...lines[1], speaker: 1 }), "var(--voice-1)");
 assert.equal(voiceColour({ ...lines[1], speaker: 8 }), "var(--voice-8)");
 assert.equal(voiceColour({ ...lines[1], speaker: 9 }), "var(--voice-1)");
 assert.equal(voiceColour(lines[0]), "var(--teal-700)");
+// Tasks: yours still open by default, newest note first; done ones apart.
+{
+  const task = (id: number, owner: string, text: string, done = false) => ({
+    id,
+    owner,
+    text,
+    done,
+  });
+  const older = note({
+    id: 11,
+    title: "Pricing sync",
+    started_at: 100,
+    actions: [task(1, "You", "Send the deck"), task(2, "Priya", "Book a room")],
+  });
+  const newer = note({
+    id: 12,
+    title: "Standup",
+    started_at: 200,
+    actions: [task(3, "you", "Fix the build", true), task(4, "You", "Ship it")],
+  });
+  const mine = taskGroups([older, newer], "mine", "");
+  assert.deepEqual(
+    mine.map((g) => [g.note.id, g.actions.map((a) => a.id)]),
+    [
+      [12, [4]],
+      [11, [1]],
+    ],
+  );
+  assert.deepEqual(
+    taskGroups([older, newer], "everyone", "")[1].actions.map((a) => a.id),
+    [1, 2],
+  );
+  assert.deepEqual(
+    taskGroups([older, newer], "done", "").map((g) => g.note.id),
+    [12],
+  );
+  // Search reads the step, its owner and the note's title.
+  assert.equal(taskGroups([older, newer], "everyone", "priya").length, 1);
+  assert.equal(taskGroups([older, newer], "mine", "pricing")[0].note.id, 11);
+}
 console.log("notes: ok");

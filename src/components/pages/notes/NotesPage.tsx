@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
   CalendarPlus,
+  ListChecks,
   ChevronDown,
   Search,
   Settings2,
@@ -28,6 +29,7 @@ import {
   FILTERS,
   inFilter,
   type Filter,
+  isYou,
 } from "../../notes/notes";
 import { NoteDetail } from "./NoteDetail";
 import { NoteRow } from "./NoteRow";
@@ -35,6 +37,7 @@ import { RecordDialog } from "./RecordDialog";
 import { ScheduleDialog } from "../../notes/ScheduleDialog";
 import { RecordingStrip } from "./RecordingStrip";
 import { CallStrip } from "./CallStrip";
+import { TasksView } from "./TasksView";
 import { ConfirmDelete } from "../../shared/ConfirmDelete";
 import {
   RecentlyDeleted,
@@ -118,6 +121,7 @@ export const NotesPage: React.FC = () => {
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<Matches | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [tasks, setTasks] = useState(false);
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [dialog, setDialog] = useState<NoteKind | null>(null);
   const [scheduling, setScheduling] = useState(false);
@@ -170,6 +174,16 @@ export const NotesPage: React.FC = () => {
   const all = useMemo(
     () => (notes ?? []).filter((n) => !hidden.has(n.id)),
     [notes, hidden],
+  );
+  // Your next steps still open, for the Next steps button.
+  const openTasks = useMemo(
+    () =>
+      all.reduce(
+        (n, note) =>
+          n + note.actions.filter((a) => !a.done && isYou(a.owner)).length,
+        0,
+      ),
+    [all],
   );
   const tags = useMemo(() => {
     const seen = new Map<string, string>();
@@ -351,6 +365,23 @@ export const NotesPage: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => setTasks(!tasks)}
+            aria-pressed={tasks}
+            title={t("notes.tasks.button")}
+            className={`inline-flex h-9 items-center gap-1.5 rounded-[var(--r-md)] border px-3 text-[13px] shadow-[var(--shadow-1)] transition-colors duration-[var(--dur-1)] hover:duration-0 active:scale-[0.97] ${
+              tasks
+                ? "border-teal-700 bg-teal-50 font-medium text-teal-700"
+                : "border-line-strong bg-surface text-text-2 hover:bg-surface-2 hover:text-text"
+            }`}
+          >
+            <ListChecks className="h-4 w-4" aria-hidden="true" />
+            {t("notes.tasks.button")}
+            {openTasks > 0 && (
+              <span className="tabular-nums text-text-3">{openTasks}</span>
+            )}
+          </button>
+          <button
+            type="button"
             onClick={() => setScheduling(true)}
             aria-label={t("notes.schedule.button")}
             title={t("notes.schedule.button")}
@@ -395,7 +426,18 @@ export const NotesPage: React.FC = () => {
 
       {session ? <RecordingStrip session={session} /> : <CallStrip />}
 
-      {!notes ? null : all.length === 0 && !session ? (
+      {!notes ? null : tasks ? (
+        <TasksView
+          notes={all}
+          onOpen={(id) => {
+            setTasks(false);
+            setQuery("");
+            setFilter("all");
+            setTag(null);
+            setSelectedId(id);
+          }}
+        />
+      ) : all.length === 0 && !session ? (
         <div className="rounded-[var(--r-lg)] border border-line bg-surface">
           {empty}
         </div>
@@ -602,6 +644,7 @@ export const NotesPage: React.FC = () => {
         kind={dialog ?? "meeting"}
         onClose={() => setDialog(null)}
         onStarted={(id) => {
+          setTasks(false);
           setSelectedId(id);
           setQuery("");
           setFilter("all");

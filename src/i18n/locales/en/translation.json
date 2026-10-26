@@ -3239,6 +3239,24 @@
         "outlookCom": "Open Outlook.com"
       },
       "failed": "Couldn't open the calendar"
+    },
+    "tasks": {
+      "button": "Next steps",
+      "search": "Search next steps",
+      "open": "Open this note",
+      "show": {
+        "mine": "Yours",
+        "everyone": "Everyone's",
+        "done": "Done"
+      },
+      "empty": {
+        "mine": "Nothing left for you",
+        "everyone": "No open next steps",
+        "done": "Nothing ticked off yet"
+      },
+      "emptyBody": "Next steps come from your notes' summaries.",
+      "noResults": "No next step matches “{{query}}”",
+      "noResultsBody": "Search covers the steps, who owns them and the notes' titles."
     }
   },
   "calls": {

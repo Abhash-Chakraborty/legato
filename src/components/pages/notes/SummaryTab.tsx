@@ -37,7 +37,7 @@ const splitTitle = (text: string): [string | null, string] => {
   return [title.trim(), rest];
 };
 
-const Titled: React.FC<{ text: string }> = ({ text }) => {
+export const Titled: React.FC<{ text: string }> = ({ text }) => {
   const [title, rest] = splitTitle(text);
   return title ? (
     <span>

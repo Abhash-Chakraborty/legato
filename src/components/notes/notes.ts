@@ -286,3 +286,41 @@ export const fixContext = (
     after: cut(text.slice(found.index + found[0].length), false),
   };
 };
+
+export type TaskShow = "mine" | "everyone" | "done";
+
+/** One note's next steps for the Tasks view. */
+export interface TaskGroup {
+  note: Note;
+  actions: Note["actions"];
+}
+
+/** Next steps from every note, newest note first: yours or everyone's
+ *  still open, or the ones done; `query` matches the step, its owner or the
+ *  note's title. */
+export const taskGroups = (
+  notes: Note[],
+  show: TaskShow,
+  query: string,
+): TaskGroup[] => {
+  const q = query.trim().toLowerCase();
+  return [...notes]
+    .sort((a, b) => b.started_at - a.started_at)
+    .map((note) => ({
+      note,
+      actions: note.actions.filter(
+        (a) =>
+          (show === "done"
+            ? a.done
+            : !a.done && (show === "everyone" || isYou(a.owner))) &&
+          (!q ||
+            a.text.toLowerCase().includes(q) ||
+            a.owner.toLowerCase().includes(q) ||
+            note.title.toLowerCase().includes(q)),
+      ),
+    }))
+    .filter((g) => g.actions.length > 0);
+};
+
+/** An action item's owner is the person who recorded. */
+export const isYou = (owner: string) => owner.trim().toLowerCase() === "you";
