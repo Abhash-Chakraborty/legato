@@ -1152,6 +1152,7 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::add_note_tag,
             commands::notes::remove_note_tag,
             commands::notes::set_note_action_done,
+            commands::notes::answer_short_note,
             commands::notes::delete_note,
             commands::notes::restore_note,
             commands::trash::list_trash,

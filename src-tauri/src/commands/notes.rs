@@ -125,6 +125,13 @@ pub fn set_note_action_done(notes: Notes<'_>, action_id: i64, done: bool) -> Res
     text(notes.set_action_done(action_id, done))
 }
 
+/// The bar's Keep or Discard for a note that looked started by mistake.
+#[tauri::command]
+#[specta::specta]
+pub fn answer_short_note(app: AppHandle, id: i64, keep: bool) -> Result<(), String> {
+    text(notes::answer_unsure(&app, id, keep))
+}
+
 /// Deletes a note and returns it for Undo.
 #[tauri::command]
 #[specta::specta]

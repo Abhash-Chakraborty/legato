@@ -1584,6 +1584,8 @@
       },
       "noteReady": "Note saved · {{duration}}",
       "noteEmpty": "Nothing was heard, so no note was saved",
+      "noteShort_one": "Only {{count}} word. Started by mistake?",
+      "noteShort_other": "Only {{count}} words. Started by mistake?",
       "notesFailed": "Notes didn't start · {{reason}}",
       "callNever": "Legato won't offer notes in {{app}}",
       "fromPhone": "From {{name}} · on your clipboard",
@@ -1612,6 +1614,8 @@
       "hint": "↑ and ↓ to choose, Enter to run, Esc to close"
     },
     "open": "Open",
+    "keep": "Keep",
+    "discard": "Discard",
     "notes": {
       "label": "Notes",
       "pause": "Pause notes",

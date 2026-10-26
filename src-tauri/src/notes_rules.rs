@@ -770,6 +770,21 @@ pub const ASK_WORDS: usize = 3_000;
 /// Shorter transcripts get no summary.
 pub const MIN_SUMMARY_WORDS: usize = 40;
 
+/// A recording with fewer words than this was likely started by mistake.
+const FEW_WORDS: usize = 20;
+/// A meeting where only you spoke, briefly: likely no meeting at all.
+const SOLO_WORDS: usize = 60;
+const SOLO_MS: i64 = 120_000;
+
+/// Whether a finished recording looks started by mistake, so Notes asks
+/// before keeping it: only a few words, or a short meeting in which nobody
+/// on the call said anything. `yours` and `theirs` count the words on each
+/// side (a memo's room is all `yours`).
+pub fn looks_accidental(meeting: bool, yours: usize, theirs: usize, duration_ms: i64) -> bool {
+    let words = yours + theirs;
+    words < FEW_WORDS || (meeting && theirs == 0 && words < SOLO_WORDS && duration_ms < SOLO_MS)
+}
+
 /// One transcript line as the prompts see it.
 pub struct PromptLine<'a> {
     pub at_ms: i64,
@@ -2119,5 +2134,21 @@ mod tests {
             "base (3).docx"
         );
         assert_eq!(unique_docx("new", |_| false), "new.docx");
+    }
+
+    #[test]
+    fn a_few_words_or_a_meeting_of_one_looks_accidental() {
+        // Six words, alone: started by mistake.
+        assert!(looks_accidental(true, 6, 0, 8_000));
+        assert!(looks_accidental(false, 6, 0, 8_000));
+        // A short meeting where only you spoke.
+        assert!(looks_accidental(true, 45, 0, 60_000));
+        // The same words in a memo are a memo.
+        assert!(!looks_accidental(false, 45, 0, 60_000));
+        // Someone on the call spoke.
+        assert!(!looks_accidental(true, 30, 15, 60_000));
+        // You talked for a while: a real recording.
+        assert!(!looks_accidental(true, 50, 0, 300_000));
+        assert!(!looks_accidental(true, 80, 0, 60_000));
     }
 }

@@ -1282,10 +1282,80 @@ pub fn stop(app: &AppHandle) -> Result<()> {
         // The next recording can start now; voices and the summary follow.
         *lock(&FINISHING) = None;
         announce(&app);
-        if let Some(after) = after {
-            after.run(&app);
+        match after {
+            Some(after) if after.words.is_some() => ask_keep(&app, after),
+            Some(after) => after.run(&app),
+            None => {}
         }
     });
+    Ok(())
+}
+
+/// A recording that looks started by mistake, waiting for Keep or Discard
+/// on the bar. Left alone, it's kept.
+static UNSURE: Mutex<Option<FollowUp>> = Mutex::new(None);
+/// How long the bar asks before the note is kept.
+const ASK_FOR: Duration = Duration::from_secs(15);
+
+/// Whether a note waits for Keep or Discard.
+pub fn is_unsure(note_id: i64) -> bool {
+    lock(&UNSURE).as_ref().is_some_and(|a| a.note_id == note_id)
+}
+
+/// Asks on the bar whether to keep a recording with only a few words. The
+/// summary and voices wait for the answer.
+fn ask_keep(app: &AppHandle, after: FollowUp) {
+    let note_id = after.note_id;
+    let words = after.words.unwrap_or(0);
+    // A question nobody answered before this one: that note stays.
+    if let Some(older) = lock(&UNSURE).replace(after) {
+        let app = app.clone();
+        std::thread::spawn(move || older.run(&app));
+    }
+    info!("Notes heard only {words} words; asking whether to keep the note");
+    crate::overlay::show_overlay_notice_for(
+        app,
+        &BarNotice::NoteShort { id: note_id, words },
+        ASK_FOR.as_millis() as u64,
+    );
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(ASK_FOR + Duration::from_secs(1));
+        while crate::overlay::bar_held() {
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        if let Err(e) = answer_unsure(&app, note_id, true) {
+            warn!("Couldn't keep the short note: {e}");
+        }
+    });
+}
+
+/// Keep or Discard for a note that looked started by mistake. Discarding
+/// moves it to Recently deleted, so it can still come back.
+pub fn answer_unsure(app: &AppHandle, note_id: i64, keep: bool) -> Result<()> {
+    let after = {
+        let mut unsure = lock(&UNSURE);
+        if unsure.as_ref().is_some_and(|a| a.note_id == note_id) {
+            unsure.take()
+        } else {
+            None
+        }
+    };
+    // Answered already, or kept when the question timed out.
+    let Some(after) = after else {
+        return Ok(());
+    };
+    if keep {
+        info!("Keeping the short note");
+        let app = app.clone();
+        std::thread::spawn(move || after.run(&app));
+        return Ok(());
+    }
+    info!("Discarding a note started by mistake");
+    if let Some(track) = &after.leftover {
+        let _ = std::fs::remove_file(track);
+    }
+    manager(app).delete(note_id)?;
     Ok(())
 }
 
@@ -1828,6 +1898,9 @@ struct FollowUp {
     voices: Option<(PathBuf, Option<Speaker>)>,
     /// The call's track, kept for the voices and removed after.
     leftover: Option<PathBuf>,
+    /// How many words were heard, when so few that the recording looks
+    /// started by mistake.
+    words: Option<usize>,
 }
 
 impl FollowUp {
@@ -1943,6 +2016,21 @@ fn finish(app: &AppHandle, session: Session) -> Option<FollowUp> {
         error!("Couldn't finish the note: {e}");
     }
     info!("Notes ready: {saved} lines, {failed} failed, {duration_ms} ms");
+    let words = m
+        .conn()
+        .and_then(|c| store::lines(&c, note_id))
+        .ok()
+        .and_then(|lines| {
+            let (yours, theirs) = lines.iter().fold((0, 0), |(y, t), l| {
+                let n = l.text.split_whitespace().count();
+                match l.who {
+                    Speaker::You => (y + n, t),
+                    Speaker::Them => (y, t + n),
+                }
+            });
+            notes_rules::looks_accidental(meeting, yours, theirs, duration_ms)
+                .then_some(yours + theirs)
+        });
     m.expire_audio();
     m.changed();
     let keeps_track = find_voices && meeting && audio.is_ok();
@@ -1956,6 +2044,7 @@ fn finish(app: &AppHandle, session: Session) -> Option<FollowUp> {
         duration_ms,
         voices,
         leftover: keeps_track.then_some(them),
+        words,
     })
 }
 

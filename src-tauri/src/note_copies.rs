@@ -126,7 +126,8 @@ fn sync(app: &AppHandle) -> Result<()> {
     }
     let mut written = 0;
     for note in notes.list()? {
-        if note.status == NoteStatus::Recording {
+        // Still recording, or waiting to hear whether it was a mistake.
+        if note.status == NoteStatus::Recording || crate::notes::is_unsure(note.id) {
             continue;
         }
         let hash = hex(&Sha256::digest(serde_json::to_vec(&note)?));

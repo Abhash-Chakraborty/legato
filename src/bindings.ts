@@ -2005,6 +2005,17 @@ async setNoteActionDone(actionId: number, done: boolean) : Promise<Result<null, 
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The bar's Keep or Discard for a note that looked started by mistake.
+ */
+async answerShortNote(id: number, keep: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("answer_short_note", { id, keep }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async deleteNote(id: number) : Promise<Result<DeletedRecording | null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_note", { id }) };

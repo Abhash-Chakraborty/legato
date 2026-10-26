@@ -87,6 +87,7 @@ type OverlayNotice =
     }
   | { kind: "note_ready"; id: number; duration_ms: number }
   | { kind: "note_empty"; duration_ms: number }
+  | { kind: "note_short"; id: number; words: number }
   | { kind: "notes_failed"; reason: string }
   | { kind: "call_never"; app: string }
   | { kind: "agent_done"; agent: string; title: string }
@@ -1114,6 +1115,8 @@ const RecordingOverlay: React.FC = () => {
         });
       case "note_empty":
         return t("overlay.notice.noteEmpty");
+      case "note_short":
+        return t("overlay.notice.noteShort", { count: n.words });
       case "notes_failed":
         return t("overlay.notice.notesFailed", { reason: n.reason });
       case "call_never":
@@ -1147,8 +1150,15 @@ const RecordingOverlay: React.FC = () => {
         notice.kind === "pasted_last" ||
         notice.kind === "learned") &&
       ("undo" in notice ? notice.undo : true);
+    // A question stays up while the pointer is on it.
+    const asks = kind === "note_short";
     return frame(
-      <div className="scard notice" role="status">
+      <div
+        className="scard notice"
+        role="status"
+        onMouseEnter={asks ? () => commands.barHold(true) : undefined}
+        onMouseLeave={asks ? () => commands.barHold(false) : undefined}
+      >
         {GOOD_NOTICES.has(kind) ? (
           <CheckMark />
         ) : WARN_NOTICES.has(kind) ? (
@@ -1194,6 +1204,30 @@ const RecordingOverlay: React.FC = () => {
           >
             {t("overlay.open")}
           </button>
+        )}
+        {notice?.kind === "note_short" && (
+          <>
+            <button
+              type="button"
+              className="sbtn ghost"
+              onClick={() => {
+                commands.answerShortNote(notice.id, false).catch(() => {});
+                commands.barDismiss();
+              }}
+            >
+              {t("overlay.discard")}
+            </button>
+            <button
+              type="button"
+              className="sbtn ghost"
+              onClick={() => {
+                commands.answerShortNote(notice.id, true).catch(() => {});
+                commands.barDismiss();
+              }}
+            >
+              {t("overlay.keep")}
+            </button>
+          </>
         )}
         {notice?.kind === "spotted" && (
           <button

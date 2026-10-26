@@ -671,6 +671,11 @@ pub fn hold_bar(held: bool) {
     BAR_HELD.store(held, Ordering::SeqCst);
 }
 
+/// Whether the pointer holds the bar's panel up.
+pub fn bar_held() -> bool {
+    BAR_HELD.load(Ordering::SeqCst)
+}
+
 /// Sets the working label ("Polishing…") the next processing state shows;
 /// None goes back to the default.
 pub fn set_working_label(app_handle: &AppHandle, label: Option<&str>) {

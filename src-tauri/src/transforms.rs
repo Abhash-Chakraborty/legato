@@ -123,6 +123,11 @@ pub enum BarNotice {
     NoteEmpty {
         duration_ms: i64,
     },
+    /// A Notes recording heard only a few words: keep it or discard it.
+    NoteShort {
+        id: i64,
+        words: usize,
+    },
     /// Never here on the call card: no more offers in this app, with Undo.
     CallNever {
         app: String,
