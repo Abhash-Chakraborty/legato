@@ -49,6 +49,13 @@ export const Titled: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
+/** You, Them or Speaker 3: a line's label, which older summaries listed
+ *  among the people (`notes_rules::is_line_label`). */
+const isLineLabel = (name: string) =>
+  /^(you|them|the other person|the others|other person|speaker \d+)$/i.test(
+    name.trim(),
+  );
+
 /** Everyone the note names: who was invited, then who the summary found. */
 const peopleOf = (note: Note): string[] => {
   const out: string[] = [];
@@ -62,7 +69,7 @@ const peopleOf = (note: Note): string[] => {
       const other = n.toLowerCase();
       return other === key || other.split(" ")[0] === key;
     });
-    if (key && !known) out.push(name.trim());
+    if (key && !known && !isLineLabel(key)) out.push(name.trim());
   }
   return out;
 };

@@ -1024,7 +1024,7 @@ pub fn transcript_parts(lines: &[PromptLine<'_>]) -> Vec<String> {
     parts
 }
 
-pub const SUMMARY_SYSTEM: &str = "You summarise one recorded conversation for the person who recorded it. Lines marked You are that person; every other line is someone else, from the call or the room, marked Them or with their name or a speaker number. Use only what the transcript says. Write in the transcript's language. Answer with JSON only.";
+pub const SUMMARY_SYSTEM: &str = "You summarise one recorded conversation for the person who recorded it. Lines marked You are that person; every other line is someone else, from the call or the room, marked Them or with their name or a speaker number. Them is a label, not a name: in what you write, call that person \"the other person\" (or \"the others\" when there may be several), never Them. Use only what the transcript says. Write in the transcript's language. Answer with JSON only.";
 
 /// At most this many tags are suggested for a note.
 pub const TAG_MAX: usize = 3;
@@ -1103,7 +1103,7 @@ pub fn summary_request(
          title: a short name for the conversation, three to six words, in sentence case, naming its main topic; no date, no quotes.\n\
          tags: one to three short topic tags, lowercase, one or two words each.\n\
          summary: one sentence of at most 25 words on what the conversation was about and where it landed.\n\
-         people: the names of everyone who spoke or was addressed by name; leave out anyone the transcript doesn't name.\n\
+         people: the names of everyone who spoke or was addressed by name; leave out anyone the transcript doesn't name, and the labels You, Them and Speaker 2.\n\
          topics: two to five topics in the order they came up, each with a heading of two to six words and one to three sentences on what was said and concluded.\n\
          decisions: what was agreed, each as a short title, a colon, then one sentence on what it means; empty when nothing was.\n\
          actions: tasks someone took on, each with its owner (\"You\" for the person who recorded, a name when the transcript gives one, else \"Them\") and text as a short title, a colon, then exactly what to do.\n\
@@ -1212,6 +1212,18 @@ pub fn merge_people<'a>(lists: impl Iterator<Item = &'a [String]>) -> Vec<String
         }
     }
     out
+}
+
+/// A transcript's label rather than a person's name: You, Them, Speaker 3,
+/// or how the prompt asks the model to write Them.
+pub fn is_line_label(name: &str) -> bool {
+    let name = name.trim().to_lowercase();
+    matches!(
+        name.as_str(),
+        "you" | "them" | "the other person" | "the others" | "other person"
+    ) || name
+        .strip_prefix("speaker ")
+        .is_some_and(|n| n.trim().parse::<u32>().is_ok())
 }
 
 /// A time written like the transcript's ("5:48", "[1:02:03]") in ms.
@@ -1435,7 +1447,10 @@ pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
             .unwrap_or_default()
     };
     let outline = NoteOutline {
-        people: merge_people(std::iter::once(strings("people").as_slice())),
+        people: merge_people(std::iter::once(strings("people").as_slice()))
+            .into_iter()
+            .filter(|name| !is_line_label(name))
+            .collect(),
         topics: pairs("topics")
             .into_iter()
             .map(|(heading, text, _)| OutlineTopic { heading, text })
@@ -1721,7 +1736,7 @@ pub fn follow_up_request(title: &str, summary: &NotesSummary, my_notes: &str) ->
     request
 }
 
-pub const ASK_SYSTEM: &str = "You answer questions about one recorded conversation, using only its transcript. Lines marked You are the person asking; every other line is someone else, marked Them or with their name or a speaker number. After each statement, put the time of the line it comes from in square brackets, like [12:04]. If the transcript doesn't answer the question, say so in one sentence. Answer in two to four sentences, in the question's language, as plain text.";
+pub const ASK_SYSTEM: &str = "You answer questions about one recorded conversation, using only its transcript. Lines marked You are the person asking; every other line is someone else, marked Them or with their name or a speaker number. Them is a label, not a name: call that person \"the other person\", never Them. After each statement, put the time of the line it comes from in square brackets, like [12:04]. If the transcript doesn't answer the question, say so in one sentence. Answer in two to four sentences, in the question's language, as plain text.";
 
 const STOPWORDS: &[&str] = &[
     "a", "an", "and", "are", "about", "did", "do", "does", "for", "from", "has", "have", "how",
@@ -2185,7 +2200,7 @@ mod tests {
 
     #[test]
     fn summaries_bring_topics_people_and_timed_details() {
-        let answer = r#"{"summary": "Repos and a test plan.", "people": ["Sahil", "sahil", "Abhash"],
+        let answer = r#"{"summary": "Repos and a test plan.", "people": ["You", "Sahil", "sahil", "Them", "Abhash", "Speaker 3"],
             "topics": [{"heading": "GIS app", "text": "A map of 3.3 million buildings."}, {"heading": "", "text": ""}],
             "details": [{"heading": "Cloudflare workers", "text": "They switch them.", "at": "[5:48]"},
                         {"heading": "Late", "text": "Past the end.", "at": "1:02:03"},
