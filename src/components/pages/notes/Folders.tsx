@@ -237,14 +237,16 @@ export const FolderFilter: React.FC<{
         onClick={() => setMenu(!menu)}
         aria-haspopup="menu"
         aria-expanded={menu}
-        className={`inline-flex h-7 max-w-[150px] items-center gap-1.5 rounded-[var(--r-sm)] px-2 text-[13px] transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 ${
+        aria-label={selected ? undefined : t("notes.folders.label")}
+        title={selected ? undefined : t("notes.folders.label")}
+        className={`inline-flex h-7 max-w-[130px] items-center gap-1 rounded-[var(--r-sm)] px-1.5 text-[13px] transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 ${
           selected ? "font-medium text-teal-700" : "text-text-2"
         }`}
       >
         <Folder className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
-        <span className="truncate">
-          {selected?.name ?? t("notes.folders.label")}
-        </span>
+        {/* Just the icon until a folder is picked, so it fits beside the
+            filter in the list's column. */}
+        {selected && <span className="truncate">{selected.name}</span>}
         <ChevronDown className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
       </button>
       {menu && (

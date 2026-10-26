@@ -506,7 +506,9 @@ export const NotesPage: React.FC = () => {
                   className="input w-full ps-[32px] [&::-webkit-search-cancel-button]:hidden"
                 />
               </div>
-              <div className="flex items-center justify-between gap-2">
+              {/* Folders and Tags drop to their own line when the column
+                  is too narrow for them beside the filter. */}
+              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
                 <div
                   role="radiogroup"
                   aria-label={t("notes.filter.label")}
@@ -532,7 +534,7 @@ export const NotesPage: React.FC = () => {
                     </button>
                   ))}
                 </div>
-                <div className="ms-auto flex items-center">
+                <div className="ms-auto flex min-w-0 items-center">
                   <FolderFilter
                     folders={folders}
                     folder={folder}
@@ -546,7 +548,9 @@ export const NotesPage: React.FC = () => {
                         onClick={() => setTagMenu(!tagMenu)}
                         aria-haspopup="menu"
                         aria-expanded={tagMenu}
-                        className={`inline-flex h-7 max-w-[140px] items-center gap-1.5 rounded-[var(--r-sm)] px-2 text-[13px] transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 ${
+                        aria-label={tag ? undefined : t("notes.filter.tags")}
+                        title={tag ? undefined : t("notes.filter.tags")}
+                        className={`inline-flex h-7 max-w-[130px] items-center gap-1 rounded-[var(--r-sm)] px-1.5 text-[13px] transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 ${
                           tag ? "font-medium text-teal-700" : "text-text-2"
                         }`}
                       >
@@ -554,9 +558,7 @@ export const NotesPage: React.FC = () => {
                           className="h-3.5 w-3.5 flex-none"
                           aria-hidden="true"
                         />
-                        <span className="truncate">
-                          {tag ?? t("notes.filter.tags")}
-                        </span>
+                        {tag && <span className="truncate">{tag}</span>}
                         <ChevronDown
                           className="h-3.5 w-3.5 flex-none"
                           aria-hidden="true"
