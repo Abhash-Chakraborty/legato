@@ -294,10 +294,6 @@ jobs:
           AZURE_TENANT_ID: ${{ inputs.sign-binaries && secrets.AZURE_TENANT_ID || '' }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ inputs.sign-binaries && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ inputs.sign-binaries && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
-          # Legato's Google OAuth client (a desktop client: Google treats its
-          # secret as public). Unset, the build offers no Google sign-in.
-          LEGATO_GOOGLE_CLIENT_ID: ${{ secrets.LEGATO_GOOGLE_CLIENT_ID }}
-          LEGATO_GOOGLE_CLIENT_SECRET: ${{ secrets.LEGATO_GOOGLE_CLIENT_SECRET }}
         with:
           tagName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}

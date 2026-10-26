@@ -1,7 +1,7 @@
 //! Settings › Connections: calendars, Inyon, and AI apps reading Legato
 //! over MCP.
 
-use crate::calendar::{self, AddedMeeting, CalendarStatus, NewMeeting, RemovedCalendar};
+use crate::calendar::{self, CalendarStatus, RemovedCalendar};
 use crate::calendar_rules::Meeting;
 use crate::settings::{get_settings, write_settings};
 use serde::Serialize;
@@ -117,40 +117,6 @@ pub fn calendar_remove(app: AppHandle, id: String) -> Result<RemovedCalendar, St
 #[specta::specta]
 pub fn calendar_refresh() {
     calendar::refresh_soon();
-}
-
-/// Whether this build can sign in to Google.
-#[tauri::command]
-#[specta::specta]
-pub fn google_available() -> bool {
-    crate::google::available()
-}
-
-/// Signs in to a Google account in the browser and adds its calendar.
-/// Waits for the browser; "cancelled" after Cancel.
-#[tauri::command]
-#[specta::specta]
-pub async fn calendar_connect_google(app: AppHandle) -> Result<CalendarStatus, String> {
-    calendar::connect_google(&app).await
-}
-
-/// Stops a Google sign-in waiting for the browser.
-#[tauri::command]
-#[specta::specta]
-pub fn calendar_cancel_google() {
-    crate::google::cancel_sign_in();
-}
-
-/// Adds a meeting to a connected Google account, with a Meet link when
-/// asked; offline, it waits for the network.
-#[tauri::command]
-#[specta::specta]
-pub async fn calendar_add_meeting(
-    app: AppHandle,
-    feed: String,
-    meeting: NewMeeting,
-) -> Result<AddedMeeting, String> {
-    calendar::add_meeting(&app, &feed, meeting).await
 }
 
 /// Meetings from a day back to two weeks ahead, by start.

@@ -82,8 +82,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `notes_panel.rs` - The Notes side panel docked at the right of the screen (live transcript, My notes, Pause, Stop)
 - `calls.rs` - Noticing calls (Teams, Zoom, Slack, Discord, WhatsApp, Telegram, and Meet, Teams or Zoom in a browser tab) and offering notes; logs who holds the microphone when that changes
 - `call_people.rs` - Who is in a Google Meet call, read from the call window through UI Automation while a meeting's note records; the names join the note's attendees, for the summary and for naming voices
-- `calendar.rs` - Calendars from secret iCal addresses or a Google account (Settings › Connections): meetings for the bubble, note titles and MCP, cached in `calendar.json`; meetings added to Google while offline wait there
-- `google.rs` - Google sign-in (desktop OAuth with PKCE, the refresh token in Credential Manager), reading Google Calendar's events and adding one with a Meet link
+- `calendar.rs` - Calendars from secret iCal addresses (Settings › Connections): meetings for the bubble, note titles and MCP, cached in `calendar.json`
 - `inyon.rs` - Inyon as a companion: pairing with a hub by its six-character code (the token in Credential Manager), a WebSocket that watches the hub's agent sessions, the bar's agent card when one asks a question, and answering it with a click or by voice (a dictation in `DictationMode::Agent`, matched to an option); Inyon's companion agent: the Talk to the companion shortcut dictates into its pane, the bar says it's thinking, and its `companion.reply` shows on the bar's companion card
 - `mcp.rs` - `legato --mcp`: a Model Context Protocol server over stdio that lets AI apps read dictations, notes, the Dictionary, the Scratchpad and meetings
 - `context.rs` - Knowing the app in front (name, category, icon) and listing open windows
@@ -162,7 +161,7 @@ Settings are stored using Tauri's store plugin with reactive updates:
 - The bar: style (none, minimal, live), shape (bar or island), position, and whether the island stays small at rest
 - Style per kind of app: tone, paste keys, Enter after pasting, trailing space
 - Transforms, Ask and your AI provider, with an optional provider and model each for dictation, transforms and Notes; Notes, calls, Scratchpad and learning options
-- Connections: calendars (their addresses or a Google account's token in Credential Manager), the folder that keeps notes as Word files, whether AI apps may read Legato over MCP, and the Inyon hub Legato is paired with. Google sign-in is optional: without it, meetings come from iCal addresses and scheduling opens the calendar's own new-event page, filled in (`components/notes/schedule.ts`); with it, Schedule adds the meeting with a Meet link
+- Connections: calendars (their addresses in Credential Manager), the folder that keeps notes as Word files, whether AI apps may read Legato over MCP, and the Inyon hub Legato is paired with. Legato signs in to no Google or Microsoft account: scheduling opens the calendar's own new-event page, filled in (`components/notes/schedule.ts`)
 
 ### Single Instance Architecture
 
@@ -264,8 +263,6 @@ Legato reads these `LEGATO_*` variables. Handy's `HANDY_*` names are not read an
 | `LEGATO_KEEP_VULKAN_IMPLICIT_LAYERS` | app                  | Keep implicit Vulkan layers enabled (see Platform Notes)                                   |
 | `LEGATO_DISABLE_UPDATER`             | app                  | Force update checks off without touching the persisted setting; the toggle shows as locked |
 | `LEGATO_VC_REDIST_DIRS`              | `build.rs`           | VC++ redist dirs (`;`-separated) whose runtime DLLs are staged app-local; set by CI        |
-| `LEGATO_GOOGLE_CLIENT_ID`            | build (`google.rs`)  | Google OAuth desktop client baked into the app; unset, Google sign-in isn't offered        |
-| `LEGATO_GOOGLE_CLIENT_SECRET`        | build (`google.rs`)  | That client's secret (public for desktop clients, per Google); set by CI from secrets      |
 | `LEGATO_TRANSCRIBE_WORKER_LOG`       | transcription worker | Log level the app hands to its worker process; set internally                              |
 | `LEGATO_DEBUG_MIC_READY_DELAY_MS`    | debug builds         | Delay the microphone-ready signal to preview the arming animation                          |
 | `LEGATO_FORCE_TRANSCRIPTION_FAILURE` | debug builds         | Make every transcription fail, to test the error path                                      |

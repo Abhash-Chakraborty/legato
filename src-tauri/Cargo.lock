@@ -3094,7 +3094,6 @@ dependencies = [
  "env_filter",
  "ferrous-opencc",
  "futures-util",
- "getrandom 0.3.4",
  "handy-keys",
  "handy-recorder",
  "hf-hub",

@@ -725,42 +725,6 @@ async calendarRefresh() : Promise<void> {
     await TAURI_INVOKE("calendar_refresh");
 },
 /**
- * Whether this build can sign in to Google.
- */
-async googleAvailable() : Promise<boolean> {
-    return await TAURI_INVOKE("google_available");
-},
-/**
- * Signs in to a Google account in the browser and adds its calendar.
- * Waits for the browser; "cancelled" after Cancel.
- */
-async calendarConnectGoogle() : Promise<Result<CalendarStatus, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("calendar_connect_google") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Stops a Google sign-in waiting for the browser.
- */
-async calendarCancelGoogle() : Promise<void> {
-    await TAURI_INVOKE("calendar_cancel_google");
-},
-/**
- * Adds a meeting to a connected Google account, with a Meet link when
- * asked; offline, it waits for the network.
- */
-async calendarAddMeeting(feed: string, meeting: NewMeeting) : Promise<Result<AddedMeeting, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("calendar_add_meeting", { feed, meeting }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Meetings from a day back to two weeks ahead, by start.
  */
 async calendarMeetings() : Promise<Meeting[]> {
@@ -3664,12 +3628,7 @@ export type CleanupLevel = "none" | "light" | "medium"
  * Where the desktop bubble sits: the monitor, and the dot's centre as
  * fractions of that monitor's work area.
  */
-/**
- * A calendar Legato reads meetings from: an iCal address, or a Google
- * account (named by its address). The address, or the account's refresh
- * token, is in Credential Manager, not here.
- */
-export type CalendarFeed = { id: string; name: string; google?: boolean }
+export type CalendarFeed = { id: string; name: string }
 /**
  * A folder a sync app keeps in the cloud, offered when you pick where the
  * copies go.
@@ -3691,39 +3650,7 @@ synced_at: number | null; error: string | null;
 /**
  * Meetings in the next seven days.
  */
-upcoming: number; 
-/**
- * A Google account rather than an iCal address.
- */
-google: boolean; 
-/**
- * Meetings added offline, waiting to go to Google.
- */
-waiting: number }
-/**
- * A meeting to add to a Google account.
- */
-export type NewMeeting = { title: string; 
-/**
- * Unix seconds.
- */
-start: number; minutes: number; invite: string[]; details: string | null; 
-/**
- * Make a Google Meet link with it.
- */
-meet: boolean }
-/**
- * What happened to a meeting added to a Google account.
- */
-export type AddedMeeting = { 
-/**
- * Offline: it waits and goes out on the next fetch.
- */
-waiting: boolean; 
-/**
- * The event in Google Calendar, and its Meet link.
- */
-link: string | null; meet: string | null }
+upcoming: number }
 export type RemovedCalendar = { name: string; url: string }
 export type CalendarChanged = null
 export type Meeting = { uid: string; title: string; 

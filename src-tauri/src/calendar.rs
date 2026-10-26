@@ -1,11 +1,9 @@
 //! Your calendars, from their secret iCal addresses (Google, Outlook, as
-//! many accounts as you like) or a signed-in Google account (`google.rs`),
-//! fetched every ten minutes so Legato knows your meetings: the bubble shows
-//! the next one, notes take its name, and AI apps can ask for them. The
-//! addresses and tokens are secrets and live in Credential Manager; the
-//! meetings are cached in `calendar.json`, which the MCP server reads and
-//! which covers a start without the network. A meeting added to a Google
-//! account while offline waits there too, and goes out on the next fetch.
+//! many accounts as you like), fetched every ten minutes so Legato knows
+//! your meetings: the bubble shows the next one, notes take its name, and AI
+//! apps can ask for them. The addresses are secrets and live in Credential
+//! Manager; the meetings are cached in `calendar.json`, which the MCP server
+//! reads and which covers a start without the network.
 
 use crate::calendar_rules::{self as rules, Meeting};
 use crate::settings::{get_settings, write_settings, CalendarFeed};
@@ -40,40 +38,6 @@ pub struct CalendarStatus {
     pub error: Option<String>,
     /// Meetings in the next seven days.
     pub upcoming: u32,
-    /// A Google account rather than an iCal address.
-    pub google: bool,
-    /// Meetings added offline, waiting to go to Google.
-    pub waiting: u32,
-}
-
-/// A meeting to add to a Google account.
-#[derive(Clone, Debug, Serialize, Deserialize, Type)]
-pub struct NewMeeting {
-    pub title: String,
-    /// Unix seconds.
-    pub start: i64,
-    pub minutes: u32,
-    pub invite: Vec<String>,
-    pub details: Option<String>,
-    /// Make a Google Meet link with it.
-    pub meet: bool,
-}
-
-/// What happened to a meeting added to a Google account.
-#[derive(Clone, Debug, Serialize, Deserialize, Type)]
-pub struct AddedMeeting {
-    /// Offline: it waits and goes out on the next fetch.
-    pub waiting: bool,
-    /// The event in Google Calendar, and its Meet link.
-    pub link: Option<String>,
-    pub meet: Option<String>,
-}
-
-/// A meeting added offline, as Google will be sent it.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Waiting {
-    feed: String,
-    event: serde_json::Value,
 }
 
 /// A removed calendar, for Undo.
@@ -99,8 +63,6 @@ struct FeedState {
 pub struct Cache {
     #[serde(default)]
     feeds: HashMap<String, FeedState>,
-    #[serde(default)]
-    waiting: Vec<Waiting>,
 }
 
 impl Cache {
@@ -238,60 +200,10 @@ async fn fetch(url: &str, name: &str) -> Result<Vec<Meeting>, String> {
     Ok(rules::meetings(&events, name, t - BACK, t + AHEAD, &local))
 }
 
-/// A Google account's meetings, after sending the ones added offline.
-async fn fetch_google(
-    app: &AppHandle,
-    feed: &CalendarFeed,
-    refresh: &str,
-) -> Result<Vec<Meeting>, String> {
-    let token = crate::google::access_token(refresh)
-        .await
-        .map_err(|e| e.to_string())?;
-    let waiting: Vec<Waiting> = cache(app)
-        .as_ref()
-        .map(|c| {
-            c.waiting
-                .iter()
-                .filter(|w| w.feed == feed.id)
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
-    for w in waiting {
-        match crate::google::create(&token, &w.event).await {
-            Ok(_) => info!("A meeting added offline went to Google Calendar"),
-            Err(crate::google::GoogleError::Offline) => break,
-            // Google said no (a bad address, say): it won't say yes later.
-            Err(e) => warn!("Google Calendar refused a meeting added offline: {e}"),
-        }
-        let mut guard = cache(app);
-        if let Some(cache) = guard.as_mut() {
-            cache.waiting.retain(|x| x.event != w.event);
-        }
-    }
-    let t = now();
-    let events = crate::google::events(&token, t - BACK, t + AHEAD)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(rules::google_meetings(&events, &feed.name, &local))
-}
-
 /// Fetches every calendar and tells the windows.
 async fn refresh(app: &AppHandle) {
     let feeds = get_settings(app).calendars;
     for feed in &feeds {
-        if feed.google {
-            let result = match crate::secrets::read_secret(&secret_name(&feed.id)) {
-                Ok(Some(token)) => fetch_google(app, feed, &token).await,
-                Ok(None) => Err("Sign in to Google again".into()),
-                Err(e) => Err(e),
-            };
-            if let Err(e) = &result {
-                warn!("Calendar \"{}\": {e}", feed.name);
-            }
-            set_feed(app, &feed.id, result);
-            continue;
-        }
         let url = match crate::secrets::read_secret(&secret_name(&feed.id)) {
             Ok(Some(url)) => url,
             Ok(None) => {
@@ -320,9 +232,6 @@ async fn refresh(app: &AppHandle) {
         cache
             .feeds
             .retain(|id, _| feeds.iter().any(|f| &f.id == id));
-        cache
-            .waiting
-            .retain(|w| feeds.iter().any(|f| f.id == w.feed));
         save(app, cache);
     }
     let _ = CalendarChanged.emit(app);
@@ -392,10 +301,6 @@ pub fn statuses(app: &AppHandle) -> Vec<CalendarStatus> {
                 }),
                 synced_at: state.and_then(|s| s.synced_at),
                 error: state.and_then(|s| s.error.clone()),
-                waiting: guard.as_ref().map_or(0, |c| {
-                    c.waiting.iter().filter(|w| w.feed == f.id).count() as u32
-                }),
-                google: f.google,
                 id: f.id,
                 name: f.name,
             }
@@ -438,7 +343,6 @@ pub async fn add(app: &AppHandle, name: &str, url: &str) -> Result<CalendarStatu
     settings.calendars.push(CalendarFeed {
         id: id.clone(),
         name: name.clone(),
-        google: false,
     });
     write_settings(app, settings);
     set_feed(app, &id, Ok(meetings));
@@ -466,14 +370,6 @@ pub fn remove(app: &AppHandle, id: &str) -> Result<RemovedCalendar, String> {
         .flatten()
         .unwrap_or_default();
     let _ = crate::secrets::delete_secret(&secret_name(id));
-    // A Google account isn't put back by Undo: Google forgets Legato.
-    let url = if feed.google {
-        let token = url;
-        tauri::async_runtime::spawn(async move { crate::google::revoke(&token).await });
-        String::new()
-    } else {
-        url
-    };
     write_settings(app, settings);
     {
         let mut guard = cache(app);
@@ -487,100 +383,4 @@ pub fn remove(app: &AppHandle, id: &str) -> Result<RemovedCalendar, String> {
         name: feed.name,
         url,
     })
-}
-
-/// Signs in to a Google account in the browser and reads its meetings; an
-/// account already here gets the new sign-in.
-pub async fn connect_google(app: &AppHandle) -> Result<CalendarStatus, String> {
-    let account = crate::google::sign_in(app).await?;
-    let mut settings = get_settings(app);
-    let existing = settings
-        .calendars
-        .iter()
-        .find(|f| f.google && f.name.eq_ignore_ascii_case(&account.email))
-        .map(|f| f.id.clone());
-    let id = existing.unwrap_or_else(|| format!("{:x}", chrono::Utc::now().timestamp_millis()));
-    crate::secrets::write_secret(&secret_name(&id), &account.refresh)
-        .map_err(|e| format!("Couldn't keep the sign-in in Credential Manager: {e}"))?;
-    if !settings.calendars.iter().any(|f| f.id == id) {
-        settings.calendars.push(CalendarFeed {
-            id: id.clone(),
-            name: account.email.clone(),
-            google: true,
-        });
-        write_settings(app, settings.clone());
-    }
-    let feed = settings
-        .calendars
-        .iter()
-        .find(|f| f.id == id)
-        .cloned()
-        .ok_or("The account wasn't saved")?;
-    let result = fetch_google(app, &feed, &account.refresh).await;
-    set_feed(app, &id, result);
-    if let Some(cache) = cache(app).as_ref() {
-        save(app, cache);
-    }
-    info!("Google Calendar connected");
-    let _ = CalendarChanged.emit(app);
-    statuses(app)
-        .into_iter()
-        .find(|s| s.id == id)
-        .ok_or_else(|| "The account wasn't saved".into())
-}
-
-/// Adds a meeting to a Google account, with a Meet link when asked, and
-/// invites its people. Offline, it waits and goes out on the next fetch.
-pub async fn add_meeting(
-    app: &AppHandle,
-    feed_id: &str,
-    m: NewMeeting,
-) -> Result<AddedMeeting, String> {
-    let feed = get_settings(app)
-        .calendars
-        .into_iter()
-        .find(|f| f.id == feed_id && f.google)
-        .ok_or("That Google account isn't connected any more")?;
-    let refresh =
-        crate::secrets::read_secret(&secret_name(&feed.id))?.ok_or("Sign in to Google again")?;
-    let request = m.meet.then(crate::google::request_id);
-    let event = rules::google_event(
-        m.title.trim(),
-        m.start,
-        m.start + i64::from(m.minutes) * 60,
-        &m.invite,
-        m.details.as_deref(),
-        request.as_deref(),
-    );
-    let sent = match crate::google::access_token(&refresh).await {
-        Ok(token) => crate::google::create(&token, &event).await,
-        Err(e) => Err(e),
-    };
-    match sent {
-        Ok(created) => {
-            refresh_soon();
-            Ok(AddedMeeting {
-                waiting: false,
-                link: created["htmlLink"].as_str().map(str::to_string),
-                meet: created["hangoutLink"].as_str().map(str::to_string),
-            })
-        }
-        Err(crate::google::GoogleError::Offline) => {
-            let mut guard = cache(app);
-            let cache = guard.get_or_insert_with(Cache::default);
-            cache.waiting.push(Waiting {
-                feed: feed.id,
-                event,
-            });
-            save(app, cache);
-            drop(guard);
-            let _ = CalendarChanged.emit(app);
-            Ok(AddedMeeting {
-                waiting: true,
-                link: None,
-                meet: None,
-            })
-        }
-        Err(e) => Err(e.to_string()),
-    }
 }

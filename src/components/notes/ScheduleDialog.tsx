@@ -2,8 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { commands, type CalendarStatus } from "@/bindings";
-import { copyToClipboard } from "../pages/home/clipboard";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 import { Segmented } from "../ui/Segmented";
@@ -18,19 +16,10 @@ const SITE_KEY = "legato:schedule-site";
 const LENGTHS = ["30", "45", "60"] as const;
 type Length = (typeof LENGTHS)[number];
 
-/** A calendar's page in the browser, or "direct": straight into a
- *  signed-in Google account. */
-type Where = CalendarSite | "direct";
-
-const savedSite = (): Where => {
+const savedSite = (): CalendarSite => {
   try {
     const site = localStorage.getItem(SITE_KEY);
-    if (
-      site === "direct" ||
-      site === "google" ||
-      site === "outlook" ||
-      site === "outlookCom"
-    )
+    if (site === "google" || site === "outlook" || site === "outlookCom")
       return site;
   } catch {
     // No storage: start with Google.
@@ -53,11 +42,9 @@ export interface SchedulePrefill {
   details?: string;
 }
 
-/** Schedule a meeting: straight into a Google account signed in under
- *  Settings › Connections (with a Meet link, waiting for the network when
- *  offline), or without signing in anywhere: the calendar's own new-event
- *  page opens in the browser with the title, time and invites filled in,
- *  and you save it there. */
+/** Schedule a meeting without signing in anywhere: the calendar's own
+ *  new-event page opens in the browser with the title, time and invites
+ *  filled in, and you save it there. */
 export const ScheduleDialog: React.FC<{
   open: boolean;
   prefill?: SchedulePrefill;
@@ -69,10 +56,7 @@ export const ScheduleDialog: React.FC<{
   const [time, setTime] = useState("");
   const [length, setLength] = useState<Length>("30");
   const [invite, setInvite] = useState("");
-  const [site, setSite] = useState<Where>(savedSite);
-  const [accounts, setAccounts] = useState<CalendarStatus[]>([]);
-  const [meet, setMeet] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [site, setSite] = useState<CalendarSite>(savedSite);
   const titleRef = useRef<HTMLInputElement>(null);
   // Read when the dialog opens only: the note behind it re-renders often.
   const prefillRef = useRef(prefill);
@@ -88,76 +72,18 @@ export const ScheduleDialog: React.FC<{
     setTime(`${pad(slot.getHours())}:${pad(slot.getMinutes())}`);
     setLength("30");
     setInvite("");
-    setMeet(true);
-    commands
-      .calendarList()
-      .then((feeds) => setAccounts(feeds.filter((f) => f.google)))
-      .catch(() => setAccounts([]));
   }, [open]);
-
-  // Without a Google account, "direct" falls back to Google's page.
-  const where: Where = site === "direct" && !accounts.length ? "google" : site;
-  const account = accounts[0];
 
   const emails = parseInvite(invite);
   const start = new Date(`${date}T${time}`);
   const ready = !Number.isNaN(start.getTime());
 
-  const addNow = async () => {
-    if (!account || busy) return;
-    setBusy(true);
-    const r = await commands
-      .calendarAddMeeting(account.id, {
-        title: title.trim() || t("notes.schedule.untitled"),
-        start: Math.floor(start.getTime() / 1000),
-        minutes: Number(length),
-        invite: emails,
-        details: prefillRef.current?.details ?? null,
-        meet,
-      })
-      .catch((e) => ({ status: "error" as const, error: String(e) }));
-    setBusy(false);
-    if (r.status === "error") {
-      toast.error(t("notes.schedule.addFailed"), { description: r.error });
-      return;
-    }
-    onClose();
-    const added = r.data;
-    if (added.waiting) {
-      toast(t("notes.schedule.waiting"));
-      return;
-    }
-    const meetLink = added.meet;
-    const link = added.link;
-    toast.success(t("notes.schedule.added", { account: account.name }), {
-      action: meetLink
-        ? {
-            label: t("notes.schedule.copyMeet"),
-            onClick: () => {
-              copyToClipboard(meetLink);
-            },
-          }
-        : link
-          ? {
-              label: t("notes.schedule.openEvent"),
-              onClick: () => {
-                openUrl(link).catch(() => {});
-              },
-            }
-          : undefined,
-    });
-  };
-
   const go = async () => {
     if (!ready) return;
     try {
-      localStorage.setItem(SITE_KEY, where);
+      localStorage.setItem(SITE_KEY, site);
     } catch {
       // Remembering the calendar is only a convenience.
-    }
-    if (where === "direct") {
-      addNow();
-      return;
     }
     const meeting: NewMeeting = {
       title: title.trim() || t("notes.schedule.untitled"),
@@ -167,7 +93,7 @@ export const ScheduleDialog: React.FC<{
       details: prefillRef.current?.details,
     };
     try {
-      await openUrl(scheduleUrl(where, meeting));
+      await openUrl(scheduleUrl(site, meeting));
       onClose();
     } catch (e) {
       toast.error(t("notes.schedule.failed"), { description: String(e) });
@@ -187,10 +113,8 @@ export const ScheduleDialog: React.FC<{
           <Button variant="ghost" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={go} disabled={!ready || busy}>
-            {where === "direct"
-              ? t("notes.schedule.addNow")
-              : t(`notes.schedule.open.${where}`)}
+          <Button onClick={go} disabled={!ready}>
+            {t(`notes.schedule.open.${site}`)}
           </Button>
         </div>
       }
@@ -284,39 +208,15 @@ export const ScheduleDialog: React.FC<{
           <Segmented
             className="w-full"
             label={t("notes.schedule.calendar")}
-            value={where}
+            value={site}
             onChange={setSite}
-            options={[
-              ...(account
-                ? [
-                    {
-                      value: "direct" as const,
-                      label: t("notes.schedule.site.direct"),
-                    },
-                  ]
-                : []),
-              ...(["google", "outlook", "outlookCom"] as const).map((s) => ({
-                value: s,
-                label: t(`notes.schedule.site.${s}`),
-              })),
-            ]}
+            options={(["google", "outlook", "outlookCom"] as const).map(
+              (s) => ({ value: s, label: t(`notes.schedule.site.${s}`) }),
+            )}
           />
           <span className="text-[13px] text-text-3">
-            {where === "direct" && account
-              ? t("notes.schedule.siteHelp.direct", { account: account.name })
-              : t(`notes.schedule.siteHelp.${where}`)}
+            {t(`notes.schedule.siteHelp.${site}`)}
           </span>
-          {where === "direct" && (
-            <label className="mt-1 flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="check"
-                checked={meet}
-                onChange={(e) => setMeet(e.target.checked)}
-              />
-              {t("notes.schedule.meet")}
-            </label>
-          )}
         </div>
       </form>
     </Dialog>
