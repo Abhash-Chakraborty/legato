@@ -1040,14 +1040,13 @@ fn default_title(kind: NoteKind) -> String {
     }
 }
 
-/// The microphone's device id from its name, or the system default.
-fn microphone_device(name: Option<&str>) -> Option<String> {
-    let name = name?;
-    handy_recorder::list_input_devices()
-        .ok()?
-        .into_iter()
-        .find(|d| d.name == name)
-        .map(|d| d.id)
+/// The microphone's device id from its name, else the next in your order
+/// that's plugged in, else the system default.
+fn microphone_device(name: Option<&str>, order: &[String]) -> Option<String> {
+    let devices = handy_recorder::list_input_devices().ok()?;
+    let present: Vec<&str> = devices.iter().map(|d| d.name.as_str()).collect();
+    let name = crate::mic_rules::pick_microphone(name, order, &present)?;
+    devices.into_iter().find(|d| d.name == name).map(|d| d.id)
 }
 
 /// Starts a recording.
@@ -1089,7 +1088,7 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
         .clone()
         .or_else(|| settings.selected_microphone.clone());
     let recorder: Recorder<MicSink> = Recorder::open(RecorderConfig {
-        device: microphone_device(microphone.as_deref()),
+        device: microphone_device(microphone.as_deref(), &settings.microphone_order),
         ..RecorderConfig::speech()
     })
     .map_err(|e| anyhow!("The microphone didn't open: {e}"))?;

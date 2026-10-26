@@ -195,6 +195,8 @@ pub async fn set_selected_microphone(app: AppHandle, device_name: String) -> Res
     settings.selected_microphone = if device_name == "default" {
         None
     } else {
+        settings.microphone_order =
+            crate::mic_rules::ranked_first(&settings.microphone_order, &device_name);
         Some(device_name)
     };
     write_settings(&app, settings);
@@ -202,6 +204,30 @@ pub async fn set_selected_microphone(app: AppHandle, device_name: String) -> Res
     // Update the audio manager to use the new device. update_selected_device
     // can restart the cpal stream (blocking device calls) — run it on a
     // blocking thread, not inline on the webview/main run loop.
+    let rm = app.state::<Arc<AudioRecordingManager>>().inner().clone();
+    tokio::task::spawn_blocking(move || rm.update_selected_device())
+        .await
+        .map_err(|e| format!("audio task join failed: {}", e))?
+        .map_err(|e| format!("Failed to update selected device: {}", e))
+}
+
+/// Microphone order in Settings › Devices: the new order, after moving or
+/// forgetting a microphone. The first is your pick.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_microphone_order(app: AppHandle, order: Vec<String>) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    let order: Vec<String> = order
+        .into_iter()
+        .take(crate::mic_rules::ORDER_LEN)
+        .collect();
+    // Moving one to the top picks it; forgetting your pick picks the next.
+    // With Default chosen, the order waits until you pick one again.
+    if settings.selected_microphone.is_some() {
+        settings.selected_microphone = order.first().cloned();
+    }
+    settings.microphone_order = order;
+    write_settings(&app, settings);
     let rm = app.state::<Arc<AudioRecordingManager>>().inner().clone();
     tokio::task::spawn_blocking(move || rm.update_selected_device())
         .await

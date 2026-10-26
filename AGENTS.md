@@ -69,7 +69,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
   - `mod.rs` / `clipboard.rs` / `net.rs` - Windows glue: `SyncManager`, the clipboard watcher, this PC's addresses
   - `bluetooth.rs` - The RFCOMM listener and SDP record for a phone that shares no network with the PC
 - `actions.rs` - What each shortcut does; the dictation pipeline from recording to paste
-- `*_rules.rs` - Pure logic kept free of Tauri so it can be unit tested on any OS: `cleanup_rules`, `style_rules`, `snippet_rules`, `transform_rules`, `learn_rules`, `notes_rules`, `calls_rules`, `ai_rules`, `bubble_rules`, `calendar_rules`, `mcp_rules`, `inyon_rules`
+- `*_rules.rs` - Pure logic kept free of Tauri so it can be unit tested on any OS: `cleanup_rules`, `style_rules`, `snippet_rules`, `transform_rules`, `learn_rules`, `notes_rules`, `calls_rules`, `ai_rules`, `bubble_rules`, `calendar_rules`, `mcp_rules`, `inyon_rules`, `mic_rules`
 - `transforms.rs` - Transforms on the selection or last dictation, the keyboard picker, Ask, the bar's Keep/Undo
 - `clipboard.rs` / `paste_tx/` - Pasting, per-category paste overrides, remembering the last paste
 - `selection.rs` - Copying the selection from another app; Add selection to Dictionary

@@ -253,7 +253,8 @@
         "title": "Microphone",
         "description": "The microphone Legato listens to. Default follows Windows Sound settings.",
         "placeholder": "Select microphone...",
-        "loading": "Loading..."
+        "loading": "Loading...",
+        "unplugged": "{{name}} · not plugged in"
       },
       "channel": {
         "title": "Input channel",
@@ -290,6 +291,15 @@
           "mute": "The whole PC is muted while you dictate, Legato's sounds included.",
           "leave": "Other apps keep playing; the microphone may pick them up."
         }
+      },
+      "microphoneOrder": {
+        "title": "Microphone order",
+        "description": "When the first isn't plugged in, Legato uses the next one that is. Picking a microphone puts it first.",
+        "unplugged": "Not plugged in",
+        "up": "Move {{name}} up",
+        "down": "Move {{name}} down",
+        "forget": "Forget {{name}}",
+        "label": "Microphones, best first"
       }
     },
     "advanced": {

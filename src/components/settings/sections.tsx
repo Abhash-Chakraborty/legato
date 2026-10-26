@@ -34,6 +34,7 @@ import { ShortcutActivationSetting } from "./ShortcutActivation";
 import { HoldThreshold } from "./debug/HoldThreshold";
 import { KeyboardImplementationSelector } from "./debug/KeyboardImplementationSelector";
 import { MicrophoneSelector } from "./MicrophoneSelector";
+import { MicrophoneOrder } from "./MicrophoneOrder";
 import { ChannelSelector } from "./ChannelSelector";
 import { BackgroundAudio } from "./BackgroundAudio";
 import { LazyStreamClose } from "./LazyStreamClose";
@@ -613,6 +614,14 @@ export const buildSections = (
               "settings.sound.microphone.description",
             ],
             render: () => <MicrophoneSelector grouped />,
+          },
+          {
+            id: "microphone-order",
+            searchKeys: [
+              "settings.sound.microphoneOrder.title",
+              "settings.sound.microphoneOrder.description",
+            ],
+            render: () => <MicrophoneOrder grouped />,
           },
           {
             id: "channel",

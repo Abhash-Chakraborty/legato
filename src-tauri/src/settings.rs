@@ -857,6 +857,10 @@ pub struct AppSettings {
     pub always_on_microphone: bool,
     #[serde(default)]
     pub selected_microphone: Option<String>,
+    /// Microphones you've picked, best first: when the one you picked isn't
+    /// plugged in, the next one here that is gets used.
+    #[serde(default)]
+    pub microphone_order: Vec<String>,
     /// Which input channel to use on the selected microphone device.
     /// None means "average all channels" (original behavior).
     #[serde(default)]
@@ -1678,6 +1682,7 @@ pub fn get_default_settings() -> AppSettings {
         setup_step: String::new(),
         always_on_microphone: false,
         selected_microphone: None,
+        microphone_order: Vec::new(),
         selected_channel: None,
         selected_output_device: None,
         translate_to_english: false,

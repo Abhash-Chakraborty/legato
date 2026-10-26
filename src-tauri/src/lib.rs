@@ -34,6 +34,7 @@ mod loopback;
 mod managers;
 pub mod mcp;
 mod mcp_rules;
+mod mic_rules;
 mod note_copies;
 mod notes;
 mod notes_panel;
@@ -1001,6 +1002,7 @@ pub fn run(cli_args: CliArgs) {
             commands::audio::get_available_microphones,
             commands::audio::set_selected_microphone,
             commands::audio::get_selected_microphone,
+            commands::audio::set_microphone_order,
             commands::audio::get_available_output_devices,
             commands::audio::set_selected_output_device,
             commands::audio::get_selected_output_device,

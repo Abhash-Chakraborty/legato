@@ -21,6 +21,7 @@ export const MicrophoneSelector: React.FC<MicrophoneSelectorProps> = React.memo(
       isLoading,
       audioDevices,
       refreshAudioDevices,
+      refreshSettings,
     } = useSettings();
 
     const selectedMicrophone =
@@ -30,6 +31,8 @@ export const MicrophoneSelector: React.FC<MicrophoneSelectorProps> = React.memo(
 
     const handleMicrophoneSelect = async (deviceName: string) => {
       await updateSetting("selected_microphone", deviceName);
+      // Picking one puts it first in Microphone order.
+      await refreshSettings();
     };
 
     const handleReset = async () => {
@@ -40,6 +43,18 @@ export const MicrophoneSelector: React.FC<MicrophoneSelectorProps> = React.memo(
       value: device.name,
       label: device.name,
     }));
+    // Your pick stays while it's unplugged; say so instead of a blank.
+    if (
+      selectedMicrophone !== "Default" &&
+      audioDevices.length > 0 &&
+      !audioDevices.some((d) => d.name === selectedMicrophone)
+    )
+      microphoneOptions.push({
+        value: selectedMicrophone,
+        label: t("settings.sound.microphone.unplugged", {
+          name: selectedMicrophone,
+        }),
+      });
 
     return (
       <SettingContainer

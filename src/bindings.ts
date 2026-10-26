@@ -1024,6 +1024,18 @@ async setSelectedMicrophone(deviceName: string) : Promise<Result<null, string>> 
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Microphone order in Settings › Devices: the new order, after moving or
+ * forgetting a microphone. The first is your pick.
+ */
+async setMicrophoneOrder(order: string[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_microphone_order", { order }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getSelectedMicrophone() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_selected_microphone") };
@@ -3785,6 +3797,11 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * part-way through from skipping the practice.
  */
 setup_step?: string; always_on_microphone?: boolean; selected_microphone?: string | null; 
+/**
+ * Microphones you've picked, best first: when the one you picked isn't
+ * plugged in, the next one here that is gets used.
+ */
+microphone_order?: string[]; 
 /**
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).

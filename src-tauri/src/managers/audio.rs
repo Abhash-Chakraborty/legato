@@ -428,29 +428,47 @@ impl AudioRecordingManager {
         // itself succeeded. A backend enumeration error may be transient and
         // must not erase the user's persisted preference.
         let enumerate_started = Instant::now();
-        let (device, enumeration_succeeded) = match handy_recorder::list_input_devices() {
-            Ok(devices) => (
-                devices
-                    .into_iter()
-                    .find(|d| d.name == device_name)
-                    .map(|d| d.id),
-                true,
-            ),
+        // Your pick, else the next microphone in your order that's plugged in.
+        let (picked, enumeration_succeeded) = match handy_recorder::list_input_devices() {
+            Ok(devices) => {
+                let present: Vec<&str> = devices.iter().map(|d| d.name.as_str()).collect();
+                let name = crate::mic_rules::pick_microphone(
+                    Some(&device_name),
+                    &settings.microphone_order,
+                    &present,
+                );
+                let picked = name.and_then(|name| {
+                    devices
+                        .iter()
+                        .find(|d| d.name == name)
+                        .map(|d| (name.clone(), d.id.clone()))
+                });
+                (picked, true)
+            }
             Err(e) => {
                 debug!("Failed to list devices, using default: {}", e);
                 (None, false)
             }
         };
+        if let Some((name, _)) = picked.as_ref().filter(|(name, _)| *name != device_name) {
+            info!("'{device_name}' isn't plugged in; recording from '{name}', next in the order");
+        }
+        let device = picked.as_ref().map(|(_, id)| id.clone());
         debug!(
             "device resolve: enumerate={:?} (found={})",
             enumerate_started.elapsed(),
             device.is_some()
         );
-        if let Some(id) = &device {
-            *self.cached_device.lock().unwrap() = Some((device_name.clone(), id.clone()));
+        if let Some((name, id)) = &picked {
+            *self.cached_device.lock().unwrap() = Some((name.clone(), id.clone()));
         }
 
-        let unavailable_selected_microphone = if enumeration_succeeded && device.is_none() {
+        // Your pick stays while it's unplugged, so it's used again when it
+        // comes back; one you took out of your order doesn't.
+        let kept = settings.microphone_order.is_empty()
+            || settings.microphone_order.contains(&device_name);
+        let unavailable_selected_microphone = if enumeration_succeeded && device.is_none() && !kept
+        {
             Some(device_name)
         } else {
             None
