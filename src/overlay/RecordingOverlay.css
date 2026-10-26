@@ -880,6 +880,40 @@
   color: var(--s-muted);
   font-variant-numeric: tabular-nums;
 }
+/* A meeting's last time: when, next steps still open, and its summary. */
+.scall-last {
+  border-top: 1px solid var(--s-hair);
+  padding-top: 8px;
+}
+.scall-last-hd {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--s-muted);
+  font-size: 12px;
+}
+.scall-last-text {
+  margin: 2px 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+.slink {
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--s-accent);
+  cursor: pointer;
+}
+.slink:hover {
+  text-decoration: underline;
+}
 .scountdown {
   position: relative;
   height: 3px;

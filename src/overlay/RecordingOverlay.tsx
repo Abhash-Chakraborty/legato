@@ -133,6 +133,13 @@ type CallCard =
       /** Unix seconds. */
       starts_at: number;
       link: boolean;
+      /** The earlier note of this meeting (notes::LastTime). */
+      last: {
+        note_id: number;
+        started_at: number;
+        summary: string;
+        open_steps: number;
+      } | null;
     };
 
 /** An agent on Inyon waiting for an answer (inyon_rules::AgentAlert). */
@@ -390,7 +397,7 @@ const IslandFrame: React.FC<{
 };
 
 const RecordingOverlay: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const [state, setState] = useState<OverlayState>("recording");
   const [notice, setNotice] = useState<OverlayNotice | null>(null);
@@ -1422,6 +1429,35 @@ const RecordingOverlay: React.FC = () => {
             </div>
           </div>
         </div>
+        {card.last && (
+          <div className="scall-last">
+            <div className="scall-last-hd">
+              <span>
+                {t("overlay.meeting.lastTime", {
+                  date: new Date(
+                    card.last.started_at * 1000,
+                  ).toLocaleDateString(i18n.language, {
+                    month: "short",
+                    day: "numeric",
+                  }),
+                })}
+                {card.last.open_steps > 0 &&
+                  ` · ${t("overlay.meeting.openSteps", { count: card.last.open_steps })}`}
+              </span>
+              <button
+                type="button"
+                className="slink"
+                onClick={() => {
+                  const id = card.last?.note_id;
+                  if (id !== undefined) commands.openNote(id);
+                }}
+              >
+                {t("overlay.meeting.openLast")}
+              </button>
+            </div>
+            <p className="scall-last-text">{card.last.summary}</p>
+          </div>
+        )}
         <div className="spanel-actions">
           {card.link ? (
             <>

@@ -2412,6 +2412,36 @@ pub async fn ask(app: &AppHandle, note_id: i64, question: &str) -> Result<String
     ask_about(app, note_id, question, None).await
 }
 
+/// What the meeting card says about the last time: an earlier note of the
+/// same meeting.
+#[derive(Clone, Debug, Serialize)]
+pub struct LastTime {
+    pub note_id: i64,
+    /// Unix seconds.
+    pub started_at: i64,
+    /// The first sentence of its summary.
+    pub summary: String,
+    /// Next steps still open.
+    pub open_steps: usize,
+}
+
+/// The newest summarised note of the meeting on the calendar, by its title
+/// or its people.
+pub fn last_time(app: &AppHandle, title: &str, people: &[String]) -> Option<LastTime> {
+    let notes = manager(app).list().ok()?;
+    notes
+        .iter()
+        .filter(|n| n.kind == NoteKind::Meeting && !n.summary.trim().is_empty())
+        .filter(|n| notes_rules::same_meeting(title, people, &n.title, &n.attendees))
+        .max_by_key(|n| n.started_at)
+        .map(|n| LastTime {
+            note_id: n.id,
+            started_at: n.started_at,
+            summary: notes_rules::first_sentence(&n.summary, 140),
+            open_steps: n.actions.iter().filter(|a| !a.done).count(),
+        })
+}
+
 /// Ask across notes, from the Notes page: the summaries, decisions and
 /// next steps of every summarised note. Errors are codes, as for Ask.
 pub async fn ask_all(app: &AppHandle, question: &str) -> Result<String, String> {

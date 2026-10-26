@@ -35,6 +35,8 @@ const OVERLAY_PICK_HEIGHT: f64 = 360.0;
 const OVERLAY_NOTES_WIDTH: f64 = 300.0;
 const OVERLAY_CALL_WIDTH: f64 = 380.0;
 const OVERLAY_CALL_HEIGHT: f64 = 124.0;
+/// A meeting's card with what was said last time.
+const OVERLAY_CALL_TALL_HEIGHT: f64 = 184.0;
 /// An agent's question from Inyon: a few lines and up to five options.
 const OVERLAY_AGENT_WIDTH: f64 = 440.0;
 const OVERLAY_AGENT_HEIGHT: f64 = 320.0;
@@ -56,6 +58,9 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
         // A Notes recording: its clock, two meters and Stop.
         "notes" => (OVERLAY_NOTES_WIDTH, OVERLAY_HEIGHT),
         // The call card: offer notes, or say the call ended.
+        "call" if CALL_CARD_TALL.load(Ordering::Relaxed) => {
+            (OVERLAY_CALL_WIDTH, OVERLAY_CALL_TALL_HEIGHT)
+        }
         "call" => (OVERLAY_CALL_WIDTH, OVERLAY_CALL_HEIGHT),
         // An agent waiting on Inyon: its question and options; or what
         // Inyon's companion agent replied.
@@ -749,6 +754,8 @@ pub fn set_notes_pill(app_handle: &AppHandle, on: bool) {
 /// otherwise go quiet.
 static CALL_CARD: Mutex<Option<serde_json::Value>> = Mutex::new(None);
 static CALL_CARD_HIDDEN_FROM_CAPTURE: AtomicBool = AtomicBool::new(true);
+/// The card up has a meeting's last time, so the bar is taller.
+static CALL_CARD_TALL: AtomicBool = AtomicBool::new(false);
 /// Whether the overlay window is excluded from screen capture now.
 static EXCLUDED_FROM_CAPTURE: AtomicBool = AtomicBool::new(false);
 
@@ -769,6 +776,10 @@ pub fn set_call_card<T: serde::Serialize>(
         value.clone(),
     );
     CALL_CARD_HIDDEN_FROM_CAPTURE.store(hide_from_capture, Ordering::Relaxed);
+    let tall = value
+        .as_ref()
+        .is_some_and(|c| c.get("last").is_some_and(|l| !l.is_null()));
+    CALL_CARD_TALL.store(tall, Ordering::Relaxed);
     match value {
         Some(card) => {
             if !dictating(app_handle) {

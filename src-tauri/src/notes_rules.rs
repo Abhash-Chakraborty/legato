@@ -1612,6 +1612,95 @@ pub fn ask_transcript(lines: &[PromptLine<'_>], question: &str) -> String {
     render(&keep)
 }
 
+const MONTHS: [&str; 25] = [
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "may",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "sept",
+    "oct",
+    "nov",
+    "dec",
+    "january",
+    "february",
+    "march",
+    "april",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+    "week",
+];
+
+/// A meeting's title as a series: lower case, without dates, numbers and
+/// month names, so "Standup 26 Oct" and "Standup" are one meeting.
+pub fn series_title(title: &str) -> String {
+    title
+        .split(|c: char| !c.is_alphanumeric())
+        .map(str::to_lowercase)
+        .filter(|w| {
+            !w.is_empty() && !w.chars().any(|c| c.is_ascii_digit()) && !MONTHS.contains(&w.as_str())
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Whether a note is an earlier one of the meeting on the calendar: the
+/// same title as a series, or mostly the same people (at least two, and
+/// more than half of the larger list).
+pub fn same_meeting(
+    title: &str,
+    people: &[String],
+    note_title: &str,
+    attendees: &[String],
+) -> bool {
+    let series = series_title(title);
+    if !series.is_empty() && series == series_title(note_title) {
+        return true;
+    }
+    let shared = people
+        .iter()
+        .filter(|p| {
+            attendees
+                .iter()
+                .any(|a| a.trim().eq_ignore_ascii_case(p.trim()))
+        })
+        .count();
+    shared >= 2 && shared * 2 > people.len().max(attendees.len())
+}
+
+/// The first sentence of a summary, cut at a word to about `max`
+/// characters, for the meeting card's last time.
+pub fn first_sentence(text: &str, max: usize) -> String {
+    let text = text.trim();
+    let end = text
+        .char_indices()
+        .find(|&(i, c)| {
+            matches!(c, '.' | '!' | '?')
+                && text[i + c.len_utf8()..]
+                    .chars()
+                    .next()
+                    .is_none_or(char::is_whitespace)
+        })
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(text.len());
+    let sentence = &text[..end];
+    if sentence.chars().count() <= max {
+        return sentence.to_string();
+    }
+    let cut: String = sentence.chars().take(max).collect();
+    let cut = cut.rsplit_once(' ').map_or(cut.as_str(), |(head, _)| head);
+    format!("{}…", cut.trim_end_matches([',', ';', ':']))
+}
+
 /// Ask across notes reads at most this many words of notes.
 pub const ASK_ALL_WORDS: usize = 6_000;
 
@@ -2401,6 +2490,51 @@ mod tests {
         // You talked for a while: a real recording.
         assert!(!looks_accidental(true, 50, 0, 300_000));
         assert!(!looks_accidental(true, 80, 0, 60_000));
+    }
+
+    #[test]
+    fn an_earlier_note_of_the_same_meeting_is_found() {
+        let people = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        assert_eq!(series_title("Standup · 26 Oct"), "standup");
+        assert!(same_meeting(
+            "Weekly sync (Oct 26)",
+            &[],
+            "Weekly sync Oct 19",
+            &[]
+        ));
+        assert!(!same_meeting("Design review", &[], "Pricing call", &[]));
+        // A 1:1 under another title: the same two people.
+        let us = people(&["Abhash", "Priya Shah"]);
+        assert!(same_meeting(
+            "Catch up",
+            &us,
+            "Priya / Abhash",
+            &people(&["priya shah", "Abhash"])
+        ));
+        // Two of five people isn't the same meeting.
+        let team = people(&["Abhash", "Priya Shah", "Sahil", "Mara", "Jo"]);
+        assert!(!same_meeting("Planning", &team, "Lunch", &us));
+        // A title of only numbers matches nothing by title.
+        assert!(!same_meeting("2026", &[], "2025", &[]));
+    }
+
+    #[test]
+    fn the_first_sentence_is_cut_at_a_word() {
+        assert_eq!(
+            first_sentence("We kept the trial. Then lunch.", 140),
+            "We kept the trial."
+        );
+        assert_eq!(
+            first_sentence("Version 2.1 ships Friday", 140),
+            "Version 2.1 ships Friday"
+        );
+        assert_eq!(
+            first_sentence(
+                "Pricing, packaging and the launch plan were all discussed",
+                20
+            ),
+            "Pricing, packaging…"
+        );
     }
 
     #[test]

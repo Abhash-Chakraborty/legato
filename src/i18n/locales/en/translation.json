@@ -1658,7 +1658,11 @@
       "started_other": "Started {{count}} min ago",
       "joinNotes": "Join with notes",
       "join": "Join",
-      "takeNotes": "Take notes"
+      "takeNotes": "Take notes",
+      "lastTime": "Last time, {{date}}",
+      "openSteps_one": "{{count}} open next step",
+      "openSteps_other": "{{count}} open next steps",
+      "openLast": "Open notes"
     },
     "caption": {
       "listening": "Listening…",

@@ -105,6 +105,8 @@ enum CallCard {
         /// Unix seconds.
         starts_at: i64,
         link: bool,
+        /// The earlier note of this meeting, when there is one.
+        last: Option<notes::LastTime>,
     },
 }
 
@@ -271,7 +273,15 @@ fn remind_due(app: &AppHandle) {
         st.meeting = Some(m.clone());
         m
     };
-    info!("Offering to join a meeting from the calendar");
+    let last = notes::last_time(app, &meeting.title, &meeting.people);
+    info!(
+        "Offering to join a meeting from the calendar{}",
+        if last.is_some() {
+            ", with last time's note"
+        } else {
+            ""
+        }
+    );
     next_generation();
     show_card(
         app,
@@ -279,6 +289,7 @@ fn remind_due(app: &AppHandle) {
             title: meeting.title.clone(),
             starts_at: meeting.start,
             link: meeting.link.is_some(),
+            last,
         }),
     );
     let left = (meeting.start + calendar_rules::REMIND_LATE - now).max(30) as u64;
