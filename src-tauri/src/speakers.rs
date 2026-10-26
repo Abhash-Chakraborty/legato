@@ -256,7 +256,13 @@ fn samples_ms(samples: usize) -> i64 {
 /// Blocks for a while.
 pub fn turns_wide(app: &AppHandle, audio: &Path, cap: Option<usize>) -> Result<Vec<Turn>> {
     let whole = turns(app, audio)?;
-    let mut voices: Vec<i32> = whole.iter().map(|t| t.speaker).collect();
+    // A fourth voice heard for a few seconds (a laugh, an echo, someone
+    // split in two) doesn't fill the model: the windowed pass would only
+    // split the real voices further.
+    let mut voices: Vec<i32> = notes_rules::fold_voices(&whole, cap)
+        .iter()
+        .map(|t| t.speaker)
+        .collect();
     voices.sort_unstable();
     voices.dedup();
     let reader = hound::WavReader::open(audio)?;
