@@ -205,39 +205,58 @@ const NEAR_TURN_MS: i64 = 1_000;
 /// Who said each line, given as (start, end) in ms: the speaker whose turns
 /// cover most of it, numbered 1, 2, … in the order they first speak. None
 /// when no one covers enough of it, and for every line when only one
-/// speaker was found, since then there's no one to tell apart.
+/// speaker was found, since then there's no one to tell apart. The strict
+/// pass `speakers_for_lines` starts from.
+#[cfg(test)]
 pub fn assign_speakers(lines: &[(i64, i64)], turns: &[Turn]) -> Vec<Option<i64>> {
-    let raw: Vec<Option<i32>> = lines
+    number_voices(&raw_speakers(lines, turns))
+}
+
+/// Each line's voice as the model numbered it, before renumbering.
+fn raw_speakers(lines: &[(i64, i64)], turns: &[Turn]) -> Vec<Option<i32>> {
+    lines
         .iter()
         .map(|&(at, end)| {
             let length = (end - at).max(1) as f64;
-            let mut cover: Vec<(i32, i64)> = Vec::new();
-            for turn in turns {
-                let overlap = turn.t1_ms.min(end) - turn.t0_ms.max(at);
-                if overlap <= 0 {
-                    continue;
-                }
-                match cover.iter_mut().find(|(s, _)| *s == turn.speaker) {
-                    Some((_, ms)) => *ms += overlap,
-                    None => cover.push((turn.speaker, overlap)),
-                }
+            match most_cover(at, end, turns) {
+                None => nearest_turn(at, end, turns, NEAR_TURN_MS),
+                Some((speaker, ms)) => (ms as f64 >= length * SPEAKER_SHARE).then_some(speaker),
             }
-            if cover.is_empty() {
-                return turns
-                    .iter()
-                    .map(|t| ((t.t0_ms - end).max(at - t.t1_ms), t.speaker))
-                    .filter(|&(gap, _)| gap <= NEAR_TURN_MS)
-                    .min()
-                    .map(|(_, speaker)| speaker);
-            }
-            cover
-                .into_iter()
-                .max_by_key(|&(speaker, ms)| (ms, -speaker))
-                .filter(|&(_, ms)| ms as f64 >= length * SPEAKER_SHARE)
-                .map(|(speaker, _)| speaker)
         })
-        .collect();
-    // Renumber by first line, so Speaker 1 is the first to talk.
+        .collect()
+}
+
+/// The voice whose turns cover most of a line, and for how long.
+fn most_cover(at: i64, end: i64, turns: &[Turn]) -> Option<(i32, i64)> {
+    let mut cover: Vec<(i32, i64)> = Vec::new();
+    for turn in turns {
+        let overlap = turn.t1_ms.min(end) - turn.t0_ms.max(at);
+        if overlap <= 0 {
+            continue;
+        }
+        match cover.iter_mut().find(|(s, _)| *s == turn.speaker) {
+            Some((_, ms)) => *ms += overlap,
+            None => cover.push((turn.speaker, overlap)),
+        }
+    }
+    cover
+        .into_iter()
+        .max_by_key(|&(speaker, ms)| (ms, -speaker))
+}
+
+/// The voice of the turn nearest a line, if one is within `within` ms.
+fn nearest_turn(at: i64, end: i64, turns: &[Turn], within: i64) -> Option<i32> {
+    turns
+        .iter()
+        .map(|t| ((t.t0_ms - end).max(at - t.t1_ms), t.speaker))
+        .filter(|&(gap, _)| gap <= within)
+        .min()
+        .map(|(_, speaker)| speaker)
+}
+
+/// Numbers voices 1, 2, … by their first line, so Speaker 1 is the first
+/// to talk; with fewer than two, there's no one to tell apart.
+fn number_voices(raw: &[Option<i32>]) -> Vec<Option<i64>> {
     let mut order: Vec<i32> = Vec::new();
     for speaker in raw.iter().flatten() {
         if !order.contains(speaker) {
@@ -245,9 +264,9 @@ pub fn assign_speakers(lines: &[(i64, i64)], turns: &[Turn]) -> Vec<Option<i64>>
         }
     }
     if order.len() < 2 {
-        return vec![None; lines.len()];
+        return vec![None; raw.len()];
     }
-    raw.into_iter()
+    raw.iter()
         .map(|s| {
             s.and_then(|s| order.iter().position(|&o| o == s))
                 .map(|i| i as i64 + 1)
@@ -761,29 +780,110 @@ pub fn fold_voices(turns: &[Turn], cap: Option<usize>) -> Vec<Turn> {
         if !over_cap && !barely {
             return out;
         }
-        let mine: Vec<Turn> = out.iter().filter(|t| t.speaker == voice).copied().collect();
-        let Some(&(into, _)) =
-            heard
-                .iter()
-                .filter(|&&(s, _)| s != voice)
-                .min_by_key(|&&(s, theirs)| {
-                    let over: i64 = out
-                        .iter()
-                        .filter(|t| t.speaker == s)
-                        .flat_map(|t| {
-                            mine.iter()
-                                .map(move |m| (t.t1_ms.min(m.t1_ms) - t.t0_ms.max(m.t0_ms)).max(0))
-                        })
-                        .sum();
-                    (over, std::cmp::Reverse(theirs), s)
-                })
-        else {
+        if !fold_into_another(&mut out, voice, &heard) {
             return out;
-        };
-        for t in out.iter_mut().filter(|t| t.speaker == voice) {
-            t.speaker = into;
         }
     }
+}
+
+/// Moves one voice's turns to the voice it talks over least, then the one
+/// heard most (`heard` gives how long each was heard). False when there's
+/// no other voice.
+fn fold_into_another(turns: &mut [Turn], voice: i32, heard: &[(i32, i64)]) -> bool {
+    let mine: Vec<Turn> = turns
+        .iter()
+        .filter(|t| t.speaker == voice)
+        .copied()
+        .collect();
+    let Some(&(into, _)) =
+        heard
+            .iter()
+            .filter(|&&(s, _)| s != voice)
+            .min_by_key(|&&(s, theirs)| {
+                let over: i64 = turns
+                    .iter()
+                    .filter(|t| t.speaker == s)
+                    .flat_map(|t| {
+                        mine.iter()
+                            .map(move |m| (t.t1_ms.min(m.t1_ms) - t.t0_ms.max(m.t0_ms)).max(0))
+                    })
+                    .sum();
+                (over, std::cmp::Reverse(theirs), s)
+            })
+    else {
+        return false;
+    };
+    for t in turns.iter_mut().filter(|t| t.speaker == voice) {
+        t.speaker = into;
+    }
+    true
+}
+
+/// A line the strict pass left without a voice, in a meeting where there
+/// are several, goes to the voice of the nearest turn this close to it.
+const FILL_TURN_MS: i64 = 5_000;
+
+/// Who said each line of a finished pass, for the lines people read: the
+/// voices folded as `fold_voices` does, then again by how much of the
+/// transcript each one gets (a voice the model heard for a while can still
+/// end up with a word or two of the lines), and every line left without a
+/// voice given the one that covers most of it, or the nearest turn's.
+/// Numbered 1, 2, … in the order they first speak.
+pub fn speakers_for_lines(
+    lines: &[(i64, i64)],
+    turns: &[Turn],
+    cap: Option<usize>,
+) -> Vec<Option<i64>> {
+    let mut turns = fold_voices(turns, cap);
+    let raw = loop {
+        let raw = raw_speakers(lines, &turns);
+        // Every voice left, with how long its lines run.
+        let mut heard: Vec<(i32, i64)> = Vec::new();
+        for t in &turns {
+            if !heard.iter().any(|h| h.0 == t.speaker) {
+                heard.push((t.speaker, 0));
+            }
+        }
+        for (&(at, end), voice) in lines.iter().zip(&raw) {
+            if let Some(h) = voice.and_then(|v| heard.iter_mut().find(|h| h.0 == v)) {
+                h.1 += end - at;
+            }
+        }
+        if heard.len() < 2 {
+            break raw;
+        }
+        let total: i64 = heard.iter().map(|h| h.1).sum();
+        let &(voice, ms) = heard
+            .iter()
+            .min_by_key(|&&(s, ms)| (ms, std::cmp::Reverse(s)))
+            .expect("two voices");
+        if ms >= MIN_VOICE_MS.max((total as f64 * MIN_VOICE_SHARE) as i64)
+            || !fold_into_another(&mut turns, voice, &heard)
+        {
+            break raw;
+        }
+    };
+    let voices = {
+        let mut v: Vec<i32> = raw.iter().flatten().copied().collect();
+        v.sort_unstable();
+        v.dedup();
+        v.len()
+    };
+    if voices < 2 {
+        return number_voices(&raw);
+    }
+    let filled: Vec<Option<i32>> = lines
+        .iter()
+        .zip(&raw)
+        .map(|(&(at, end), voice)| {
+            voice.or_else(|| {
+                most_cover(at, end, &turns)
+                    .map(|(speaker, _)| speaker)
+                    .or_else(|| nearest_turn(at, end, &turns, FILL_TURN_MS))
+            })
+        })
+        .collect();
+    number_voices(&filled)
 }
 
 /// How many voices the other side of a meeting can have, from the people
@@ -2440,6 +2540,48 @@ mod tests {
                 .filter(|t| t.speaker == 2)
                 .count(),
             0
+        );
+    }
+
+    #[test]
+    fn a_voice_with_a_word_of_the_transcript_is_folded_and_no_line_is_left_out() {
+        // Three people; the model also hears a fourth for 10 s, but only a
+        // second of it lands on a line. Two quick lines fall between turns.
+        let turns = [
+            turn(1, 0, 40),
+            turn(2, 40, 80),
+            turn(4, 80, 90),
+            turn(3, 92, 130),
+            turn(1, 130, 170),
+        ];
+        let lines = [
+            (0, 39_000),
+            (41_000, 79_000),
+            (88_500, 89_500),
+            (91_000, 129_000),
+            (131_000, 169_000),
+            // A quick line across the gap before 3, too little covered.
+            (89_800, 92_600),
+            // Three seconds past the end of every turn.
+            (173_000, 174_000),
+        ];
+        let strict = assign_speakers(&lines, &turns);
+        assert_eq!(strict[2], Some(3));
+        assert_eq!((strict[5], strict[6]), (None, None));
+        let mut voices: Vec<i64> = speakers_for_lines(&lines, &turns, None)
+            .into_iter()
+            .map(|s| s.expect("every line has a voice"))
+            .collect();
+        assert_eq!(voices[0], voices[4]);
+        assert_eq!(voices[5], voices[3]);
+        assert_eq!(voices[6], voices[4]);
+        voices.sort_unstable();
+        voices.dedup();
+        assert_eq!(voices, [1, 2, 3]);
+        // One real voice: still nothing to tell apart.
+        assert_eq!(
+            speakers_for_lines(&lines[..1], &[turn(1, 0, 40)], None),
+            [None]
         );
     }
 

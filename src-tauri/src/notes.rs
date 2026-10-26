@@ -2149,11 +2149,10 @@ fn find_speakers_in(
     } else {
         crate::speakers::turns(app, audio)?
     };
-    let turns = notes_rules::fold_voices(&turns, cap);
     let conn = m.conn()?;
     let open = store::speaker_lines(&conn, note_id, side)?;
     let spans: Vec<(i64, i64)> = open.iter().map(|l| (l.at_ms, l.end_ms)).collect();
-    let fresh = notes_rules::assign_speakers(&spans, &turns);
+    let fresh = notes_rules::speakers_for_lines(&spans, &turns, cap);
     // Numbers taken by hand count as taken, so a new voice can't get one.
     let mut old: Vec<Option<i64>> = open.iter().map(|l| l.speaker).collect();
     let mut new = fresh;
