@@ -978,6 +978,10 @@ impl TranscriptionManager {
                 is_loading = self.loading_condvar.wait(is_loading).unwrap();
             }
         }
+        // Cancelled while the model loaded: no stream to begin and end.
+        if cancelled.load(Ordering::Acquire) {
+            return;
+        }
 
         let model_id = self.get_current_model().unwrap_or_default();
 
