@@ -385,7 +385,7 @@ fn foreground_fills_screen() -> bool {
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsZoomed, GWL_STYLE,
-        WS_CAPTION,
+        WS_CAPTION, WS_THICKFRAME,
     };
     // SAFETY: plain queries on the foreground window handle, which may be
     // null; every call tolerates that and reports failure.
@@ -410,10 +410,14 @@ fn foreground_fills_screen() -> bool {
         ) {
             return false;
         }
-        // A maximized window with a title bar fills the screen too when the
-        // taskbar hides itself, but it isn't a video or a game.
+        // A maximized window with a title bar, or with a frame to resize it
+        // by (apps that draw their own title bar), fills the screen too when
+        // the taskbar hides itself, but it isn't a video or a game. A
+        // fullscreen remote desktop (RustDesk) is maximized with neither.
         let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
-        if IsZoomed(hwnd).as_bool() || style & WS_CAPTION.0 == WS_CAPTION.0 {
+        if style & WS_CAPTION.0 == WS_CAPTION.0
+            || (IsZoomed(hwnd).as_bool() && style & WS_THICKFRAME.0 != 0)
+        {
             return false;
         }
         let mut rect = RECT::default();
@@ -429,10 +433,14 @@ fn foreground_fills_screen() -> bool {
             return false;
         }
         let m = info.rcMonitor;
-        bubble_rules::covers(
+        let covers = bubble_rules::covers(
             (rect.left, rect.top, rect.right, rect.bottom),
             (m.left, m.top, m.right, m.bottom),
-        )
+        );
+        if covers && !COVERED.load(Ordering::SeqCst) {
+            debug!("{class} fills the screen");
+        }
+        covers
     }
 }
 

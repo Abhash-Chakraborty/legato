@@ -152,11 +152,18 @@ pub fn caption_rect(area: Rect, size: (f64, f64), top: bool, bubble: Option<Plac
     Rect { x, y, w, h }
 }
 
-/// Whether a window fills its monitor, as a video, a game or a slideshow
-/// does; the bubble steps aside for those. `window` and `monitor` are
-/// physical (left, top, right, bottom).
+/// A fullscreen window may stop this far short of an edge: some viewers
+/// (VNC) leave a pixel so Windows doesn't treat them as exclusive fullscreen.
+const COVER_SLACK: i32 = 2;
+
+/// Whether a window fills its monitor, as a video, a game, a slideshow or a
+/// remote desktop does; the bubble and the resting island step aside for
+/// those. `window` and `monitor` are physical (left, top, right, bottom).
 pub fn covers(window: (i32, i32, i32, i32), monitor: (i32, i32, i32, i32)) -> bool {
-    window.0 <= monitor.0 && window.1 <= monitor.1 && window.2 >= monitor.2 && window.3 >= monitor.3
+    window.0 <= monitor.0 + COVER_SLACK
+        && window.1 <= monitor.1 + COVER_SLACK
+        && window.2 >= monitor.2 - COVER_SLACK
+        && window.3 >= monitor.3 - COVER_SLACK
 }
 
 #[cfg(test)]
@@ -245,5 +252,8 @@ mod tests {
         assert!(covers((0, 0, 1920, 1080), monitor));
         assert!(covers((-8, -8, 1928, 1088), monitor));
         assert!(!covers((0, 0, 1920, 1040), monitor));
+        // A viewer a pixel short of the edges is still fullscreen.
+        assert!(covers((1, 1, 1919, 1079), monitor));
+        assert!(!covers((0, 0, 1900, 1080), monitor));
     }
 }
