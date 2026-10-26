@@ -891,6 +891,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_bar_look_setting,
             shortcut::change_feature_setting,
             shortcut::change_island_idle_setting,
+            shortcut::change_bar_opacity_setting,
             shortcut::change_overlay_style_setting,
             shortcut::change_debug_mode_setting,
             shortcut::change_word_correction_threshold_setting,

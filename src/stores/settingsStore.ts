@@ -212,6 +212,7 @@ const settingUpdaters: {
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
   bar_look: (value) => commands.changeBarLookSetting(value as BarLook),
   island_idle: (value) => commands.changeIslandIdleSetting(value as IslandIdle),
+  bar_opacity: (value) => commands.changeBarOpacitySetting(value as number),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   long_form_chunking: (value) =>
     commands.changeLongFormChunkingSetting(value as boolean),

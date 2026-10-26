@@ -313,6 +313,13 @@ const WAVE_BARS = 9;
 // loads can take 40s+.
 const SLOW_MODEL_LOAD_MS = 2000;
 
+/** How solid the island and the live transcript box are (Settings › Bar). */
+const setBarOpacity = (opacity: number | null | undefined) =>
+  document.documentElement.style.setProperty(
+    "--bar-alpha",
+    String(Math.min(1, Math.max(0.3, opacity ?? 0.8))),
+  );
+
 /** Slack around the island's shape that still counts as on it, in CSS px. */
 const ISLAND_SLACK = 6;
 /** The pointer rests this long before the resting island opens. */
@@ -325,13 +332,16 @@ const ISLAND_HOVER_OUT_MS = 300;
  * what it shows. The content is measured and the shape follows it with a
  * transition (width first when growing, height first when shrinking), so
  * every state change is one smooth morph. The shape's place goes to the
- * backend, which lets clicks through everywhere else in the window.
+ * backend, which lets clicks through everywhere else in the window. With
+ * `hit`, only the element it selects takes clicks: live words are there to
+ * read, so clicks on them reach the window under the island.
  */
 const IslandFrame: React.FC<{
   visible: boolean;
   contentKey: string;
+  hit?: string;
   children: React.ReactNode;
-}> = ({ visible, contentKey, children }) => {
+}> = ({ visible, contentKey, hit, children }) => {
   const innerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0, growing: true });
 
@@ -357,6 +367,20 @@ const IslandFrame: React.FC<{
   // takes clicks at once, a shrinking one lets them through at once.
   useEffect(() => {
     const ratio = window.devicePixelRatio || 1;
+    const part = hit && innerRef.current?.querySelector(hit);
+    if (part && size.w) {
+      // The content sits at its final place while the shape catches up.
+      const r = part.getBoundingClientRect();
+      commands
+        .islandShape(
+          (r.left - ISLAND_SLACK) * ratio,
+          0,
+          (r.width + 2 * ISLAND_SLACK) * ratio,
+          (r.bottom + ISLAND_SLACK) * ratio,
+        )
+        .catch(() => {});
+      return;
+    }
     const w = size.w ? size.w + 2 * ISLAND_SLACK : 0;
     const h = size.h ? size.h + ISLAND_SLACK : 0;
     commands
@@ -367,7 +391,7 @@ const IslandFrame: React.FC<{
         h * ratio,
       )
       .catch(() => {});
-  }, [size.w, size.h]);
+  }, [size.w, size.h, hit]);
 
   const radius = Math.min(size.h / 2, 22);
   return (
@@ -536,6 +560,7 @@ const RecordingOverlay: React.FC = () => {
             setMini(settings.data.overlay_style === "minimal");
             setCaptionTop(settings.data.live_caption === "top");
             setIsland(settings.data.bar_look === "island");
+            setBarOpacity(settings.data.bar_opacity);
             // The transform after every dictation only runs, and only
             // shows, while Transforms are on.
             const autoId = settings.data.post_process_enabled
@@ -653,6 +678,10 @@ const RecordingOverlay: React.FC = () => {
         },
       );
 
+      const unlistenOpacity = await listen<number>("bar-opacity", (event) =>
+        setBarOpacity(event.payload),
+      );
+
       const unlistenReady = await listen("recording-ready", () => {
         setElapsed(0);
         setCaptureReady(true);
@@ -725,6 +754,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenWorkSince();
         unlistenHide();
         unlistenPointer();
+        unlistenOpacity();
         clearTimeout(hoverTimerRef.current);
         unlistenReady();
         unlistenLevel();
@@ -791,9 +821,14 @@ const RecordingOverlay: React.FC = () => {
 
   // Every card sits in the bar's stage, or in the island when it has the
   // look. `fade` is off for the Live card, which animates itself.
-  const frame = (card: React.ReactNode, key: string, fade = true) =>
+  const frame = (
+    card: React.ReactNode,
+    key: string,
+    fade = true,
+    hit?: string,
+  ) =>
     island ? (
-      <IslandFrame visible={isVisible} contentKey={key}>
+      <IslandFrame visible={isVisible} contentKey={key} hit={hit}>
         {card}
       </IslandFrame>
     ) : (
@@ -1049,6 +1084,8 @@ const RecordingOverlay: React.FC = () => {
       </div>,
       "dictation",
       false,
+      // Words to read, not to click: only the controls take clicks.
+      open ? ".sbase" : undefined,
     );
   }
 

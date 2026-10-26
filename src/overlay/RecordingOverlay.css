@@ -61,7 +61,7 @@
 
   /* The live transcript box: dark and see-through in either theme, like
      captions, so it reads over whatever is on screen. */
-  --caption-bg: rgb(18 18 18 / 0.8);
+  --caption-bg: rgb(18 18 18 / var(--bar-alpha, 0.8));
   --caption-text: #f5f5f4;
 }
 @media (prefers-color-scheme: dark) {
@@ -1077,6 +1077,7 @@
   border-radius: 12px;
   background: var(--caption-bg);
   color: var(--caption-text);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
   font-size: 16px;
   line-height: 1.4;
 }

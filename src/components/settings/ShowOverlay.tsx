@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { Dropdown } from "../ui/Dropdown";
+import { Slider } from "../ui/Slider";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
 import { useModelStore } from "../../stores/modelStore";
@@ -158,6 +159,22 @@ export const ShowOverlay: React.FC<ShowOverlayProps> = React.memo(
             />
           </SettingContainer>
         )}
+
+        {(selectedStyle !== "none" && selectedLook === "island") ||
+        (getSetting("live_caption") ?? "off") !== "off" ? (
+          <Slider
+            value={getSetting("bar_opacity") ?? 0.8}
+            onChange={(value) => updateSetting("bar_opacity", value)}
+            min={0.3}
+            max={1}
+            step={0.05}
+            label={t("settings.advanced.overlay.opacity.title")}
+            description={t("settings.advanced.overlay.opacity.description")}
+            descriptionMode={descriptionMode}
+            grouped={grouped}
+            formatValue={(value) => `${Math.round(value * 100)}%`}
+          />
+        ) : null}
       </>
     );
   },

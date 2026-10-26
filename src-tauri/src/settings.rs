@@ -1144,6 +1144,10 @@ pub struct AppSettings {
     /// The island at rest: small, or hidden.
     #[serde(default)]
     pub island_idle: IslandIdle,
+    /// How solid the island and the live transcript box are, from 0.3 (the
+    /// screen shows through) to 1 (solid).
+    #[serde(default = "default_bar_opacity")]
+    pub bar_opacity: f32,
 }
 
 fn default_model() -> String {
@@ -1254,6 +1258,12 @@ fn default_recording_retention_period() -> RecordingRetentionPeriod {
 
 fn default_remember_app() -> bool {
     true
+}
+
+pub const MIN_BAR_OPACITY: f32 = 0.3;
+
+fn default_bar_opacity() -> f32 {
+    0.8
 }
 
 fn default_audio_feedback_volume() -> f32 {
@@ -1777,6 +1787,7 @@ pub fn get_default_settings() -> AppSettings {
         overlay_style: default_overlay_style(),
         bar_look: BarLook::Bar,
         island_idle: IslandIdle::Small,
+        bar_opacity: default_bar_opacity(),
     }
 }
 

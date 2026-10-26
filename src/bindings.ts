@@ -138,6 +138,18 @@ async changeIslandIdleSetting(idle: IslandIdle) : Promise<Result<null, string>> 
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * How solid the island and the live transcript box are; the bar's window
+ * takes it at once.
+ */
+async changeBarOpacitySetting(opacity: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_bar_opacity_setting", { opacity }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeOverlayStyleSetting(style: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_overlay_style_setting", { style }) };
@@ -4039,7 +4051,12 @@ bar_look?: BarLook;
 /**
  * The island at rest: small, or hidden.
  */
-island_idle?: IslandIdle }
+island_idle?: IslandIdle; 
+/**
+ * How solid the island and the live transcript box are, from 0.3 (the
+ * screen shows through) to 1 (solid).
+ */
+bar_opacity?: number }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; gpu_devices: GpuDeviceOption[] }

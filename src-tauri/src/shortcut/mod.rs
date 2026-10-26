@@ -891,6 +891,19 @@ pub fn change_island_idle_setting(
     Ok(())
 }
 
+/// How solid the island and the live transcript box are; the bar's window
+/// takes it at once.
+#[tauri::command]
+#[specta::specta]
+pub fn change_bar_opacity_setting(app: AppHandle, opacity: f32) -> Result<(), String> {
+    let opacity = opacity.clamp(settings::MIN_BAR_OPACITY, 1.0);
+    let mut settings = settings::get_settings(&app);
+    settings.bar_opacity = opacity;
+    settings::write_settings(&app, settings);
+    let _ = app.emit_to("recording_overlay", "bar-opacity", opacity);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_overlay_style_setting(app: AppHandle, style: String) -> Result<(), String> {

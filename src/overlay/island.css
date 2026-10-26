@@ -7,7 +7,10 @@
    own layout and lose their own surface; the island is the surface.
    ============================================================ */
 .ov-stage.island {
-  --isl-ink: #0d0e0d;
+  /* See-through as Settings › Bar › Background says; text on it stays
+     solid, with a shadow so it reads over a bright page. */
+  --isl-solid: #0d0e0d;
+  --isl-ink: rgb(13 14 13 / var(--bar-alpha, 0.8));
   --isl-ease: cubic-bezier(0.22, 1, 0.36, 1);
   /* The cards read the bar's tokens; the island is dark in either theme. */
   --color-text: #f1f0ec;
@@ -128,13 +131,22 @@
   padding: 0 6px;
 }
 .island .sbtn.primary {
-  color: var(--isl-ink);
+  color: var(--isl-solid);
 }
 .island .sbtn.primary:hover {
   background: #8ad3c9;
 }
 .island .stext-cap .tentative {
   color: var(--s-muted);
+}
+/* Live words in the island: upright and a touch smaller, three lines at
+   most, so the island stays a strip under the edge rather than a panel. */
+.island .stext-cap {
+  --ov-cap-max-h: calc(14px * 1.4 * 3 + 12px);
+  font-size: 14px;
+  font-style: normal;
+  line-height: 1.4;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
 }
 
 /* At rest: a small shape with the time in grey; under the pointer it opens

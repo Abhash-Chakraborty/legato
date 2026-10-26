@@ -385,6 +385,10 @@
             "bottom": "Bottom",
             "top": "Top"
           }
+        },
+        "opacity": {
+          "title": "Background",
+          "description": "How solid the island and the live transcript box are. Lower lets your screen show through; clicks on the words go through either way."
         }
       },
       "pasteMethod": {
