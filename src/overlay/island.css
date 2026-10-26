@@ -7,8 +7,9 @@
    own layout and lose their own surface; the island is the surface.
    ============================================================ */
 .ov-stage.island {
-  /* See-through as Settings › Bar › Background says; text on it stays
-     solid, with a shadow so it reads over a bright page. */
+  /* See-through as Settings › Bar › Background says, below the control
+     row: the row stays solid so its controls read over anything, and the
+     words under it keep a shadow so they read over a bright page. */
   --isl-solid: #0d0e0d;
   --isl-ink: rgb(13 14 13 / var(--bar-alpha, 0.8));
   --isl-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -27,7 +28,10 @@
 .isl {
   position: relative;
   flex: none;
-  background: var(--isl-ink);
+  background: linear-gradient(
+    var(--isl-solid) var(--ov-base-h, 40px),
+    var(--isl-ink) calc(var(--ov-base-h, 40px) + 12px)
+  );
   color: var(--color-text);
   border-radius: 0 0 var(--r, 12px) var(--r, 12px);
   transition:
@@ -64,7 +68,7 @@
   background: radial-gradient(
     circle at 0 100%,
     transparent 9.5px,
-    var(--isl-ink) 10px
+    var(--isl-solid) 10px
   );
 }
 .isl::after {
@@ -72,7 +76,7 @@
   background: radial-gradient(
     circle at 100% 100%,
     transparent 9.5px,
-    var(--isl-ink) 10px
+    var(--isl-solid) 10px
   );
 }
 
