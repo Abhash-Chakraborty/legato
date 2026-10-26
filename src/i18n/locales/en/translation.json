@@ -1304,7 +1304,7 @@
     "connections": {
       "calendars": {
         "title": "Calendars",
-        "help": "Legato reads your meetings from each calendar's secret address, so notes take the meeting's name and the bubble shows what's next.",
+        "help": "Legato reads your meetings from a Google account or each calendar's secret address, so notes take the meeting's name and the bubble shows what's next. What it read stays on this PC, so it works offline.",
         "refresh": "Refresh",
         "status_one": "Synced {{when}} · {{count}} meeting this week",
         "status_other": "Synced {{when}} · {{count}} meetings this week",
@@ -1319,7 +1319,16 @@
         "namePlaceholder": "Name (optional)",
         "add": "Add calendar",
         "checking": "Checking…",
-        "where": "In Google Calendar, open Settings › your calendar › Integrate calendar and copy Secret address in iCal format; in Outlook, publish the calendar and copy its ICS link."
+        "where": "In Google Calendar, open Settings › your calendar › Integrate calendar and copy Secret address in iCal format; in Outlook, publish the calendar and copy its ICS link.",
+        "google": {
+          "signIn": "Sign in with Google",
+          "help": "Reads your meetings and adds new ones with a Meet link. Or paste a calendar's secret address below, with no sign-in.",
+          "browser": "Finish signing in in your browser…",
+          "connected_one": "Connected {{name}} · {{count}} meeting this week",
+          "connected_other": "Connected {{name}} · {{count}} meetings this week",
+          "waiting_one": "{{count}} meeting waiting to be sent",
+          "waiting_other": "{{count}} meetings waiting to be sent"
+        }
       },
       "comingUp": {
         "title": "Coming up",
@@ -3227,7 +3236,7 @@
     "schedule": {
       "button": "Schedule a meeting",
       "title": "Schedule a meeting",
-      "description": "Your calendar opens in the browser with this filled in. Save it there; Google adds a Meet link and Outlook a Teams link with one click.",
+      "description": "Add it straight to your Google account, or open your calendar in the browser with this filled in and save it there.",
       "titleLabel": "Title",
       "untitled": "Meeting",
       "followUp": "Follow-up: {{title}}",
@@ -3242,11 +3251,13 @@
       "inviteCount_other": "{{count}} people invited",
       "calendar": "Calendar",
       "site": {
+        "direct": "Add now",
         "google": "Google",
         "outlook": "Outlook",
         "outlookCom": "Outlook.com"
       },
       "siteHelp": {
+        "direct": "Adds it to {{account}} and emails the invites. Offline, it waits and goes out when you're back.",
         "google": "Google Calendar, in the browser you're signed in to.",
         "outlook": "Outlook for work or school (Microsoft 365).",
         "outlookCom": "Outlook.com and Hotmail accounts."
@@ -3256,7 +3267,14 @@
         "outlook": "Open Outlook",
         "outlookCom": "Open Outlook.com"
       },
-      "failed": "Couldn't open the calendar"
+      "failed": "Couldn't open the calendar",
+      "addNow": "Add meeting",
+      "meet": "Make a Google Meet link",
+      "added": "Added to {{account}}",
+      "copyMeet": "Copy Meet link",
+      "openEvent": "Open",
+      "waiting": "Saved. It goes to Google Calendar when you're back online.",
+      "addFailed": "Couldn't add the meeting"
     },
     "tasks": {
       "button": "Next steps",

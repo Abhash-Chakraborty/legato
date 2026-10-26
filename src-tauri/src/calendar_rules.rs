@@ -1,6 +1,8 @@
 //! Calendars from their secret iCal addresses: reading the ICS text,
-//! repeating events by their rules, and finding the meeting link. Pure
-//! functions with the local time zone passed in, tested without the app.
+//! repeating events by their rules, and finding the meeting link; and from
+//! a Google account: the sign-in's addresses and Google Calendar's events.
+//! Pure functions with the local time zone passed in, tested without the
+//! app.
 
 use chrono::{
     Datelike, Days, Duration, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Weekday,
@@ -743,6 +745,198 @@ pub fn is_calendar(text: &str) -> bool {
         .starts_with("BEGIN:VCALENDAR")
 }
 
+// ---- Google Calendar ---------------------------------------------------
+
+/// What Legato asks a Google account for: who it is, to name it, and the
+/// events on its calendars, to read meetings and add new ones.
+pub const GOOGLE_SCOPES: &str = "openid email https://www.googleapis.com/auth/calendar.events";
+pub const GOOGLE_AUTH: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+pub const GOOGLE_TOKEN: &str = "https://oauth2.googleapis.com/token";
+pub const GOOGLE_REVOKE: &str = "https://oauth2.googleapis.com/revoke";
+pub const GOOGLE_EVENTS: &str = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+
+/// The page Google's sign-in opens in the browser: the desktop flow, with
+/// the answer coming back to `redirect` on this PC and a PKCE challenge, so
+/// the code is worth nothing to anyone else.
+pub fn google_auth_url(client_id: &str, redirect: &str, challenge: &str, state: &str) -> String {
+    let mut url = url::Url::parse(GOOGLE_AUTH).expect("a fixed address");
+    url.query_pairs_mut()
+        .append_pair("client_id", client_id)
+        .append_pair("redirect_uri", redirect)
+        .append_pair("response_type", "code")
+        .append_pair("scope", GOOGLE_SCOPES)
+        .append_pair("code_challenge", challenge)
+        .append_pair("code_challenge_method", "S256")
+        .append_pair("state", state)
+        .append_pair("access_type", "offline")
+        .append_pair("prompt", "consent");
+    url.into()
+}
+
+/// The code from the request the browser makes back to this PC, after
+/// checking it answers our `state`. Err says why there's no code, such as
+/// "access_denied" when you said no.
+pub fn google_redirect(request_line: &str, state: &str) -> Result<String, String> {
+    let target = request_line
+        .split_whitespace()
+        .nth(1)
+        .ok_or("not a request")?;
+    let url = url::Url::parse(&format!("http://localhost{target}")).map_err(|e| e.to_string())?;
+    let get = |key: &str| {
+        url.query_pairs()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.into_owned())
+    };
+    if let Some(error) = get("error") {
+        return Err(error);
+    }
+    if get("state").as_deref() != Some(state) {
+        return Err("state".into());
+    }
+    get("code")
+        .filter(|c| !c.is_empty())
+        .ok_or_else(|| "no code".into())
+}
+
+/// A Google time: `dateTime` in RFC 3339, or a whole day's `date`.
+fn google_time(
+    value: &serde_json::Value,
+    local: &dyn Fn(NaiveDateTime) -> Option<i64>,
+) -> Option<(i64, bool)> {
+    if let Some(t) = value["dateTime"].as_str() {
+        return chrono::DateTime::parse_from_rfc3339(t)
+            .ok()
+            .map(|d| (d.timestamp(), false));
+    }
+    let day = NaiveDate::parse_from_str(value["date"].as_str()?, "%Y-%m-%d").ok()?;
+    local(day.and_time(NaiveTime::MIN)).map(|t| (t, true))
+}
+
+/// A person on a Google event: their name, else their address up to the @.
+/// Rooms aren't people.
+fn google_person(p: &serde_json::Value) -> Option<String> {
+    if p["resource"].as_bool() == Some(true) {
+        return None;
+    }
+    p["displayName"]
+        .as_str()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            let email = p["email"].as_str()?;
+            Some(email.split('@').next()?.to_string()).filter(|n| !n.is_empty())
+        })
+}
+
+/// Meetings from Google Calendar's events list (repeats already expanded,
+/// as `singleEvents` asks), like the ones an iCal address gives.
+pub fn google_meetings(
+    events: &serde_json::Value,
+    calendar: &str,
+    local: &dyn Fn(NaiveDateTime) -> Option<i64>,
+) -> Vec<Meeting> {
+    let mut out = Vec::new();
+    for e in events["items"].as_array().into_iter().flatten() {
+        if e["status"].as_str() == Some("cancelled") {
+            continue;
+        }
+        let (Some((start, all_day)), Some((end, _))) = (
+            google_time(&e["start"], local),
+            google_time(&e["end"], local),
+        ) else {
+            continue;
+        };
+        let title = e["summary"]
+            .as_str()
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .unwrap_or("Busy")
+            .to_string();
+        let video = e["conferenceData"]["entryPoints"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|p| p["entryPointType"].as_str() == Some("video"))
+            .and_then(|p| p["uri"].as_str());
+        let text = |key: &str| e[key].as_str().unwrap_or("");
+        let link = e["hangoutLink"]
+            .as_str()
+            .or(video)
+            .map(str::to_string)
+            .or_else(|| meeting_link(&[text("location"), text("description")]));
+        let location = Some(text("location").to_string())
+            .filter(|l| !l.is_empty() && !l.starts_with("https://"));
+        let mut people: Vec<String> = Vec::new();
+        let organizer = e["organizer"]["email"].as_str().unwrap_or("");
+        let attendees = e["attendees"].as_array().cloned().unwrap_or_default();
+        // The organiser first, as on an iCal invite.
+        let first = attendees
+            .iter()
+            .filter(|p| p["email"].as_str() == Some(organizer))
+            .chain(
+                attendees
+                    .iter()
+                    .filter(|p| p["email"].as_str() != Some(organizer)),
+            );
+        for name in first.filter_map(google_person) {
+            if !people.contains(&name) {
+                people.push(name);
+            }
+        }
+        out.push(Meeting {
+            uid: e["iCalUID"]
+                .as_str()
+                .or(e["id"].as_str())
+                .unwrap_or_default()
+                .to_string(),
+            title,
+            start,
+            end: end.max(start),
+            all_day,
+            link,
+            location,
+            calendar: calendar.to_string(),
+            people,
+        });
+    }
+    out.sort_by(|a, b| a.start.cmp(&b.start).then(a.title.cmp(&b.title)));
+    out
+}
+
+/// A new event for Google Calendar: the time in UTC, the invites, and a
+/// Meet link made with it when `meet`. `request` makes asking twice safe.
+pub fn google_event(
+    title: &str,
+    start: i64,
+    end: i64,
+    invite: &[String],
+    details: Option<&str>,
+    meet: Option<&str>,
+) -> serde_json::Value {
+    let at = |t: i64| {
+        chrono::DateTime::from_timestamp(t, 0)
+            .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+            .unwrap_or_default()
+    };
+    let mut event = serde_json::json!({
+        "summary": title,
+        "start": {"dateTime": at(start)},
+        "end": {"dateTime": at(end.max(start))},
+        "attendees": invite.iter().map(|e| serde_json::json!({"email": e})).collect::<Vec<_>>(),
+    });
+    if let Some(details) = details.filter(|d| !d.trim().is_empty()) {
+        event["description"] = serde_json::json!(details);
+    }
+    if let Some(request) = meet {
+        event["conferenceData"] = serde_json::json!({"createRequest": {
+            "requestId": request,
+            "conferenceSolutionKey": {"type": "hangoutsMeet"},
+        }});
+    }
+    event
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1071,5 +1265,83 @@ END:VEVENT\r\nEND:VCALENDAR\r\n";
         let mut day = meeting("holiday", now + 30, 24 * 60);
         day.all_day = true;
         assert_eq!(to_remind(&[day], now, &[]), None, "all day");
+    }
+    #[test]
+    fn google_sign_in_goes_out_and_comes_back() {
+        let url = google_auth_url("id.apps", "http://127.0.0.1:5123", "chal", "s1");
+        assert!(url.starts_with(GOOGLE_AUTH));
+        assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A5123"));
+        assert!(url.contains("code_challenge_method=S256"));
+        assert!(url.contains("access_type=offline"));
+        assert_eq!(
+            google_redirect("GET /?state=s1&code=4%2F0Ab&scope=x HTTP/1.1", "s1"),
+            Ok("4/0Ab".to_string())
+        );
+        assert_eq!(
+            google_redirect("GET /?error=access_denied&state=s1 HTTP/1.1", "s1"),
+            Err("access_denied".to_string())
+        );
+        assert_eq!(
+            google_redirect("GET /?state=other&code=c HTTP/1.1", "s1"),
+            Err("state".to_string())
+        );
+        assert!(google_redirect("GET /favicon.ico HTTP/1.1", "s1").is_err());
+    }
+
+    #[test]
+    fn google_events_become_meetings() {
+        let events = serde_json::json!({"items": [
+            {"id": "b", "iCalUID": "b@google.com", "status": "confirmed",
+             "summary": "Cockpit review",
+             "start": {"dateTime": "2026-10-26T12:30:00+05:30"},
+             "end": {"dateTime": "2026-10-26T13:00:00+05:30"},
+             "hangoutLink": "https://meet.google.com/abc-defg-hij",
+             "organizer": {"email": "vansh@example.com"},
+             "attendees": [
+                {"email": "abhash@example.com", "self": true},
+                {"email": "room@resource.calendar.google.com", "resource": true},
+                {"email": "vansh@example.com", "displayName": "Vansh"}
+             ]},
+            {"id": "a", "status": "confirmed", "summary": "Holiday",
+             "start": {"date": "2026-10-26"}, "end": {"date": "2026-10-27"}},
+            {"id": "c", "status": "cancelled", "summary": "Gone",
+             "start": {"dateTime": "2026-10-26T09:00:00Z"},
+             "end": {"dateTime": "2026-10-26T10:00:00Z"}},
+            {"id": "d", "status": "confirmed",
+             "start": {"dateTime": "2026-10-27T09:00:00Z"},
+             "end": {"dateTime": "2026-10-27T09:30:00Z"},
+             "location": "https://zoom.us/j/123 or room 4"}
+        ]});
+        let m = google_meetings(&events, "abhash@example.com", &berlin);
+        assert_eq!(m.len(), 3);
+        assert_eq!((m[0].title.as_str(), m[0].all_day), ("Holiday", true));
+        assert_eq!(m[0].start, ts("2026-10-26T00:00:00+01:00"));
+        assert_eq!(m[1].uid, "b@google.com");
+        assert_eq!(m[1].start, ts("2026-10-26T07:00:00Z"));
+        assert_eq!(
+            m[1].link.as_deref(),
+            Some("https://meet.google.com/abc-defg-hij")
+        );
+        assert_eq!(m[1].people, ["Vansh", "abhash"]);
+        assert_eq!(m[2].title, "Busy");
+        assert_eq!(m[2].link.as_deref(), Some("https://zoom.us/j/123"));
+    }
+
+    #[test]
+    fn a_new_google_event_asks_for_meet() {
+        let e = google_event(
+            "Follow-up",
+            ts("2026-10-27T10:00:00Z"),
+            ts("2026-10-27T10:30:00Z"),
+            &["sahil@example.com".to_string()],
+            Some("From Legato"),
+            Some("req-1"),
+        );
+        assert_eq!(e["start"]["dateTime"], "2026-10-27T10:00:00Z");
+        assert_eq!(e["attendees"][0]["email"], "sahil@example.com");
+        assert_eq!(e["conferenceData"]["createRequest"]["requestId"], "req-1");
+        let plain = google_event("x", 0, 60, &[], Some(" "), None);
+        assert!(plain.get("conferenceData").is_none());
+        assert!(plain.get("description").is_none());
     }
 }

@@ -157,12 +157,15 @@ pub struct BubbleSpot {
     pub edge: Option<crate::bubble_rules::Edge>,
 }
 
-/// A calendar Legato reads meetings from. Its secret address is in
-/// Credential Manager, not here.
+/// A calendar Legato reads meetings from: an iCal address, or a Google
+/// account (named by its address). The address, or the account's refresh
+/// token, is in Credential Manager, not here.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
 pub struct CalendarFeed {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub google: bool,
 }
 
 /// Which recording overlay to display. `Minimal` and `Live` share one base

@@ -24,6 +24,7 @@ mod document;
 mod edit_reader;
 mod elevation;
 pub mod engine_supervisor;
+mod google;
 mod handy_migration;
 mod input;
 mod inyon;
@@ -965,6 +966,10 @@ pub fn run(cli_args: CliArgs) {
             commands::connections::calendar_add,
             commands::connections::calendar_remove,
             commands::connections::calendar_refresh,
+            commands::connections::google_available,
+            commands::connections::calendar_connect_google,
+            commands::connections::calendar_cancel_google,
+            commands::connections::calendar_add_meeting,
             commands::connections::calendar_meetings,
             commands::connections::mcp_info,
             commands::connections::change_mcp_enabled_setting,

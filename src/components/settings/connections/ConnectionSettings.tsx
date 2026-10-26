@@ -75,11 +75,41 @@ export const CalendarsCard: React.FC = () => {
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [google, setGoogle] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
 
   useEffect(() => {
     // The fetch finished when the list comes back.
     setRefreshing(false);
   }, [feeds]);
+
+  useEffect(() => {
+    commands
+      .googleAvailable()
+      .then(setGoogle)
+      .catch(() => {});
+  }, []);
+
+  const signIn = async () => {
+    if (signingIn) return;
+    setSigningIn(true);
+    setError(null);
+    const r = await commands
+      .calendarConnectGoogle()
+      .catch((e) => ({ status: "error" as const, error: String(e) }));
+    setSigningIn(false);
+    if (r.status === "error") {
+      if (r.error !== "cancelled") setError(r.error);
+      return;
+    }
+    refreshSettings();
+    toast.success(
+      t("settings.connections.calendars.google.connected", {
+        name: r.data.name,
+        count: r.data.upcoming,
+      }),
+    );
+  };
 
   const add = async (address = url, label = name) => {
     if (!address.trim() || adding) return;
@@ -110,14 +140,18 @@ export const CalendarsCard: React.FC = () => {
     }
     const removed = r.data;
     refreshSettings();
-    toast(t("settings.connections.calendars.removed", { name: feed.name }), {
-      action: {
-        label: t("settings.devices.undo"),
-        onClick: () => {
-          if (removed.url) add(removed.url, removed.name);
-        },
-      },
-    });
+    // A Google account signs out for good; an address can come back.
+    toast(
+      t("settings.connections.calendars.removed", { name: feed.name }),
+      removed.url
+        ? {
+            action: {
+              label: t("settings.devices.undo"),
+              onClick: () => add(removed.url, removed.name),
+            },
+          }
+        : undefined,
+    );
   };
 
   return (
@@ -171,6 +205,11 @@ export const CalendarsCard: React.FC = () => {
                         count: f.upcoming,
                       })
                     : t("settings.connections.calendars.waiting")}
+                {f.google &&
+                  f.waiting > 0 &&
+                  ` · ${t("settings.connections.calendars.google.waiting", {
+                    count: f.waiting,
+                  })}`}
               </div>
             </div>
             <button
@@ -188,6 +227,33 @@ export const CalendarsCard: React.FC = () => {
             </button>
           </li>
         ))}
+        {google && (
+          <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line py-2.5 ps-4">
+            {signingIn ? (
+              <>
+                <span className="text-[13px] text-text-2" role="status">
+                  {t("settings.connections.calendars.google.browser")}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => commands.calendarCancelGoogle()}
+                >
+                  {t("common.cancel")}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="secondary" size="sm" onClick={signIn}>
+                  {t("settings.connections.calendars.google.signIn")}
+                </Button>
+                <span className="max-w-[460px] text-[12.5px] leading-[1.45] text-text-3">
+                  {t("settings.connections.calendars.google.help")}
+                </span>
+              </>
+            )}
+          </li>
+        )}
         <li className="py-2.5 ps-4">
           <form
             className="flex flex-wrap items-center gap-2"

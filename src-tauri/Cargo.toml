@@ -80,6 +80,7 @@ chrono = "0.4"
 chrono-tz = "0.10"
 rusqlite = { version = "0.37", features = ["bundled"] }
 sha2 = "0.10"
+getrandom = "0.3"
 # Phone sync: TLS with pinned self-signed certificates, on ring like reqwest.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging"] }
