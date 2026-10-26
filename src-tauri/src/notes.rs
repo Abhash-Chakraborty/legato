@@ -25,7 +25,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -920,6 +920,9 @@ struct Shared {
     you: Level,
     them: Level,
     stop_ticker: AtomicBool,
+    /// The recording stops at this length in milliseconds; 0 is no limit.
+    /// Keep recording on the bar's question moves it on.
+    limit_ms: AtomicU64,
 }
 
 impl Shared {
@@ -998,6 +1001,7 @@ pub fn session() -> Option<SessionInfo> {
         elapsed_ms: shared.elapsed().as_millis() as i64,
         paused: shared.paused.load(Ordering::Relaxed),
         pending: shared.pending.load(Ordering::Relaxed),
+        max_ms: shared.limit_ms.load(Ordering::Relaxed) as i64,
         ..info.clone()
     };
     if let Some(s) = lock(&SESSION).as_ref() {
@@ -1077,6 +1081,7 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
         you: Level::default(),
         them: Level::default(),
         stop_ticker: AtomicBool::new(false),
+        limit_ms: AtomicU64::new(max.map_or(0, |m| m.as_millis() as u64)),
     });
 
     let microphone = options
@@ -1214,7 +1219,7 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
             .map(|s| format!(" with {s}"))
             .unwrap_or_default()
     );
-    spawn_ticker(app, Arc::clone(&shared), meeting, max);
+    spawn_ticker(app, Arc::clone(&shared), meeting);
     spawn_speaker_passes(app, note.id, meeting, Arc::clone(&shared));
     if meeting {
         spawn_call_people(app, note.id, Arc::clone(&shared));
@@ -1395,9 +1400,11 @@ pub fn toggle(app: &AppHandle) {
     }
 }
 
-fn spawn_ticker(app: &AppHandle, shared: Arc<Shared>, meeting: bool, max: Option<Duration>) {
+fn spawn_ticker(app: &AppHandle, shared: Arc<Shared>, meeting: bool) {
     let app = app.clone();
     std::thread::spawn(move || {
+        // The limit the bar last asked about, so it asks once per limit.
+        let mut asked = 0;
         while !shared.stop_ticker.load(Ordering::Relaxed) {
             std::thread::sleep(TICK);
             let elapsed = shared.elapsed();
@@ -1409,13 +1416,49 @@ fn spawn_ticker(app: &AppHandle, shared: Arc<Shared>, meeting: bool, max: Option
                 pending: shared.pending.load(Ordering::Relaxed),
             }
             .emit(&app);
-            if max.is_some_and(|max| elapsed >= max) {
+            let limit = shared.limit_ms.load(Ordering::Relaxed);
+            let ms = elapsed.as_millis() as u64;
+            if limit > 0 && ms >= limit {
                 info!("Notes reached the recording limit; stopping");
                 let _ = stop(&app);
                 break;
             }
+            let warn = LIMIT_WARN.as_millis() as u64;
+            if limit > 2 * warn && ms + warn >= limit && asked != limit {
+                asked = limit;
+                let minutes = (limit - ms).div_ceil(60_000);
+                info!("Notes stop in {minutes} min; asking whether to keep recording");
+                crate::overlay::show_overlay_notice_for(
+                    &app,
+                    &BarNotice::NoteLimit { minutes },
+                    LIMIT_ASK_FOR.as_millis() as u64,
+                );
+            }
         }
     });
+}
+
+/// The bar asks whether to keep recording this long before the limit.
+const LIMIT_WARN: Duration = Duration::from_secs(120);
+/// How long the question stays on the bar.
+const LIMIT_ASK_FOR: Duration = Duration::from_secs(60);
+/// Keep recording moves the limit on by this much.
+const KEEP_FOR: Duration = Duration::from_secs(30 * 60);
+
+/// Keep recording, from the bar's question before the limit: the recording
+/// runs another half hour.
+pub fn keep_recording() -> Result<()> {
+    let session = lock(&SESSION);
+    let Some(s) = session.as_ref() else {
+        return Err(anyhow!("No notes are recording"));
+    };
+    let limit = s.shared.limit_ms.load(Ordering::Relaxed);
+    if limit > 0 {
+        let next = limit + KEEP_FOR.as_millis() as u64;
+        s.shared.limit_ms.store(next, Ordering::Relaxed);
+        info!("Notes keep recording until {} min", next / 60_000);
+    }
+    Ok(())
 }
 
 /// One track: writes it to a WAV and cuts it into lines for the

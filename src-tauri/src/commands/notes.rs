@@ -132,6 +132,13 @@ pub fn answer_short_note(app: AppHandle, id: i64, keep: bool) -> Result<(), Stri
     text(notes::answer_unsure(&app, id, keep))
 }
 
+/// The bar's Keep recording, shortly before a recording's length limit.
+#[tauri::command]
+#[specta::specta]
+pub fn keep_notes_recording() -> Result<(), String> {
+    text(notes::keep_recording())
+}
+
 /// Deletes a note and returns it for Undo.
 #[tauri::command]
 #[specta::specta]

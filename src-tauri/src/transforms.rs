@@ -128,6 +128,10 @@ pub enum BarNotice {
         id: i64,
         words: usize,
     },
+    /// A Notes recording nears its length limit: keep recording?
+    NoteLimit {
+        minutes: u64,
+    },
     /// Never here on the call card: no more offers in this app, with Undo.
     CallNever {
         app: String,

@@ -88,6 +88,7 @@ type OverlayNotice =
   | { kind: "note_ready"; id: number; duration_ms: number }
   | { kind: "note_empty"; duration_ms: number }
   | { kind: "note_short"; id: number; words: number }
+  | { kind: "note_limit"; minutes: number }
   | { kind: "notes_failed"; reason: string }
   | { kind: "call_never"; app: string }
   | { kind: "agent_done"; agent: string; title: string }
@@ -1117,6 +1118,8 @@ const RecordingOverlay: React.FC = () => {
         return t("overlay.notice.noteEmpty");
       case "note_short":
         return t("overlay.notice.noteShort", { count: n.words });
+      case "note_limit":
+        return t("overlay.notice.noteLimit", { count: n.minutes });
       case "notes_failed":
         return t("overlay.notice.notesFailed", { reason: n.reason });
       case "call_never":
@@ -1151,7 +1154,7 @@ const RecordingOverlay: React.FC = () => {
         notice.kind === "learned") &&
       ("undo" in notice ? notice.undo : true);
     // A question stays up while the pointer is on it.
-    const asks = kind === "note_short";
+    const asks = kind === "note_short" || kind === "note_limit";
     return frame(
       <div
         className="scard notice"
@@ -1228,6 +1231,18 @@ const RecordingOverlay: React.FC = () => {
               {t("overlay.keep")}
             </button>
           </>
+        )}
+        {notice?.kind === "note_limit" && (
+          <button
+            type="button"
+            className="sbtn ghost"
+            onClick={() => {
+              commands.keepNotesRecording().catch(() => {});
+              commands.barDismiss();
+            }}
+          >
+            {t("overlay.keepRecording")}
+          </button>
         )}
         {notice?.kind === "spotted" && (
           <button

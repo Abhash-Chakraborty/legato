@@ -1058,7 +1058,7 @@
       },
       "maxLength": {
         "title": "Stop recording after",
-        "help": "A limit for every note, in case a call never ends.",
+        "help": "A limit for every note, in case a call never ends. Two minutes before, the bar offers to keep recording.",
         "hours_one": "{{count}} hour",
         "hours_other": "{{count}} hours",
         "none": "No limit"
@@ -1594,6 +1594,8 @@
       "noteEmpty": "Nothing was heard, so no note was saved",
       "noteShort_one": "Only {{count}} word. Started by mistake?",
       "noteShort_other": "Only {{count}} words. Started by mistake?",
+      "noteLimit_one": "Notes stop in {{count}} minute",
+      "noteLimit_other": "Notes stop in {{count}} minutes",
       "notesFailed": "Notes didn't start · {{reason}}",
       "callNever": "Legato won't offer notes in {{app}}",
       "fromPhone": "From {{name}} · on your clipboard",
@@ -1685,7 +1687,8 @@
       "reply": "Reply",
       "replyHelp": "Speak your reply; press again to send",
       "dismiss": "Dismiss"
-    }
+    },
+    "keepRecording": "Keep recording"
   },
   "titleBar": {
     "minimize": "Minimize",
