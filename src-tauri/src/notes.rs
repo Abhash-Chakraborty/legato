@@ -2108,12 +2108,20 @@ fn find_speakers_in(
     wide: bool,
 ) -> Result<usize> {
     let _pass = lock(&SPEAKER_PASS);
+    let m = manager(app);
+    // The other side of a call holds everyone known to be in it but you.
+    let cap = match side {
+        Some(Speaker::Them) => m
+            .get(note_id)?
+            .and_then(|n| notes_rules::voice_cap(&n.attendees, &get_settings(app).your_name)),
+        _ => None,
+    };
     let turns = if wide {
-        crate::speakers::turns_wide(app, audio)?
+        crate::speakers::turns_wide(app, audio, cap)?
     } else {
         crate::speakers::turns(app, audio)?
     };
-    let m = manager(app);
+    let turns = notes_rules::fold_voices(&turns, cap);
     let conn = m.conn()?;
     let open = store::speaker_lines(&conn, note_id, side)?;
     let spans: Vec<(i64, i64)> = open.iter().map(|l| (l.at_ms, l.end_ms)).collect();
@@ -2562,7 +2570,19 @@ pub async fn suggest_fixes(app: &AppHandle, note_id: i64) -> Result<Vec<Suggeste
     if lines.is_empty() {
         return Err("empty".to_string());
     }
-    let words = dictionary_for_ai(app, FIX_WORDS);
+    let mut words = dictionary_for_ai(app, FIX_WORDS);
+    // Names said in the meeting are most often the people in it, you too.
+    let you = get_settings(app).your_name;
+    for name in note.attendees.iter().chain(Some(&you)) {
+        let name = name.trim();
+        if !name.is_empty() && !words.iter().any(|w| w.starts_with(name)) {
+            words.push(notes_rules::describe_word(
+                name,
+                Some("a person's name"),
+                &[],
+            ));
+        }
+    }
     let labels = speaker_labels(&note, &lines);
     let fixes = crate::ai::find_note_fixes(
         app,

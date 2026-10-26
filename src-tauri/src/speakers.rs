@@ -251,8 +251,10 @@ fn samples_ms(samples: usize) -> i64 {
 /// filled all four of its voices is heard again in short windows, and the
 /// windows' voices are joined into the meeting's: by who talks where two
 /// windows overlap, then by playing voices that never share a window one
-/// after the other through the model. Blocks for a while.
-pub fn turns_wide(app: &AppHandle, audio: &Path) -> Result<Vec<Turn>> {
+/// after the other through the model. With at most `cap` people to tell
+/// apart, fewer than the model holds, the whole recording is enough.
+/// Blocks for a while.
+pub fn turns_wide(app: &AppHandle, audio: &Path, cap: Option<usize>) -> Result<Vec<Turn>> {
     let whole = turns(app, audio)?;
     let mut voices: Vec<i32> = whole.iter().map(|t| t.speaker).collect();
     voices.sort_unstable();
@@ -261,7 +263,8 @@ pub fn turns_wide(app: &AppHandle, audio: &Path) -> Result<Vec<Turn>> {
     let duration = samples_ms(reader.duration() as usize);
     drop(reader);
     let windows = notes_rules::voice_windows(duration);
-    if voices.len() < notes_rules::MODEL_VOICES || windows.len() < 2 {
+    let few = cap.is_some_and(|c| c < notes_rules::MODEL_VOICES);
+    if voices.len() < notes_rules::MODEL_VOICES || few || windows.len() < 2 {
         return Ok(whole);
     }
     let started = Instant::now();

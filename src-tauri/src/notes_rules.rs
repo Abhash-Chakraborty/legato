@@ -198,6 +198,10 @@ pub struct Turn {
 /// of it.
 const SPEAKER_SHARE: f64 = 0.3;
 
+/// A line no turn covers at all (a quick "yeah" the model didn't hear as
+/// speech) goes to the voice of a turn this close to it.
+const NEAR_TURN_MS: i64 = 1_000;
+
 /// Who said each line, given as (start, end) in ms: the speaker whose turns
 /// cover most of it, numbered 1, 2, … in the order they first speak. None
 /// when no one covers enough of it, and for every line when only one
@@ -217,6 +221,14 @@ pub fn assign_speakers(lines: &[(i64, i64)], turns: &[Turn]) -> Vec<Option<i64>>
                     Some((_, ms)) => *ms += overlap,
                     None => cover.push((turn.speaker, overlap)),
                 }
+            }
+            if cover.is_empty() {
+                return turns
+                    .iter()
+                    .map(|t| ((t.t0_ms - end).max(at - t.t1_ms), t.speaker))
+                    .filter(|&(gap, _)| gap <= NEAR_TURN_MS)
+                    .min()
+                    .map(|(_, speaker)| speaker);
             }
             cover
                 .into_iter()
@@ -713,6 +725,81 @@ pub fn speech_ms(turns: &[Turn], voices: usize) -> Vec<i64> {
         }
     }
     out
+}
+
+/// A voice heard for less than this, or for less than `MIN_VOICE_SHARE` of
+/// all the speech, is most likely someone the model split in two, a laugh
+/// or a click, rather than another person.
+pub const MIN_VOICE_MS: i64 = 8_000;
+pub const MIN_VOICE_SHARE: f64 = 0.02;
+
+/// The voices again with the ones the model most likely made up folded
+/// into others: down to `cap` voices when it's known how many people there
+/// are, and without any voice heard for only a few seconds. A folded voice
+/// joins the one it talks over least (two people talking at once are two
+/// people), then the one heard most. The least heard go first.
+pub fn fold_voices(turns: &[Turn], cap: Option<usize>) -> Vec<Turn> {
+    let mut out = turns.to_vec();
+    loop {
+        let mut heard: Vec<(i32, i64)> = Vec::new();
+        for t in &out {
+            match heard.iter_mut().find(|(s, _)| *s == t.speaker) {
+                Some((_, ms)) => *ms += t.t1_ms - t.t0_ms,
+                None => heard.push((t.speaker, t.t1_ms - t.t0_ms)),
+            }
+        }
+        if heard.len() < 2 {
+            return out;
+        }
+        let total: i64 = heard.iter().map(|h| h.1).sum();
+        let &(voice, ms) = heard
+            .iter()
+            .min_by_key(|&&(s, ms)| (ms, std::cmp::Reverse(s)))
+            .expect("two voices");
+        let over_cap = cap.is_some_and(|c| heard.len() > c.max(1));
+        let barely = ms < MIN_VOICE_MS.max((total as f64 * MIN_VOICE_SHARE) as i64);
+        if !over_cap && !barely {
+            return out;
+        }
+        let mine: Vec<Turn> = out.iter().filter(|t| t.speaker == voice).copied().collect();
+        let Some(&(into, _)) =
+            heard
+                .iter()
+                .filter(|&&(s, _)| s != voice)
+                .min_by_key(|&&(s, theirs)| {
+                    let over: i64 = out
+                        .iter()
+                        .filter(|t| t.speaker == s)
+                        .flat_map(|t| {
+                            mine.iter()
+                                .map(move |m| (t.t1_ms.min(m.t1_ms) - t.t0_ms.max(m.t0_ms)).max(0))
+                        })
+                        .sum();
+                    (over, std::cmp::Reverse(theirs), s)
+                })
+        else {
+            return out;
+        };
+        for t in out.iter_mut().filter(|t| t.speaker == voice) {
+            t.speaker = into;
+        }
+    }
+}
+
+/// How many voices the other side of a meeting can have, from the people
+/// known to be in it (the calendar or the call window): everyone but you.
+/// None when no one is known.
+pub fn voice_cap(people: &[String], your_name: &str) -> Option<usize> {
+    if people.is_empty() {
+        return None;
+    }
+    let first = |n: &str| n.split_whitespace().next().unwrap_or("").to_lowercase();
+    let you = first(your_name);
+    let others = people
+        .iter()
+        .filter(|p| you.chars().count() < 2 || first(p) != you)
+        .count();
+    Some(others.max(1))
 }
 
 /// Whether a microphone line is the speakers playing a line of the call back
@@ -2239,6 +2326,14 @@ mod tests {
             ),
             vec![None, Some(1), Some(2)]
         );
+        // A quick "yeah" the model missed goes to the turn right beside it.
+        assert_eq!(
+            assign_speakers(
+                &[(0, 4_000), (4_100, 4_600), (5_000, 9_000)],
+                &[turn(1, 0, 4_000), turn(2, 5_000, 9_000)]
+            ),
+            vec![Some(1), Some(1), Some(2)]
+        );
     }
 
     #[test]
@@ -2311,6 +2406,52 @@ mod tests {
             t0_ms: t0_s * 1000,
             t1_ms: t1_s * 1000,
         }
+    }
+
+    #[test]
+    fn voices_the_model_made_up_are_folded_away() {
+        // Three people, and two slivers: 4 talks over 1 for a second, 5
+        // says one word in a gap.
+        let turns = [
+            turn(1, 0, 40),
+            turn(4, 39, 41),
+            turn(2, 41, 80),
+            turn(5, 80, 81),
+            turn(3, 81, 120),
+            turn(1, 120, 160),
+        ];
+        let folded = fold_voices(&turns, None);
+        let mut voices: Vec<i32> = folded.iter().map(|t| t.speaker).collect();
+        voices.sort_unstable();
+        voices.dedup();
+        assert_eq!(voices, [1, 2, 3]);
+        // 4 talked over 1, so it's 2; 5 talked over no one: the most heard.
+        assert_eq!(folded[1].speaker, 2);
+        assert_eq!(folded[3].speaker, 1);
+        // Two people known on the other side: the least heard goes too.
+        let two = fold_voices(&turns, Some(2));
+        assert!(two.iter().all(|t| t.speaker != 3 && t.speaker != 4));
+        // A real voice heard for a while stays.
+        let pair = [turn(1, 0, 30), turn(2, 30, 45)];
+        assert_eq!(fold_voices(&pair, None), pair);
+        assert_eq!(
+            fold_voices(&pair, Some(1))
+                .iter()
+                .filter(|t| t.speaker == 2)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn the_people_in_a_meeting_cap_its_voices() {
+        let people = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        let four = people(&["Abhash Chakraborty", "Vansh", "Sahil", "Priya Shah"]);
+        assert_eq!(voice_cap(&four, "Abhash"), Some(3));
+        assert_eq!(voice_cap(&four, ""), Some(4));
+        assert_eq!(voice_cap(&people(&["Vansh"]), "Abhash"), Some(1));
+        assert_eq!(voice_cap(&people(&["Abhash"]), "abhash"), Some(1));
+        assert_eq!(voice_cap(&[], "Abhash"), None);
     }
 
     #[test]
