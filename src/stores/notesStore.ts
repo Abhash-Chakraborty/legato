@@ -4,6 +4,7 @@ import {
   commands,
   events,
   type Note,
+  type NoteFolder,
   type NoteLine,
   type NotesTick,
   type SessionInfo,
@@ -13,6 +14,8 @@ import {
  *  events. */
 interface NotesStore {
   notes: Note[] | null;
+  /** The folders, A to Z, empty ones too. */
+  folders: NoteFolder[];
   session: SessionInfo | null;
   /** The clock and meters, a few times a second while recording. */
   tick: NotesTick | null;
@@ -29,17 +32,20 @@ interface NotesStore {
 
 export const useNotesStore = create<NotesStore>()((set, get) => ({
   notes: null,
+  folders: [],
   session: null,
   tick: null,
   live: [],
   previews: [],
   linesVersion: 0,
   load: async () => {
-    const [notes, session] = await Promise.all([
+    const [notes, session, folders] = await Promise.all([
       commands.getNotes().catch(() => null),
       commands.getNotesSession().catch(() => null),
+      commands.getNoteFolders().catch(() => null),
     ]);
     if (notes?.status === "ok") set({ notes: notes.data });
+    if (folders?.status === "ok") set({ folders: folders.data });
     set((state) => {
       const same = session && session.note_id === state.session?.note_id;
       return {

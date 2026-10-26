@@ -7,6 +7,8 @@ import {
   Copy,
   FileDown,
   FileText,
+  Folder,
+  FolderInput,
   MoreVertical,
   Pencil,
   Plus,
@@ -25,6 +27,8 @@ import { TranscriptTab } from "./TranscriptTab";
 import { NotePlayer, useNoteAudio } from "./NoteAudio";
 import { useSpeakerNames } from "../../notes/SpeakerTag";
 import { ScheduleDialog } from "../../notes/ScheduleDialog";
+import { useNotesStore } from "../../../stores/notesStore";
+import { MoveToFolder } from "./Folders";
 
 type Tab = "summary" | "transcript" | "mine";
 
@@ -214,6 +218,8 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
   const { t, i18n } = useTranslation();
   const [tab, setTab] = useState<Tab>("summary");
   const [menu, setMenu] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const folders = useNotesStore((s) => s.folders);
   const [scheduling, setScheduling] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [tagging, setTagging] = useState(false);
@@ -331,6 +337,12 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
                     icon: Tag,
                     onSelect: () => setTagging(true),
                   },
+                  {
+                    id: "folder",
+                    label: t("notes.folders.moveTo"),
+                    icon: FolderInput,
+                    onSelect: () => setMoving(true),
+                  },
                   "separator",
                   {
                     id: "copy-summary",
@@ -385,6 +397,17 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
                 ]}
               />
             )}
+            {moving && (
+              <MoveToFolder
+                note={note}
+                folders={folders}
+                className="end-0 top-full z-10 mt-1 w-56"
+                onClose={(restore) => {
+                  setMoving(false);
+                  if (restore) menuButton.current?.focus();
+                }}
+              />
+            )}
           </div>
         </div>
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-text-3">
@@ -421,6 +444,20 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
               ? t("notes.detail.youAndOthers")
               : t("notes.detail.justYou")}
           </span>
+          {note.folder && (
+            <>
+              <span aria-hidden="true">·</span>
+              <button
+                type="button"
+                onClick={() => setMoving(true)}
+                title={t("notes.folders.moveTo")}
+                className="inline-flex items-center gap-1 rounded-[var(--r-xs)] text-text-2 underline-offset-2 hover:underline"
+              >
+                <Folder className="h-3.5 w-3.5" aria-hidden="true" />
+                {note.folder}
+              </button>
+            </>
+          )}
         </div>
         <Tags note={note} adding={tagging} setAdding={setTagging} />
         {!recording && <NotePlayer note={note} player={player} />}

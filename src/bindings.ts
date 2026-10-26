@@ -1961,6 +1961,61 @@ async renameNote(id: number, title: string) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Every folder of notes, A to Z, with how many notes each holds.
+ */
+async getNoteFolders() : Promise<Result<NoteFolder[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_note_folders") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Makes a folder; returns its name as kept.
+ */
+async addNoteFolder(name: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_note_folder", { name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Renames a folder, joining one already called that.
+ */
+async renameNoteFolder(from: string, to: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_note_folder", { from, to }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Removes a folder, keeping its notes; returns them, for Undo.
+ */
+async deleteNoteFolder(name: string) : Promise<Result<number[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_note_folder", { name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Puts notes in a folder (made if needed), or in none.
+ */
+async moveNotesToFolder(ids: number[], folder: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("move_notes_to_folder", { ids, folder }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Corrects a line's words, or who said it, during or after the recording.
  */
 async editNoteLine(id: number, who: Speaker, speaker: number | null, text: string) : Promise<Result<LineEdit, string>> {
@@ -3138,7 +3193,15 @@ outline?: NoteOutline;
 /**
  * Who was invited, when the note began with a calendar meeting.
  */
-attendees?: string[] }
+ attendees?: string[]; 
+/**
+ * The folder the note is in, by name.
+ */
+folder?: string | null }
+/**
+ * A folder of notes, with how many it holds.
+ */
+export type NoteFolder = { name: string; notes: number }
 export type NoteAction = { id: number; owner: string; text: string; done: boolean }
 /**
  * A summary's longer parts: who took part, a short paragraph per topic,

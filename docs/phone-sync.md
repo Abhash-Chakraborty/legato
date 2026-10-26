@@ -333,7 +333,9 @@ Rules per kind:
   `you`, and the recording itself stays on the phone only until it's written up. Once the
   PC's speaker model has told voices apart, a line carries `speaker` (1, 2, …) and the note
   `speakers`, a list of `{speaker, name}` for the voices given a name; both are left out when
-  unset, so older notes hash as before. Saved voice clips stay on the PC.
+  unset, so older notes hash as before. Saved voice clips stay on the PC. A note in a folder
+  carries `folder`, the folder's name, also left out when unset; a device makes the folder when
+  a note arrives in one it doesn't have. Empty folders stay on the device they were made on.
 - **Notes and the Scratchpad**: a deleted note waits 30 days in Recently deleted on the device
   it was deleted on. Restoring it there sends a newer version, and a device that had removed
   that note puts it back.

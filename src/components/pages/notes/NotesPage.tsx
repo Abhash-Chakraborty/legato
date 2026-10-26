@@ -40,6 +40,7 @@ import { RecordingStrip } from "./RecordingStrip";
 import { CallStrip } from "./CallStrip";
 import { TasksView } from "./TasksView";
 import { AskNotes } from "./AskNotes";
+import { FolderFilter } from "./Folders";
 import { ConfirmDelete } from "../../shared/ConfirmDelete";
 import {
   RecentlyDeleted,
@@ -116,9 +117,11 @@ export const NotesPage: React.FC = () => {
   const clearHint = useNavStore((s) => s.clearHint);
   const notes = useNotesStore((s) => s.notes);
   const session = useNotesStore((s) => s.session);
+  const folders = useNotesStore((s) => s.folders);
   const { settings } = useSettings();
   const [filter, setFilter] = useState<Filter>("all");
   const [tag, setTag] = useState<string | null>(null);
+  const [folder, setFolder] = useState<string | null>(null);
   const [tagMenu, setTagMenu] = useState(false);
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<Matches | null>(null);
@@ -146,6 +149,7 @@ export const NotesPage: React.FC = () => {
       setQuery("");
       setFilter("all");
       setTag(null);
+      setFolder(null);
     }
     clearHint();
   }, [hint, clearHint]);
@@ -178,6 +182,22 @@ export const NotesPage: React.FC = () => {
     () => (notes ?? []).filter((n) => !hidden.has(n.id)),
     [notes, hidden],
   );
+  // The notes in the folder picked, or every note.
+  const inFolder = useMemo(
+    () =>
+      folder
+        ? all.filter((n) => n.folder?.toLowerCase() === folder.toLowerCase())
+        : all,
+    [all, folder],
+  );
+  // A folder renamed or deleted elsewhere stops filtering.
+  useEffect(() => {
+    if (
+      folder &&
+      !folders.some((f) => f.name.toLowerCase() === folder.toLowerCase())
+    )
+      setFolder(null);
+  }, [folders, folder]);
   // Your next steps still open, for the Next steps button.
   const openTasks = useMemo(
     () =>
@@ -198,16 +218,19 @@ export const NotesPage: React.FC = () => {
   const counts = useMemo(
     () =>
       Object.fromEntries(
-        FILTERS.map((f) => [f, all.filter((n) => inFilter(n, f, tag)).length]),
+        FILTERS.map((f) => [
+          f,
+          inFolder.filter((n) => inFilter(n, f, tag)).length,
+        ]),
       ) as Record<Filter, number>,
-    [all, tag],
+    [inFolder, tag],
   );
   const shown = useMemo(
     () =>
-      all.filter(
+      inFolder.filter(
         (n) => inFilter(n, filter, tag) && (!matches || matches.has(n.id)),
       ),
-    [all, filter, tag, matches],
+    [inFolder, filter, tag, matches],
   );
   const recordingId = session?.note_id ?? null;
   const selected = all.find((n) => n.id === selectedId) ?? shown[0] ?? null;
@@ -446,6 +469,7 @@ export const NotesPage: React.FC = () => {
             setQuery("");
             setFilter("all");
             setTag(null);
+            setFolder(null);
             setSelectedId(id);
           }}
         />
@@ -508,57 +532,64 @@ export const NotesPage: React.FC = () => {
                     </button>
                   ))}
                 </div>
-                {tags.length > 0 && (
-                  <div className="relative">
-                    <button
-                      ref={tagButton}
-                      type="button"
-                      onClick={() => setTagMenu(!tagMenu)}
-                      aria-haspopup="menu"
-                      aria-expanded={tagMenu}
-                      className={`inline-flex h-7 max-w-[140px] items-center gap-1.5 rounded-[var(--r-sm)] px-2 text-[13px] transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 ${
-                        tag ? "font-medium text-teal-700" : "text-text-2"
-                      }`}
-                    >
-                      <Tag
-                        className="h-3.5 w-3.5 flex-none"
-                        aria-hidden="true"
-                      />
-                      <span className="truncate">
-                        {tag ?? t("notes.filter.tags")}
-                      </span>
-                      <ChevronDown
-                        className="h-3.5 w-3.5 flex-none"
-                        aria-hidden="true"
-                      />
-                    </button>
-                    {tagMenu && (
-                      <ActionMenu
-                        label={t("notes.filter.tags")}
-                        className="end-0 top-full z-10 mt-1 w-52"
-                        onClose={(restore) => {
-                          setTagMenu(false);
-                          if (restore) tagButton.current?.focus();
-                        }}
-                        items={[
-                          {
-                            id: "any",
-                            label: t("notes.filter.anyTag"),
-                            checked: tag === null,
-                            onSelect: () => setTag(null),
-                          },
-                          "separator",
-                          ...tags.map((tg) => ({
-                            id: `tag-${tg}`,
-                            label: tg,
-                            checked: tag?.toLowerCase() === tg.toLowerCase(),
-                            onSelect: () => setTag(tg),
-                          })),
-                        ]}
-                      />
-                    )}
-                  </div>
-                )}
+                <div className="ms-auto flex items-center">
+                  <FolderFilter
+                    folders={folders}
+                    folder={folder}
+                    onChange={setFolder}
+                  />
+                  {tags.length > 0 && (
+                    <div className="relative">
+                      <button
+                        ref={tagButton}
+                        type="button"
+                        onClick={() => setTagMenu(!tagMenu)}
+                        aria-haspopup="menu"
+                        aria-expanded={tagMenu}
+                        className={`inline-flex h-7 max-w-[140px] items-center gap-1.5 rounded-[var(--r-sm)] px-2 text-[13px] transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0 ${
+                          tag ? "font-medium text-teal-700" : "text-text-2"
+                        }`}
+                      >
+                        <Tag
+                          className="h-3.5 w-3.5 flex-none"
+                          aria-hidden="true"
+                        />
+                        <span className="truncate">
+                          {tag ?? t("notes.filter.tags")}
+                        </span>
+                        <ChevronDown
+                          className="h-3.5 w-3.5 flex-none"
+                          aria-hidden="true"
+                        />
+                      </button>
+                      {tagMenu && (
+                        <ActionMenu
+                          label={t("notes.filter.tags")}
+                          className="end-0 top-full z-10 mt-1 w-52"
+                          onClose={(restore) => {
+                            setTagMenu(false);
+                            if (restore) tagButton.current?.focus();
+                          }}
+                          items={[
+                            {
+                              id: "any",
+                              label: t("notes.filter.anyTag"),
+                              checked: tag === null,
+                              onSelect: () => setTag(null),
+                            },
+                            "separator",
+                            ...tags.map((tg) => ({
+                              id: `tag-${tg}`,
+                              label: tg,
+                              checked: tag?.toLowerCase() === tg.toLowerCase(),
+                              onSelect: () => setTag(tg),
+                            })),
+                          ]}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -580,6 +611,7 @@ export const NotesPage: React.FC = () => {
                     setQuery("");
                     setFilter("all");
                     setTag(null);
+                    setFolder(null);
                   }}
                   className="mt-1 text-sm font-medium text-teal-700 underline-offset-2 hover:underline"
                 >
@@ -661,6 +693,7 @@ export const NotesPage: React.FC = () => {
           setQuery("");
           setFilter("all");
           setTag(null);
+          setFolder(null);
           setSelectedId(id);
         }}
       />
@@ -675,6 +708,7 @@ export const NotesPage: React.FC = () => {
           setQuery("");
           setFilter("all");
           setTag(null);
+          setFolder(null);
         }}
       />
 

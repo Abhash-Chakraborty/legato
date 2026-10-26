@@ -346,6 +346,34 @@ impl NotesManager {
         Ok(())
     }
 
+    pub fn folders(&self) -> Result<Vec<store::NoteFolder>> {
+        store::folders(&self.conn()?)
+    }
+
+    pub fn add_folder(&self, name: &str) -> Result<String> {
+        let name = store::add_folder(&self.conn()?, name)?;
+        self.changed();
+        Ok(name)
+    }
+
+    pub fn rename_folder(&self, from: &str, to: &str) -> Result<String> {
+        let name = store::rename_folder(&mut self.conn()?, from, to)?;
+        self.changed();
+        Ok(name)
+    }
+
+    pub fn delete_folder(&self, name: &str) -> Result<Vec<i64>> {
+        let ids = store::delete_folder(&mut self.conn()?, name)?;
+        self.changed();
+        Ok(ids)
+    }
+
+    pub fn set_folder(&self, ids: &[i64], folder: Option<&str>) -> Result<()> {
+        store::set_folder(&mut self.conn()?, ids, folder)?;
+        self.changed();
+        Ok(())
+    }
+
     /// Saves My notes without telling other windows; the page that typed it
     /// already has it.
     pub fn set_my_notes(&self, id: i64, text: &str) -> Result<()> {

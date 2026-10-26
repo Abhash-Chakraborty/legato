@@ -3288,6 +3288,29 @@
         "promised": "What did I promise people?",
         "open": "What's still open?"
       }
+    },
+    "folders": {
+      "label": "Folders",
+      "all": "All notes",
+      "new": "New folder…",
+      "newTitle": "New folder",
+      "rename": "Rename folder…",
+      "renameTitle": "Rename folder",
+      "delete": "Delete folder",
+      "name": "Folder name",
+      "placeholder": "Client calls",
+      "create": "Create",
+      "createAndMove": "Create and move",
+      "save": "Save",
+      "moveTo": "Move to folder",
+      "takeOut": "Take out of {{folder}}",
+      "moved": "Moved to {{folder}}",
+      "removed": "Taken out of {{folder}}",
+      "deleted": "Deleted the folder {{folder}}; its notes are still here",
+      "moveFailed": "Couldn't move the note",
+      "createFailed": "Couldn't make the folder",
+      "renameFailed": "Couldn't rename the folder",
+      "deleteFailed": "Couldn't delete the folder"
     }
   },
   "calls": {

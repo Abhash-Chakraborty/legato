@@ -427,6 +427,15 @@ pub static MIGRATIONS: &[M] = &[
     ),
     // What a Dictionary word is: person, project, organisation or term.
     M::up("ALTER TABLE dictionary_entry ADD COLUMN kind TEXT;"),
+    // Notes in folders: each note's folder by name, and the folders, kept
+    // while empty too.
+    M::up(
+        "ALTER TABLE note ADD COLUMN folder TEXT;
+         CREATE TABLE note_folder (
+            name TEXT PRIMARY KEY COLLATE NOCASE,
+            created_at INTEGER NOT NULL
+         );",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.

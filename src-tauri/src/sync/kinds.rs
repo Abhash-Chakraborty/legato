@@ -518,7 +518,7 @@ fn export_notes(conn: &Connection, me: &str) -> Result<Vec<Item>> {
     }
     let mut stmt = conn.prepare(
         "SELECT n.id, l.key, n.title, n.kind, n.started_at, n.duration_ms, n.app, n.my_notes,
-            n.summary, n.decisions, l.device
+            n.summary, n.decisions, l.device, n.folder
          FROM note n LEFT JOIN sync_local l ON l.kind = 'notes' AND l.local_id = n.id
          WHERE n.status = 'ready' ORDER BY n.id",
     )?;
@@ -535,6 +535,7 @@ fn export_notes(conn: &Connection, me: &str) -> Result<Vec<Item>> {
             r.get::<_, String>(8)?,
             r.get::<_, String>(9)?,
             r.get::<_, Option<String>>(10)?,
+            r.get::<_, Option<String>>(11)?,
         ))
     })?;
     let mut items = Vec::new();
@@ -551,6 +552,7 @@ fn export_notes(conn: &Connection, me: &str) -> Result<Vec<Item>> {
             summary,
             decisions,
             origin,
+            folder,
         ) = row?;
         let decisions: Value = serde_json::from_str(&decisions).unwrap_or_else(|_| json!([]));
         let mut body = json!({
@@ -564,6 +566,10 @@ fn export_notes(conn: &Connection, me: &str) -> Result<Vec<Item>> {
         // Names given to voices, only when there are any (see the lines).
         if let Some(names) = speakers.remove(&id) {
             body["speakers"] = json!(names);
+        }
+        // Likewise the folder.
+        if let Some(folder) = folder {
+            body["folder"] = json!(folder);
         }
         with_origin(&mut body, origin);
         items.push(Item {
@@ -632,6 +638,13 @@ fn apply_note(
         text(body, "my_notes"),
         text(body, "summary"),
     );
+    let folder = opt_text(body, "folder").filter(|f| !f.trim().is_empty());
+    if let Some(folder) = &folder {
+        conn.execute(
+            "INSERT OR IGNORE INTO note_folder (name, created_at) VALUES (?1, ?2)",
+            params![folder, started_at],
+        )?;
+    }
     let fields = params![
         title,
         kind,
@@ -640,14 +653,16 @@ fn apply_note(
         app,
         my_notes,
         summary,
-        decisions
+        decisions,
+        folder
     ];
     let id = match row {
         Some((id, _)) => {
             conn.execute(
                 &format!(
                     "UPDATE note SET title = ?1, kind = ?2, started_at = ?3, duration_ms = ?4,
-                        app = ?5, my_notes = ?6, summary = ?7, decisions = ?8 WHERE id = {id}"
+                        app = ?5, my_notes = ?6, summary = ?7, decisions = ?8, folder = ?9
+                     WHERE id = {id}"
                 ),
                 fields,
             )?;
@@ -662,8 +677,8 @@ fn apply_note(
         None => {
             conn.execute(
                 "INSERT INTO note (title, kind, status, started_at, duration_ms, app, my_notes,
-                    summary, decisions)
-                 VALUES (?1, ?2, 'ready', ?3, ?4, ?5, ?6, ?7, ?8)",
+                    summary, decisions, folder)
+                 VALUES (?1, ?2, 'ready', ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 fields,
             )?;
             let id = conn.last_insert_rowid();

@@ -138,6 +138,16 @@ pub struct Note {
     /// Who was invited, when the note began with a calendar meeting.
     #[serde(default)]
     pub attendees: Vec<String>,
+    /// The folder the note is in, by name.
+    #[serde(default)]
+    pub folder: Option<String>,
+}
+
+/// A folder of notes, with how many it holds.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct NoteFolder {
+    pub name: String,
+    pub notes: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -228,7 +238,7 @@ pub struct NewNote<'a> {
 
 const COLUMNS: &str = "id, title, kind, status, app, app_path, microphone, system_audio,
     started_at, duration_ms, audio_file, my_notes, summary, decisions, summary_model,
-    summary_at, summary_error, failed_lines, edited_at, outline, attendees,
+    summary_at, summary_error, failed_lines, edited_at, outline, attendees, folder,
     (SELECT COUNT(*) FROM note_line l WHERE l.note_id = note.id) AS lines,
     (SELECT COUNT(*) FROM note_failed_line f WHERE f.note_id = note.id) AS retryable";
 
@@ -269,6 +279,7 @@ fn map(row: &Row<'_>) -> rusqlite::Result<Note> {
         attendees: attendees
             .and_then(|a| serde_json::from_str(&a).ok())
             .unwrap_or_default(),
+        folder: row.get("folder")?,
     })
 }
 
@@ -768,6 +779,121 @@ pub fn set_summary(
     Ok(())
 }
 
+/// Longest folder name.
+pub const FOLDER_CHARS: usize = 60;
+
+fn folder_name(name: &str) -> Result<String> {
+    let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    if name.is_empty() {
+        return Err(anyhow!("A folder needs a name"));
+    }
+    if name.chars().count() > FOLDER_CHARS {
+        return Err(anyhow!(
+            "Keep a folder's name under {FOLDER_CHARS} characters"
+        ));
+    }
+    Ok(name)
+}
+
+/// Makes a folder unless one by that name (in any case) is there; returns
+/// the name as kept.
+pub fn add_folder(conn: &Connection, name: &str) -> Result<String> {
+    let name = folder_name(name)?;
+    conn.execute(
+        "INSERT OR IGNORE INTO note_folder (name, created_at) VALUES (?1, ?2)",
+        params![name, chrono::Utc::now().timestamp()],
+    )?;
+    Ok(conn.query_row(
+        "SELECT name FROM note_folder WHERE name = ?1",
+        [&name],
+        |r| r.get(0),
+    )?)
+}
+
+/// Every folder, A to Z, with its finished notes counted.
+pub fn folders(conn: &Connection) -> Result<Vec<NoteFolder>> {
+    let mut stmt = conn.prepare(
+        "SELECT f.name, (SELECT COUNT(*) FROM note n
+            WHERE n.folder = f.name COLLATE NOCASE AND n.status = 'ready')
+         FROM note_folder f ORDER BY f.name COLLATE NOCASE",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(NoteFolder {
+            name: r.get(0)?,
+            notes: r.get(1)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Renames a folder; into a folder that's already there, its notes join
+/// that one.
+pub fn rename_folder(conn: &mut Connection, from: &str, to: &str) -> Result<String> {
+    let to = folder_name(to)?;
+    let tx = conn.transaction()?;
+    let existing: Option<String> = tx
+        .query_row(
+            "SELECT name FROM note_folder WHERE name = ?1 AND name <> ?2",
+            params![to, from],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let kept = match existing {
+        Some(name) => {
+            tx.execute("DELETE FROM note_folder WHERE name = ?1", [from])?;
+            name
+        }
+        None => {
+            tx.execute(
+                "UPDATE note_folder SET name = ?2 WHERE name = ?1",
+                params![from, to],
+            )?;
+            to
+        }
+    };
+    tx.execute(
+        "UPDATE note SET folder = ?2 WHERE folder = ?1 COLLATE NOCASE",
+        params![from, kept],
+    )?;
+    tx.commit()?;
+    Ok(kept)
+}
+
+/// Removes a folder; its notes stay, in no folder. Returns them, so the
+/// folder can be put back.
+pub fn delete_folder(conn: &mut Connection, name: &str) -> Result<Vec<i64>> {
+    let tx = conn.transaction()?;
+    let ids = {
+        let mut stmt = tx.prepare("SELECT id FROM note WHERE folder = ?1 COLLATE NOCASE")?;
+        let rows = stmt.query_map([name], |r| r.get(0))?;
+        rows.collect::<rusqlite::Result<Vec<i64>>>()?
+    };
+    tx.execute(
+        "UPDATE note SET folder = NULL WHERE folder = ?1 COLLATE NOCASE",
+        [name],
+    )?;
+    tx.execute("DELETE FROM note_folder WHERE name = ?1", [name])?;
+    tx.commit()?;
+    Ok(ids)
+}
+
+/// Puts notes in a folder (made if it isn't there), or in none.
+pub fn set_folder(conn: &mut Connection, ids: &[i64], folder: Option<&str>) -> Result<()> {
+    let tx = conn.transaction()?;
+    let folder = match folder {
+        Some(name) => Some(add_folder(&tx, name)?),
+        None => None,
+    };
+    for id in ids {
+        tx.execute(
+            "UPDATE note SET folder = ?2 WHERE id = ?1",
+            params![id, folder],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 /// The people invited to the meeting the note began with.
 pub fn set_attendees(conn: &Connection, id: i64, people: &[String]) -> Result<()> {
     conn.execute(
@@ -893,9 +1019,9 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
     tx.execute(
         "INSERT INTO note (id, title, kind, status, app, app_path, microphone, system_audio,
             started_at, duration_ms, audio_file, my_notes, summary, decisions, summary_model,
-            summary_at, summary_error, failed_lines, edited_at, outline, attendees)
+            summary_at, summary_error, failed_lines, edited_at, outline, attendees, folder)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
-            ?19, ?20, ?21)",
+            ?19, ?20, ?21, ?22)",
         params![
             n.id,
             n.title,
@@ -917,9 +1043,13 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
             n.failed_lines,
             n.edited_at,
             serde_json::to_string(&n.outline)?,
-            serde_json::to_string(&n.attendees)?
+            serde_json::to_string(&n.attendees)?,
+            n.folder
         ],
     )?;
+    if let Some(folder) = &n.folder {
+        add_folder(&tx, folder)?;
+    }
     for tag in &n.tags {
         tx.execute(
             "INSERT INTO note_tag (note_id, tag) VALUES (?1, ?2)",
@@ -1635,5 +1765,67 @@ mod tests {
             Some("v2.wav".to_string())
         );
         assert!(voices(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn notes_go_in_folders() {
+        let mut conn = db();
+        let a = meeting(&conn);
+        let b = meeting(&conn);
+        for id in [a.id, b.id] {
+            set_status(&conn, id, NoteStatus::Ready).unwrap();
+        }
+        assert_eq!(
+            add_folder(&conn, "  Client   calls ").unwrap(),
+            "Client calls"
+        );
+        assert_eq!(add_folder(&conn, "client CALLS").unwrap(), "Client calls");
+        assert!(add_folder(&conn, " ").is_err());
+        set_folder(&mut conn, &[a.id, b.id], Some("client calls")).unwrap();
+        assert_eq!(
+            get(&conn, a.id).unwrap().unwrap().folder.as_deref(),
+            Some("Client calls")
+        );
+        // Moving into a folder that isn't there makes it.
+        set_folder(&mut conn, &[b.id], Some("Interviews")).unwrap();
+        let names = |conn: &Connection| -> Vec<(String, i64)> {
+            folders(conn)
+                .unwrap()
+                .into_iter()
+                .map(|f| (f.name, f.notes))
+                .collect()
+        };
+        assert_eq!(
+            names(&conn),
+            [
+                ("Client calls".to_string(), 1),
+                ("Interviews".to_string(), 1)
+            ]
+        );
+        // Renamed onto another folder, the notes join it.
+        assert_eq!(
+            rename_folder(&mut conn, "Interviews", "client calls").unwrap(),
+            "Client calls"
+        );
+        assert_eq!(names(&conn), [("Client calls".to_string(), 2)]);
+        assert_eq!(
+            rename_folder(&mut conn, "Client calls", "Clients").unwrap(),
+            "Clients"
+        );
+        assert_eq!(
+            get(&conn, b.id).unwrap().unwrap().folder.as_deref(),
+            Some("Clients")
+        );
+        // A deleted note comes back to its folder.
+        let gone = delete(&mut conn, a.id).unwrap().unwrap();
+        delete_folder(&mut conn, "Clients").unwrap();
+        restore(&mut conn, &gone).unwrap();
+        assert_eq!(names(&conn), [("Clients".to_string(), 1)]);
+        // Deleting a folder keeps its notes, in no folder.
+        assert_eq!(delete_folder(&mut conn, "clients").unwrap(), vec![a.id]);
+        assert!(folders(&conn).unwrap().is_empty());
+        assert_eq!(get(&conn, a.id).unwrap().unwrap().folder, None);
+        set_folder(&mut conn, &[b.id], None).unwrap();
+        assert_eq!(get(&conn, b.id).unwrap().unwrap().folder, None);
     }
 }

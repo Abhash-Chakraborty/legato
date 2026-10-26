@@ -3,7 +3,9 @@
 use crate::loopback::{self, AudioApp};
 use crate::managers::dictionary_store::WordKind;
 use crate::managers::notes_store::Speaker;
-use crate::managers::notes_store::{DeletedRecording, Note, NoteLine, NoteMatch, Voice};
+use crate::managers::notes_store::{
+    DeletedRecording, Note, NoteFolder, NoteLine, NoteMatch, Voice,
+};
 use crate::notes::{
     self, LineEdit, NotesManager, SessionInfo, StartNotes, SuggestedFix, WordFix, WordFixed,
 };
@@ -46,6 +48,45 @@ pub fn get_note_tags(notes: Notes<'_>) -> Result<Vec<String>, String> {
 #[specta::specta]
 pub fn rename_note(notes: Notes<'_>, id: i64, title: String) -> Result<(), String> {
     text(notes.rename(id, &title))
+}
+
+/// Every folder of notes, A to Z, with how many notes each holds.
+#[tauri::command]
+#[specta::specta]
+pub fn get_note_folders(notes: Notes<'_>) -> Result<Vec<NoteFolder>, String> {
+    text(notes.folders())
+}
+
+/// Makes a folder; returns its name as kept.
+#[tauri::command]
+#[specta::specta]
+pub fn add_note_folder(notes: Notes<'_>, name: String) -> Result<String, String> {
+    text(notes.add_folder(&name))
+}
+
+/// Renames a folder, joining one already called that.
+#[tauri::command]
+#[specta::specta]
+pub fn rename_note_folder(notes: Notes<'_>, from: String, to: String) -> Result<String, String> {
+    text(notes.rename_folder(&from, &to))
+}
+
+/// Removes a folder, keeping its notes; returns them, for Undo.
+#[tauri::command]
+#[specta::specta]
+pub fn delete_note_folder(notes: Notes<'_>, name: String) -> Result<Vec<i64>, String> {
+    text(notes.delete_folder(&name))
+}
+
+/// Puts notes in a folder (made if needed), or in none.
+#[tauri::command]
+#[specta::specta]
+pub fn move_notes_to_folder(
+    notes: Notes<'_>,
+    ids: Vec<i64>,
+    folder: Option<String>,
+) -> Result<(), String> {
+    text(notes.set_folder(&ids, folder.as_deref()))
 }
 
 /// Corrects a line's words, or who said it, during or after the recording.
