@@ -388,7 +388,7 @@
         },
         "opacity": {
           "title": "Background",
-          "description": "How solid the island and the live transcript box are. Lower lets your screen show through; clicks on the words go through either way."
+          "description": "How solid the background behind your words is, on the island and the live transcript box. The island's controls stay solid, and clicks on the words go through either way."
         }
       },
       "pasteMethod": {
