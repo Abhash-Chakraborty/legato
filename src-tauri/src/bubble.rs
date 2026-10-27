@@ -455,18 +455,25 @@ fn judge_front(hwnd: windows::Win32::Foundation::HWND) -> (bool, String) {
                 m.left, m.top, m.right, m.bottom
             )),
         );
+        let Some(m) = m else {
+            return (false, seen);
+        };
+        let (rect, m) = (
+            (rect.left, rect.top, rect.right, rect.bottom),
+            (m.left, m.top, m.right, m.bottom),
+        );
         // A maximized window with a title bar, or with a frame to resize it
         // by (apps that draw their own title bar), fills the screen too when
-        // the taskbar hides itself, but it isn't a video or a game.
-        if caption || (zoomed && frame) {
-            return (false, seen);
-        }
-        let covers = m.is_some_and(|m| {
-            bubble_rules::covers(
-                (rect.left, rect.top, rect.right, rect.bottom),
-                (m.left, m.top, m.right, m.bottom),
-            )
-        });
+        // the taskbar hides itself, but it isn't a video or a game. One with
+        // a title bar that isn't maximized yet sits exactly over the taskbar
+        // is a viewer in full screen (TightVNC keeps its title bar there).
+        let covers = if zoomed && (caption || frame) {
+            false
+        } else if caption {
+            bubble_rules::fits(rect, m)
+        } else {
+            bubble_rules::covers(rect, m)
+        };
         (covers, seen)
     }
 }

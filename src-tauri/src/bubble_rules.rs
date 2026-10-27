@@ -166,6 +166,17 @@ pub fn covers(window: (i32, i32, i32, i32), monitor: (i32, i32, i32, i32)) -> bo
         && window.3 >= monitor.3 - COVER_SLACK
 }
 
+/// Whether a window sits exactly on its monitor, over the taskbar, rather
+/// than hanging past its edges as a maximized window does. Some viewers
+/// (TightVNC) keep their title bar in full screen and are only told apart
+/// from an ordinary window this way.
+pub fn fits(window: (i32, i32, i32, i32), monitor: (i32, i32, i32, i32)) -> bool {
+    (window.0 - monitor.0).abs() <= COVER_SLACK
+        && (window.1 - monitor.1).abs() <= COVER_SLACK
+        && (window.2 - monitor.2).abs() <= COVER_SLACK
+        && (window.3 - monitor.3).abs() <= COVER_SLACK
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,5 +266,19 @@ mod tests {
         // A viewer a pixel short of the edges is still fullscreen.
         assert!(covers((1, 1, 1919, 1079), monitor));
         assert!(!covers((0, 0, 1900, 1080), monitor));
+    }
+
+    #[test]
+    fn only_a_window_on_the_monitor_exactly_fits_it() {
+        let monitor = (0, 0, 1920, 1080);
+        // TightVNC in full screen, title bar and all.
+        assert!(fits((0, 0, 1920, 1080), monitor));
+        assert!(fits((1, 1, 1919, 1079), monitor));
+        // Maximized windows hang past the edges by their frame.
+        assert!(!fits((-9, -9, 1929, 1089), monitor));
+        // Above the taskbar, or snapped to a side.
+        assert!(!fits((0, 0, 1920, 1020), monitor));
+        assert!(!fits((0, 0, 1862, 1080), monitor));
+        assert!(fits((1920, 0, 3840, 1080), (1920, 0, 3840, 1080)));
     }
 }

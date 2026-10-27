@@ -499,7 +499,7 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
 fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
     // Size the overlay for this state (compact vs. streaming), then position it.
     let island = island_on(&settings::get_settings(app_handle));
-    if island && crate::bubble::screen_covered() && state == "rest" {
+    if island && crate::bubble::screen_covered() && steps_aside(state) {
         return;
     }
     let (width, height) = if island {
@@ -744,7 +744,9 @@ pub fn set_notes_pill(app_handle: &AppHandle, on: bool) {
         return;
     }
     if on {
-        show_overlay_state(app_handle, "notes");
+        if !island_aside(app_handle) {
+            show_overlay_state(app_handle, "notes");
+        }
     } else {
         hide_recording_overlay(app_handle);
     }
@@ -923,7 +925,7 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
         show_bar(app_handle, "agent", "bar-agent", &card, None);
         return;
     }
-    if NOTES_PILL.load(Ordering::SeqCst) {
+    if NOTES_PILL.load(Ordering::SeqCst) && !island_aside(app_handle) {
         show_overlay_state(app_handle, "notes");
         return;
     }
@@ -1165,23 +1167,39 @@ pub fn look_changed(app_handle: &AppHandle) {
     crate::notes::refresh_pill(app_handle);
 }
 
-/// A window started or stopped filling the screen: the resting island steps
-/// aside for it, as the bubble does. A dictation or a call still shows.
+/// What the island shows only to be at hand: at rest, and the Notes pill
+/// while a recording runs. A remote desktop or a video in full screen has
+/// the top edge to itself, so these step aside for it.
+fn steps_aside(state: &str) -> bool {
+    matches!(state, "rest" | "notes")
+}
+
+/// Whether the island is on and a window fills the screen now.
+fn island_aside(app_handle: &AppHandle) -> bool {
+    crate::bubble::screen_covered() && island_on(&settings::get_settings(app_handle))
+}
+
+/// A window started or stopped filling the screen: the island at rest, and
+/// its Notes pill, step aside for it, as the bubble does. A dictation, a
+/// call or an agent's question still shows, and the shortcuts still work.
 pub fn island_cover_changed(app_handle: &AppHandle, covered: bool) {
     let settings = settings::get_settings(app_handle);
-    if !island_rests(&settings) {
+    if !island_on(&settings) {
         return;
     }
     let shown = SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone();
     match (covered, shown.as_deref()) {
-        (true, Some("rest")) => {
+        (true, Some(state)) if steps_aside(state) => {
             if let Some(window) = app_handle.get_webview_window("recording_overlay") {
                 *SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = None;
                 island_hit::disarm(&window);
                 let _ = window.hide();
             }
         }
-        (false, None) => show_overlay_state(app_handle, "rest"),
+        (false, None) if NOTES_PILL.load(Ordering::SeqCst) => {
+            show_overlay_state(app_handle, "notes")
+        }
+        (false, None) if island_rests(&settings) => show_overlay_state(app_handle, "rest"),
         _ => {}
     }
 }
