@@ -1589,7 +1589,31 @@ pub fn run(cli_args: CliArgs) {
         if let tauri::RunEvent::Exit = event {
             log::info!("Legato is exiting.");
             EXITING.store(true, Ordering::SeqCst);
+            end_if_still_running();
         }
+    });
+}
+
+/// How long the process may take to wind down after `RunEvent::Exit`.
+const EXIT_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Tearing down the managed state can block (a model still loading holds
+/// the worker's lock, a hook thread doesn't join), and a quit from the tray
+/// once left a windowless Legato running for hours. Everything that must
+/// last is already on disk by now, and the worker exits once this process's
+/// end of its stdin closes, so the process ends itself after the grace.
+fn end_if_still_running() {
+    std::thread::spawn(|| {
+        std::thread::sleep(EXIT_GRACE);
+        log::warn!("Still running {EXIT_GRACE:?} after exit; ending the process");
+        log::logger().flush();
+        #[cfg(windows)]
+        {
+            use windows::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
+            // SAFETY: ends this process; nothing runs after it.
+            let _ = unsafe { TerminateProcess(GetCurrentProcess(), 0) };
+        }
+        std::process::exit(0);
     });
 }
 
