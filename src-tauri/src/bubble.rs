@@ -376,24 +376,43 @@ fn build_window(app: &AppHandle) -> bool {
     }
 }
 
+/// The window in front at the last check, so each window is described
+/// once (and again when it starts or stops filling the screen).
+static LAST_FRONT: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
 /// Whether the window in front fills its monitor (a video, a game, a
-/// slideshow). The desktop, the taskbar and the window switcher don't count.
+/// slideshow, a remote desktop). The desktop, the taskbar and the window
+/// switcher don't count. Each new window in front is described once in the
+/// log with the verdict, so a fullscreen app the island stayed over can be
+/// told apart from one it never saw.
 fn foreground_fills_screen() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    // SAFETY: GetForegroundWindow has no preconditions; it may return null.
+    let hwnd = unsafe { GetForegroundWindow() };
+    let (covers, why) = judge_front(hwnd);
+    let new_front = LAST_FRONT.swap(hwnd.0 as isize, Ordering::SeqCst) != hwnd.0 as isize;
+    if new_front || covers != COVERED.load(Ordering::SeqCst) {
+        debug!("Window in front: {why}; fills the screen: {covers}");
+    }
+    covers
+}
+
+/// Whether `hwnd` fills its monitor, and what was seen.
+fn judge_front(hwnd: windows::Win32::Foundation::HWND) -> (bool, String) {
     use windows::Win32::Foundation::RECT;
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsZoomed, GWL_STYLE,
-        WS_CAPTION, WS_THICKFRAME,
+        GetClassNameW, GetWindowLongW, GetWindowRect, IsZoomed, GWL_STYLE, WS_CAPTION,
+        WS_THICKFRAME,
     };
-    // SAFETY: plain queries on the foreground window handle, which may be
-    // null; every call tolerates that and reports failure.
+    if hwnd.0.is_null() {
+        return (false, "none".into());
+    }
+    // SAFETY: plain queries on a window handle that may already be gone;
+    // every call tolerates that and reports failure.
     unsafe {
-        let hwnd = GetForegroundWindow();
-        if hwnd.0.is_null() {
-            return false;
-        }
         let mut class = [0u16; 64];
         let n = GetClassNameW(hwnd, &mut class);
         let class = String::from_utf16_lossy(&class[..n.max(0) as usize]);
@@ -408,39 +427,47 @@ fn foreground_fills_screen() -> bool {
                 | "MultitaskingViewFrame"
                 | "TaskSwitcherWnd"
         ) {
-            return false;
+            return (false, format!("{class}, part of the shell"));
         }
-        // A maximized window with a title bar, or with a frame to resize it
-        // by (apps that draw their own title bar), fills the screen too when
-        // the taskbar hides itself, but it isn't a video or a game. A
-        // fullscreen remote desktop (RustDesk) is maximized with neither.
         let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
-        if style & WS_CAPTION.0 == WS_CAPTION.0
-            || (IsZoomed(hwnd).as_bool() && style & WS_THICKFRAME.0 != 0)
-        {
-            return false;
-        }
+        let zoomed = IsZoomed(hwnd).as_bool();
+        let caption = style & WS_CAPTION.0 == WS_CAPTION.0;
+        let frame = style & WS_THICKFRAME.0 != 0;
         let mut rect = RECT::default();
-        if GetWindowRect(hwnd, &mut rect).is_err() {
-            return false;
-        }
+        let _ = GetWindowRect(hwnd, &mut rect);
         let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
         let mut info = MONITORINFO {
             cbSize: std::mem::size_of::<MONITORINFO>() as u32,
             ..Default::default()
         };
-        if !GetMonitorInfoW(monitor, &mut info).as_bool() {
-            return false;
-        }
-        let m = info.rcMonitor;
-        let covers = bubble_rules::covers(
-            (rect.left, rect.top, rect.right, rect.bottom),
-            (m.left, m.top, m.right, m.bottom),
+        let m = GetMonitorInfoW(monitor, &mut info)
+            .as_bool()
+            .then_some(info.rcMonitor);
+        let seen = format!(
+            "{class}, caption {caption}, frame {frame}, maximized {zoomed}, \
+             at ({}, {}, {}, {}) on {}",
+            rect.left,
+            rect.top,
+            rect.right,
+            rect.bottom,
+            m.map_or("no monitor".into(), |m| format!(
+                "({}, {}, {}, {})",
+                m.left, m.top, m.right, m.bottom
+            )),
         );
-        if covers && !COVERED.load(Ordering::SeqCst) {
-            debug!("{class} fills the screen");
+        // A maximized window with a title bar, or with a frame to resize it
+        // by (apps that draw their own title bar), fills the screen too when
+        // the taskbar hides itself, but it isn't a video or a game.
+        if caption || (zoomed && frame) {
+            return (false, seen);
         }
-        covers
+        let covers = m.is_some_and(|m| {
+            bubble_rules::covers(
+                (rect.left, rect.top, rect.right, rect.bottom),
+                (m.left, m.top, m.right, m.bottom),
+            )
+        });
+        (covers, seen)
     }
 }
 
