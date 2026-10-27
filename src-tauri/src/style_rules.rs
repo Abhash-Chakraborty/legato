@@ -511,9 +511,14 @@ pub fn spoken_enter(text: &str) -> (String, bool) {
         if !lower.ends_with(command) {
             continue;
         }
-        let cut = body.len() - command.len();
+        // Lowercasing can change a text's length; the cut must land on the
+        // command itself.
+        let Some(cut) = body.len().checked_sub(command.len()) else {
+            continue;
+        };
         // A whole word: "repress enter" isn't the command.
         if !body.is_char_boundary(cut)
+            || !body[cut..].eq_ignore_ascii_case(command)
             || body[..cut]
                 .chars()
                 .last()
@@ -714,6 +719,8 @@ mod tests {
         // In the middle, or part of a word, it's just words.
         assert!(!spoken_enter("Press enter to send it, then wait.").1);
         assert!(!spoken_enter("They repress enter").1);
+        // A letter that lowercases longer doesn't throw the cut off.
+        assert_eq!(spoken_enter("İİ press enter"), ("İİ".to_string(), true));
         assert_eq!(
             spoken_enter("No command here."),
             ("No command here.".to_string(), false)

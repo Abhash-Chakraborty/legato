@@ -1276,8 +1276,10 @@ pub fn run(cli_args: CliArgs) {
                 // token among them.
                 .level_for("tungstenite", log::LevelFilter::Debug)
                 .level_for("tokio_tungstenite", log::LevelFilter::Debug)
+                // A busy day at debug level fills a file; the last few are
+                // kept, so yesterday's problem can still be read.
                 .max_file_size(2_000_000)
-                .rotation_strategy(RotationStrategy::KeepOne)
+                .rotation_strategy(RotationStrategy::KeepSome(5))
                 .clear_targets()
                 .targets([
                     // Console output respects RUST_LOG environment variable. In

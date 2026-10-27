@@ -841,6 +841,17 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             }
 
+                            // "…, press enter" comes off before cleanup or a
+                            // transform can reword or drop it.
+                            let (transcription, enter_said_early) =
+                                if matches!(mode, DictationMode::Plain | DictationMode::Transform)
+                                    && get_settings(&ah).press_enter_by_voice
+                                {
+                                    crate::style_rules::spoken_enter(&transcription)
+                                } else {
+                                    (transcription, false)
+                                };
+
                             // The Scratchpad and agents aren't apps with a style.
                             let app_info = started_in
                                 .as_ref()
@@ -990,16 +1001,19 @@ impl ShortcutAction for TranscribeAction {
                             } else if mode == DictationMode::Agent {
                                 end_session(&ah, session);
                                 crate::inyon::receive(&ah, processed.final_text);
-                            } else if processed.final_text.is_empty() {
+                            } else if processed.final_text.is_empty() && !enter_said_early {
                                 end_session(&ah, session);
                             } else {
                                 let ah_clone = ah.clone();
                                 let paste_time = Instant::now();
                                 let settings_now = get_settings(&ah);
                                 // "…, press enter" at the end sends the text.
+                                // Cleanup may also have kept it, capitalised.
                                 let (final_text, enter_said) = if settings_now.press_enter_by_voice
                                 {
-                                    crate::style_rules::spoken_enter(&processed.final_text)
+                                    let (text, said) =
+                                        crate::style_rules::spoken_enter(&processed.final_text);
+                                    (text, said || enter_said_early)
                                 } else {
                                     (processed.final_text, false)
                                 };
