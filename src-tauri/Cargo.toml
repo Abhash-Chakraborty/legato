@@ -1,6 +1,6 @@
 [package]
 name = "legato"
-version = "0.9.9"
+version = "0.10.0"
 description = "Legato"
 authors = ["Abhash Chakraborty"]
 edition = "2021"
