@@ -2183,7 +2183,8 @@
       "dictate": {
         "title": "Dictate then transform runs",
         "help": "The transform {{keys}} runs on what you dictate.",
-        "helpNoKeys": "The transform the Dictate then transform shortcut runs on what you dictate."
+        "helpNoKeys": "The transform the Dictate then transform shortcut runs on what you dictate.",
+        "helpShadowed": "The transform the Dictate then transform shortcut runs on what you dictate. That shortcut has the same keys as {{name}}, so it does nothing; give it its own in Settings › Shortcuts."
       }
     },
     "try": {

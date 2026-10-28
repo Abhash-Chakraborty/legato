@@ -16,6 +16,7 @@ import { Button } from "../../ui/Button";
 import { Dropdown } from "../../ui/Dropdown";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Requires, SettingContainer } from "../../ui/SettingContainer";
+import { bindingName } from "../../settings/shortcutError";
 import { localDay } from "../home/format";
 import { keyCaps, usageOf } from "./list";
 import { modelLine } from "./model";
@@ -149,6 +150,21 @@ export const TransformsPage: React.FC = () => {
   const dictateKeys = formatKeyCombination(
     settings?.bindings?.transcribe_with_post_process?.current_binding ?? "",
   );
+  // Keys another action already has do nothing, so don't offer them here.
+  const [dictateShadowedBy, setDictateShadowedBy] = useState<string>();
+  const bindings = settings?.bindings;
+  useEffect(() => {
+    let live = true;
+    commands
+      .shadowedShortcuts()
+      .then((shadowed) => {
+        if (live) setDictateShadowedBy(shadowed.transcribe_with_post_process);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [bindings]);
   const askOn = getSetting("ask_enabled") ?? true;
   const options = usable.map((x) => ({ value: x.id, label: x.name }));
 
@@ -342,9 +358,13 @@ export const TransformsPage: React.FC = () => {
         <SettingContainer
           title={t("transforms.after.dictate.title")}
           description={
-            dictateKeys
-              ? t("transforms.after.dictate.help", { keys: dictateKeys })
-              : t("transforms.after.dictate.helpNoKeys")
+            dictateShadowedBy
+              ? t("transforms.after.dictate.helpShadowed", {
+                  name: bindingName(t, dictateShadowedBy, transforms),
+                })
+              : dictateKeys
+                ? t("transforms.after.dictate.help", { keys: dictateKeys })
+                : t("transforms.after.dictate.helpNoKeys")
           }
         >
           <Dropdown
