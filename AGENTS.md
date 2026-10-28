@@ -87,7 +87,7 @@ Legato is a Windows desktop speech-to-text application built with Tauri 2.x (Rus
 - `mcp.rs` - `legato --mcp`: a Model Context Protocol server over stdio that lets AI apps read dictations, notes, the Dictionary, the Scratchpad and meetings
 - `context.rs` - Knowing the app in front (name, category, icon) and listing open windows
 - `elevation.rs` - Work in apps run as administrator: the scheduled task that starts Legato elevated, and handing over to it at startup
-- `desktop.rs` - Windows shell integration: app ID, jump list, notifications (Do not disturb aware), Mica
+- `desktop.rs` - Windows shell integration: app ID, jump list, notifications (Do not disturb aware), Mica, and keeping the bar, the bubble and the Notes panel out of screenshots and screen sharing (Settings › Bar)
 - `setup.rs` - First-run setup: microphone check, model choice, practice scenes
 - `ai.rs` / `llm_client.rs` / `secrets.rs` - Your own AI provider; API keys in Windows Credential Manager
 - `cli.rs` - CLI argument definitions (clap derive)
@@ -158,7 +158,7 @@ Settings are stored using Tauri's store plugin with reactive updates:
 - Audio devices (microphone/output selection)
 - Speech model, plus an optional model per kind of app in Style
 - Features (Settings › Features): Notes, the Scratchpad and Insights switch whole features; off hides the page, its shortcuts (`binding_is_active`) and its buttons. Settings saved before the switches keep everything on; new installs start with just dictation until setup's last step asks
-- The bar: style (none, minimal, live), shape (bar or island), position, and whether the island stays small at rest
+- The bar: style (none, minimal, live), shape (bar or island), position, and whether the island stays small at rest; the bar, the bubble and the Notes panel stay out of screen capture unless turned off
 - Style per kind of app: tone, paste keys, Enter after pasting, trailing space
 - Transforms, Ask and your AI provider, with an optional provider and model each for dictation, transforms and Notes; Notes, calls, Scratchpad and learning options
 - Connections: calendars (their addresses in Credential Manager), the folder that keeps notes as Word files, whether AI apps may read Legato over MCP, and the Inyon hub Legato is paired with. Legato signs in to no Google or Microsoft account: scheduling opens the calendar's own new-event page, filled in (`components/notes/schedule.ts`)

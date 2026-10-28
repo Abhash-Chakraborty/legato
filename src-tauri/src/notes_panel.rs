@@ -49,10 +49,12 @@ fn build_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     if let Some(data_dir) = crate::portable::data_dir() {
         builder = builder.data_directory(data_dir.join("webview"));
     }
-    builder
+    let window = builder
         .build()
         .map_err(|e| warn!("Couldn't create the Notes panel: {e}"))
-        .ok()
+        .ok()?;
+    crate::desktop::apply_capture_privacy(app, &window);
+    Some(window)
 }
 
 /// Docks the window at the right of the work area of the screen the

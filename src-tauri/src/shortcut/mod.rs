@@ -904,6 +904,18 @@ pub fn change_bar_opacity_setting(app: AppHandle, opacity: f32) -> Result<(), St
     Ok(())
 }
 
+/// Settings › Bar: keep Legato's floating windows out of screenshots,
+/// recordings and shared screens; the ones open now follow at once.
+#[tauri::command]
+#[specta::specta]
+pub fn change_hide_from_capture_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.hide_from_capture = enabled;
+    settings::write_settings(&app, settings);
+    crate::desktop::capture_privacy_changed(&app);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_overlay_style_setting(app: AppHandle, style: String) -> Result<(), String> {

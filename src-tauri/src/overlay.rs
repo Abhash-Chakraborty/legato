@@ -293,8 +293,9 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     }
 
     match builder.build() {
-        Ok(_) => {
+        Ok(window) => {
             debug!("Recording overlay window created successfully (hidden)");
+            crate::desktop::apply_capture_privacy(app_handle, &window);
             // The resting island, once the page is listening.
             if island_rests(&settings::get_settings(app_handle)) {
                 let handle = app_handle.clone();
@@ -401,7 +402,6 @@ fn show_caption(app_handle: &AppHandle) {
         OVERLAY_SHOW_GENERATION.fetch_add(1, Ordering::SeqCst);
         CAPTION_SHOWN.store(true, Ordering::SeqCst);
         WINDOWS_OVERLAY_IS_STREAMING.store(false, Ordering::Relaxed);
-        exclude_from_capture(&overlay_window, false);
         let _ = overlay_window.set_ignore_cursor_events(true);
         // Placed again after showing, for the same DPI reason as the bar.
         if let Err(error) = place_caption(&handle, &overlay_window) {
@@ -517,11 +517,6 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
         if CAPTION_SHOWN.swap(false, Ordering::SeqCst) {
             let _ = overlay_window.set_ignore_cursor_events(false);
         }
-
-        exclude_from_capture(
-            &overlay_window,
-            state == "call" && CALL_CARD_HIDDEN_FROM_CAPTURE.load(Ordering::Relaxed),
-        );
 
         let set_pos_started = std::time::Instant::now();
         if let Err(error) = place_windows_overlay(app_handle, &overlay_window, width, height) {
@@ -755,11 +750,8 @@ pub fn set_notes_pill(app_handle: &AppHandle, on: bool) {
 /// The call card, while one is up; it comes back whenever the bar would
 /// otherwise go quiet.
 static CALL_CARD: Mutex<Option<serde_json::Value>> = Mutex::new(None);
-static CALL_CARD_HIDDEN_FROM_CAPTURE: AtomicBool = AtomicBool::new(true);
 /// The card up has a meeting's last time, so the bar is taller.
 static CALL_CARD_TALL: AtomicBool = AtomicBool::new(false);
-/// Whether the overlay window is excluded from screen capture now.
-static EXCLUDED_FROM_CAPTURE: AtomicBool = AtomicBool::new(false);
 
 fn call_card() -> Option<serde_json::Value> {
     CALL_CARD.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -767,17 +759,12 @@ fn call_card() -> Option<serde_json::Value> {
 
 /// Shows the call card, or takes it away with None. A dictation in
 /// progress keeps the bar; the card shows when it's done.
-pub fn set_call_card<T: serde::Serialize>(
-    app_handle: &AppHandle,
-    card: Option<&T>,
-    hide_from_capture: bool,
-) {
+pub fn set_call_card<T: serde::Serialize>(app_handle: &AppHandle, card: Option<&T>) {
     let value = card.and_then(|c| serde_json::to_value(c).ok());
     let had = std::mem::replace(
         &mut *CALL_CARD.lock().unwrap_or_else(|e| e.into_inner()),
         value.clone(),
     );
-    CALL_CARD_HIDDEN_FROM_CAPTURE.store(hide_from_capture, Ordering::Relaxed);
     let tall = value
         .as_ref()
         .is_some_and(|c| c.get("last").is_some_and(|l| !l.is_null()));
@@ -888,28 +875,6 @@ pub fn show_companion_reply<T: serde::Serialize>(app_handle: &AppHandle, reply: 
         .unwrap_or(0) as u64;
     let ms = (6_000 + chars * 60).min(30_000);
     show_bar(app_handle, "companion", "bar-companion", reply, Some(ms));
-}
-
-/// Keeps the bar out of screen sharing and recordings while it shows the
-/// call card.
-fn exclude_from_capture(overlay_window: &tauri::webview::WebviewWindow, exclude: bool) {
-    if EXCLUDED_FROM_CAPTURE.swap(exclude, Ordering::Relaxed) == exclude {
-        return;
-    }
-    use windows::Win32::UI::WindowsAndMessaging::{
-        SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
-    };
-    if let Ok(hwnd) = overlay_window.hwnd() {
-        let affinity = if exclude {
-            WDA_EXCLUDEFROMCAPTURE
-        } else {
-            WDA_NONE
-        };
-        // SAFETY: the overlay window is ours and alive.
-        if let Err(e) = unsafe { SetWindowDisplayAffinity(hwnd, affinity) } {
-            log::warn!("Couldn't change the bar's screen capture setting: {e}");
-        }
-    }
 }
 
 /// Hides the bar with its fade-out; while a call card or an agent's

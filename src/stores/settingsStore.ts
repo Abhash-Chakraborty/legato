@@ -213,6 +213,8 @@ const settingUpdaters: {
   bar_look: (value) => commands.changeBarLookSetting(value as BarLook),
   island_idle: (value) => commands.changeIslandIdleSetting(value as IslandIdle),
   bar_opacity: (value) => commands.changeBarOpacitySetting(value as number),
+  hide_from_capture: (value) =>
+    commands.changeHideFromCaptureSetting(value as boolean),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   long_form_chunking: (value) =>
     commands.changeLongFormChunkingSetting(value as boolean),

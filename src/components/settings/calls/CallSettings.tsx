@@ -39,7 +39,6 @@ const DEFAULTS: Required<Omit<CallSettings, "last">> & {
   auto_start: false,
   countdown_secs: 10,
   snooze_minutes: 10,
-  hide_card_from_capture: true,
   stop_on_end: true,
   max_minutes: 120,
   open_note: false,
@@ -62,7 +61,6 @@ const CallToggle: React.FC<{
     | "detect"
     | "browser_titles"
     | "auto_start"
-    | "hide_card_from_capture"
     | "stop_on_end"
     | "open_note"
     | "meeting_cards";
@@ -91,12 +89,6 @@ export const BrowserTitlesRow = () => (
 );
 export const AutoStartRow = () => (
   <CallToggle field="auto_start" labelKey="settings.calls.autoStart" />
-);
-export const HideCardRow = () => (
-  <CallToggle
-    field="hide_card_from_capture"
-    labelKey="settings.calls.hideCard"
-  />
 );
 export const StopOnEndRow = () => (
   <CallToggle field="stop_on_end" labelKey="settings.calls.stopOnEnd" />

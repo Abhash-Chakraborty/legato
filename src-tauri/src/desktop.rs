@@ -282,6 +282,70 @@ mod win {
     }
 }
 
+/// Legato's floating windows, which Settings › Bar can keep out of
+/// screenshots, recordings and shared screens: the bar or island (with the
+/// live transcript it shows), the bubble and the Notes side panel. The main
+/// window and the Scratchpad are yours to share.
+const PRIVATE_WINDOWS: [&str; 3] = [
+    "recording_overlay",
+    crate::bubble::WINDOW,
+    crate::notes_panel::WINDOW,
+];
+
+/// Keeps a floating window out of capture, or lets it back in, as the
+/// setting says. Windows keeps this for the window while it hides and shows
+/// again, so it's set once when the window is made and again when the
+/// setting changes.
+pub fn apply_capture_privacy(app: &AppHandle, window: &tauri::WebviewWindow) {
+    let hide = crate::settings::get_settings(app).hide_from_capture;
+    let window = window.clone();
+    let _ = app.run_on_main_thread(move || set_capture_hidden(&window, hide));
+}
+
+/// The setting changed: the floating windows made so far follow it now.
+pub fn capture_privacy_changed(app: &AppHandle) {
+    use tauri::Manager;
+    for label in PRIVATE_WINDOWS {
+        if let Some(window) = app.get_webview_window(label) {
+            apply_capture_privacy(app, &window);
+        }
+    }
+}
+
+/// Screen capture (sharing in a call, Snipping Tool, recorders, remote
+/// desktops) leaves the window out and shows what's behind it. Needs
+/// Windows 10 2004; on older builds the window stays visible.
+fn set_capture_hidden(window: &tauri::WebviewWindow, hide: bool) {
+    #[cfg(windows)]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
+        };
+        let Ok(hwnd) = window.hwnd() else {
+            return;
+        };
+        let affinity = if hide {
+            WDA_EXCLUDEFROMCAPTURE
+        } else {
+            WDA_NONE
+        };
+        // SAFETY: the window is ours and alive; this is its owning thread.
+        match unsafe { SetWindowDisplayAffinity(hwnd, affinity) } {
+            Ok(()) => debug!(
+                "'{}' is {} screen capture",
+                window.label(),
+                if hide { "hidden from" } else { "shown in" }
+            ),
+            Err(e) => warn!(
+                "Couldn't change screen capture for '{}': {e}",
+                window.label()
+            ),
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (window, hide);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

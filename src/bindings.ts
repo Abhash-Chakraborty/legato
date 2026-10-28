@@ -150,6 +150,18 @@ async changeBarOpacitySetting(opacity: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Settings › Bar: keep Legato's floating windows out of screenshots,
+ * recordings and shared screens; the ones open now follow at once.
+ */
+async changeHideFromCaptureSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_hide_from_capture_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeOverlayStyleSetting(style: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_overlay_style_setting", { style }) };
@@ -3522,10 +3534,6 @@ auto_start?: boolean; countdown_secs?: number;
  */
 snooze_minutes?: number; 
 /**
- * Screen sharing doesn't show the call card.
- */
-hide_card_from_capture?: boolean; 
-/**
  * Notes started for a call stop 20 seconds after it ends.
  */
 stop_on_end?: boolean; 
@@ -4119,7 +4127,12 @@ island_idle?: IslandIdle;
  * How solid the island and the live transcript box are, from 0.3 (the
  * screen shows through) to 1 (solid).
  */
-bar_opacity?: number }
+bar_opacity?: number; 
+/**
+ * The bar or island, the bubble and the Notes side panel stay on your
+ * screen but out of screenshots, recordings and shared screens.
+ */
+hide_from_capture?: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; gpu_devices: GpuDeviceOption[] }

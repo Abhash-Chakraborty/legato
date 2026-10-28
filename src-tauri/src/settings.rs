@@ -416,9 +416,6 @@ pub struct CallSettings {
     /// call.
     #[serde(default = "default_call_snooze")]
     pub snooze_minutes: u32,
-    /// Screen sharing doesn't show the call card.
-    #[serde(default = "default_true")]
-    pub hide_card_from_capture: bool,
     /// Notes started for a call stop 20 seconds after it ends.
     #[serde(default = "default_true")]
     pub stop_on_end: bool,
@@ -447,7 +444,6 @@ impl Default for CallSettings {
             auto_start: false,
             countdown_secs: default_call_countdown(),
             snooze_minutes: default_call_snooze(),
-            hide_card_from_capture: true,
             stop_on_end: true,
             max_minutes: default_notes_max_minutes(),
             open_note: false,
@@ -1148,6 +1144,10 @@ pub struct AppSettings {
     /// screen shows through) to 1 (solid).
     #[serde(default = "default_bar_opacity")]
     pub bar_opacity: f32,
+    /// The bar or island, the bubble and the Notes side panel stay on your
+    /// screen but out of screenshots, recordings and shared screens.
+    #[serde(default = "default_true")]
+    pub hide_from_capture: bool,
 }
 
 fn default_model() -> String {
@@ -1788,6 +1788,7 @@ pub fn get_default_settings() -> AppSettings {
         bar_look: BarLook::Bar,
         island_idle: IslandIdle::Small,
         bar_opacity: default_bar_opacity(),
+        hide_from_capture: true,
     }
 }
 

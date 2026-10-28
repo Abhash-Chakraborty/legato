@@ -368,7 +368,10 @@ fn build_window(app: &AppHandle) -> bool {
         builder = builder.data_directory(data_dir.join("webview"));
     }
     match builder.build() {
-        Ok(_) => true,
+        Ok(window) => {
+            crate::desktop::apply_capture_privacy(app, &window);
+            true
+        }
         Err(e) => {
             warn!("Couldn't create the bubble: {e}");
             false

@@ -76,7 +76,6 @@ import {
   BrowserTitlesRow,
   CountdownRow,
   DetectCallsRow,
-  HideCardRow,
   LastCallRow,
   MaxLengthRow,
   MeetingCardsRow,
@@ -120,6 +119,7 @@ import {
 import { ShowOverlay } from "./ShowOverlay";
 import {
   ConfirmPaste,
+  HideFromCapture,
   LiveCaptionPlace,
   ShowBubble,
   ShowChanges,
@@ -1129,15 +1129,6 @@ export const buildSections = (
             render: () => <SnoozeRow />,
             requires: needsCallDetection,
           },
-          {
-            id: "hide-card",
-            searchKeys: [
-              "settings.calls.hideCard.title",
-              "settings.calls.hideCard.help",
-            ],
-            render: () => <HideCardRow />,
-            requires: needsCallDetection,
-          },
         ],
       },
       {
@@ -1379,6 +1370,14 @@ export const buildSections = (
               settings?.bubble_enabled === false
                 ? { reasonKey: "settings.requires.bubble" }
                 : null,
+          },
+          {
+            id: "hide-from-capture",
+            searchKeys: [
+              "settings.bar.hideFromCapture.title",
+              "settings.bar.hideFromCapture.help",
+            ],
+            render: () => <HideFromCapture grouped />,
           },
         ],
       },

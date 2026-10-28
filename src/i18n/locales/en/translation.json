@@ -979,6 +979,10 @@
           "top": "Top"
         }
       },
+      "hideFromCapture": {
+        "title": "Hide from screenshots and screen sharing",
+        "help": "The bar, the island, the bubble and the Notes side panel stay on your screen but don't show in screenshots, recordings or a screen you share in a call."
+      },
       "confirmPaste": {
         "title": "Confirm after pasting",
         "help": "The bar says how many words went where, with Undo."
@@ -1061,10 +1065,6 @@
         "minutes_one": "Ask again in {{count}} minute",
         "minutes_other": "Ask again in {{count}} minutes",
         "call": "Don't ask again this call"
-      },
-      "hideCard": {
-        "title": "Hide the call card from screen sharing",
-        "help": "Others in the call won't see the card when you share your screen."
       },
       "stopOnEnd": {
         "title": "Stop when the call ends",

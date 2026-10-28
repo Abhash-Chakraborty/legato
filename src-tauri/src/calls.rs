@@ -228,8 +228,7 @@ fn app_path(app: CallApp, browser: Option<&(String, CallApp)>) -> Option<String>
 }
 
 fn show_card(app: &AppHandle, card: Option<CallCard>) {
-    let hide = get_settings(app).calls.hide_card_from_capture;
-    crate::overlay::set_call_card(app, card.as_ref(), hide);
+    crate::overlay::set_call_card(app, card.as_ref());
 }
 
 fn hide_card(app: &AppHandle) {

@@ -60,6 +60,25 @@ export const ShowBubble: React.FC<{ grouped?: boolean }> = ({ grouped }) => {
   );
 };
 
+/** Keeps the bar or island, the bubble and the Notes side panel out of
+ *  screenshots, recordings and shared screens. */
+export const HideFromCapture: React.FC<{ grouped?: boolean }> = ({
+  grouped,
+}) => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
+  return (
+    <ToggleSwitch
+      checked={getSetting("hide_from_capture") ?? true}
+      onChange={(on) => updateSetting("hide_from_capture", on)}
+      isUpdating={isUpdating("hide_from_capture")}
+      label={t("settings.bar.hideFromCapture.title")}
+      description={t("settings.bar.hideFromCapture.help")}
+      grouped={grouped}
+    />
+  );
+};
+
 /** The live transcript box while the bubble has a dictation: off, or at the
  *  bottom or top of the screen. */
 export const LiveCaptionPlace: React.FC<{ grouped?: boolean }> = ({
