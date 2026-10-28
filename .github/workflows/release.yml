@@ -114,7 +114,7 @@ jobs:
         if: env.WINGET_TOKEN != ''
         uses: vedantmgoyal9/winget-releaser@b7370d4d152efdce803a26cc6ca9eee58cb2ad54 # v2
         with:
-          identifier: AbhashChakraborty.Legato
+          identifier: abhashchakraborty.legato
           version: ${{ needs.create-release.outputs.version }}
           release-tag: v${{ needs.create-release.outputs.version }}
           installers-regex: '\.(exe|msi)$'
