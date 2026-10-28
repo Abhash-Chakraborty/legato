@@ -100,3 +100,22 @@ jobs:
               make_latest: 'true'
             })
             core.setOutput('url', data.html_url)
+
+  winget:
+    # Sends the new version to winget-pkgs as a pull request from the
+    # owner's fork. Needs a classic token with public_repo in WINGET_TOKEN;
+    # without one the job is skipped.
+    needs: [create-release, publish-release]
+    runs-on: windows-latest
+    env:
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - name: Open the winget-pkgs pull request
+        if: env.WINGET_TOKEN != ''
+        uses: vedantmgoyal9/winget-releaser@b7370d4d152efdce803a26cc6ca9eee58cb2ad54 # v2
+        with:
+          identifier: AbhashChakraborty.Legato
+          version: ${{ needs.create-release.outputs.version }}
+          release-tag: v${{ needs.create-release.outputs.version }}
+          installers-regex: '\.(exe|msi)$'
+          token: ${{ secrets.WINGET_TOKEN }}
