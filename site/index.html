@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Legato</title>
+    <meta
+      name="description"
+      content="Dictation and meeting notes for Windows, transcribed on your PC."
+    />
+    <meta property="og:title" content="Legato" />
+    <meta
+      property="og:description"
+      content="Dictation and meeting notes for Windows, transcribed on your PC."
+    />
+    <meta
+      property="og:image"
+      content="https://abhash-chakraborty.github.io/legato/hero-light.webp"
+    />
+    <link rel="icon" href="legato-icon.svg" type="image/svg+xml" />
+    <style>
+      @font-face {
+        font-family: "Figtree";
+        src: url("fonts/figtree-latin.woff2") format("woff2");
+        font-weight: 300 900;
+        font-display: swap;
+      }
+      :root {
+        --bg: #f3f2ee;
+        --surface: #fcfcfb;
+        --border: #ebe8e1;
+        --border-strong: #d9d5cc;
+        --text: #1a1a1a;
+        --text-2: #4a4845;
+        --text-3: #8a8580;
+        --teal: #1a5c5c;
+        --teal-fill: #1a5c5c;
+        --teal-fill-hover: #247872;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #161716;
+          --surface: #1e1f1e;
+          --border: #2a2c2a;
+          --border-strong: #383a37;
+          --text: #f1f0ec;
+          --text-2: #c7c5bf;
+          --text-3: #8e8b85;
+          --teal: #66b8ad;
+          --teal-fill: #1d6f6a;
+          --teal-fill-hover: #23807a;
+          color-scheme: dark;
+        }
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.6 "Figtree",
+          system-ui,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: var(--teal);
+      }
+      a:focus-visible,
+      .button:focus-visible {
+        outline: 2px solid var(--teal);
+        outline-offset: 2px;
+      }
+      .wrap {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 0;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+        font-size: 18px;
+        color: var(--text);
+        text-decoration: none;
+      }
+      .brand img {
+        width: 30px;
+        height: 30px;
+      }
+      nav {
+        display: flex;
+        gap: 18px;
+        font-size: 14px;
+      }
+      nav a {
+        color: var(--text-2);
+        text-decoration: none;
+      }
+      nav a:hover {
+        color: var(--text);
+      }
+      .intro {
+        padding: 48px 0 32px;
+        max-width: 680px;
+      }
+      h1 {
+        font-size: clamp(32px, 6vw, 46px);
+        line-height: 1.12;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .lede {
+        margin-top: 16px;
+        font-size: 18px;
+        color: var(--text-2);
+      }
+      .actions {
+        margin-top: 28px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px 20px;
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        height: 44px;
+        padding: 0 20px;
+        border-radius: 10px;
+        background: var(--teal-fill);
+        color: #fff;
+        font-weight: 600;
+        text-decoration: none;
+        transition: background 100ms;
+      }
+      .button:hover {
+        background: var(--teal-fill-hover);
+        transition-duration: 0ms;
+      }
+      .button:active {
+        transform: scale(0.97);
+      }
+      .note {
+        font-size: 14px;
+        color: var(--text-3);
+      }
+      .shot {
+        margin: 16px 0 64px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--surface);
+      }
+      .shot img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      h2 {
+        font-size: 24px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 28px 40px;
+        margin: 24px 0 64px;
+      }
+      .features h3 {
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .features p {
+        margin-top: 4px;
+        color: var(--text-2);
+        font-size: 15px;
+      }
+      .how {
+        margin: 24px 0 16px;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+      }
+      .how img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .how-text {
+        max-width: 680px;
+        color: var(--text-2);
+        margin-bottom: 64px;
+      }
+      .install {
+        border-top: 1px solid var(--border);
+        padding: 40px 0;
+        display: grid;
+        gap: 12px;
+        max-width: 680px;
+      }
+      .install p {
+        color: var(--text-2);
+      }
+      code {
+        font-family: ui-monospace, "Cascadia Mono", monospace;
+        font-size: 0.92em;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 1px 6px;
+      }
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 24px 0 40px;
+        font-size: 14px;
+        color: var(--text-3);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 24px;
+        justify-content: space-between;
+      }
+      footer a {
+        color: var(--text-2);
+      }
+      @media (max-width: 560px) {
+        nav a.hide-small {
+          display: none;
+        }
+        .intro {
+          padding-top: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <a class="brand" href="./"
+          ><img src="legato-icon.svg" alt="" />Legato</a
+        >
+        <nav>
+          <a href="#features" class="hide-small">Features</a>
+          <a href="#how" class="hide-small">How it works</a>
+          <a href="https://github.com/Abhash-Chakraborty/legato">GitHub</a>
+        </nav>
+      </header>
+
+      <section class="intro">
+        <h1>
+          Dictation and meeting notes for Windows, transcribed on your PC.
+        </h1>
+        <p class="lede">
+          Hold a shortcut, speak, and the text lands where you're typing. Record
+          a meeting and get a transcript with each voice told apart.
+        </p>
+        <div class="actions">
+          <a
+            class="button"
+            href="https://github.com/Abhash-Chakraborty/legato/releases/latest"
+            >Download for Windows</a
+          >
+          <span class="note">x64 and ARM64 · free and open source (MIT)</span>
+        </div>
+      </section>
+
+      <div class="shot">
+        <picture>
+          <source
+            media="(prefers-color-scheme: dark)"
+            srcset="hero-dark.webp"
+          />
+          <img
+            src="hero-light.webp"
+            width="1440"
+            height="900"
+            alt="Legato's Notes page: a weekly meeting with its summary, topics, decisions, next steps with owners, and details that jump to the moment in the recording"
+          />
+        </picture>
+      </div>
+
+      <h2 id="features">What it does</h2>
+      <div class="features">
+        <div>
+          <h3>Dictation in any app</h3>
+          <p>
+            Filler words go, numbers and lists are tidied, and the tone follows
+            the kind of app in front.
+          </p>
+        </div>
+        <div>
+          <h3>Your words</h3>
+          <p>
+            The Dictionary keeps names spelled your way and learns from the
+            words you fix.
+          </p>
+        </div>
+        <div>
+          <h3>Meeting notes</h3>
+          <p>
+            A live transcript with voices told apart. With your own AI provider,
+            summaries with decisions and next steps.
+          </p>
+        </div>
+        <div>
+          <h3>Speech stays on the PC</h3>
+          <p>
+            Parakeet and Whisper run on your computer, on the GPU through
+            Vulkan. An AI provider is asked only if you add one.
+          </p>
+        </div>
+        <div>
+          <h3>Out of the way</h3>
+          <p>
+            A bar, an island or a bubble shows Legato is listening, and stays
+            out of screenshots and screen shares.
+          </p>
+        </div>
+        <div>
+          <h3>No accounts</h3>
+          <p>
+            Word copies of notes for Google Docs, calendars from iCal addresses.
+            Legato never signs in anywhere.
+          </p>
+        </div>
+      </div>
+
+      <h2 id="how">How it works</h2>
+      <div class="how">
+        <img
+          src="how-it-works-anim.svg"
+          width="1200"
+          height="640"
+          alt="One dictation in four steps: the shortcut and microphone with voice detection, the speech model on the PC, the Dictionary and style, then the paste into the app in front; an AI provider is an optional side step"
+        />
+      </div>
+      <p class="how-text">
+        The speech model runs in its own worker process through transcribe.cpp,
+        so a GPU driver crash can't take the app down. The text goes through
+        your Dictionary, snippets and cleanup, and is pasted with the keys that
+        suit the app in front.
+      </p>
+
+      <section class="install">
+        <h2>Install</h2>
+        <p>
+          Download <code>Legato_&lt;version&gt;_x64-setup.exe</code> from the
+          <a href="https://github.com/Abhash-Chakraborty/legato/releases/latest"
+            >latest release</a
+          >
+          and run it. Setup checks your microphone and downloads a speech model
+          for your languages (0.5 to 1.6 GB).
+        </p>
+        <p>
+          The installer isn't code-signed yet, so SmartScreen may warn you:
+          choose More info, then Run anyway.
+        </p>
+      </section>
+
+      <footer>
+        <span
+          >Legato by Abhash Chakraborty · grew from
+          <a href="https://github.com/cjpais/Handy">Handy</a> by CJ Pais</span
+        >
+        <span
+          ><a href="https://github.com/Abhash-Chakraborty/legato">Source</a> ·
+          <a
+            href="https://github.com/Abhash-Chakraborty/legato/blob/main/LICENSE"
+            >MIT licence</a
+          ></span
+        >
+      </footer>
+    </div>
+  </body>
+</html>

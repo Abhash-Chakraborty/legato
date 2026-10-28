@@ -1,0 +1,44 @@
+name: "Project page"
+
+# The page at abhash-chakraborty.github.io/legato: site/ plus the pictures
+# and font it shares with the README and the app.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/*.webp"
+      - "docs/*.svg"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Put the page together
+        run: |
+          mkdir -p _site/fonts
+          cp site/index.html _site/
+          cp docs/hero-light.webp docs/hero-dark.webp docs/how-it-works-anim.svg _site/
+          cp src/assets/legato-icon.svg _site/
+          cp src/assets/fonts/figtree-latin.woff2 src/assets/fonts/Figtree-OFL.txt _site/fonts/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

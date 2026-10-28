@@ -27,17 +27,23 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
+            const fs = require('fs')
+            const version = '${{ steps.get-version.outputs.version }}'
+            // Notes written for the release, else GitHub's list of changes.
+            const file = `.github/release-notes/${version}.md`
+            const body = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined
             const { data } = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: `v${{ steps.get-version.outputs.version }}`,
+              tag_name: `v${version}`,
               // The tag is made when the draft is published; pin it to the
               // commit built here, not wherever the branch has moved since.
               target_commitish: context.sha,
-              name: `v${{ steps.get-version.outputs.version }}`,
+              name: `Legato ${version}`,
+              body,
               draft: true,
               prerelease: false,
-              generate_release_notes: true
+              generate_release_notes: body === undefined
             })
             return data.id
 
@@ -69,3 +75,28 @@ jobs:
       # stale cached native lib can never be linked into a shipped artifact.
       no-cache: true
     secrets: inherit
+
+  publish-release:
+    # Publishes the draft once both installers are on it. The release
+    # environment lists each one under Deployments, linked to its page.
+    needs: [create-release, publish-tauri]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    environment:
+      name: release
+      url: ${{ steps.publish.outputs.url }}
+    steps:
+      - name: Publish the draft
+        id: publish
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { data } = await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release-id }},
+              draft: false,
+              make_latest: 'true'
+            })
+            core.setOutput('url', data.html_url)

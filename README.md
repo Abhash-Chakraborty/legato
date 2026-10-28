@@ -18,7 +18,8 @@
   <a href="https://github.com/Abhash-Chakraborty/legato/releases/latest">Download</a> ·
   <a href="#install">Install</a> ·
   <a href="#what-it-does">What it does</a> ·
-  <a href="docs/phone-sync.md">Phone sync</a>
+  <a href="#how-it-works">How it works</a> ·
+  <a href="docs/troubleshooting.md">Troubleshooting</a>
 </p>
 
 <picture>
@@ -26,210 +27,67 @@
   <img src="docs/hero-light.webp" alt="Legato's Notes page: a weekly meeting with its summary, topics, decisions, next steps with owners, and details that jump to the moment in the recording">
 </picture>
 
-Speech recognition runs on your computer, with models such as Parakeet and Whisper, on the GPU through Vulkan on x64. What you say stays on the PC. The steps that need a language model (summaries, transforms, Ask) use a provider you add yourself, and only then.
+Legato is a dictation app and meeting notetaker for Windows. Speech recognition runs on your computer with models such as Parakeet and Whisper, on the GPU through Vulkan on x64, so what you say stays on the PC. Summaries, transforms and Ask use an AI provider only if you add one yourself.
 
-Status: in development. Legato started as a fork of [Handy](https://github.com/cjpais/Handy) by CJ Pais and its contributors (MIT), with my changes on top.
+It started as a fork of [Handy](https://github.com/cjpais/Handy) by CJ Pais and its contributors (MIT). Notes, the Dictionary, the Scratchpad, the island and the bubble, phone sync and first-run setup were built in this fork.
 
 ## What it does
 
-- **Dictation in any app.** Hold or tap a shortcut, speak, and Legato pastes the text. It drops filler words, tidies numbers and lists, and takes a tone and paste keys from the kind of app in front.
-- **Your words.** The Dictionary keeps names and terms spelled your way, with the ways the model mishears them, and learns from the words you fix. Snippets turn a trigger phrase into saved text.
-- **Transforms and Ask.** Rewrite the selection or your last dictation, or ask about the selection, with your own provider: Ollama, OpenAI, Anthropic, OpenRouter, Groq, Cerebras and others.
-- **Notes.** Record a meeting (one app's sound or everything) or a voice memo, with a live transcript. Voices are told apart, and a voice you name is recognised in later meetings. With a provider, the summary has topics, decisions, next steps with owners and details that play the moment they came from.
-- **Google Docs and calendars, no sign-in.** Save a note as a Word file that Google Docs opens formatted, or keep a Word copy of every note in your Google Drive or OneDrive folder. Schedule a follow-up and Google Calendar or Outlook opens filled in. Meetings and invitees come from a calendar's secret iCal address.
-- **Scratchpad and Insights.** A notes window to dictate drafts into, where a failed paste also lands, and your dictation in numbers.
-- **Always in reach.** The bar, an island at the top of the screen, or a bubble at the edge shows that Legato is listening.
-- **Other apps.** AI apps can read your dictations, notes and Dictionary over MCP (`legato --mcp`) once you allow it. [Inyon](https://github.com/Abhash-Chakraborty/inyon)'s coding agents can ask you questions on the bar, answered with a click or by voice.
-- **Your phone.** Legato for Android, in development, syncs the Dictionary, snippets, dictations, notes and the Scratchpad over Wi-Fi or Bluetooth, with no server in between ([how](docs/phone-sync.md)).
+- **Dictation in any app.** Hold or tap a shortcut, speak, and the text is pasted where you're typing. Filler words go, numbers and lists are tidied, and the tone follows the kind of app in front. Say "press enter" to send, once you turn it on.
+- **Your words.** The Dictionary keeps names spelled your way, learns from the words you fix, and snippets turn a phrase into saved text.
+- **Meeting notes.** Record a call (one app's sound or everything) or a voice memo with a live transcript. Voices are told apart and recognised in later meetings. With a provider, summaries have decisions, next steps with owners and moments you can play back, and you can ask across all your notes.
+- **Transforms and Ask.** Rewrite the selection or your last dictation with Ollama, OpenAI, Anthropic, OpenRouter, Groq or another provider.
+- **Out of the way.** A bar, an island at the top of the screen or a bubble at the edge shows Legato is listening. It steps aside for fullscreen apps and stays out of screenshots and screen shares.
+- **No accounts.** Word copies of notes for Google Docs or OneDrive, calendars from secret iCal addresses, follow-ups that open your calendar filled in. Legato never signs in anywhere.
+- **More.** A Scratchpad for drafts and failed pastes, Insights on your dictation, MCP for AI apps (`legato --mcp`), questions from [Inyon](https://github.com/Abhash-Chakraborty/inyon)'s coding agents on the bar, and an Android app in development that syncs over Wi-Fi or Bluetooth ([how](docs/phone-sync.md)).
 
-Built with Tauri 2 (Rust and React), transcribe.cpp on GGML, Silero VAD and SQLite.
+## How it works
+
+<picture>
+  <img src="docs/how-it-works-anim.webp" alt="One dictation in four steps: the shortcut and microphone with voice detection, the speech model on the PC, the Dictionary and style, then the paste into the app in front; an AI provider is an optional side step">
+</picture>
+
+A shortcut starts the microphone, and Silero VAD keeps only the speech. transcribe.cpp runs the speech model in a worker process, so a crash in the GPU driver can't take the app down, and a dictation that ends while the model is still loading onto the GPU is transcribed on the CPU meanwhile. The text then goes through your Dictionary, snippets and cleanup, and is pasted with the keys that suit the app in front.
 
 ## Install
 
-Download `Legato_<version>_x64-setup.exe` (or `arm64` for Windows on Arm) from the [latest release](https://github.com/Abhash-Chakraborty/legato/releases/latest) and run it. It installs for your account only and needs no administrator rights. Setup then checks your microphone, picks a speech model for your languages and downloads it (0.5 to 1.6 GB).
+Download `Legato_<version>_x64-setup.exe` (or `arm64` for Windows on Arm) from the [latest release](https://github.com/Abhash-Chakraborty/legato/releases/latest) and run it. It installs for your account and needs no administrator rights. Setup checks your microphone, picks a speech model for your languages and downloads it (0.5 to 1.6 GB). Legato updates itself after that.
 
-The installer isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC". Choose More info, then Run anyway. To check the file first, see [Verify release signatures](#verify-release-signatures).
+The installers aren't code-signed yet, so SmartScreen may say "Windows protected your PC": choose More info, then Run anyway. You can [verify a download](docs/verify.md) against the release signature first.
 
-To use Legato in apps run as administrator (an admin terminal, say), install it for all users with the `.msi` instead, then turn on Settings › General › Work in apps run as administrator.
+To use Legato in apps run as administrator, install the `.msi` instead (for all users), then turn on Settings › General › Work in apps run as administrator.
 
-Uninstalling removes the app. Tick "Delete app data" to also remove your history, notes, settings and the keys Legato saved in Windows Credential Manager. Downloaded models stay in the shared Hugging Face cache (`%USERPROFILE%\.cache\huggingface`), since other tools may use them.
+Uninstalling keeps your data unless you tick "Delete app data". Downloaded models stay in the shared Hugging Face cache (`%USERPROFILE%\.cache\huggingface`), since other tools may use them.
 
-To build it on Windows, see [BUILD.md](BUILD.md).
+## Build from source
 
-## Debug mode
-
-Legato has a debug mode for development and troubleshooting. Open it by pressing `Ctrl+Shift+D`.
-
-## CLI parameters
-
-Legato supports command-line flags for controlling a running instance and customizing startup behavior. Largely this is a beta feature.
-
-**Remote control flags** (sent to an already-running instance via the single-instance plugin):
+You need Rust (stable), [Bun](https://bun.sh/), and on Windows the Visual Studio C++ tools, CMake and the Vulkan SDK ([BUILD.md](BUILD.md) has the details).
 
 ```powershell
-legato --toggle-transcription    # Toggle recording on/off
-legato --toggle-post-process     # Toggle recording with post-processing on/off
-legato --cancel                  # Cancel the current operation
-legato --open-scratchpad         # Open the Scratchpad
-legato --new-note                # Open the Scratchpad on a new note
+bun install
+bun run tauri dev      # run it
+bun run tauri build    # installers in src-tauri/target/release/bundle
 ```
 
-**Startup flags:**
+Built with Tauri 2 (Rust and React), transcribe.cpp on GGML, Silero VAD and SQLite. The command-line flags and debug mode are in [docs/cli.md](docs/cli.md).
 
-```powershell
-legato --start-hidden            # Start without showing the main window
-legato --no-tray                 # Start without the system tray icon
-legato --debug                   # Enable debug mode with verbose logging
-legato --help                    # Show all available flags
-```
+## Status
 
-Flags can be combined for autostart scenarios:
+Legato is in development and used daily on Windows 11. What to know:
 
-```powershell
-legato --start-hidden --no-tray
-```
+- Windows only, on x64 and ARM64. ARM64 builds run the speech model on the CPU.
+- The installers aren't code-signed yet.
+- The Android app is in development and not released.
+- Hiding from screen capture needs Windows 10 version 2004 or later.
 
-## Verify release signatures
+Something not working? See [Troubleshooting](docs/troubleshooting.md) or [open an issue](https://github.com/Abhash-Chakraborty/legato/issues/new/choose).
 
-Legato release artifacts are signed with Tauri's updater signature format. The public key is stored in [`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json) under `plugins.updater.pubkey`.
+## Credits
 
-To verify a release manually, set `$Artifact` to the filename you downloaded, save the `pubkey` value from `src-tauri/tauri.conf.json` to `legato.pub.b64`, then decode the public key and matching `.sig` file from base64 and verify the artifact with `minisign`. In PowerShell:
-
-```powershell
-# Replace with the file you downloaded
-$Artifact = "Legato_0.9.9_x64-setup.exe"
-
-$pub = (Get-Content legato.pub.b64 -Raw).Trim()
-[IO.File]::WriteAllBytes("$PWD\legato.pub", [Convert]::FromBase64String($pub))
-
-$sig = (Get-Content "$Artifact.sig" -Raw).Trim()
-[IO.File]::WriteAllBytes("$PWD\$Artifact.minisig", [Convert]::FromBase64String($sig))
-
-minisign -Vm $Artifact -p legato.pub -x "$Artifact.minisig"
-```
-
-On success, `minisign` prints:
-
-```text
-Signature and comment signature verified
-```
-
-Do not use `gpg` for these `.sig` files.
-
-## Troubleshooting
-
-### Previous clipboard content is pasted instead of the transcription
-
-If the transcription is correct in **History** but Legato inserts text you copied earlier, the problem is paste timing. With the standard clipboard paste method, Legato restores your previous clipboard after a fixed delay. Under load, the receiving application may read the clipboard only after that restoration.
-
-1. Open Legato's settings window and press `Ctrl+Shift+D` to reveal **Debug**.
-2. Try **Reliable Paste (Beta)** in Debug with a clipboard paste method selected. It uses clipboard read notifications to delay restoration instead of relying on the standard fixed delay. Test it in the application where the problem occurs; it is still experimental.
-3. If Reliable Paste is disabled, increase **Paste Delay (After)** in Debug and test again. This controls the wait before restoring your previous clipboard. **Paste Delay (Before)** controls the wait before sending the paste keystroke and addresses a different part of the operation. These delay settings apply to the standard paste path, not Reliable Paste.
-
-### Manual model installation (for proxy users or network restrictions)
-
-If you're behind a proxy, firewall, or in a restricted network environment where Legato cannot download models automatically, you can manually download and install them. The URLs are publicly accessible from any browser.
-
-#### Step 1: Find your app data directory
-
-1. Open Legato settings
-2. Navigate to the **About** section
-3. Copy the "App Data Directory" path shown there, or press `Ctrl+Shift+D` to open the debug menu
-
-The typical path is `C:\Users\{username}\AppData\Roaming\io.github.abhash-chakraborty.legato\`.
-
-#### Step 2: Create the models directory
-
-Inside your app data directory, create a `models` folder if it doesn't already exist:
-
-```powershell
-New-Item -ItemType Directory -Force -Path "$env:APPDATA\io.github.abhash-chakraborty.legato\models"
-```
-
-#### Step 3: Download model files
-
-Download the models you want from below
-
-**Whisper models (single .bin files):**
-
-- Small (487 MB): `https://blob.handy.computer/ggml-small.bin`
-- Medium (492 MB): `https://blob.handy.computer/whisper-medium-q4_1.bin`
-- Turbo (1600 MB): `https://blob.handy.computer/ggml-large-v3-turbo.bin`
-- Large (1100 MB): `https://blob.handy.computer/ggml-large-v3-q5_0.bin`
-
-**Parakeet Unified EN 0.6B (single `.gguf` file, recommended):**
-
-- Q8_0 (731 MB): `https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/main/parakeet-unified-en-0.6b-Q8_0.gguf`
-
-#### Step 4: Install models
-
-**For Whisper models (.bin files):**
-
-Simply place the `.bin` file directly into the `models` directory:
-
-```
-{app_data_dir}/models/
-├── ggml-small.bin
-├── whisper-medium-q4_1.bin
-├── ggml-large-v3-turbo.bin
-└── ggml-large-v3-q5_0.bin
-```
-
-**For GGUF models (.gguf files):**
-
-Place the `.gguf` file directly into the `models` directory, exactly like the Whisper `.bin` files above. Legato also picks up models already present in the shared Hugging Face cache (`%USERPROFILE%\.cache\huggingface\hub`), so a copy downloaded by another tool works without being moved.
-
-**Important notes:**
-
-- Do not rename the `.bin` or `.gguf` files—use the exact filenames from the download URLs
-- After placing the files, restart Legato to detect the new models
-
-#### Step 5: Verify the installation
-
-1. Restart Legato
-2. Open Settings → Models
-3. Your manually installed models should now appear as "Downloaded"
-4. Select the model you want to use and test transcription
-
-### Custom Whisper models
-
-Legato can auto-discover custom Whisper GGML models placed in the `models` directory. This is useful for users who want to use fine-tuned or community models not included in the default model list.
-
-**How to use:**
-
-1. Obtain a Whisper model in GGML `.bin` format (e.g., from [Hugging Face](https://huggingface.co/models?search=whisper%20ggml))
-2. Place the `.bin` file in your `models` directory (see the path above)
-3. Restart Legato to discover the new model
-4. The model will appear in the "Custom Models" section of the Models settings page
-
-**Important:**
-
-- Community models are user-provided and may not receive troubleshooting assistance
-- The model must be a valid Whisper GGML format (`.bin` file)
-- Model name is derived from the filename (e.g., `my-custom-model.bin` → "My Custom Model")
-
-### Vulkan overlays and capture tools (`LEGATO_KEEP_VULKAN_IMPLICIT_LAYERS`)
-
-Legato asks the Vulkan loader to skip implicit layers to avoid crashes caused by overlay and capture hooks. GPU acceleration remains enabled; this does not change system-wide settings.
-
-To opt out for GPU selection or debugging tools, fully quit Legato (including the tray icon), then run both commands in the same PowerShell window:
-
-```powershell
-$env:LEGATO_KEEP_VULKAN_IMPLICIT_LAYERS = "1"
-& "$env:ProgramFiles\Legato\legato.exe"
-```
-
-Adjust the executable path if needed. This override only applies to apps launched from that PowerShell session, not the Start menu. Legato also preserves any existing `VK_LOADER_LAYERS_DISABLE` value.
+- [Handy](https://github.com/cjpais/Handy) by CJ Pais and its contributors, which Legato grew from. Legato is an independent fork and isn't affiliated with or endorsed by the Handy project.
+- [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) and [GGML](https://github.com/ggml-org/ggml) for running speech models locally, and the Whisper, Parakeet and Silero VAD models.
+- [Tauri](https://tauri.app) for the app framework.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-Legato is an independent fork and isn't affiliated with or endorsed by the Handy project.
-
-## Acknowledgments
-
-- **Whisper** by OpenAI for the speech recognition model
-- **ggml** for an amazing cross-platform tensor library
-- **Silero** for great lightweight VAD
-- **Tauri** team for the excellent Rust-based app framework
+MIT. See [LICENSE](LICENSE).

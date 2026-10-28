@@ -1,0 +1,49 @@
+name: Something isn't working
+description: A bug in Legato on Windows or Android
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Legato did instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Legato version
+      description: Settings › About shows it.
+      placeholder: "0.10.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installed with
+      options:
+        - The setup .exe (for my account)
+        - The .msi (for all users)
+        - Built from source
+        - Legato for Android
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version and PC
+      description: For example "Windows 11 24H2, x64, NVIDIA GTX 1650".
+  - type: input
+    id: model
+    attributes:
+      label: Speech model
+      description: Settings › Models, if it's about transcription.
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >-
+        The end of legato.log, in %LOCALAPPDATA%\io.github.abhash-chakraborty.legato\logs
+        (or press Ctrl+Shift+D in Settings, then Debug › Logs). Dictated text
+        is redacted in the log, but read it over before posting.
+      render: text

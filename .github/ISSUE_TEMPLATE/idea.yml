@@ -1,0 +1,11 @@
+name: An idea
+description: Something Legato could do, or do better
+labels: [idea]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you'd like
+      description: What you're trying to do, and where Legato gets in the way.
+    validations:
+      required: true
