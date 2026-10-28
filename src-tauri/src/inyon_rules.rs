@@ -12,6 +12,10 @@ use std::net::IpAddr;
 /// The contract version Legato speaks, sent as `X-Inyon-Contract`.
 pub const CONTRACT: u32 = 1;
 
+/// The agent catalog Legato understands. 2 brings Inyon 0.23's terminal-only
+/// kinds (cursor, goose, kiro…); the kind is kept as text, so any name works.
+pub const CATALOG: u32 = 2;
+
 /// The hub's address as typed, tidied to its origin. A bare address gets
 /// `http://` when the token may go in the clear there (this PC, or a
 /// NetBird or Tailscale address), else `https://`. A user name, a path, a
@@ -92,7 +96,7 @@ pub fn ws_url(hub: &str) -> String {
     } else {
         hub.to_string()
     };
-    format!("{ws}/ws?contract={CONTRACT}")
+    format!("{ws}/ws?contract={CONTRACT}&catalog={CATALOG}")
 }
 
 /// A pairing code as typed: any case, spaces and dashes dropped.
@@ -996,8 +1000,11 @@ mod tests {
             hub_url("[fd7a:115c:a1e0::5]:4777").as_deref(),
             Some("http://[fd7a:115c:a1e0::5]:4777")
         );
-        assert_eq!(ws_url("http://h:4777"), "ws://h:4777/ws?contract=1");
-        assert_eq!(ws_url("https://h"), "wss://h/ws?contract=1");
+        assert_eq!(
+            ws_url("http://h:4777"),
+            "ws://h:4777/ws?contract=1&catalog=2"
+        );
+        assert_eq!(ws_url("https://h"), "wss://h/ws?contract=1&catalog=2");
     }
 
     #[test]
