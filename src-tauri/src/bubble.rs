@@ -465,12 +465,14 @@ fn judge_front(hwnd: windows::Win32::Foundation::HWND) -> (bool, String) {
         // A maximized window with a title bar, or with a frame to resize it
         // by (apps that draw their own title bar), fills the screen too when
         // the taskbar hides itself, but it isn't a video or a game. One with
-        // a title bar that isn't maximized yet sits exactly over the taskbar
-        // is a viewer in full screen (TightVNC keeps its title bar there).
+        // a title bar and a frame that isn't maximized yet sits exactly over
+        // the taskbar is a viewer in full screen (TightVNC keeps both there).
+        // Windows' sign-in prompt and other system screens have a title bar
+        // but no frame, and are gone again in a moment.
         let covers = if zoomed && (caption || frame) {
             false
         } else if caption {
-            bubble_rules::fits(rect, m)
+            frame && bubble_rules::fits(rect, m)
         } else {
             bubble_rules::covers(rect, m)
         };
