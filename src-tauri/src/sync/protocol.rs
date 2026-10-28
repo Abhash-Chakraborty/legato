@@ -414,7 +414,7 @@ mod tests {
             device_id: "6f1c".into(),
             name: "Abhash's desk PC & co".into(),
             fingerprint: "q-_x".into(),
-            addrs: vec!["192.168.1.20:47613".into(), "100.97.188.40:47613".into()],
+            addrs: vec!["192.168.1.20:47613".into(), "100.64.12.40:47613".into()],
             secret: "s3cr3t".into(),
         };
         let uri = link.to_uri();
@@ -503,7 +503,7 @@ mod tests {
             "10.1.2.3",
             "172.16.0.9",
             "169.254.3.4",
-            "100.97.188.40",
+            "100.64.12.40",
             "::1",
             "fd7a:115c:a1e0::9",
             "fe80::1",

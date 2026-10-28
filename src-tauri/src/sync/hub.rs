@@ -317,7 +317,7 @@ mod tests {
         let kind = |s: &str| address_kind(s.parse().unwrap());
         assert_eq!(kind("192.168.1.20"), Some("lan"));
         assert_eq!(kind("10.0.0.4"), Some("lan"));
-        assert_eq!(kind("100.97.188.40"), Some("netbird"));
+        assert_eq!(kind("100.64.12.40"), Some("netbird"));
         assert_eq!(kind("100.63.0.1"), Some("lan"));
         assert_eq!(kind("100.128.0.1"), Some("lan"));
         assert_eq!(kind("127.0.0.1"), None);

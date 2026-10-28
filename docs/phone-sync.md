@@ -33,7 +33,7 @@ On the PC, Settings › Devices › Pair a phone shows a QR code holding a pairi
 
 ```
 legato://pair?v=1&id=<pc device id>&name=<pc name>&fp=<pc fingerprint>
-             &addr=192.168.1.20:47613,100.97.188.40:47613,bt:AA:BB:CC:DD:EE:FF&secret=<secret>
+             &addr=192.168.1.20:47613,100.64.12.40:47613,bt:AA:BB:CC:DD:EE:FF&secret=<secret>
 ```
 
 - `addr` lists every address the phone may try: home network first, then Netbird (any

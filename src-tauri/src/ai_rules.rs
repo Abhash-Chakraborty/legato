@@ -412,7 +412,7 @@ mod tests {
         assert!(transport_ok("https://api.openai.com/v1"));
         assert!(transport_ok("http://localhost:11434/v1"));
         assert!(transport_ok("http://127.0.0.1:1234/v1"));
-        assert!(transport_ok("http://100.97.188.112:11434/v1"));
+        assert!(transport_ok("http://100.64.12.34:11434/v1"));
         assert!(!transport_ok("http://192.168.1.20:11434/v1"));
         assert!(!transport_ok("http://my-litellm.example.com:4000/v1"));
         assert!(!transport_ok("ftp://localhost/"));

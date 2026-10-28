@@ -853,7 +853,7 @@ mod tests {
     #[test]
     fn a_real_hubs_frames() {
         // Captured from Inyon's companion test hub, trimmed.
-        let overview = r#"{"t":"overview","hosts":[{"config":{"id":"local","name":"abhash-arm","kind":"local"},"status":"ok","sessions":[{"id":"$0","name":"legato-test","attached":0,"windows":[{"id":"@0","index":0,"name":"legato-test","active":true,"activity":0,"panes":[{"id":"%1","index":0,"active":true,"command":"claude","cwd":"/x","title":"","width":110,"height":30,"dead":false,"agent":{"kind":"claude","pid":4132496,"state":"waiting","mode":"manual","waitingFor":"Write hello-inyon to out.txt: echo hello-inyon > out.txt","options":[{"n":1,"label":"Yes"},{"n":3,"label":"No"}],"ultracode":false}}]}]},{"id":"$1","name":"work","attached":0,"windows":[{"id":"@1","index":0,"name":"work","active":true,"activity":0,"panes":[{"id":"%0","index":0,"active":true,"command":"bash","cwd":"/x","title":"","width":80,"height":24,"dead":false}]}]}]}]}"#;
+        let overview = r#"{"t":"overview","hosts":[{"config":{"id":"local","name":"build-box","kind":"local"},"status":"ok","sessions":[{"id":"$0","name":"legato-test","attached":0,"windows":[{"id":"@0","index":0,"name":"legato-test","active":true,"activity":0,"panes":[{"id":"%1","index":0,"active":true,"command":"claude","cwd":"/x","title":"","width":110,"height":30,"dead":false,"agent":{"kind":"claude","pid":4132496,"state":"waiting","mode":"manual","waitingFor":"Write hello-inyon to out.txt: echo hello-inyon > out.txt","options":[{"n":1,"label":"Yes"},{"n":3,"label":"No"}],"ultracode":false}}]}]},{"id":"$1","name":"work","attached":0,"windows":[{"id":"@1","index":0,"name":"work","active":true,"activity":0,"panes":[{"id":"%0","index":0,"active":true,"command":"bash","cwd":"/x","title":"","width":80,"height":24,"dead":false}]}]}]}]}"#;
         let empty = r#"{"t":"chat.screen","key":"local:%1","screen":{"working":false,"width":0}}"#;
         let asking = r#"{"t":"chat.screen","key":"local:%1","screen":{"prompt":{"body":["Bash command","Write hello-inyon to out.txt","╌","echo hello-inyon > out.txt","╌","Do you want to proceed?"],"wholeLines":true,"options":[{"n":1,"label":"Yes","selected":true},{"n":2,"label":"Yes, and don't ask again for echo commands in this project","selected":false},{"n":3,"label":"No","selected":false}],"footer":"Esc to cancel · Tab to amend","multi":false,"key":"BashcommandWritehello-inyon"},"working":false,"width":110}}"#;
         let mut waiting = Waiting::default();
@@ -939,8 +939,8 @@ mod tests {
     fn plain_http_only_on_this_pc_or_a_vpn() {
         let ok = |s: &str| plain_http_ok(s.parse().unwrap());
         assert!(ok("127.0.0.1") && ok("::1"));
-        assert!(ok("100.64.0.1") && ok("100.97.188.112") && ok("100.127.255.254"));
-        assert!(ok("fd7a:115c:a1e0::1234") && ok("::ffff:100.97.1.2"));
+        assert!(ok("100.64.0.1") && ok("100.64.12.34") && ok("100.127.255.254"));
+        assert!(ok("fd7a:115c:a1e0::1234") && ok("::ffff:100.64.1.2"));
         assert!(!ok("100.63.255.255") && !ok("100.128.0.1"));
         assert!(!ok("192.168.1.20") && !ok("10.0.0.5") && !ok("8.8.8.8"));
         assert!(!ok("fd7a:115c:a1e1::1") && !ok("fe80::1"));
@@ -966,8 +966,8 @@ mod tests {
             Some("https://192.168.1.20:4777")
         );
         assert_eq!(
-            hub_url("100.97.188.112:4777").as_deref(),
-            Some("http://100.97.188.112:4777")
+            hub_url("100.64.12.34:4777").as_deref(),
+            Some("http://100.64.12.34:4777")
         );
         assert_eq!(
             hub_url("localhost:4777").as_deref(),
@@ -987,8 +987,8 @@ mod tests {
         assert_eq!(hub_url("two words"), None);
         // Nothing may hide another host or a path in the address.
         assert_eq!(hub_url("https://hub.example.com@evil.example"), None);
-        assert_eq!(hub_url("100.97.188.112:4777@evil.example"), None);
-        assert_eq!(hub_url("http://evil.example\\@100.97.188.112"), None);
+        assert_eq!(hub_url("100.64.12.34:4777@evil.example"), None);
+        assert_eq!(hub_url("http://evil.example\\@100.64.12.34"), None);
         assert_eq!(hub_url("https://hub.example.com/x"), None);
         assert_eq!(hub_url("https://hub.example.com/?a=1"), None);
         assert_eq!(hub_url("https://hub.example.com/#/hosts"), None);
@@ -1051,12 +1051,12 @@ mod tests {
         );
 
         assert_eq!(parse_frame(r#"{"t":"pong"}"#), Some(Frame::Pong));
-        let reply = r#"{"t":"companion.reply","id":"r7","host":"abhash-arm","pane":"%12","text":" Two sessions wait for you. ","at":1792866545000}"#;
+        let reply = r#"{"t":"companion.reply","id":"r7","host":"build-box","pane":"%12","text":" Two sessions wait for you. ","at":1792866545000}"#;
         assert_eq!(
             parse_frame(reply),
             Some(Frame::CompanionReply(CompanionReply {
                 id: "r7".into(),
-                host: "abhash-arm".into(),
+                host: "build-box".into(),
                 pane: "%12".into(),
                 text: "Two sessions wait for you.".into(),
                 error: false,
@@ -1180,11 +1180,11 @@ mod tests {
         assert_eq!(link.fingerprint, Some("ab".repeat(32)));
         // No fingerprint on plain http, and none needed.
         let plain =
-            pairing_link("inyon://companion?u=http%3A%2F%2F100.97.1.2%3A4777&c=K7Q2XP&f=00")
+            pairing_link("inyon://companion?u=http%3A%2F%2F100.64.1.2%3A4777&c=K7Q2XP&f=00")
                 .map(|l| l.fingerprint);
         assert_eq!(plain, None, "a bad fingerprint refuses the link");
         let plain = pairing_link(&format!(
-            "inyon://companion?u=http%3A%2F%2F100.97.1.2%3A4777&c=K7Q2XP&f={fp}"
+            "inyon://companion?u=http%3A%2F%2F100.64.1.2%3A4777&c=K7Q2XP&f={fp}"
         ))
         .unwrap();
         assert_eq!(plain.fingerprint, None);
