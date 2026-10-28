@@ -39,3 +39,7 @@ blob-report/
 
 # Python bytecode (scripts/)
 __pycache__/
+
+# Agent instructions stay local
+AGENTS.md
+CLAUDE.md

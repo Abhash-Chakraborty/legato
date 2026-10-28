@@ -127,7 +127,7 @@ impl SpeechScorer for SileroVad {
 mod tests {
     use super::*;
 
-    /// Needs the bundled model (see AGENTS.md); run with `--ignored`.
+    /// Needs the bundled model in `resources/models`; run with `--ignored`.
     #[test]
     #[ignore]
     fn scores_the_same_in_pieces_and_frame_by_frame() {

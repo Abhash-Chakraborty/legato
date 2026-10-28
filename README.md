@@ -29,8 +29,6 @@
 
 Legato is a dictation app and meeting notetaker for Windows. Speech recognition runs on your computer with models such as Parakeet and Whisper, on the GPU through Vulkan on x64, so what you say stays on the PC. Summaries, transforms and Ask use an AI provider only if you add one yourself.
 
-It started as a fork of [Handy](https://github.com/cjpais/Handy) by CJ Pais and its contributors (MIT). Notes, the Dictionary, the Scratchpad, the island and the bubble, phone sync and first-run setup were built in this fork.
-
 ## What it does
 
 - **Dictation in any app.** Hold or tap a shortcut, speak, and the text is pasted where you're typing. Filler words go, numbers and lists are tidied, and the tone follows the kind of app in front. Say "press enter" to send, once you turn it on.
@@ -82,11 +80,9 @@ Legato is in development and used daily on Windows 11. What to know:
 
 Something not working? See [Troubleshooting](docs/troubleshooting.md) or [open an issue](https://github.com/Abhash-Chakraborty/legato/issues/new/choose).
 
-## Credits
+## Contributing
 
-- [Handy](https://github.com/cjpais/Handy) by CJ Pais and its contributors, which Legato grew from. Legato is an independent fork and isn't affiliated with or endorsed by the Handy project.
-- [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) and [GGML](https://github.com/ggml-org/ggml) for running speech models locally, and the Whisper, Parakeet and Silero VAD models.
-- [Tauri](https://tauri.app) for the app framework.
+Bug reports and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the setup and the checks to run; report security problems privately, as [SECURITY.md](SECURITY.md) describes.
 
 ## License
 

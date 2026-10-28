@@ -141,11 +141,7 @@ import {
   type OnboardingPreviewStep,
 } from "./debug/OnboardingPreview";
 import { DebugModeRow } from "./debug/DebugModeRow";
-import {
-  AcknowledgmentsRow,
-  SourceCodeRow,
-  VersionRow,
-} from "./about/AboutRows";
+import { SourceCodeRow, VersionRow } from "./about/AboutRows";
 
 /** What a dependent row looks at to decide whether it can be changed. */
 export interface RowContext {
@@ -1656,14 +1652,6 @@ export const buildSections = (
               "settings.about.sourceCode.description",
             ],
             render: () => <SourceCodeRow />,
-          },
-          {
-            id: "acknowledgments",
-            searchKeys: [
-              "settings.about.acknowledgments.ggml.title",
-              "settings.about.acknowledgments.ggml.description",
-            ],
-            render: () => <AcknowledgmentsRow />,
           },
         ],
       },

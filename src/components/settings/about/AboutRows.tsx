@@ -82,18 +82,3 @@ export const SourceCodeRow: React.FC = () => {
     </SettingContainer>
   );
 };
-
-export const AcknowledgmentsRow: React.FC = () => {
-  const { t } = useTranslation();
-  return (
-    <SettingContainer
-      title={t("settings.about.acknowledgments.ggml.title")}
-      description={t("settings.about.acknowledgments.ggml.description")}
-      layout="stacked"
-    >
-      <p className="text-[13px] text-text-2">
-        {t("settings.about.acknowledgments.ggml.details")}
-      </p>
-    </SettingContainer>
-  );
-};
