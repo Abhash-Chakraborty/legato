@@ -217,7 +217,8 @@ fn window_state_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 
     let mut builder = tauri_plugin_window_state::Builder::default()
         .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
-        .with_denylist(&["recording_overlay"]);
+        // The bar, the bubble and the Notes panel place themselves.
+        .with_denylist(&["recording_overlay", bubble::WINDOW, notes_panel::WINDOW]);
     if let Some(data_dir) = portable::data_dir() {
         // The plugin joins this onto the config folder; an absolute path wins.
         builder = builder.with_filename(data_dir.join("window-state.json").to_string_lossy());
