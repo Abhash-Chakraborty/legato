@@ -456,6 +456,9 @@ pub enum DictationStatus {
     NotPasted,
     /// Transcription failed; the audio is kept so it can be tried again.
     Failed,
+    /// Cancelled before it was pasted (Escape, say); kept so its words can
+    /// still be copied or transformed. Not counted in Insights.
+    Cancelled,
 }
 
 impl DictationStatus {
@@ -465,6 +468,7 @@ impl DictationStatus {
             DictationStatus::PasteFailed => "paste_failed",
             DictationStatus::NotPasted => "not_pasted",
             DictationStatus::Failed => "failed",
+            DictationStatus::Cancelled => "cancelled",
         }
     }
 
@@ -474,6 +478,7 @@ impl DictationStatus {
             "paste_failed" => Some(DictationStatus::PasteFailed),
             "not_pasted" => Some(DictationStatus::NotPasted),
             "failed" => Some(DictationStatus::Failed),
+            "cancelled" => Some(DictationStatus::Cancelled),
             _ => None,
         }
     }
@@ -675,7 +680,7 @@ const DAY_OF: &str = "date(?1, 'unixepoch', 'localtime')";
 
 /// Adds one dictation (or removes one, with `sign` -1) to the daily tables.
 fn add_to_stats(conn: &Connection, entry: &HistoryEntry, sign: i64) -> Result<()> {
-    if entry.transcription_text.is_empty() {
+    if entry.transcription_text.is_empty() || entry.status == Some(DictationStatus::Cancelled) {
         return Ok(());
     }
     let words = sign * entry.word_count.unwrap_or(0);
@@ -1885,6 +1890,31 @@ mod tests {
             )
             .unwrap();
         assert_eq!(model, 2);
+    }
+
+    #[test]
+    fn cancelled_dictations_are_kept_but_not_counted() {
+        let mut conn = db();
+        let mut cancelled = entry("", None);
+        cancelled.status = Some(DictationStatus::Cancelled);
+        let saved = insert(&mut conn, &cancelled).unwrap();
+        // Transcribed after the cancel: the words are there to copy, still
+        // marked cancelled, and Insights doesn't count them.
+        let done = update_transcription(
+            &mut conn,
+            saved.id,
+            "the words I meant",
+            None,
+            None,
+            None,
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
+        assert_eq!(done.status, Some(DictationStatus::Cancelled));
+        assert_eq!(done.transcription_text, "the words I meant");
+        assert_eq!(summary(&conn).unwrap().today.dictations, 0);
     }
 
     #[test]

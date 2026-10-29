@@ -228,6 +228,121 @@ fn app_fields(info: AppInfo) -> AppFields {
     }
 }
 
+/// What the dictation being recorded is for, so a cancel can keep it.
+static RECORDING_FOR: Mutex<Option<(DictationMode, Option<context::ForegroundWindow>)>> =
+    Mutex::new(None);
+
+/// Under a second of speech is a slip of the shortcut, not words to keep.
+const KEEP_AT_LEAST: usize = 16_000;
+
+/// Whether a cancelled dictation of this kind is worth keeping: Ask's words
+/// are an instruction and an agent's answer goes nowhere else, and a setup
+/// practice scene is only practice.
+fn keeps_when_cancelled(mode: DictationMode) -> bool {
+    matches!(
+        mode,
+        DictationMode::Plain | DictationMode::Transform | DictationMode::Scratchpad
+    ) && crate::setup::scene_target().is_none()
+}
+
+fn kept_app(mode: DictationMode, front: Option<&context::ForegroundWindow>) -> Option<AppFields> {
+    if mode == DictationMode::Scratchpad {
+        Some(scratchpad_fields())
+    } else {
+        front.map(context::resolve).map(app_fields)
+    }
+}
+
+/// Keeps a dictation cancelled while it was still recording (a stray Escape,
+/// say) in Home, so its words can still be copied or transformed. They are
+/// transcribed when the model is loaded anyway; otherwise Home offers to.
+/// Called once the cancel has stopped any transcription in flight, with
+/// what the recording heard, if one was going.
+pub(crate) fn keep_cancelled(app: &AppHandle, heard: Option<Vec<f32>>) {
+    let recording = RECORDING_FOR
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
+    let (Some((mode, front)), Some(samples)) = (recording, heard) else {
+        return;
+    };
+    if samples.len() < KEEP_AT_LEAST || !keeps_when_cancelled(mode) {
+        return;
+    }
+    let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
+    let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
+    let models = Arc::clone(&app.state::<Arc<ModelManager>>());
+    // Loading a model just for this would cost more than a click in Home.
+    let transcribe = tm.is_model_loaded()
+        && get_settings(app).model_unload_timeout
+            != crate::settings::ModelUnloadTimeout::Immediately;
+    let app_info = kept_app(mode, front.as_ref());
+    tauri::async_runtime::spawn_blocking(move || {
+        let speech_ms = (samples.len() / 16) as i64;
+        let file_name = format!("legato-{}.wav", chrono::Utc::now().timestamp_millis());
+        let path = hm.recordings_dir().join(&file_name);
+        if let Err(e) = crate::audio_toolkit::save_wav_file(&path, &samples) {
+            warn!("Couldn't keep the cancelled dictation's audio: {e}");
+            return;
+        }
+        let entry = match hm.save_entry(NewEntry {
+            file_name,
+            post_process_requested: mode == DictationMode::Transform,
+            app: app_info,
+            speech_ms: Some(speech_ms),
+            status: Some(DictationStatus::Cancelled),
+            ..Default::default()
+        }) {
+            Ok(entry) => entry,
+            Err(e) => {
+                error!("Couldn't keep the cancelled dictation: {e}");
+                return;
+            }
+        };
+        log::info!("Kept a cancelled dictation ({speech_ms} ms of speech) in Home");
+        if !transcribe {
+            return;
+        }
+        match tm.transcribe(samples) {
+            Ok(done) if !done.text.trim().is_empty() => {
+                let model = tm.get_current_model().map(|id| {
+                    let name = models.get_model_info(&id).map(|m| m.name);
+                    let name = name.unwrap_or_else(|| id.clone());
+                    (id, name)
+                });
+                if let Err(e) = hm.update_transcription(
+                    entry.id,
+                    done.text,
+                    None,
+                    None,
+                    None,
+                    model,
+                    &applied_fixes(&done.fixes),
+                    Some(&done.heard),
+                ) {
+                    error!("Couldn't save the cancelled dictation's words: {e}");
+                }
+            }
+            Ok(_) => debug!("The cancelled dictation had no words"),
+            // Another cancel, say; Home can try again.
+            Err(e) => debug!("Didn't transcribe the cancelled dictation: {e}"),
+        }
+    });
+}
+
+/// Keeps a dictation cancelled after it stopped recording, with whatever
+/// words it had by then.
+fn keep_stopped(hm: &HistoryManager, entry: NewEntry) {
+    if let Err(e) = hm.save_entry(NewEntry {
+        status: Some(DictationStatus::Cancelled),
+        ..entry
+    }) {
+        error!("Couldn't keep the cancelled dictation: {e}");
+    } else {
+        log::info!("Kept a cancelled dictation in Home");
+    }
+}
+
 pub(crate) struct ProcessedTranscription {
     /// The transcript after the correction pass, snippets, cleanup and Style.
     pub transcription: String,
@@ -502,8 +617,9 @@ impl ShortcutAction for TranscribeAction {
         }
 
         let remember_app = get_settings(app).remember_app;
-        app.state::<DictationContext>()
-            .set(if remember_app { front } else { None });
+        let front = if remember_app { front } else { None };
+        *RECORDING_FOR.lock().unwrap_or_else(|e| e.into_inner()) = Some((self.mode, front.clone()));
+        app.state::<DictationContext>().set(front);
 
         let binding_id = binding_id.to_string();
         let tray_started = Instant::now();
@@ -698,6 +814,10 @@ impl ShortcutAction for TranscribeAction {
         let mode = self.mode;
         let post_process = mode == DictationMode::Transform;
         let started_in = app.state::<DictationContext>().take();
+        RECORDING_FOR
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         let remember_app = get_settings(app).remember_app;
         let cancel_generation = rm.cancel_generation();
         // A practice scene in setup gets the text instead of the app in front.
@@ -731,6 +851,11 @@ impl ShortcutAction for TranscribeAction {
                     debug!("Transcription operation cancelled after recording stop");
                     tm.cancel_stream();
                     end_session(&ah, session);
+                    if keeps_when_cancelled(mode) {
+                        *RECORDING_FOR.lock().unwrap_or_else(|e| e.into_inner()) =
+                            Some((mode, started_in));
+                        keep_cancelled(&ah, Some(samples));
+                    }
                     return;
                 }
 
@@ -800,6 +925,33 @@ impl ShortcutAction for TranscribeAction {
                     if cancelled() {
                         debug!("Transcription operation cancelled before output handling");
                         end_session(&ah, session);
+                        // Words lost to a stray Escape stay in Home; a
+                        // transcription the cancel stopped can be run there.
+                        if wav_saved && keeps_when_cancelled(mode) {
+                            let (text, fixes, heard) = match transcription_result {
+                                Ok(done) => {
+                                    (done.text, applied_fixes(&done.fixes), Some(done.heard))
+                                }
+                                Err(_) => (String::new(), Vec::new(), None),
+                            };
+                            keep_stopped(
+                                &hm,
+                                NewEntry {
+                                    file_name,
+                                    transcription_text: text,
+                                    post_process_requested: post_process,
+                                    app: kept_app(mode, started_in.as_ref()),
+                                    speech_ms: Some(speech_ms),
+                                    model_id: Some(model_id),
+                                    model_name,
+                                    fixes,
+                                    heard_text: heard,
+                                    ..Default::default()
+                                },
+                            );
+                        } else {
+                            let _ = std::fs::remove_file(hm.recordings_dir().join(&file_name));
+                        }
                         return;
                     }
 
@@ -887,6 +1039,28 @@ impl ShortcutAction for TranscribeAction {
                                     crate::overlay::set_stage(&ah, Some(s.key()));
                                 }
                             };
+                            // Cancelled while it's polished: the words it had
+                            // stay in Home.
+                            let keep_words = |text: &str| {
+                                if !(wav_saved && keeps_when_cancelled(mode)) {
+                                    return;
+                                }
+                                keep_stopped(
+                                    &hm,
+                                    NewEntry {
+                                        file_name: file_name.clone(),
+                                        transcription_text: text.to_string(),
+                                        post_process_requested: post_process,
+                                        app: kept_app(mode, started_in.as_ref()),
+                                        speech_ms: Some(speech_ms),
+                                        model_id: Some(model_id.clone()),
+                                        model_name: model_name.clone(),
+                                        fixes: applied_fixes(&fixes),
+                                        heard_text: Some(heard.clone()),
+                                        ..Default::default()
+                                    },
+                                );
+                            };
                             let Some(processed) = complete_unless_cancelled(
                                 process_transcription_output(
                                     &ah,
@@ -901,12 +1075,14 @@ impl ShortcutAction for TranscribeAction {
                             else {
                                 debug!("Transcription operation cancelled during output handling");
                                 end_session(&ah, session);
+                                keep_words(&transcription);
                                 return;
                             };
 
                             if cancelled() {
                                 debug!("Transcription operation cancelled before paste");
                                 end_session(&ah, session);
+                                keep_words(&processed.transcription);
                                 return;
                             }
 

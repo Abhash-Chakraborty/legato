@@ -91,7 +91,7 @@ pub fn cancel_current_operation(app: &AppHandle) {
     // Cancel any ongoing recording
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     let recording_was_active = audio_manager.is_recording();
-    audio_manager.cancel_recording();
+    let heard = audio_manager.cancel_recording();
     // Other apps' sound comes back, whether or not the microphone stays open.
     audio_manager.remove_mute();
 
@@ -120,6 +120,9 @@ pub fn cancel_current_operation(app: &AppHandle) {
     if let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() {
         coordinator.notify_cancel(recording_was_active);
     }
+
+    // What it heard stays in Home, now that nothing in flight can stop it.
+    crate::actions::keep_cancelled(app, heard);
 
     info!("Operation cancellation completed - returned to idle state");
 }

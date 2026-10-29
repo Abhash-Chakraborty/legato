@@ -4290,7 +4290,12 @@ export type DictationStatus = "pasted" |
 /**
  * Transcription failed; the audio is kept so it can be tried again.
  */
-"failed"
+"failed" | 
+/**
+ * Cancelled before it was pasted (Escape, say); kept so its words can
+ * still be copied or transformed. Not counted in Insights.
+ */
+"cancelled"
 export type FilterCounts = { all: number; starred: number; fixed: number; transformed: number }
 export type ImplementationChangeResult = { success: boolean; 
 /**

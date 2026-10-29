@@ -109,6 +109,8 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
 
   const text = finalText(entry);
   const failed = entry.status === "failed" || !entry.transcription_text.trim();
+  // Stopped by a cancel (Escape, say) and kept here.
+  const cancelled = entry.status === "cancelled";
   // Dictations from a paired phone keep their audio on the phone.
   const hasAudio = !!entry.file_name;
   const time = new Date(entry.timestamp * 1000).toLocaleTimeString(
@@ -230,13 +232,13 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
           </p>
         ) : failed ? (
           <p className="text-[15px] leading-[1.55] text-text-3">
-            {t("home.row.failed")}{" "}
+            {cancelled ? t("home.row.cancelled") : t("home.row.failed")}{" "}
             <button
               type="button"
               onClick={retry}
               className="font-medium text-teal-700 underline-offset-2 hover:underline"
             >
-              {t("home.row.tryAgain")}
+              {cancelled ? t("home.row.transcribe") : t("home.row.tryAgain")}
             </button>
           </p>
         ) : fixing ? (
@@ -341,6 +343,7 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
           {entry.status === "not_pasted" && !entry.device && (
             <span>{t("home.meta.notPasted")}</span>
           )}
+          {cancelled && <span>{t("home.meta.cancelled")}</span>}
           {entry.transform && (
             <span>{t("home.meta.transformed", { name: entry.transform })}</span>
           )}
