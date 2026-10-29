@@ -43,6 +43,11 @@ assert.equal(work.searchParams.get("startdt"), "2026-10-26T09:30:00.000Z");
 assert.equal(work.searchParams.get("enddt"), "2026-10-26T10:15:00.000Z");
 assert.equal(work.searchParams.get("to"), null);
 
+// Spaces as %20, never "+", which Outlook shows as it is; a typed "+" stays.
+const plus = scheduleUrl("outlook", { ...meeting, title: "C++ sync" });
+assert.ok(!plus.includes("+"));
+assert.equal(new URL(plus).searchParams.get("subject"), "C++ sync");
+
 assert.equal(
   new URL(scheduleUrl("outlookCom", meeting)).host,
   "outlook.live.com",

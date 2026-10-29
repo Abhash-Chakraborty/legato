@@ -32,6 +32,11 @@ export const parseInvite = (text: string): string[] => {
   return out;
 };
 
+/** A query string with spaces as %20, which every reader takes for a
+ *  space. URLSearchParams writes "+", which only form decoding turns back
+ *  into one; Outlook's mail links show it as it is. */
+const query = (q: URLSearchParams) => q.toString().replace(/\+/g, "%20");
+
 /** The page that opens the calendar's new-event form with the meeting in
  *  it. Google adds a Meet link with one click (or on its own, when that's
  *  your setting); Outlook offers Teams the same way. */
@@ -45,7 +50,7 @@ export const scheduleUrl = (site: CalendarSite, m: NewMeeting): string => {
     });
     if (m.invite.length) q.set("add", m.invite.join(","));
     if (m.details) q.set("details", m.details);
-    return `https://calendar.google.com/calendar/render?${q}`;
+    return `https://calendar.google.com/calendar/render?${query(q)}`;
   }
   const host =
     site === "outlook"
@@ -60,5 +65,5 @@ export const scheduleUrl = (site: CalendarSite, m: NewMeeting): string => {
   });
   if (m.invite.length) q.set("to", m.invite.join(","));
   if (m.details) q.set("body", m.details);
-  return `${host}?${q}`;
+  return `${host}?${query(q)}`;
 };
