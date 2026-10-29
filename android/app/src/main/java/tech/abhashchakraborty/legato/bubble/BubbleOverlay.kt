@@ -21,6 +21,7 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.view.animation.DecelerateInterpolator
 import tech.abhashchakraborty.legato.R
 import kotlin.math.abs
@@ -45,6 +46,8 @@ class BubbleOverlay(private val context: Context) {
     private val bubble = ImageView(context)
     private val bar = LinearLayout(context)
     private val wave = WaveView(context)
+    private val check = ImageButton(context)
+    private val working = ProgressBar(context)
     private var snoozedUntil = 0L
     /** Where the bubble rests on its edge; the bar opens from here and the dot returns here. */
     private var dockX = 0
@@ -204,16 +207,29 @@ class BubbleOverlay(private val context: Context) {
             contentDescription = context.getString(R.string.bubble_cancel)
             setOnClickListener { Dictation.cancel(context) }
         }
-        val check = ImageButton(context).apply {
-            setImageResource(R.drawable.ic_check)
-            setBackgroundResource(R.drawable.bar_check_bg)
-            contentDescription = context.getString(R.string.bubble_finish)
-            setOnClickListener { Dictation.finish(context) }
+        check.setImageResource(R.drawable.ic_check)
+        check.setBackgroundResource(R.drawable.bar_check_bg)
+        check.contentDescription = context.getString(R.string.bubble_finish)
+        check.setOnClickListener {
+            it.performHapticFeedback(
+                if (android.os.Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY,
+            )
+            Dictation.finish(context)
         }
+        // While the words are written up the check turns into a spinner, so a
+        // tap is answered at once even when the PC takes a few seconds.
+        working.isIndeterminate = true
+        working.indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+        working.visibility = View.GONE
         val size = dpi(36f)
+        val checkSlot = FrameLayout(context)
+        (check.parent as? ViewGroup)?.removeView(check)
+        (working.parent as? ViewGroup)?.removeView(working)
+        checkSlot.addView(check, FrameLayout.LayoutParams(size, size))
+        checkSlot.addView(working, FrameLayout.LayoutParams(dpi(20f), dpi(20f), Gravity.CENTER))
         bar.addView(cancel, LinearLayout.LayoutParams(size, size))
         bar.addView(wave, LinearLayout.LayoutParams(dpi(72f), dpi(24f)).apply { marginStart = dpi(6f); marginEnd = dpi(6f) })
-        bar.addView(check, LinearLayout.LayoutParams(size, size))
+        bar.addView(checkSlot, LinearLayout.LayoutParams(size, size))
         frame.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dpi(40f)))
     }
 
@@ -256,7 +272,13 @@ class BubbleOverlay(private val context: Context) {
             }
         }
         if (state is Dictation.State.Listening) wave.level = state.level
-        if (state is Dictation.State.Transcribing) wave.busy = true else wave.busy = false
+        val busy = state is Dictation.State.Transcribing
+        if (wave.busy != busy) {
+            wave.busy = busy
+            check.isEnabled = !busy
+            check.setImageResource(if (busy) 0 else R.drawable.ic_check)
+            working.visibility = if (busy) View.VISIBLE else View.GONE
+        }
         keepScreenOn(state is Dictation.State.Listening)
         if (state is Dictation.State.Idle && hideWhenIdle) hide()
     }
@@ -401,11 +423,23 @@ class WaveView(context: Context) : View(context) {
     }
     private val path = Path()
 
+    private val faint = Paint(paint).apply { alpha = 70 }
+
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        val target = if (busy) 3f else 1.5f + level * (h / 2 - 3f)
+        if (busy) {
+            // Writing up: the line lies flat and a short stroke runs along it.
+            canvas.drawLine(0f, h / 2, w, h / 2, faint)
+            phase = (phase + 0.025f) % 1.4f
+            val start = (phase - 0.4f) * w
+            canvas.drawLine(start.coerceIn(0f, w), h / 2, (start + 0.4f * w).coerceIn(0f, w), h / 2, paint)
+            amp = 0f
+            postInvalidateOnAnimation()
+            return
+        }
+        val target = 1.5f + level * (h / 2 - 3f)
         amp += (target - amp) * 0.5f
-        phase += if (busy) 0.5f else 0.9f
+        phase += 0.9f
         val wl = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 14f, resources.displayMetrics)
         path.reset()
         var x = 0f

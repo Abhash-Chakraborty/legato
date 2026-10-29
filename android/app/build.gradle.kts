@@ -12,8 +12,8 @@ android {
         applicationId = "tech.abhashchakraborty.legato"
         minSdk = 29 // Android 10: the clipboard rules the design is built around start here
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
@@ -47,7 +47,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     sourceSets {
         // The Kotlin bindings UniFFI generates from the Rust core (see .github/workflows/android.yml).
         getByName("main").java.srcDirs("build/generated/uniffi")

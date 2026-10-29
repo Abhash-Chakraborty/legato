@@ -118,11 +118,28 @@ class Legato(private val context: Context) : CoreListener {
 
     override fun onLine(line: String) {
         val stamp = java.text.SimpleDateFormat("MMM d HH:mm:ss", java.util.Locale.US).format(java.util.Date())
-        val all = lines.updateAndGet { (it + "$stamp  $line").takeLast(LOG_LINES) }
-        scope.launch(Dispatchers.IO) { synchronized(logFile) { runCatching { logFile.writeText(all.joinToString("\n", postfix = "\n")) } } }
+        val entry = "$stamp  $line"
+        val all = lines.updateAndGet { (it + entry).takeLast(LOG_LINES) }
+        // Each line is added to the file; it's cut back to the last lines only
+        // once it has grown to twice that, rather than rewritten every time.
+        scope.launch(Dispatchers.IO) {
+            synchronized(logFile) {
+                runCatching {
+                    if (++logged > LOG_LINES * 2) {
+                        logFile.writeText(all.joinToString("\n", postfix = "\n"))
+                        logged = all.size
+                    } else {
+                        logFile.appendText(entry + "\n")
+                    }
+                }
+            }
+        }
         refresh()
         bump()
     }
+
+    /** Lines in the log file, for knowing when to cut it back. Under the file's lock. */
+    private var logged = runCatching { logFile.readLines().size }.getOrDefault(0)
 
     /** A crash goes in the log before Android closes Legato. */
     private fun logCrashes() {
@@ -192,6 +209,29 @@ class Legato(private val context: Context) : CoreListener {
         val sent = runCatching { core.sendClip(t) }.getOrDefault(false)
         if (sent) lastClip = t
         return sent
+    }
+
+    /**
+     * A copy made in another app, which the bubble's service noticed by
+     * Android's clipboard chip. Android hands the clipboard only to the app
+     * in front, so the text is what was selected just before; with nothing
+     * selected (an app's own Copy button), Legato comes to the front for a
+     * moment to read it, unless a keyboard is open: that would take the
+     * field you're typing in out of focus. Automatic clipboard only.
+     */
+    fun copiedElsewhere(selected: String?, keyboardOpen: Boolean) {
+        if (!autoClipboard || !state.value.online) return
+        if (selected != null) {
+            scope.launch { if (sendClip(selected)) onLine("Sent what you copied to ${state.value.pcName ?: "the PC"}") }
+            return
+        }
+        if (keyboardOpen) return
+        runCatching {
+            context.startActivity(
+                android.content.Intent(context, ClipReadActivity::class.java)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION),
+            )
+        }.onFailure { onLine("Couldn't read what you copied: ${it.message}") }
     }
 
     /** Called when Legato comes to the front: in Automatic, sends what's new on the clipboard. */
@@ -296,6 +336,64 @@ class Legato(private val context: Context) : CoreListener {
     /** What this device is, for the words on screen. */
     val device: String
         get() = if (context.resources.configuration.smallestScreenWidthDp >= 600) "tablet" else "phone"
+
+    /**
+     * Whether a dictation keeps listening when the keyboard closes (switching
+     * apps, the notification shade, the screen timing out). Off: closing
+     * the keyboard ends it, and the words are written up.
+     */
+    var listenThroughKeyboardClose: Boolean
+        get() = prefs.getBoolean(PREF_KEEP_LISTENING, true)
+        set(value) { prefs.edit().putBoolean(PREF_KEEP_LISTENING, value).apply() }
+
+    // ---- a cancelled dictation --------------------------------------------
+
+    /** The audio of the last dictation cancelled before its words were written up. */
+    private val cancelledFile = File(context.filesDir, "cancelled.pcm")
+
+    /** How long the dictation waiting in [cancelledFile] is, in seconds; null when none waits. */
+    val cancelled = MutableStateFlow(
+        cancelledFile.takeIf { it.exists() }?.let { (it.length() / 32_000L).toInt() },
+    )
+
+    /**
+     * Keeps a cancelled dictation (✕, or Cancel in the notification) so its
+     * words aren't lost to a slip. Written up at once when the PC does it
+     * (cheap for the phone); otherwise its audio waits for Home's Write it up,
+     * as loading this device's model for it would cost more than a tap.
+     */
+    fun keepCancelled(samples: FloatArray) {
+        // Under a second is a slip of the finger, not words.
+        if (samples.size < 16_000) return
+        scope.launch(Dispatchers.IO) {
+            runCatching { cancelledFile.writeBytes(pcm16(samples)) }
+                .onFailure { onLine("Couldn't keep the cancelled dictation: ${it.message}"); return@launch }
+            cancelled.value = samples.size / 16_000
+            onLine("Kept the cancelled dictation")
+            if (pcWillTranscribe()) writeUpCancelled()
+        }
+    }
+
+    /** Writes up the cancelled dictation into Home. Blocks; call it off the main thread. */
+    fun writeUpCancelled(): Boolean {
+        val bytes = runCatching { cancelledFile.readBytes() }.getOrNull() ?: return false
+        val samples = FloatArray(bytes.size / 2) { i ->
+            ((bytes[2 * i].toInt() and 0xff) or (bytes[2 * i + 1].toInt() shl 8)).toShort() / 32768f
+        }
+        val text = runCatching { transcribe(samples, null) }.getOrElse { e ->
+            onLine("Couldn't write up the cancelled dictation: ${e.message}")
+            return false
+        }
+        if (text.isNotBlank()) runCatching { core.keepCancelled(text) }
+        discardCancelled()
+        bump()
+        return text.isNotBlank()
+    }
+
+    fun discardCancelled() {
+        cancelledFile.delete()
+        cancelled.value = null
+    }
 
     /** Whether to send recordings to the PC's model while connected. */
     var usePcModel: Boolean
@@ -513,6 +611,7 @@ class Legato(private val context: Context) : CoreListener {
         private const val KEY_PREFIX = "ai:"
         const val PREF_MODEL = "speech_model"
         const val PREF_AUTO_CLIP = "auto_clipboard"
+        const val PREF_KEEP_LISTENING = "keep_listening_without_keyboard"
         private const val PREF_CLIP_SENT = "clip_sent_copied_at"
         /** The label on clips that came from the PC, so they aren't sent back. */
         private const val PC_CLIP = "Legato from the PC"

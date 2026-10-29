@@ -64,6 +64,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Reads a copy made in another app, unseen, for the shared clipboard. -->
+        <activity
+            android:name=".ClipReadActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Legato.Clip" />
+
         <!-- "Transform" on selected text: one of the PC's transforms rewrites it. -->
         <activity
             android:name=".TransformActivity"

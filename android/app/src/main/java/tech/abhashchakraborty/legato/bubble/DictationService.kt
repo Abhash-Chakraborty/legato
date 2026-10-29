@@ -164,7 +164,8 @@ class DictationService : Service() {
             return
         }
         main.removeCallbacks(tick)
-        val samples = recorder.stop()
+        // The bar answers the tap at once; the microphone lets go off this thread.
+        val take = recorder.halt()
         Dictation.set(Dictation.State.Transcribing)
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(listening = false))
         val legato = applicationContext.legato
@@ -176,6 +177,7 @@ class DictationService : Service() {
         // The screen may be off by now; keep the CPU up until the text is written.
         val wake = awake()
         scope.launch {
+            val samples = take?.collect() ?: FloatArray(0)
             val text = runCatching {
                 withContext(Dispatchers.Default) {
                     val heard = legato.transcribe(samples, app)
@@ -196,6 +198,8 @@ class DictationService : Service() {
             withContext(Dispatchers.Main) {
                 if (wake.isHeld) wake.release()
                 pending--
+                // Cancelled while it was written up: the words stay in Home.
+                if (text.isNotBlank() && mine <= cancelled) runCatching { legato.core.keepCancelled(text) }
                 if (text.isNotBlank() && mine > cancelled && target == Dictation.Target.Screen) {
                     Dictation.forScreen.value = listOfNotNull(Dictation.forScreen.value, text).joinToString(" ")
                 } else if (text.isNotBlank() && mine > cancelled) {
@@ -231,12 +235,17 @@ class DictationService : Service() {
         main.removeCallbacks(tick)
         cancelled = session
         if (recorder.isRecording) {
-            recorder.stop()
+            val heard = recorder.stop()
             applicationContext.legato.onLine("Dictation cancelled")
+            // Kept, in case ✕ was a slip.
+            applicationContext.legato.keepCancelled(heard)
         }
         Dictation.set(Dictation.State.Idle)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        // One being written up finishes first, to keep its words in Home.
+        if (pending == 0) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     override fun onDestroy() {

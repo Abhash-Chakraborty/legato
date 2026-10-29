@@ -79,6 +79,8 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
     val history by coreList { history(200u).filter { it.text.isNotBlank() } }
     var query by remember { mutableStateOf("") }
     var menuFor by remember { mutableStateOf<HistoryEntry?>(null) }
+    val cancelled by legato.cancelled.collectAsStateWithLifecycle()
+    var writing by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
@@ -113,6 +115,37 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
                 Spacer(Modifier.height(14.dp))
                 SearchField(query, { query = it }, "Search your dictations")
             }
+            cancelled?.let { seconds ->
+                item(key = "cancelled") {
+                    Spacer(Modifier.height(10.dp))
+                    Card(first = true, last = true) {
+                        ListItem(
+                            headlineContent = { Text(if (writing) "Writing it up…" else "Cancelled dictation, $seconds s") },
+                            supportingContent = { Text("Kept in case cancelling was a slip.", color = LocalStatus.current.faint) },
+                            leadingContent = { AppDot(false) },
+                            trailingContent = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(enabled = !writing, onClick = { legato.discardCancelled() }) {
+                                        Icon(Icons.Outlined.Delete, contentDescription = "Discard it", tint = LocalStatus.current.faint)
+                                    }
+                                    androidx.compose.material3.TextButton(
+                                        enabled = !writing,
+                                        onClick = {
+                                            writing = true
+                                            scope.launch {
+                                                val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { legato.writeUpCancelled() }
+                                                writing = false
+                                                snackbar.showSnackbar(if (ok) "Written up below" else "No words in it")
+                                            }
+                                        },
+                                    ) { Text("Write it up") }
+                                }
+                            },
+                            colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                        )
+                    }
+                }
+            }
             if (shown.isEmpty()) {
                 item {
                     Empty(
@@ -128,7 +161,7 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
                         ListItem(
                             headlineContent = { Text(e.text, maxLines = 3, overflow = TextOverflow.Ellipsis) },
                             supportingContent = {
-                                Text(listOfNotNull(e.app.ifBlank { null }, timeOf(e.at), e.device?.let { "On $it" }).joinToString(" · "), color = LocalStatus.current.faint)
+                                Text(listOfNotNull(e.app.ifBlank { null }, timeOf(e.at), e.device?.let { "On $it" }, "Cancelled".takeIf { e.cancelled }).joinToString(" · "), color = LocalStatus.current.faint)
                             },
                             trailingContent = {
                                 IconButton(onClick = { menuFor = e }) { Icon(Icons.Default.MoreVert, contentDescription = "More for this dictation", tint = LocalStatus.current.faint) }

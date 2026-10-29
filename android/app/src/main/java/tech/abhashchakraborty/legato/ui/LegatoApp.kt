@@ -167,4 +167,5 @@ fun LegatoApp(pairingLink: String?) {
             }
         }
     }
+    WhatsNew(legato)
 }

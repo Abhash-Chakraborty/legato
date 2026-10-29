@@ -13,6 +13,14 @@
         <item name="android:backgroundDimEnabled">false</item>
         <item name="android:alertDialogTheme">@style/Legato.Dialog</item>
     </style>
+    <style name="Theme.Legato.Clip" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowSoftInputMode">stateUnchanged</item>
+    </style>
     <style name="Legato.Dialog" parent="android:Theme.Material.Light.Dialog.Alert">
         <item name="android:windowBackground">@drawable/dialog_bg</item>
         <item name="android:colorAccent">@color/legato_accent</item>

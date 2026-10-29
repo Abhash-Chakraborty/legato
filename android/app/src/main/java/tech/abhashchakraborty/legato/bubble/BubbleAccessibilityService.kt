@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.InputType
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -26,6 +27,13 @@ class BubbleAccessibilityService : AccessibilityService() {
     private val main = Handler(Looper.getMainLooper())
     private var overlay: BubbleOverlay? = null
     private val recheck = Runnable { refresh() }
+    private val stopIfClosed = Runnable {
+        val closed = windows.none { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        if (closed && Dictation.state.value is Dictation.State.Listening && Dictation.target == Dictation.Target.Field) {
+            legato.onLine("The keyboard closed, so the dictation stopped")
+            Dictation.finish(this)
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -37,6 +45,15 @@ class BubbleAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> noteSelection(event)
+            // The chip's views fill in a moment after its window opens.
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> if (event.packageName == SYSTEM_UI) {
+                chipLooks = 0
+                main.removeCallbacks(lookForChip)
+                main.postDelayed(lookForChip, 150)
+            }
+        }
         // The cursor moves with every key typed. With the bubble already up
         // the field is known, so skip the search (a walk through the page
         // in Chrome) and spare the battery; focus and window changes still look.
@@ -57,6 +74,78 @@ class BubbleAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
+    // ---- copies, for the shared clipboard ---------------------------------
+
+    /**
+     * The text last selected, kept only in memory to tell what a copy took,
+     * and when the selection went away: Copy itself collapses it, so the
+     * first collapse keeps it a moment; anything after forgets it.
+     */
+    private var selected: String? = null
+    private var selectedAt = 0L
+    private var collapsedAt = 0L
+    private var copiedAt = 0L
+
+    /** Follows the selection; password fields are skipped. */
+    private fun noteSelection(event: AccessibilityEvent) {
+        if (event.isPassword) return
+        val from = minOf(event.fromIndex, event.toIndex)
+        val to = maxOf(event.fromIndex, event.toIndex)
+        val text = event.text.firstOrNull()
+        if (from >= 0 && to > from && text != null && to <= text.length) {
+            selected = text.subSequence(from, to).toString()
+            selectedAt = SystemClock.uptimeMillis()
+            collapsedAt = 0L
+        } else if (selected != null) {
+            if (collapsedAt == 0L) collapsedAt = SystemClock.uptimeMillis() else selected = null
+        }
+    }
+
+    /**
+     * The chip's views can take a moment to appear, so it's looked for a few
+     * times. Only its appearing counts: while it stays up, a new selection's
+     * menu isn't another copy. Once up, it's watched until it goes.
+     */
+    private var chipLooks = 0
+    private var chipUp = false
+    private val lookForChip: Runnable = object : Runnable {
+        override fun run() {
+            val shown = clipboardChipShown()
+            if (shown && !chipUp) copied()
+            chipUp = shown
+            when {
+                shown -> main.postDelayed(this, 1000)
+                ++chipLooks < 4 -> main.postDelayed(this, 250)
+            }
+        }
+    }
+
+    /**
+     * Whether Android's "copied" chip (Android 13+), which opens on every
+     * copy, is on screen. Its window has no title, so it's known by its view.
+     */
+    private fun clipboardChipShown(): Boolean = windows.any { w ->
+        w.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
+            w.root?.findAccessibilityNodeInfosByViewId("$SYSTEM_UI:id/clipboard_ui")?.isNotEmpty() == true
+    }
+
+    /**
+     * Something was copied in another app: the selection made just before
+     * is what was copied (Copy in the text menu). An older one may belong to
+     * something else, so then the clipboard is read instead.
+     */
+    private fun copied() {
+        val now = SystemClock.uptimeMillis()
+        if (now - copiedAt < 1500) return
+        copiedAt = now
+        // Still selected, or collapsed just now by the copy.
+        val text = selected?.takeIf { now - selectedAt < 120_000 && (collapsedAt == 0L || now - collapsedAt < 3000) }
+        selected = null
+        val keyboard = windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        Log.i(TAG, "Noticed a copy (${if (text != null) "the selection" else "nothing selected"}, keyboard ${if (keyboard) "open" else "closed"})")
+        legato.copiedElsewhere(text, keyboard)
+    }
+
     /** Shows the bubble when a keyboard is open over a field it may type into. */
     private fun refresh() {
         val keyboard = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
@@ -68,6 +157,12 @@ class BubbleAccessibilityService : AccessibilityService() {
             if (overlay?.shown != true) legato.wakeLink()
             overlay?.show(top.takeIf { it > 0 })
         } else {
+            // The keyboard closed mid-dictation: it listens on, unless set to
+            // stop. Moving between fields closes it for a moment, so look again.
+            if (keyboard == null && !legato.listenThroughKeyboardClose) {
+                main.removeCallbacks(stopIfClosed)
+                main.postDelayed(stopIfClosed, 600)
+            }
             overlay?.hide()
         }
     }
@@ -275,6 +370,7 @@ class BubbleAccessibilityService : AccessibilityService() {
 
     companion object {
         const val TAG = "LegatoBubble"
+        private const val SYSTEM_UI = "com.android.systemui"
         @Volatile var instance: BubbleAccessibilityService? = null
             private set
 

@@ -130,7 +130,11 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
 
             Group("Transforms") { TransformRows(legato) }
 
-            Group("Bubble over Gboard") { BubbleRows() }
+            Group("Bubble over Gboard") {
+                BubbleRows()
+                Hairline()
+                KeyboardCloseRow(legato)
+            }
 
             Group("Clipboard") {
                 SettingRow(
@@ -332,6 +336,18 @@ private fun PcModelRow(legato: Legato, paired: Boolean, pcName: String?) {
         else "Pair with your PC to have its model write up what you say.",
         enabled = paired,
         trailing = { Switch(checked = on && paired, enabled = paired, onCheckedChange = { on = it; legato.usePcModel = it }) },
+    )
+}
+
+/** Whether a dictation listens on when the keyboard closes. */
+@Composable
+private fun KeyboardCloseRow(legato: Legato) {
+    var on by remember { mutableStateOf(legato.listenThroughKeyboardClose) }
+    SettingRow(
+        "Keep listening when the keyboard closes",
+        if (on) "Switching apps or pulling down the notifications doesn't stop a dictation."
+        else "Closing the keyboard ends the dictation and writes up what you said.",
+        trailing = { Switch(checked = on, onCheckedChange = { on = it; legato.listenThroughKeyboardClose = it }) },
     )
 }
 
