@@ -66,6 +66,12 @@ fn paste_via_clipboard(
     } else {
         None
     };
+    // Neither: files copied in Explorer, say. Their data is kept as it is.
+    let saved_other = if saved_text.is_none() && saved_image.is_none() {
+        raw::snapshot()
+    } else {
+        None
+    };
 
     // Write text to clipboard first
     write_text_to_clipboard(app_handle, text)?;
@@ -93,6 +99,10 @@ fn paste_via_clipboard(
         } else if let Some(image) = saved_image {
             info!("Restoring image to clipboard");
             let _ = crate::sync::clipboard::paste_write(|| clipboard.write_image(&image));
+        } else if let Some(other) = saved_other
+            .filter(|other| crate::sync::clipboard::paste_write(|| raw::restore(app_handle, other)))
+        {
+            info!("Restored {} clipboard format(s)", other.formats());
         } else {
             // Nothing was there to begin with — don't leave the transcription behind.
             let _ = clipboard.clear();
@@ -367,6 +377,138 @@ fn paste_with(
     }
 
     Ok(())
+}
+
+/// What the clipboard held when it was neither text nor an image (files
+/// copied in Explorer, a format only one app reads), copied byte for byte so
+/// a paste can put it back.
+mod raw {
+    use tauri::{AppHandle, Manager};
+
+    /// Formats whose data is a GDI handle rather than memory, and the
+    /// private and GDI ranges, which can't be copied as bytes. Windows makes
+    /// the bitmap formats again from CF_DIB.
+    const NOT_MEMORY: [u32; 8] = [2, 3, 9, 14, 0x80, 0x82, 0x83, 0x8E];
+    const NOT_MEMORY_RANGE: std::ops::RangeInclusive<u32> = 0x200..=0x3FF;
+    /// More than this isn't kept: the clipboard is cleared as before.
+    const MAX_BYTES: usize = 64 * 1024 * 1024;
+
+    pub struct Snapshot(Vec<(u32, Vec<u8>)>);
+
+    impl Snapshot {
+        pub fn formats(&self) -> usize {
+            self.0.len()
+        }
+    }
+
+    /// The clipboard's formats as bytes, or None when it's empty, too big,
+    /// or can't be opened.
+    pub fn snapshot() -> Option<Snapshot> {
+        use windows::Win32::Foundation::HGLOBAL;
+        use windows::Win32::System::DataExchange::{
+            CloseClipboard, EnumClipboardFormats, GetClipboardData,
+        };
+        use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+
+        // SAFETY: the clipboard is opened and closed on this thread; each
+        // handle is read under GlobalLock and copied before it's unlocked.
+        unsafe {
+            if !open(None) {
+                return None;
+            }
+            let mut out = Vec::new();
+            let mut total = 0usize;
+            let mut format = 0u32;
+            let mut fits = true;
+            loop {
+                format = EnumClipboardFormats(format);
+                if format == 0 {
+                    break;
+                }
+                if NOT_MEMORY.contains(&format) || NOT_MEMORY_RANGE.contains(&format) {
+                    continue;
+                }
+                let Ok(handle) = GetClipboardData(format) else {
+                    continue;
+                };
+                let global = HGLOBAL(handle.0);
+                let size = GlobalSize(global);
+                if size == 0 {
+                    continue;
+                }
+                total += size;
+                if total > MAX_BYTES {
+                    fits = false;
+                    break;
+                }
+                let ptr = GlobalLock(global) as *const u8;
+                if ptr.is_null() {
+                    continue;
+                }
+                out.push((format, std::slice::from_raw_parts(ptr, size).to_vec()));
+                let _ = GlobalUnlock(global);
+            }
+            let _ = CloseClipboard();
+            (fits && !out.is_empty()).then_some(Snapshot(out))
+        }
+    }
+
+    /// Puts a snapshot back. Windows only keeps data set by an owner window
+    /// after emptying the clipboard, so one of Legato's windows owns it.
+    pub fn restore(app: &AppHandle, snapshot: &Snapshot) -> bool {
+        use windows::Win32::Foundation::{GlobalFree, HANDLE};
+        use windows::Win32::System::DataExchange::{
+            CloseClipboard, EmptyClipboard, SetClipboardData,
+        };
+        use windows::Win32::System::Memory::{
+            GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
+        };
+
+        let Some(owner) = app.webview_windows().values().find_map(|w| w.hwnd().ok()) else {
+            return false;
+        };
+        // SAFETY: as above; each buffer is handed to the clipboard or freed.
+        unsafe {
+            if !open(Some(owner)) {
+                return false;
+            }
+            let mut put = 0;
+            if EmptyClipboard().is_ok() {
+                for (format, bytes) in &snapshot.0 {
+                    let Ok(global) = GlobalAlloc(GMEM_MOVEABLE, bytes.len()) else {
+                        continue;
+                    };
+                    let ptr = GlobalLock(global) as *mut u8;
+                    if ptr.is_null() {
+                        let _ = GlobalFree(Some(global));
+                        continue;
+                    }
+                    std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len());
+                    let _ = GlobalUnlock(global);
+                    // On success the clipboard owns the memory.
+                    if SetClipboardData(*format, Some(HANDLE(global.0))).is_ok() {
+                        put += 1;
+                    } else {
+                        let _ = GlobalFree(Some(global));
+                    }
+                }
+            }
+            let _ = CloseClipboard();
+            put > 0
+        }
+    }
+
+    /// Opens the clipboard, waiting a moment for another app to let go.
+    unsafe fn open(owner: Option<windows::Win32::Foundation::HWND>) -> bool {
+        use windows::Win32::System::DataExchange::OpenClipboard;
+        for _ in 0..10 {
+            if OpenClipboard(owner).is_ok() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        false
+    }
 }
 
 #[cfg(test)]
