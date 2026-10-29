@@ -833,3 +833,23 @@ async fn a_phone_on_bluetooth_moves_to_the_network_when_it_answers() {
     stop_tx.send(true).unwrap();
     looping.abort();
 }
+
+#[test]
+fn only_the_newest_image_stays_in_memory() {
+    let pixel = phone("Pixel 9");
+    let clip = |id: &str, png: Option<&str>, text: Option<&str>| Clip {
+        id: id.into(),
+        kind: if png.is_some() { ClipKind::Image } else { ClipKind::Text },
+        text: text.map(Into::into),
+        png: png.map(Into::into),
+        age_ms: 0,
+        from_app: None,
+    };
+    pixel.clip("pc", clip("a", Some("first screenshot"), None));
+    pixel.clip("pc", clip("b", None, Some("some text")));
+    pixel.clip("pc", clip("c", Some("second screenshot"), None));
+    let clips = pixel.clips.lock().unwrap();
+    let images: Vec<_> = clips.iter().filter_map(|c| c.png.as_deref()).collect();
+    assert_eq!(images, ["second screenshot"]);
+    assert_eq!(clips.len(), 3);
+}

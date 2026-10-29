@@ -863,6 +863,13 @@ impl Host for Phone {
             hear(&clip);
         }
         let mut clips = self.clips.lock().unwrap();
+        // An image can be megabytes: only the newest keeps its picture, so
+        // the list stays small in memory however many screenshots come.
+        if clip.png.is_some() {
+            for older in clips.iter_mut() {
+                older.png = None;
+            }
+        }
         clips.push(clip);
         // The recent ones are enough; an evening of copying shouldn't grow without end.
         let over = clips.len().saturating_sub(20);
