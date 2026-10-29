@@ -381,8 +381,8 @@ fn paste_with(
 
 /// What the clipboard held when it was neither text nor an image (files
 /// copied in Explorer, a format only one app reads), copied byte for byte so
-/// a paste can put it back.
-mod raw {
+/// a paste or a copy of the selection can put it back.
+pub(crate) mod raw {
     use tauri::{AppHandle, Manager};
 
     /// Formats whose data is a GDI handle rather than memory, and the

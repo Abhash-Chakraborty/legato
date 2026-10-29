@@ -233,12 +233,23 @@ pub(crate) fn wait_for_keys_up() {
 }
 
 /// Sends Ctrl+C and reads what the app copied, then puts back whatever the
-/// clipboard held before.
+/// clipboard held before. The copy is Legato's doing, not the person's, so
+/// the shared clipboard doesn't send it to a phone.
 pub(crate) fn copy_selection(app: &AppHandle) -> Result<Option<String>, String> {
+    crate::sync::clipboard::paste_write(|| copy_and_restore(app))
+}
+
+fn copy_and_restore(app: &AppHandle) -> Result<Option<String>, String> {
     let clipboard = app.clipboard();
     let saved_text = clipboard.read_text().ok().filter(|t| !t.is_empty());
     let saved_image = if saved_text.is_none() {
         clipboard.read_image().ok().map(|image| image.to_owned())
+    } else {
+        None
+    };
+    // Neither: files copied in Explorer, say. Their data is kept as it is.
+    let saved_other = if saved_text.is_none() && saved_image.is_none() {
+        crate::clipboard::raw::snapshot()
     } else {
         None
     };
@@ -265,7 +276,7 @@ pub(crate) fn copy_selection(app: &AppHandle) -> Result<Option<String>, String> 
         let _ = clipboard.write_text(text);
     } else if let Some(image) = saved_image {
         let _ = clipboard.write_image(&image);
-    } else {
+    } else if !saved_other.is_some_and(|other| crate::clipboard::raw::restore(app, &other)) {
         let _ = clipboard.clear();
     }
     sent?;
