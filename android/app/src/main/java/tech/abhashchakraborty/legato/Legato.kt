@@ -85,10 +85,35 @@ class Legato(private val context: Context) : CoreListener {
             context.getSystemService(android.net.ConnectivityManager::class.java)
                 .registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: android.net.Network) {
-                        if (state.value.paired && !state.value.online) runCatching { core.connect() }
+                        wakeLink()
                     }
                 })
         }
+        // With the screen on, a PC out of reach is tried at once and then every
+        // half minute (a laptop waking up is found while the phone is in hand);
+        // with it off, every five minutes.
+        runCatching {
+            val screen = object : android.content.BroadcastReceiver() {
+                override fun onReceive(c: Context, intent: android.content.Intent) {
+                    core.setScreenOn(intent.action == android.content.Intent.ACTION_SCREEN_ON)
+                }
+            }
+            val filter = android.content.IntentFilter().apply {
+                addAction(android.content.Intent.ACTION_SCREEN_ON)
+                addAction(android.content.Intent.ACTION_SCREEN_OFF)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                context.registerReceiver(screen, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                context.registerReceiver(screen, filter)
+            }
+            core.setScreenOn(context.getSystemService(android.os.PowerManager::class.java).isInteractive)
+        }
+    }
+
+    /** Tries the PC now, if paired and not connected, rather than after the backoff. */
+    fun wakeLink() {
+        if (state.value.paired && !state.value.online) runCatching { core.connect() }
     }
 
     override fun onLine(line: String) {

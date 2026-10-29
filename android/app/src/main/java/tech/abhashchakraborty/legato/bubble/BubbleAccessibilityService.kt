@@ -14,6 +14,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import tech.abhashchakraborty.legato.Legato
+import tech.abhashchakraborty.legato.legato
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -63,6 +64,8 @@ class BubbleAccessibilityService : AccessibilityService() {
         val allowed = field != null && !field.password && !field.numeric && field.app !in Excluded.packages
         if (allowed) {
             val top = Rect().also { keyboard?.getBoundsInScreen(it) }.top
+            // A dictation may follow: the PC gets a head start if it's out of reach.
+            if (overlay?.shown != true) legato.wakeLink()
             overlay?.show(top.takeIf { it > 0 })
         } else {
             overlay?.hide()

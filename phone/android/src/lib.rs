@@ -292,6 +292,12 @@ impl Core {
         Ok(())
     }
 
+    /// The screen went on or off: on, a PC out of reach is tried at once and
+    /// then every half minute or so; off, the waits stretch to five minutes.
+    pub fn set_screen_on(&self, on: bool) {
+        self.phone.set_screen_on(on);
+    }
+
     /// Connects to the paired PC and keeps trying while the app is up.
     pub fn connect(&self) -> Result<(), CoreError> {
         if self.phone.paired_pc().is_none() {

@@ -138,6 +138,8 @@ pub struct Phone {
     /// Cuts the wait before the next try short (the app came to the front,
     /// the network changed).
     wake: tokio::sync::Notify,
+    /// The screen is on, so tries come closer together (see `retry_after`).
+    screen_on: AtomicBool,
 }
 
 /// A transform's answer: new text, None when nothing changed, or why it failed.
@@ -149,13 +151,15 @@ pub type ClipHook = Box<dyn Fn(&Clip) + Send + Sync>;
 pub type KeysHook = Box<dyn Fn(Vec<(String, Option<String>)>) + Send + Sync>;
 
 /// How long to wait before the next try after `failures` failed ones: from
-/// 2 s, doubling, to 5 minutes, give or take a fifth so phones on one
-/// network don't all knock at once. A PC that's off for a weekend costs a
-/// few hundred tries, not fifty thousand.
-pub fn retry_after(failures: u32, jitter: f64) -> Duration {
+/// 2 s, doubling, to 5 minutes (30 s while the screen is on), give or take a
+/// fifth so phones on one network don't all knock at once. A PC that's off
+/// for a weekend costs a few hundred tries, not fifty thousand; a laptop
+/// that wakes while the phone is in your hand is found within half a minute.
+pub fn retry_after(failures: u32, jitter: f64, screen_on: bool) -> Duration {
+    let cap = if screen_on { 30 } else { 300 };
     let base = 2u64
         .saturating_mul(1 << failures.saturating_sub(1).min(16))
-        .min(300) as f64;
+        .min(cap) as f64;
     let jitter = jitter.clamp(0.0, 1.0) * 0.4 - 0.2;
     Duration::from_secs_f64(base * (1.0 + jitter))
 }
@@ -267,6 +271,7 @@ impl Phone {
             on_ai_keys: Mutex::new(None),
             say,
             wake: tokio::sync::Notify::new(),
+            screen_on: AtomicBool::new(false),
         })
     }
 
@@ -277,6 +282,14 @@ impl Phone {
     /// Tries the PC again now rather than after the backoff.
     pub fn wake(&self) {
         self.wake.notify_waiters();
+    }
+
+    /// The screen went on (try now, and keep the waits short) or off.
+    pub fn set_screen_on(&self, on: bool) {
+        let was = self.screen_on.swap(on, Ordering::Relaxed);
+        if on && !was && !self.is_online() {
+            self.wake();
+        }
     }
 
     /// Whether the PC transcribes recordings for this phone (while connected).
@@ -425,7 +438,7 @@ impl Phone {
                 }
                 Err(e) => {
                     failures += 1;
-                    let wait = retry_after(failures, jitter());
+                    let wait = retry_after(failures, jitter(), self.screen_on.load(Ordering::Relaxed));
                     self.say(format!(
                         "Can't reach {}: {e:#}. Trying again in {} s.",
                         pc.name,
@@ -452,7 +465,7 @@ impl Phone {
                     self.say("Connection closed. Reconnecting in 2 s.");
                 }
             }
-            let wait = retry_after(1, jitter());
+            let wait = retry_after(1, jitter(), self.screen_on.load(Ordering::Relaxed));
             tokio::select! {
                 _ = tokio::time::sleep(wait) => {}
                 _ = self.wake.notified() => {}
@@ -935,10 +948,13 @@ mod tests {
 
     #[test]
     fn retries_back_off_to_five_minutes_with_jitter() {
-        assert_eq!(retry_after(1, 0.5), Duration::from_secs(2));
-        assert_eq!(retry_after(3, 0.5), Duration::from_secs(8));
-        assert_eq!(retry_after(40, 0.5), Duration::from_secs(300));
-        assert_eq!(retry_after(40, 0.0), Duration::from_secs(240));
-        assert_eq!(retry_after(40, 1.0), Duration::from_secs(360));
+        assert_eq!(retry_after(1, 0.5, false), Duration::from_secs(2));
+        assert_eq!(retry_after(3, 0.5, false), Duration::from_secs(8));
+        assert_eq!(retry_after(40, 0.5, false), Duration::from_secs(300));
+        assert_eq!(retry_after(40, 0.0, false), Duration::from_secs(240));
+        assert_eq!(retry_after(40, 1.0, false), Duration::from_secs(360));
+        // With the screen on, never more than half a minute or so.
+        assert_eq!(retry_after(3, 0.5, true), Duration::from_secs(8));
+        assert_eq!(retry_after(40, 0.5, true), Duration::from_secs(30));
     }
 }
