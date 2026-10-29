@@ -651,6 +651,25 @@ impl SyncManager {
 
     /// Sends a clip to every connected phone and keeps it in Recent clips.
     pub fn send_clip(&self, clip: Clip) {
+        // Snipping Tool, among others, puts one screenshot on the clipboard
+        // twice; the phone gets it once.
+        static LAST: Mutex<Option<([u8; 32], std::time::Instant)>> = Mutex::new(None);
+        let digest: [u8; 32] = {
+            use sha2::{Digest, Sha256};
+            let mut hash = Sha256::new();
+            hash.update(clip.text.as_deref().unwrap_or_default());
+            hash.update([0]);
+            hash.update(clip.png.as_deref().unwrap_or_default());
+            hash.finalize().into()
+        };
+        {
+            let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+            if last.is_some_and(|(d, at)| d == digest && at.elapsed() < Duration::from_secs(10)) {
+                log::debug!("Not sending the same clip twice");
+                return;
+            }
+            *last = Some((digest, std::time::Instant::now()));
+        }
         let peers = self.hub.peers().unwrap_or_default();
         let online = self
             .online
