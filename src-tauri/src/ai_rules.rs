@@ -385,6 +385,36 @@ fn phrase_pattern(phrase: &str) -> Option<Regex> {
     Regex::new(&format!("(?i){lead}{body}{trail}")).ok()
 }
 
+/// Whether a failed request is worth sending again at once: no answer, a
+/// dropped connection or a server error may well work the second time; a
+/// rejected key, a missing model or a rate limit won't.
+pub fn worth_retrying(kind: AiStatusKind) -> bool {
+    matches!(
+        kind,
+        AiStatusKind::Slow | AiStatusKind::Unreachable | AiStatusKind::Failed
+    )
+}
+
+/// When a short request with no answer yet is sent again on a fresh
+/// connection, the first answer winning: halfway through its time, and not
+/// before 2.5 seconds. A connection kept open between dictations can die
+/// quietly, and the request on it then hangs while a new one answers in a
+/// second or two. Long requests (Notes) aren't doubled: they cost more and
+/// are slow because they're big.
+pub fn hedge_after(timeout: std::time::Duration) -> Option<std::time::Duration> {
+    (timeout <= std::time::Duration::from_secs(30))
+        .then(|| (timeout / 2).max(std::time::Duration::from_millis(2500)))
+        .filter(|at| *at < timeout)
+}
+
+/// The time an AI step in a dictation gets: the setting, plus a second for
+/// every 100 words past the first 100, at most ten more. The answer is as
+/// long as the dictation, and the model writes it a word at a time.
+pub fn dictation_budget(base: std::time::Duration, words: usize) -> std::time::Duration {
+    let extra = (words.saturating_sub(100) / 100).min(10) as u64;
+    base + std::time::Duration::from_secs(extra)
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -406,6 +436,35 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn retries_and_hedges_only_what_can_work() {
+        use std::time::Duration;
+        assert!(worth_retrying(AiStatusKind::Slow));
+        assert!(worth_retrying(AiStatusKind::Unreachable));
+        assert!(worth_retrying(AiStatusKind::Failed));
+        assert!(!worth_retrying(AiStatusKind::Rejected));
+        assert!(!worth_retrying(AiStatusKind::NotFound));
+        assert!(!worth_retrying(AiStatusKind::RateLimited));
+
+        assert_eq!(
+            hedge_after(Duration::from_secs(6)),
+            Some(Duration::from_secs(3))
+        );
+        assert_eq!(
+            hedge_after(Duration::from_secs(3)),
+            Some(Duration::from_millis(2500))
+        );
+        // Too short to wait 2.5 seconds first, and Notes' long requests.
+        assert_eq!(hedge_after(Duration::from_secs(2)), None);
+        assert_eq!(hedge_after(Duration::from_secs(120)), None);
+
+        let base = Duration::from_secs(6);
+        assert_eq!(dictation_budget(base, 40), base);
+        assert_eq!(dictation_budget(base, 199), base);
+        assert_eq!(dictation_budget(base, 350), Duration::from_secs(8));
+        assert_eq!(dictation_budget(base, 5000), Duration::from_secs(16));
+    }
 
     #[test]
     fn provider_addresses_need_https_off_this_pc() {

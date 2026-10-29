@@ -281,7 +281,11 @@ fn report(app: &AppHandle, config: &AiConfig, kind: AiStatusKind) {
     }
 }
 
-/// Sends one request and waits at most `timeout` for the answer.
+/// Sends one request and waits at most `timeout` for the answer. A short
+/// request with no answer halfway is sent again on a fresh connection and
+/// the first answer wins; one that fails quickly in a way that may not
+/// happen twice (a dropped connection, a server error) is sent again at
+/// once. Either way within the same `timeout`.
 async fn ask(
     config: &AiConfig,
     system: &str,
@@ -289,32 +293,101 @@ async fn ask(
     schema: Option<serde_json::Value>,
     timeout: Duration,
 ) -> Result<String, AiStatusKind> {
-    let call = async {
-        if config.provider.api_format == PostProcessApiFormat::Anthropic {
-            llm_client::send_chat_completion(
-                &config.provider,
-                config.api_key.clone(),
-                &config.model,
-                format!("{system}\n\n{user}"),
-                false,
-            )
-            .await
-        } else {
-            llm_client::send_chat_completion_with_schema(
-                &config.provider,
-                config.api_key.clone(),
-                &config.model,
-                user,
-                Some(system.to_string()),
-                schema.filter(|_| config.provider.supports_structured_output),
-                config.disable_reasoning(),
-            )
-            .await
-        }
+    let started = Instant::now();
+    let first = attempt(config, system, user.clone(), schema.clone());
+    tokio::pin!(first);
+    let early = match ai_rules::hedge_after(timeout) {
+        Some(at) => tokio::time::timeout(at, &mut first).await.ok(),
+        None => Some(
+            tokio::time::timeout(timeout, &mut first)
+                .await
+                .unwrap_or(Err(AiStatusKind::Slow)),
+        ),
     };
-    match tokio::time::timeout(timeout, call).await {
-        Err(_) => Err(AiStatusKind::Slow),
-        Ok(Err(e)) => {
+    let left = || timeout.saturating_sub(started.elapsed());
+    match early {
+        Some(Ok(text)) => Ok(text),
+        Some(Err(kind)) if !ai_rules::worth_retrying(kind) || left().is_zero() => Err(kind),
+        // Failed quickly: once more on a new connection.
+        Some(Err(kind)) => {
+            debug!(
+                "{} answered {kind:?} after {:?}; asking again on a new connection",
+                config.provider.id,
+                started.elapsed()
+            );
+            llm_client::forget_connection(&config.provider, &config.api_key);
+            match tokio::time::timeout(left(), attempt(config, system, user, schema)).await {
+                Err(_) => Err(AiStatusKind::Slow),
+                Ok(result) => result,
+            }
+        }
+        // No answer yet: a second request beside the first.
+        None => {
+            debug!(
+                "No answer from {} after {:?}; asking again on a new connection",
+                config.provider.id,
+                started.elapsed()
+            );
+            llm_client::forget_connection(&config.provider, &config.api_key);
+            let second = attempt(config, system, user, schema);
+            tokio::pin!(second);
+            let race = async {
+                let (mut first_done, mut second_done) = (false, false);
+                loop {
+                    let (result, from_second) = tokio::select! {
+                        r = &mut first, if !first_done => { first_done = true; (r, false) }
+                        r = &mut second, if !second_done => { second_done = true; (r, true) }
+                    };
+                    match result {
+                        Ok(text) => {
+                            if from_second {
+                                debug!("The second request answered first");
+                            }
+                            return Ok(text);
+                        }
+                        Err(kind) if first_done && second_done => return Err(kind),
+                        Err(_) => {}
+                    }
+                }
+            };
+            match tokio::time::timeout(left(), race).await {
+                Err(_) => Err(AiStatusKind::Slow),
+                Ok(result) => result,
+            }
+        }
+    }
+}
+
+/// One request, its error logged and read as a status.
+async fn attempt(
+    config: &AiConfig,
+    system: &str,
+    user: String,
+    schema: Option<serde_json::Value>,
+) -> Result<String, AiStatusKind> {
+    let result = if config.provider.api_format == PostProcessApiFormat::Anthropic {
+        llm_client::send_chat_completion(
+            &config.provider,
+            config.api_key.clone(),
+            &config.model,
+            format!("{system}\n\n{user}"),
+            false,
+        )
+        .await
+    } else {
+        llm_client::send_chat_completion_with_schema(
+            &config.provider,
+            config.api_key.clone(),
+            &config.model,
+            user,
+            Some(system.to_string()),
+            schema.filter(|_| config.provider.supports_structured_output),
+            config.disable_reasoning(),
+        )
+        .await
+    };
+    match result {
+        Err(e) => {
             warn!(
                 "{} (model '{}') said: {}",
                 config.provider.id,
@@ -323,8 +396,8 @@ async fn ask(
             );
             Err(ai_rules::classify_error(&e))
         }
-        Ok(Ok(None)) => Err(AiStatusKind::Failed),
-        Ok(Ok(Some(text))) => Ok(text),
+        Ok(None) => Err(AiStatusKind::Failed),
+        Ok(Some(text)) => Ok(text),
     }
 }
 
@@ -625,7 +698,8 @@ pub async fn medium_pass(
     let request = ai_rules::cleanup_request(&words, &input);
     let started = Instant::now();
     let system = ai_rules::cleanup_system_prompt(placeholders);
-    let answer = match ask(&config, &system, request, None, config.timeout).await {
+    let budget = ai_rules::dictation_budget(config.timeout, text.split_whitespace().count());
+    let answer = match ask(&config, &system, request, None, budget).await {
         Ok(answer) => answer,
         Err(kind) => {
             warn!(
@@ -723,7 +797,7 @@ pub async fn correction_pass(
         ai_rules::CORRECTION_SYSTEM_PROMPT,
         request,
         Some(ai_rules::correction_schema()),
-        config.timeout,
+        ai_rules::dictation_budget(config.timeout, text.split_whitespace().count()),
     )
     .await;
     let answer = match answer {

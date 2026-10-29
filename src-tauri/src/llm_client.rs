@@ -248,11 +248,10 @@ fn build_headers(provider: &PostProcessProvider, api_key: &str) -> Result<Header
 /// per provider and key, so each dictation reuses the connection the last
 /// request opened: a new TLS handshake for every request cost about half a
 /// second to OpenAI from India.
-fn create_client(provider: &PostProcessProvider, api_key: &str) -> Result<reqwest::Client, String> {
-    use std::collections::HashMap;
-    use std::hash::{DefaultHasher, Hash, Hasher};
-    static CLIENTS: OnceLock<Mutex<HashMap<u64, reqwest::Client>>> = OnceLock::new();
+static CLIENTS: OnceLock<Mutex<std::collections::HashMap<u64, reqwest::Client>>> = OnceLock::new();
 
+fn client_key(provider: &PostProcessProvider, api_key: &str) -> u64 {
+    use std::hash::{DefaultHasher, Hash, Hasher};
     let mut hasher = DefaultHasher::new();
     (
         &provider.base_url,
@@ -260,7 +259,21 @@ fn create_client(provider: &PostProcessProvider, api_key: &str) -> Result<reqwes
         api_key,
     )
         .hash(&mut hasher);
-    let key = hasher.finish();
+    hasher.finish()
+}
+
+/// Drops the kept client for a provider and key, so the next request opens
+/// a new connection: the kept one may have died without a word, leaving a
+/// request on it hanging. Requests already sent keep theirs.
+pub fn forget_connection(provider: &PostProcessProvider, api_key: &str) {
+    if let Some(Ok(mut clients)) = CLIENTS.get().map(|c| c.lock()) {
+        clients.remove(&client_key(provider, api_key));
+    }
+}
+
+fn create_client(provider: &PostProcessProvider, api_key: &str) -> Result<reqwest::Client, String> {
+    use std::collections::HashMap;
+    let key = client_key(provider, api_key);
     let clients = CLIENTS.get_or_init(|| Mutex::new(HashMap::new()));
     if let Some(client) = clients.lock().ok().and_then(|c| c.get(&key).cloned()) {
         return Ok(client);
