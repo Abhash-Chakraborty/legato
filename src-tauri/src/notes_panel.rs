@@ -6,7 +6,7 @@
 
 use log::warn;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder};
 
 pub const WINDOW: &str = "notes_panel";
 /// The panel's width, and its gap from the screen's edges, in logical pixels.
@@ -58,29 +58,59 @@ fn build_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
 }
 
 /// Docks the window at the right of the work area of the screen the
-/// pointer is on.
+/// pointer is on. In physical pixels with native moves, like the bar: a
+/// logical size is converted at the scale of the screen the window is on
+/// now, which misplaces it on a second screen with other scaling.
 fn dock(app: &AppHandle, window: &tauri::WebviewWindow) {
-    let pointer = app.cursor_position().ok().and_then(|p| {
-        let scale = window.scale_factor().ok()?;
-        Some((p.x / scale, p.y / scale))
-    });
-    let Some(monitor) = crate::bubble::monitor_at(app, pointer) else {
+    let pointer = app.cursor_position().ok();
+    let monitor = pointer
+        .and_then(|p| {
+            app.available_monitors().ok()?.into_iter().find(|m| {
+                let (pos, size) = (m.position(), m.size());
+                p.x >= f64::from(pos.x)
+                    && p.x < f64::from(pos.x) + f64::from(size.width)
+                    && p.y >= f64::from(pos.y)
+                    && p.y < f64::from(pos.y) + f64::from(size.height)
+            })
+        })
+        .or_else(|| app.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
         return;
     };
     let scale = monitor.scale_factor();
     let area = monitor.work_area();
-    let (x, y) = (
-        f64::from(area.position.x) / scale,
-        f64::from(area.position.y) / scale,
-    );
-    let (w, h) = (
-        f64::from(area.size.width) / scale,
-        f64::from(area.size.height) / scale,
-    );
-    let width = WIDTH.min(w - 2.0 * MARGIN);
-    let height = (h - 2.0 * MARGIN).max(320.0);
-    let _ = window.set_size(LogicalSize::new(width, height));
-    let _ = window.set_position(LogicalPosition::new(x + w - width - MARGIN, y + MARGIN));
+    let (w, h) = (f64::from(area.size.width), f64::from(area.size.height));
+    let margin = MARGIN * scale;
+    let width = (WIDTH * scale).min(w - 2.0 * margin).round() as i32;
+    let height = (h - 2.0 * margin).max(320.0 * scale).round() as i32;
+    let x = area.position.x + area.size.width as i32 - width - margin.round() as i32;
+    let y = area.position.y + margin.round() as i32;
+    let window = window.clone();
+    let _ = app.run_on_main_thread(move || {
+        use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+        let Ok(hwnd) = window.hwnd() else {
+            return;
+        };
+        // Moving onto a screen with other scaling makes tao resize the
+        // window for it, so it's placed a second time once there.
+        for _ in 0..2 {
+            // SAFETY: the window is ours and alive; this is its owning thread.
+            if let Err(e) = unsafe {
+                SetWindowPos(
+                    hwnd,
+                    None,
+                    x,
+                    y,
+                    width,
+                    height,
+                    SWP_NOACTIVATE | SWP_NOZORDER,
+                )
+            } {
+                warn!("Couldn't place the Notes panel: {e}");
+                return;
+            }
+        }
+    });
 }
 
 fn set_open(app: &AppHandle, open: bool) {
