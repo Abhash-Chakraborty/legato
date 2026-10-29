@@ -34,6 +34,7 @@ val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
         "The checkmark answers at once: a spinner shows while your words are written up.",
         "Choose whether a dictation keeps listening when the keyboard closes (Settings › Bubble over Gboard).",
         "Your PC is found again within half a minute while you're using the phone.",
+        "Setup is a step-by-step guide now; open it again from Settings › About.",
     ),
 )
 

@@ -157,7 +157,7 @@ fun LegatoApp(pairingLink: String?) {
                     composable("note/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) {
                         NoteScreen(id = it.arguments?.getLong("id") ?: -1L, onBack = { nav.popBackStack() })
                     }
-                    composable(Tab.Settings.route) { SettingsScreen(onPair = { nav.navigate("pair") }, onDebug = { nav.navigate("debug") }) }
+                    composable(Tab.Settings.route) { SettingsScreen(onPair = { nav.navigate("pair") }, onDebug = { nav.navigate("debug") }, onGuide = { nav.navigate("setup") }) }
                     composable(
                         "pair?link={link}",
                         arguments = listOf(navArgument("link") { type = NavType.StringType; nullable = true; defaultValue = null }),

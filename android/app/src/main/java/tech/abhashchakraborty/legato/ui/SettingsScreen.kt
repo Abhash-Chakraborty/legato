@@ -82,7 +82,7 @@ import tech.abhashchakraborty.legato.core.coreVersion
 /** Your PC, dictation, the bubble's Android switches, the clipboard, the connection. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
+fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit, onGuide: () -> Unit) {
     val legato = rememberLegato()
     val context = LocalContext.current
     val state by legato.state.collectAsStateWithLifecycle()
@@ -178,7 +178,9 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit) {
             }
 
             Group("About") {
-                SettingRow("Legato for Android", "Core ${coreVersion()}")
+                SettingRow("Legato for Android", "${tech.abhashchakraborty.legato.BuildConfig.VERSION_NAME} · core ${coreVersion()}")
+                Hairline()
+                SettingRow("Setup guide", "The first-run steps again.", onClick = onGuide, trailing = { Chevron() })
                 Hairline()
                 SettingRow("Advanced", "Connection details and the log.", onClick = onDebug, trailing = { Chevron() })
             }

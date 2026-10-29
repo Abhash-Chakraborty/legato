@@ -40,6 +40,8 @@ class BubbleAccessibilityService : AccessibilityService() {
         Log.i(TAG, "Connected")
         instance = this
         running.value = true
+        // Android can bind the service again without destroying it; the old bubble goes first.
+        overlay?.hide(force = true)
         overlay = BubbleOverlay(this)
         refresh()
     }
@@ -138,6 +140,11 @@ class BubbleAccessibilityService : AccessibilityService() {
         val now = SystemClock.uptimeMillis()
         if (now - copiedAt < 1500) return
         copiedAt = now
+        // Copied in Legato itself, which has the clipboard while in front.
+        if (rootInActiveWindow?.packageName == packageName) {
+            legato.clipboardOnFocus()
+            return
+        }
         // Still selected, or collapsed just now by the copy.
         val text = selected?.takeIf { now - selectedAt < 120_000 && (collapsedAt == 0L || now - collapsedAt < 3000) }
         selected = null
