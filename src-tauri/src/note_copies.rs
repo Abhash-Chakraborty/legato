@@ -1,4 +1,4 @@
-//! Word copies of every note in a folder you pick (Settings › Notes), kept
+//! Word copies of every note in a folder you pick (Settings › Connections), kept
 //! in step as notes change. Pick the folder Google Drive for desktop or
 //! OneDrive syncs, and the copies reach the cloud through that app: Legato
 //! itself never signs in anywhere or goes online for them.
@@ -125,6 +125,7 @@ fn sync(app: &AppHandle) -> Result<()> {
         };
     }
     let mut written = 0;
+    let mut renamed = false;
     for note in notes.list()? {
         // Still recording, or waiting to hear whether it was a mistake.
         if note.status == NoteStatus::Recording || crate::notes::is_unsure(note.id) {
@@ -168,7 +169,27 @@ fn sync(app: &AppHandle) -> Result<()> {
         };
         if let Some(p) = previous.as_ref().filter(|p| p.file != file) {
             // A renamed note: its copy follows, rather than leaving two.
-            let _ = std::fs::rename(dir.join(&p.file), dir.join(&file));
+            match std::fs::rename(dir.join(&p.file), dir.join(&file)) {
+                Ok(()) => {
+                    // Ours under its new name, even if the write fails.
+                    renamed = true;
+                    ledger.notes.insert(
+                        note.id,
+                        Copy {
+                            file: file.clone(),
+                            base: base.clone(),
+                            hash: String::new(),
+                        },
+                    );
+                }
+                // Open in Word, say: the next pass tries again.
+                Err(e) if dir.join(&p.file).exists() => {
+                    warn!("Couldn't rename {} to {file}: {e}", p.file);
+                    continue;
+                }
+                // Deleted from the folder: the copy is written afresh.
+                Err(_) => {}
+            }
         }
         match std::fs::write(dir.join(&file), bytes) {
             Ok(()) => {
@@ -179,7 +200,7 @@ fn sync(app: &AppHandle) -> Result<()> {
             Err(e) => warn!("Couldn't write {file}: {e}"),
         }
     }
-    if written > 0 {
+    if written > 0 || renamed {
         info!("Updated {written} note copies in the notes folder");
         std::fs::write(&path, serde_json::to_vec(&ledger)?)?;
     }
