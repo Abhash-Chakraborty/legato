@@ -108,7 +108,7 @@ impl Tools for Legato {
             },
             ToolSpec {
                 name: "get_note",
-                description: "One note in full: its summary, decisions, action items with owners, the person's own notes, and the transcript with who spoke when.",
+                description: "One note in full: its summary, decisions, action items with owners, the person's own notes, and the transcript with who spoke when (You is the person; others by name once they named the voice, else Speaker 1, 2, …, or Them).",
                 input_schema: schema(
                     json!({ "id": { "type": "integer", "description": "The note's id from list_notes." } }),
                     &["id"],
@@ -223,11 +223,7 @@ impl Tools for Legato {
                             "[{}:{:02}] {}: {}",
                             s / 60,
                             s % 60,
-                            if l.who.as_str() == "you" {
-                                "You"
-                            } else {
-                                "Them"
-                            },
+                            notes_store::speaker_label(&note, l, "You", "Them", "Speaker {n}"),
                             l.text
                         )
                     })
