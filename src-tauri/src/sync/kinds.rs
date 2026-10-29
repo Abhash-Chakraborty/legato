@@ -334,7 +334,7 @@ fn export_history(conn: &Connection, me: &str) -> Result<Vec<Item>> {
     let mut stmt = conn.prepare(
         "SELECT h.id, l.key, h.transcription_text, h.post_processed_text, h.heard_text,
             h.timestamp, h.title, h.app_name, h.category, h.word_count, h.speech_ms,
-            h.model_name, h.transform, l.device
+            h.model_name, h.transform, l.device, h.status
          FROM transcription_history h
          LEFT JOIN sync_local l ON l.kind = 'history' AND l.local_id = h.id
          WHERE h.status IS NOT 'failed'
@@ -358,6 +358,10 @@ fn export_history(conn: &Connection, me: &str) -> Result<Vec<Item>> {
                 "transform": r.get::<_, Option<String>>(12)?,
         });
         with_origin(&mut body, r.get(13)?);
+        // Only when set, so other rows hash as they always did.
+        if r.get::<_, Option<String>>(14)?.as_deref() == Some("cancelled") {
+            body["cancelled"] = json!(true);
+        }
         Ok(Item {
             key: key.unwrap_or_else(|| format!("{me}:{id}")),
             body,
@@ -431,12 +435,20 @@ fn apply_history(
         // doesn't come back.
         None if local.is_some() => {}
         None => {
+            let status = if body.get("cancelled").and_then(Value::as_bool) == Some(true) {
+                "cancelled"
+            } else {
+                "not_pasted"
+            };
             conn.execute(
                 "INSERT INTO transcription_history (file_name, transcription_text,
                     post_processed_text, heard_text, timestamp, title, app_name, category,
                     word_count, speech_ms, model_name, transform, status)
-                 VALUES ('', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'not_pasted')",
-                fields,
+                 VALUES ('', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                params![
+                    said, processed, heard, at, title, app, category, words, speech_ms, model,
+                    transform, status
+                ],
             )?;
             ledger::map_local(conn, "history", conn.last_insert_rowid(), key, device)?;
         }

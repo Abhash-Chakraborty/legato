@@ -265,6 +265,7 @@ async fn a_phone_pairs_syncs_both_ways_merges_and_shares_the_clipboard() {
     let pixel = phone("Pixel 8");
     pixel.add_word("Netbird").unwrap();
     pixel.dictate("lunch at noon").unwrap();
+    pixel.keep_cancelled("words cut off by ✕").unwrap();
     pixel.refresh().unwrap();
     pixel
         .save_pc(&PairedPc {
@@ -316,11 +317,21 @@ async fn a_phone_pairs_syncs_both_ways_merges_and_shares_the_clipboard() {
     let (text, device): (String, String) = pc_conn()
         .query_row(
             "SELECT h.transcription_text, l.device FROM transcription_history h
-             JOIN sync_local l ON l.kind = 'history' AND l.local_id = h.id",
+             JOIN sync_local l ON l.kind = 'history' AND l.local_id = h.id
+             WHERE h.status IS NOT 'cancelled'",
             [],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
+    // One cancelled there stays marked cancelled.
+    let cancelled: String = pc_conn()
+        .query_row(
+            "SELECT transcription_text FROM transcription_history WHERE status = 'cancelled'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(cancelled, "words cut off by ✕");
     assert_eq!(
         (text.as_str(), device.as_str()),
         ("lunch at noon", "Pixel 8")

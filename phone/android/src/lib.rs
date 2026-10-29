@@ -75,6 +75,8 @@ pub struct HistoryEntry {
     pub app: String,
     /// The device name when it came from the PC; None for this phone.
     pub device: Option<String>,
+    /// Cancelled before it was typed, and kept.
+    pub cancelled: bool,
 }
 
 /// A clip the PC sent.
@@ -382,7 +384,8 @@ impl Core {
         let mut stmt = conn.prepare(
             "SELECT h.id, h.timestamp, COALESCE(h.post_processed_text, h.transcription_text),
                     COALESCE(h.app_name, ''),
-                    (SELECT device FROM sync_local WHERE kind = 'history' AND local_id = h.id)
+                    (SELECT device FROM sync_local WHERE kind = 'history' AND local_id = h.id),
+                    h.status IS 'cancelled'
              FROM transcription_history h
              ORDER BY h.timestamp DESC
              LIMIT ?1",
@@ -394,6 +397,7 @@ impl Core {
                 text: r.get(2)?,
                 app: r.get(3)?,
                 device: r.get(4)?,
+                cancelled: r.get(5)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -406,6 +410,17 @@ impl Core {
             return Ok(());
         }
         self.phone.dictate(text)?;
+        self.changed()
+    }
+
+    /// Keeps the words of a dictation cancelled on this phone, so Home can
+    /// still copy them.
+    pub fn keep_cancelled(&self, text: String) -> Result<(), CoreError> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(());
+        }
+        self.phone.keep_cancelled(text)?;
         self.changed()
     }
 

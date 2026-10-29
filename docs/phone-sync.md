@@ -309,15 +309,15 @@ out, so a field added later (sent as `null` when unset) changes nothing for item
 
 Each kind can be switched off on the PC. Keys are stable across devices.
 
-| Kind         | Key                                   | Body                                                                                                                  |
-| ------------ | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `dictionary` | the word, lowercased                  | `text`, `case_sensitive`, `pinned`, `heard` (sorted), `kind` (`null` clears it; a side that sends none keeps its own) |
-| `snippets`   | the trigger, lowercased               | `trigger`, `text`, `alone`                                                                                            |
-| `history`    | `<device id>:<id on that device>`     | `text`, `heard`, `at` (seconds), `title`, `app`, `category`, `words`, `speech_ms`, `model`, `transform`               |
-| `notes`      | `<device id>:<id on that device>`     | `title`, `kind`, `started_at`, `duration_ms`, `app`, `my_notes`, `summary`, `decisions`, `tags`, `actions`, `lines`   |
-| `scratchpad` | `<device id>:<id on that device>`     | `title`, `auto_title`, `text`, `pinned`, `created_at`, `updated_at`                                                   |
-| `transforms` | the transform's ID                    | `name`, `description`, `prompt`, `enabled`, `built_in`, `output`, `show_changes`, `position`                          |
-| `style`      | the kind of app (`personal`, `work`…) | `tone`                                                                                                                |
+| Kind         | Key                                   | Body                                                                                                                                  |
+| ------------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `dictionary` | the word, lowercased                  | `text`, `case_sensitive`, `pinned`, `heard` (sorted), `kind` (`null` clears it; a side that sends none keeps its own)                 |
+| `snippets`   | the trigger, lowercased               | `trigger`, `text`, `alone`                                                                                                            |
+| `history`    | `<device id>:<id on that device>`     | `text`, `heard`, `at` (seconds), `title`, `app`, `category`, `words`, `speech_ms`, `model`, `transform`, `cancelled` (only when true) |
+| `notes`      | `<device id>:<id on that device>`     | `title`, `kind`, `started_at`, `duration_ms`, `app`, `my_notes`, `summary`, `decisions`, `tags`, `actions`, `lines`                   |
+| `scratchpad` | `<device id>:<id on that device>`     | `title`, `auto_title`, `text`, `pinned`, `created_at`, `updated_at`                                                                   |
+| `transforms` | the transform's ID                    | `name`, `description`, `prompt`, `enabled`, `built_in`, `output`, `show_changes`, `position`                                          |
+| `style`      | the kind of app (`personal`, `work`…) | `tone`                                                                                                                                |
 
 Rules per kind:
 
