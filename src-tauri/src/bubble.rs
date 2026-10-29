@@ -181,17 +181,15 @@ fn apply(app: &AppHandle) {
         return;
     };
     let r = placement.window;
-    // Size first when growing and position first when shrinking, so the
-    // dot doesn't jump for a frame.
-    let size = tauri::LogicalSize::new(r.w, r.h);
-    let pos = tauri::LogicalPosition::new(r.x, r.y);
-    if expanded {
-        let _ = window.set_size(size);
-        let _ = window.set_position(pos);
-    } else {
-        let _ = window.set_position(pos);
-        let _ = window.set_size(size);
-    }
+    // The spot is in the logical pixels of its own screen; that screen's
+    // scale makes them physical. Position and size change in one move, so
+    // the dot doesn't jump for a frame.
+    let Some(monitor) = monitor_at(app, Some((r.x + r.w / 2.0, r.y + r.h / 2.0))) else {
+        return;
+    };
+    let scale = monitor.scale_factor();
+    let px = |v: f64| (v * scale).round() as i32;
+    crate::desktop::place_physical(app, &window, (px(r.x), px(r.y), px(r.w), px(r.h)));
     let _ = window.emit("bubble-layout", layout_of(&placement, expanded));
 }
 

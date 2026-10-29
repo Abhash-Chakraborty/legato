@@ -346,6 +346,55 @@ fn set_capture_hidden(window: &tauri::WebviewWindow, hide: bool) {
     let _ = (window, hide);
 }
 
+/// Moves and sizes a window in physical pixels, on the main thread. tao
+/// converts a logical position at the scale of the screen the window is on
+/// before the move, which misplaces it on a second screen with other
+/// scaling; and arriving there makes tao resize it for the new scale, so
+/// it's placed a second time once there.
+pub fn place_physical(
+    app: &AppHandle,
+    window: &tauri::WebviewWindow,
+    (x, y, width, height): (i32, i32, i32, i32),
+) {
+    let window = window.clone();
+    let _ = app.run_on_main_thread(move || {
+        #[cfg(windows)]
+        {
+            use windows::Win32::UI::WindowsAndMessaging::{
+                SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER,
+            };
+            let Ok(hwnd) = window.hwnd() else {
+                return;
+            };
+            for _ in 0..2 {
+                // SAFETY: the window is ours and alive; this is its owning thread.
+                if let Err(e) = unsafe {
+                    SetWindowPos(
+                        hwnd,
+                        None,
+                        x,
+                        y,
+                        width,
+                        height,
+                        SWP_NOACTIVATE | SWP_NOZORDER,
+                    )
+                } {
+                    warn!("Couldn't place '{}': {e}", window.label());
+                    return;
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+            let _ = window.set_size(tauri::PhysicalSize::new(
+                width.max(0) as u32,
+                height.max(0) as u32,
+            ));
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
