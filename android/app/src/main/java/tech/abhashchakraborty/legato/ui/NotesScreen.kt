@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -245,6 +246,9 @@ fun NoteScreen(id: Long, onBack: () -> Unit) {
                         copy(context, transcript.joinToString("\n"))
                         scope.launch { snackbar.showSnackbar("Transcript copied") }
                     }) { Icon(Icons.Default.ContentCopy, contentDescription = "Copy transcript") }
+                    if (transcript.isNotEmpty()) IconButton(onClick = { TransformSheet.open(transcript.joinToString("\n")) }) {
+                        Icon(Icons.Default.SwapHoriz, contentDescription = "Transform the transcript")
+                    }
                 },
                 scrollBehavior = scrollBehavior,
             )
@@ -313,4 +317,5 @@ fun NoteScreen(id: Long, onBack: () -> Unit) {
             item { Spacer(Modifier.height(16.dp)) }
         }
     }
+    TransformSheet.Host()
 }

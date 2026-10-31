@@ -47,6 +47,9 @@ class BubbleOverlay(private val context: Context) {
     private val bar = LinearLayout(context)
     private val wave = WaveView(context)
     private val check = ImageButton(context)
+    private val cancel = ImageButton(context)
+    /** The bar opened from a bubble on the left edge (it grows and shrinks from there). */
+    private var onLeft = true
     private val working = ProgressBar(context)
     private var snoozedUntil = 0L
     /** Where the bubble rests on its edge; the bar opens from here and the dot returns here. */
@@ -201,7 +204,7 @@ class BubbleOverlay(private val context: Context) {
         bar.alpha = 0.86f
         bar.visibility = View.GONE
         bar.setPadding(dpi(4f), 0, dpi(4f), 0)
-        val cancel = ImageButton(context).apply {
+        cancel.apply {
             setImageResource(R.drawable.ic_close)
             setBackgroundResource(R.drawable.bar_button_bg)
             contentDescription = context.getString(R.string.bubble_cancel)
@@ -247,7 +250,7 @@ class BubbleOverlay(private val context: Context) {
                 val barW = bar.measuredWidth
                 val dotW = frame.getChildAt(0).width.takeIf { it > 0 } ?: dpi(48f)
                 val screen = context.resources.displayMetrics.widthPixels
-                val onLeft = dockX + dotW / 2 < screen / 2
+                onLeft = dockX + dotW / 2 < screen / 2
                 params?.let { lp ->
                     lp.x = (if (onLeft) dockX else dockX + dotW - barW).coerceIn(dpi(8f), screen - barW - dpi(8f))
                     runCatching { wm.updateViewLayout(frame, lp) }
@@ -278,9 +281,33 @@ class BubbleOverlay(private val context: Context) {
             check.isEnabled = !busy
             check.setImageResource(if (busy) 0 else R.drawable.ic_check)
             working.visibility = if (busy) View.VISIBLE else View.GONE
+            compact(busy)
         }
         keepScreenOn(state is Dictation.State.Listening)
         if (state is Dictation.State.Idle && hideWhenIdle) hide()
+    }
+
+    /**
+     * While the words are written up the bar folds into a small dot with
+     * the spinner, at the bubble's side, so it covers little of the app and
+     * still says it's working; the next dictation opens it again.
+     */
+    private fun compact(on: Boolean) {
+        val frame = root ?: return
+        val before = bar.width
+        cancel.visibility = if (on) View.GONE else View.VISIBLE
+        wave.visibility = if (on) View.GONE else View.VISIBLE
+        if (before == 0 || bar.visibility != View.VISIBLE) return
+        bar.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val after = bar.measuredWidth
+        // On the right edge the bar's end stays put, so the dot sits where the check was.
+        if (!onLeft) params?.let { lp ->
+            lp.x += before - after
+            runCatching { wm.updateViewLayout(frame, lp) }
+        }
+        bar.pivotX = if (onLeft) 0f else after.toFloat()
+        bar.scaleX = if (on) 1.4f else 0.6f
+        bar.animate().scaleX(1f).setDuration(160).setInterpolator(easeOut).start()
     }
 
     /**

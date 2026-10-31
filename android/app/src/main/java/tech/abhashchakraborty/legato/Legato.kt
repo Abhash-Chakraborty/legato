@@ -298,23 +298,25 @@ class Legato(private val context: Context) : CoreListener {
         set(value) { prefs.edit().apply { if (value == null) remove(PREF_AFTER) else putString(PREF_AFTER, value) }.apply() }
 
     /**
-     * Runs transform `id` on `text`, for the app `app`: on the PC while
-     * connected (its key never leaves it), else here with the provider and
-     * key it shared. Null when the model had nothing to change. Blocks.
+     * Runs transform `id` on `text`, for the app `app`: here with the
+     * provider and key the PC shared, else on the PC while connected (its
+     * key never leaves it). Null when the model had nothing to change. Blocks.
      */
     fun transform(id: String, text: String, app: String? = null): String? {
-        if (core.pcTransforms()) {
+        // Here first when the PC shared a key: the request goes straight to
+        // the AI provider, so a weak link to the PC doesn't hold it up.
+        val request = core.transformRequest(id, app ?: "", null)
+        if (request != null) {
             try {
-                return core.transformOnPc(id, text, app ?: "")
+                val answer = LlmClient.complete(request, vault.get(KEY_PREFIX + request.providerId), text)
+                return core.readTransformAnswer(answer, text)
             } catch (e: Exception) {
-                if (core.transformRequest(id, app ?: "", null) == null) throw e
-                onLine("${state.value.pcName ?: "The PC"} couldn't run the transform (${e.message}); ran it here")
+                if (!core.pcTransforms()) throw e
+                onLine("The transform didn't run here (${e.message}); asking ${state.value.pcName ?: "the PC"}")
             }
         }
-        val request = core.transformRequest(id, app ?: "", null)
-            ?: error("Connect to ${state.value.pcName ?: "your PC"} to run this, or turn on Share AI keys with your phone there")
-        val answer = LlmClient.complete(request, vault.get(KEY_PREFIX + request.providerId), text)
-        return core.readTransformAnswer(answer, text)
+        if (core.pcTransforms()) return core.transformOnPc(id, text, app ?: "")
+        error("Connect to ${state.value.pcName ?: "your PC"} to run this, or turn on Share AI keys with your phone there")
     }
 
     fun refresh() {
@@ -443,11 +445,26 @@ class Legato(private val context: Context) : CoreListener {
     }
 
     /**
+     * Until when the PC counts as slow: this device's model beat it to a
+     * recording, so for a while both start at once instead of the device
+     * waiting [HEDGE_MS] for it.
+     */
+    @Volatile private var pcSlowUntil = 0L
+
+    /** The PC was slow lately: worth having this device's model loaded while you talk. */
+    fun pcSlowLately(): Boolean = System.currentTimeMillis() < pcSlowUntil
+
+    private val writers = java.util.concurrent.Executors.newCachedThreadPool()
+
+    /**
      * Your words as text: by the PC's model while connected to a PC that
      * offers it (bigger and quicker than the one on this device), else by
-     * this device's own. With `app`, the package typed into, this device's
-     * text gets the Dictionary, snippets, cleanup and Style for that kind of
-     * app, as the PC's does. Blocks; call it off the main thread.
+     * this device's own. When this device has a model too, a PC that hasn't
+     * answered within [HEDGE_MS] (a weak Wi-Fi, a busy PC) is raced by it,
+     * and the first text back wins. With `app`, the package typed into,
+     * this device's text gets the Dictionary, snippets, cleanup and Style
+     * for that kind of app, as the PC's does. Blocks; call it off the main
+     * thread.
      */
     fun transcribe(samples: FloatArray, app: String? = null): String {
         if (!readyToTranscribe() && pcMayTranscribe()) error("Couldn't reach ${state.value.pcName ?: "your PC"} to write this up")
@@ -455,21 +472,64 @@ class Legato(private val context: Context) : CoreListener {
         val seconds = "%.1f".format(samples.size / 16_000f)
         val started = System.currentTimeMillis()
         fun took() = "%.1f".format((System.currentTimeMillis() - started) / 1000f)
-        if (pcWillTranscribe()) {
-            try {
-                return core.transcribeOnPc(pcm, app ?: "").also {
-                    onLine("${state.value.pcName ?: "The PC"} wrote up $seconds s in ${took()} s" + if (it.isBlank()) ", and heard no words" else "")
+        val pcName = state.value.pcName ?: "The PC"
+        fun onPc(): String = core.transcribeOnPc(pcm, app ?: "").also {
+            onLine("$pcName wrote up $seconds s in ${took()} s" + if (it.isBlank()) ", and heard no words" else "")
+        }
+        fun here(): String = onDevice(pcm, app).also {
+            onLine("${selectedModel.name} wrote up $seconds s in ${took()} s" + if (it.isBlank()) ", and heard no words" else "")
+        }
+        if (!pcWillTranscribe()) return here()
+        if (!modelFile().exists()) return onPc()
+
+        val results = java.util.concurrent.LinkedBlockingQueue<Pair<Boolean, Result<String>>>()
+        writers.execute { results.put(true to runCatching { onPc() }) }
+        var running = 1
+        var deviceStarted = false
+        fun startDevice() {
+            if (deviceStarted) return
+            deviceStarted = true
+            running++
+            writers.execute { results.put(false to runCatching { here() }) }
+        }
+        val hedge = if (pcSlowLately()) 0L else HEDGE_MS
+        if (hedge == 0L) startDevice()
+        var failure: Throwable? = null
+        while (running > 0) {
+            val next = if (deviceStarted) results.take()
+            else results.poll(hedge, java.util.concurrent.TimeUnit.MILLISECONDS)
+            if (next == null) {
+                onLine("$pcName hasn't answered in ${hedge / 1000.0} s; writing it up here as well")
+                startDevice()
+                continue
+            }
+            running--
+            val (fromPc, result) = next
+            result.onSuccess { text ->
+                if (fromPc) {
+                    if (!deviceStarted) pcSlowUntil = 0L
+                } else {
+                    pcSlowUntil = System.currentTimeMillis() + SLOW_FOR_MS
                 }
-            } catch (e: Exception) {
-                if (!modelFile().exists()) throw e
-                onLine("The PC couldn't transcribe (${e.message}); used this device's model")
+                return text
+            }
+            result.onFailure { e ->
+                failure = e
+                if (fromPc) {
+                    onLine("$pcName couldn't transcribe (${e.message}); using this device's model")
+                    startDevice()
+                }
             }
         }
+        throw failure ?: IllegalStateException("Transcription failed")
+    }
+
+    /** This device's model, finished for `app` as the PC finishes its text. */
+    private fun onDevice(pcm: ByteArray, app: String?): String {
         val heard = synchronized(modelLock) {
             ensureModel()
             try { core.transcribe(pcm, selectedModel.language()) } finally { idleUnload() }
         }
-        onLine("${selectedModel.name} wrote up $seconds s in ${took()} s" + if (heard.isBlank()) ", and heard no words" else "")
         // The PC's text comes finished; this device's is finished here, for the app.
         if (app == null || heard.isBlank()) return heard
         return runCatching { core.finishDictation(heard, app) }.getOrElse { e ->
@@ -644,6 +704,10 @@ class Legato(private val context: Context) : CoreListener {
         /** The label on clips the bubble writes, so they aren't sent to the PC. */
         const val DICTATION_CLIP = "Legato dictation"
         private const val IDLE_UNLOAD_MS = 5 * 60 * 1000L
+        /** How long the PC gets before this device's model starts on the same recording. */
+        private const val HEDGE_MS = 2_500L
+        /** How long a PC that lost the race counts as slow. */
+        private const val SLOW_FOR_MS = 3 * 60 * 1000L
         private const val LOG_LINES = 300
 
         /** A recording as signed 16-bit little-endian PCM, which crosses to the core in one copy. */

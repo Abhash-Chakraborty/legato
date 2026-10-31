@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
@@ -187,6 +188,7 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
             actions = listOf(
                 MenuAction("Copy", Icons.Default.ContentCopy) { copy(context, e.text); scope.launch { snackbar.showSnackbar("Copied") } },
                 MenuAction("Share", Icons.Default.Share) { share(context, e.text) },
+                MenuAction("Transform", Icons.Default.SwapHoriz) { TransformSheet.open(e.text) },
                 MenuAction("Add a word from this", Icons.AutoMirrored.Outlined.MenuBook) { AddWordSheet.open(e.text) },
                 MenuAction("Delete", Icons.Outlined.Delete, danger = true) {
                     legato.run { deleteHistory(e.id) }
@@ -200,6 +202,7 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
         )
     }
     AddWordSheet.Host()
+    TransformSheet.Host()
 }
 
 /** The PC's name and how it stands, as a pill that opens Settings. */

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material3.CircularProgressIndicator
@@ -320,6 +321,20 @@ fun ScratchEditScreen(id: Long, onBack: () -> Unit) {
                 title = {},
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
+                    // The selection if there is one, else the whole note; Replace puts the result there.
+                    IconButton(
+                        onClick = {
+                            val sel = body.selection
+                            val (start, end) = if (sel.collapsed) 0 to body.text.length else minOf(sel.start, sel.end) to maxOf(sel.start, sel.end)
+                            TransformSheet.open(body.text.substring(start, end)) { out ->
+                                val text = body.text.substring(0, start) + out + body.text.substring(end)
+                                body = TextFieldValue(text, TextRange(start + out.length))
+                            }
+                        },
+                        enabled = body.text.isNotBlank(),
+                    ) {
+                        Icon(Icons.Default.SwapHoriz, contentDescription = "Transform")
+                    }
                     IconButton(onClick = { copy(context, body.text); scope.launch { snackbar.showSnackbar("Copied") } }, enabled = body.text.isNotBlank()) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
                     }
@@ -367,4 +382,5 @@ fun ScratchEditScreen(id: Long, onBack: () -> Unit) {
             Surface(color = Color.Transparent, modifier = Modifier.height(72.dp)) {}
         }
     }
+    TransformSheet.Host()
 }
