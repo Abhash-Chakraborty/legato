@@ -153,7 +153,7 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
                                                 snackbar.showSnackbar(
                                                     when {
                                                         ok -> "Written up below"
-                                                        left != null -> "Still not written up. ${left.failed ?: ""}".trim()
+                                                        left != null -> "Still not written up${left.failed?.let { ": $it" } ?: ""}"
                                                         else -> "No words in it"
                                                     },
                                                 )

@@ -664,9 +664,19 @@ impl Phone {
         self.save_dictation(text, app, "cancelled")
     }
 
+    /// The words of a dictation that failed and was written up later, from
+    /// Home: kept, not typed anywhere.
+    pub fn keep_written_up(&self, text: &str, app: &str) -> Result<()> {
+        self.save_dictation(text, app, "not_pasted")
+    }
+
     fn save_dictation(&self, text: &str, app: &str, status: &str) -> Result<()> {
         let words = text.split_whitespace().count() as i64;
-        let app = if app.trim().is_empty() { "Phone" } else { app.trim() };
+        let app = if app.trim().is_empty() {
+            "Phone"
+        } else {
+            app.trim()
+        };
         self.conn()?.execute(
             "INSERT INTO transcription_history (file_name, timestamp, title, transcription_text,
                 app_name, word_count, status)

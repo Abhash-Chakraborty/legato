@@ -442,10 +442,15 @@ class Legato(private val context: Context) : CoreListener {
         }
         val text = runCatching { transcribe(samples, app, race) }.getOrElse { e ->
             onLine("Couldn't write up the kept dictation: ${e.message}")
-            cancelled.value = cancelled.value?.copy(failed = e.message ?: "Transcription failed")
+            // A failed one says the latest reason; a cancelled one stays cancelled.
+            cancelled.value?.takeIf { it.failed != null }?.let { cancelled.value = it.copy(failed = e.message ?: "Transcription failed") }
             return false
         }
-        if (text.isNotBlank()) runCatching { core.keepCancelled(text, appLabel(app)) }
+        // A failed one wasn't cancelled: it's kept as written up, not typed.
+        val failed = cancelled.value?.failed != null
+        if (text.isNotBlank()) runCatching {
+            if (failed) core.keepWrittenUp(text, appLabel(app)) else core.keepCancelled(text, appLabel(app))
+        }
         discardCancelled()
         bump()
         return text.isNotBlank()

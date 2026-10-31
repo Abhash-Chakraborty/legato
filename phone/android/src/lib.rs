@@ -434,6 +434,17 @@ impl Core {
         self.changed()
     }
 
+    /// Keeps the words of a dictation that failed and was written up later
+    /// from Home (not typed anywhere), so Home and the PC see them.
+    pub fn keep_written_up(&self, text: String, app: String) -> Result<(), CoreError> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(());
+        }
+        self.phone.keep_written_up(text, &app)?;
+        self.changed()
+    }
+
     /// Saves a voice memo recorded on the phone as a note, so Notes and the
     /// PC see it. `started_at` is in seconds since 1970. Returns its id.
     pub fn add_memo(
