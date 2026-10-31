@@ -190,6 +190,10 @@ pub async fn retry_history_entry_transcription(
     )
     .await;
     let fixes = processed.all_fixes(&transcription.fixes);
+    let ai_skipped = processed
+        .ai_problem
+        .as_ref()
+        .map(crate::transforms::problem_text);
     let model_id = crate::settings::get_settings(&app).selected_model;
     let model_name = app
         .state::<Arc<ModelManager>>()
@@ -207,7 +211,7 @@ pub async fn retry_history_entry_transcription(
             &fixes,
             Some(&transcription.heard),
         )
-        .map(|_| ())
+        .and_then(|_| history_manager.set_ai_skipped(id, ai_skipped))
         .map_err(|e| e.to_string())
 }
 

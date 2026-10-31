@@ -219,6 +219,15 @@ impl HistoryManager {
         Ok(())
     }
 
+    /// Sets or clears why an AI step was skipped, after a retry.
+    pub fn set_ai_skipped(&self, id: i64, why: Option<String>) -> Result<()> {
+        let conn = self.get_connection()?;
+        if let Some(entry) = store::set_ai_skipped(&conn, id, why.as_deref())? {
+            self.emit(HistoryUpdatePayload::Updated { entry });
+        }
+        Ok(())
+    }
+
     /// Update an existing history entry with new transcription results (used by retry).
     #[allow(clippy::too_many_arguments)]
     pub fn update_transcription(

@@ -4188,7 +4188,12 @@ on_gpu: boolean | null;
 /**
  * The paired phone it was dictated on; None for this PC.
  */
-device: string | null }
+device: string | null; 
+/**
+ * Why an AI step (cleanup, a transform) was skipped, so Home can offer
+ * to try again; None when every step ran.
+ */
+ai_skipped: string | null }
 export type HistoryFilter = "all" | "starred" | "fixed" | "transformed"
 export type HistoryQuery = { 
 /**

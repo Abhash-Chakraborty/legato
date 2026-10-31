@@ -440,6 +440,8 @@ pub static MIGRATIONS: &[M] = &[
     // in ms from the start of the recording, one pair per word of its
     // text; NULL when the model gave no word times.
     M::up("ALTER TABLE note_line ADD COLUMN word_ms TEXT;"),
+    // Why an AI step was skipped (the provider didn't answer), for Home.
+    M::up("ALTER TABLE transcription_history ADD COLUMN ai_skipped TEXT;"),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.
@@ -557,13 +559,16 @@ pub struct HistoryEntry {
     pub on_gpu: Option<bool>,
     /// The paired phone it was dictated on; None for this PC.
     pub device: Option<String>,
+    /// Why an AI step (cleanup, a transform) was skipped, so Home can offer
+    /// to try again; None when every step ran.
+    pub ai_skipped: Option<String>,
 }
 
 pub const COLUMNS: &str = "id, file_name, timestamp, saved, title, transcription_text,
     post_processed_text, post_process_prompt, post_process_requested, app_exe, app_path,
     app_name, app_title, app_site, category, paste_app_name, speech_ms, word_count,
     model_id, model_name, transform, fixes, paste_ms, status, error, heard_text,
-    transcribe_ms, on_gpu,
+    transcribe_ms, on_gpu, ai_skipped,
     (SELECT device FROM sync_local
      WHERE kind = 'history' AND local_id = transcription_history.id) AS device";
 
@@ -602,6 +607,7 @@ pub fn map_entry(row: &Row<'_>) -> rusqlite::Result<HistoryEntry> {
         transcribe_ms: row.get("transcribe_ms")?,
         on_gpu: row.get("on_gpu")?,
         device: row.get("device")?,
+        ai_skipped: row.get("ai_skipped")?,
     })
 }
 
@@ -640,6 +646,8 @@ pub struct NewEntry {
     pub snippets: i64,
     pub transcribe_ms: Option<i64>,
     pub on_gpu: Option<bool>,
+    /// Why an AI step was skipped.
+    pub ai_skipped: Option<String>,
 }
 
 /// How the paste went.
@@ -820,8 +828,8 @@ pub fn insert(conn: &mut Connection, new: &NewEntry) -> Result<HistoryEntry> {
             file_name, timestamp, saved, title, transcription_text, post_processed_text,
             post_process_prompt, post_process_requested, app_exe, app_path, app_name,
             app_title, app_site, category, speech_ms, word_count, model_id, model_name,
-            transform, status, fixes, heard_text, transcribe_ms, on_gpu
-         ) VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+            transform, status, fixes, heard_text, transcribe_ms, on_gpu, ai_skipped
+         ) VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
         params![
             new.file_name,
             new.timestamp,
@@ -846,6 +854,7 @@ pub fn insert(conn: &mut Connection, new: &NewEntry) -> Result<HistoryEntry> {
             new.heard_text,
             new.transcribe_ms,
             new.on_gpu,
+            new.ai_skipped,
         ],
     )?;
     let entry = get(&tx, tx.last_insert_rowid())?.ok_or_else(|| anyhow!("Saved row is missing"))?;
@@ -853,6 +862,19 @@ pub fn insert(conn: &mut Connection, new: &NewEntry) -> Result<HistoryEntry> {
     add_cleanup_stats(&tx, new)?;
     tx.commit()?;
     Ok(entry)
+}
+
+/// Sets or clears why an AI step was skipped (after a retry).
+pub fn set_ai_skipped(
+    conn: &Connection,
+    id: i64,
+    why: Option<&str>,
+) -> Result<Option<HistoryEntry>> {
+    conn.execute(
+        "UPDATE transcription_history SET ai_skipped = ?1 WHERE id = ?2",
+        params![why, id],
+    )?;
+    get(conn, id)
 }
 
 /// Records how the paste went.

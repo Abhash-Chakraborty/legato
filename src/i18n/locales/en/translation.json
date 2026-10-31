@@ -1787,6 +1787,7 @@
       "fixes_one": "{{count}} fix",
       "fixes_other": "{{count}} fixes",
       "pasteFailed": "Not pasted: {{reason}}",
+      "aiSkipped": "{{reason}}, so the AI step was skipped.",
       "unknownReason": "Windows didn't say why.",
       "onDevice": "On {{device}}"
     },

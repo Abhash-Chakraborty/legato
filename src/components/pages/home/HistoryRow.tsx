@@ -354,6 +354,19 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
           )}
         </MetaLine>
 
+        {entry.ai_skipped && !failed && !retrying && hasAudio && (
+          <p className="mt-1 text-[13px] text-text-3">
+            {t("home.meta.aiSkipped", { reason: entry.ai_skipped })}{" "}
+            <button
+              type="button"
+              onClick={retry}
+              className="font-medium text-teal-700 underline-offset-2 hover:underline"
+            >
+              {t("home.row.tryAgain")}
+            </button>
+          </p>
+        )}
+
         {entry.status === "paste_failed" && (
           <p className="mt-1 text-[13px] text-danger">
             {t("home.meta.pasteFailed", {

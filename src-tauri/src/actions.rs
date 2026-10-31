@@ -1149,6 +1149,10 @@ impl ShortcutAction for TranscribeAction {
                                     snippets: processed.snippet_hits.len() as i64,
                                     transcribe_ms: Some(transcribe_ms),
                                     on_gpu,
+                                    ai_skipped: processed
+                                        .ai_problem
+                                        .as_ref()
+                                        .map(crate::transforms::problem_text),
                                     ..Default::default()
                                 }) {
                                     Ok(entry) => Some(entry.id),
