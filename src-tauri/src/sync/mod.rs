@@ -904,6 +904,18 @@ impl SyncManager {
                 let _ = std::fs::remove_file(path);
             }
         }
+        // A memo from the phone gets the summary, title and tags a memo
+        // recorded here would, and they go back to the phone with the next
+        // sync. Without an AI for Notes, summarise leaves it as it is.
+        if !accepted.unsummarised_notes.is_empty() && get_settings(app).notes_enabled {
+            let app = app.clone();
+            let ids = accepted.unsummarised_notes.clone();
+            tauri::async_runtime::spawn(async move {
+                for id in ids {
+                    crate::notes::summarise(&app, id).await;
+                }
+            });
+        }
     }
 }
 

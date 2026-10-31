@@ -30,6 +30,8 @@ pub struct Accepted {
     pub kinds: BTreeSet<String>,
     /// Recordings of rows the other device deleted, with their kind.
     pub removed_audio: Vec<(String, String)>,
+    /// Memos that came without a summary, by their ID here.
+    pub unsummarised_notes: Vec<i64>,
 }
 
 pub struct Engine {
@@ -152,6 +154,7 @@ impl Engine {
                             if let Some(file) = a.removed_audio {
                                 done.removed_audio.push((change.kind.clone(), file));
                             }
+                            done.unsummarised_notes.extend(a.unsummarised_note);
                         })
                     } else if let Some(extra) = self.extra_for(&change.kind) {
                         extra.apply(&change.kind, &change.key, change.body.as_ref())

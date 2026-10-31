@@ -26,6 +26,9 @@ pub fn infer_deletes(kind: &str) -> bool {
 pub struct Applied {
     /// A recording file that belonged to a deleted row.
     pub removed_audio: Option<String>,
+    /// A memo that arrived from another device without a summary, which
+    /// this device may write with its AI.
+    pub unsummarised_note: Option<i64>,
 }
 
 fn seconds_to_ms(at: i64) -> Option<i64> {
@@ -398,6 +401,7 @@ fn apply_history(
         conn.execute("DELETE FROM transcription_history WHERE id = ?1", [id])?;
         return Ok(Applied {
             removed_audio: (!file.is_empty()).then_some(file),
+            ..Applied::default()
         });
     };
     let (said, processed, heard, at, title) = (
@@ -631,6 +635,7 @@ fn apply_note(
         conn.execute("DELETE FROM note WHERE id = ?1", [id])?;
         return Ok(Applied {
             removed_audio: audio,
+            ..Applied::default()
         });
     };
     let kind = if text(body, "kind") == "meeting" {
@@ -668,6 +673,7 @@ fn apply_note(
         decisions,
         folder
     ];
+    let mut fresh = false;
     let id = match row {
         Some((id, _)) => {
             conn.execute(
@@ -695,6 +701,7 @@ fn apply_note(
             )?;
             let id = conn.last_insert_rowid();
             ledger::map_local(conn, "notes", id, key, device)?;
+            fresh = true;
             id
         }
     };
@@ -739,7 +746,12 @@ fn apply_note(
             params![id, text(action, "owner"), text(action, "text"), flag(action, "done"), position as i64],
         )?;
     }
-    Ok(Applied::default())
+    let has_lines = body["lines"].as_array().is_some_and(|l| !l.is_empty());
+    Ok(Applied {
+        unsummarised_note: (fresh && kind == "memo" && summary.trim().is_empty() && has_lines)
+            .then_some(id),
+        ..Applied::default()
+    })
 }
 
 /* -- scratchpad -------------------------------------------------------------- */
@@ -931,6 +943,53 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM note_line", [], |r| r.get(0))
             .unwrap();
         assert_eq!(lines, 1);
+    }
+
+    /// A memo recorded on the phone arrives with no summary, once, so the
+    /// PC can write one; a summarised or empty memo, a meeting and a later
+    /// version of the same memo don't ask for one.
+    #[test]
+    fn a_new_memo_without_a_summary_asks_for_one() {
+        let mut pc = db();
+        let memo = json!({"title": "Voice memo · 18:24", "kind": "memo", "started_at": 1,
+            "lines": [{"at_ms": 0, "end_ms": 900, "text": "Ship the test build tomorrow"}]});
+        let first = apply(&mut pc, "notes", "phone:1", Some(&memo), "Pixel 8", "pc", 2).unwrap();
+        let id: i64 = pc
+            .query_row("SELECT id FROM note", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(first.unsummarised_note, Some(id));
+        let again = apply(&mut pc, "notes", "phone:1", Some(&memo), "Pixel 8", "pc", 3).unwrap();
+        assert_eq!(again.unsummarised_note, None);
+        let mut done = memo.clone();
+        done["summary"] = json!("Ship it tomorrow.");
+        let summarised =
+            apply(&mut pc, "notes", "phone:2", Some(&done), "Pixel 8", "pc", 4).unwrap();
+        assert_eq!(summarised.unsummarised_note, None);
+        let mut meeting = memo.clone();
+        meeting["kind"] = json!("meeting");
+        let meeting = apply(
+            &mut pc,
+            "notes",
+            "phone:3",
+            Some(&meeting),
+            "Pixel 8",
+            "pc",
+            5,
+        )
+        .unwrap();
+        assert_eq!(meeting.unsummarised_note, None);
+        let empty = json!({"title": "Voice memo", "kind": "memo", "started_at": 1, "lines": []});
+        let empty = apply(
+            &mut pc,
+            "notes",
+            "phone:4",
+            Some(&empty),
+            "Pixel 8",
+            "pc",
+            6,
+        )
+        .unwrap();
+        assert_eq!(empty.unsummarised_note, None);
     }
 
     /// A phone's dictation the PC passes on to a tablet is the phone's on
