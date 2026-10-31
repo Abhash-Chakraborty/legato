@@ -31,6 +31,11 @@ class LegatoApplication : Application() {
         super.onCreate()
         legato = Legato(this)
     }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        legato.trimMemory(level)
+    }
 }
 
 val Context.legato: Legato get() = (applicationContext as LegatoApplication).legato
@@ -542,6 +547,27 @@ class Legato(private val context: Context) : CoreListener {
         if (!modelFile().exists()) error("No speech model on this $device yet")
         val arch = core.loadModel(modelFile().absolutePath)
         model.value = ModelStatus.Loaded(arch)
+    }
+
+    /**
+     * Android is short of memory: the model goes now rather than in five
+     * minutes, as soon as no dictation is using it. Leaving Legato's screens
+     * alone (the bubble may be tapped any second) keeps it.
+     */
+    fun trimMemory(level: Int) {
+        val short = level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
+        if (!short) return
+        scope.launch {
+            synchronized(modelLock) {
+                if (core.modelLoaded()) {
+                    core.unloadModel()
+                    model.value = ModelStatus.Downloaded
+                    onLine("Android is short of memory: let go of the speech model")
+                }
+            }
+        }
     }
 
     /**
