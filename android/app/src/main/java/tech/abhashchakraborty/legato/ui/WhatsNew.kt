@@ -30,7 +30,7 @@ import tech.abhashchakraborty.legato.Legato
  * release; the sheet shows the one for the version just installed, once.
  */
 val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
-    "0.3.1" to listOf(
+    "0.3.2" to listOf(
         "The checkmark no longer waits on a slow PC: when it hasn't answered in a couple of seconds, this device's model writes your words up too, and the first text back is typed (Settings › Don't wait for a slow PC).",
         "This device's own model writes up 20–25% sooner, using every core.",
         "What this device writes up gets the same AI cleanup as on your PC, with the AI key your PC shares.",

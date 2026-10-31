@@ -113,7 +113,7 @@ class MemoService : Service() {
             val end = quietest(window, 0)
             if (!quiet(window, 0, end)) {
                 val text = try {
-                    legato.transcribe(window.copyOfRange(0, end)).trim()
+                    legato.transcribe(window.copyOfRange(0, end), Legato.MEMO).trim()
                 } catch (e: Exception) {
                     legato.onLine("The memo will be written up when it stops (${e.message ?: "transcription failed"})")
                     return
@@ -154,7 +154,7 @@ class MemoService : Service() {
                     if (pieces.size > 1) Memo.state.value = Memo.State(writing = "Writing up · ${n + 1} of ${pieces.size}")
                     val (from, to) = piece
                     if (quiet(samples, from, to)) continue
-                    val text = runCatching { legato.transcribe(samples.copyOfRange(from, to)) }.getOrElse { e ->
+                    val text = runCatching { legato.transcribe(samples.copyOfRange(from, to), Legato.MEMO) }.getOrElse { e ->
                         legato.onLine(e.message ?: "Transcription failed"); ""
                     }.trim()
                     if (text.isNotEmpty()) lines += MemoLine(atMs = from / 16L, endMs = to / 16L, text = text)

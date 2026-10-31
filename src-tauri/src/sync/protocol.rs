@@ -103,6 +103,10 @@ pub struct Welcome {
     pub transforms: bool,
 }
 
+/// The `app` of a `transcribe` that is a piece of a voice memo: the PC
+/// answers with the transcript alone, without cleanup, transforms or Style.
+pub const MEMO_APP: &str = "memo";
+
 /// The AI providers the PC's transforms run on, so the phone can run them
 /// itself while the PC is away (the transforms themselves sync as the
 /// `transforms` kind). Keys travel only inside this TLS link, and only when

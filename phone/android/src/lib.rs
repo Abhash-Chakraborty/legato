@@ -490,7 +490,11 @@ impl Core {
     /// `package` (empty when none). Blocks until the PC answers.
     pub fn transcribe_on_pc(&self, pcm: Vec<u8>, package: String) -> Result<String, CoreError> {
         let samples = legato_phone::pieces::from_pcm16(&pcm);
-        let app = (!package.is_empty()).then(|| legato_phone::finish::category_of(&package));
+        let app = match package.as_str() {
+            "" => None,
+            legato_phone::sync::protocol::MEMO_APP => Some(legato_phone::sync::protocol::MEMO_APP),
+            package => Some(legato_phone::finish::category_of(package)),
+        };
         // A minute for the PC to answer, plus time for a long recording to
         // travel (slowly, over Bluetooth) and be written up.
         let seconds = samples.len() as u64 / legato_phone::pieces::RATE as u64;

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
@@ -103,6 +104,14 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
+    // The memo under way, and a note just added (the memo saved, or one from
+    // the PC), show at the top: the list keeps its place by the row in view,
+    // so they'd otherwise arrive out of sight above it.
+    val list = rememberLazyListState()
+    val newest = notes.firstOrNull()?.id
+    LaunchedEffect(memo.recording) { if (memo.recording) list.animateScrollToItem(0) }
+    LaunchedEffect(newest) { if (list.firstVisibleItemIndex <= 2) list.animateScrollToItem(0) }
+
     // Ticks the clock while a memo records.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(memo.recording) {
@@ -162,6 +171,7 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
     ) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
+            state = list,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
         ) {
             // The memo so far, written up half a minute at a time as you talk.

@@ -547,7 +547,7 @@ class Legato(private val context: Context) : CoreListener {
             try { core.transcribe(pcm, selectedModel.language()) } finally { idleUnload() }
         }
         // The PC's text comes finished; this device's is finished here, for the app.
-        if (app == null || heard.isBlank()) return heard
+        if (app == null || app == MEMO || heard.isBlank()) return heard
         cleanedUp(heard, app)?.let { return it }
         return runCatching { core.finishDictation(heard, app) }.getOrElse { e ->
             onLine("Couldn't apply the Dictionary and Style: ${e.message}")
@@ -771,6 +771,8 @@ class Legato(private val context: Context) : CoreListener {
         const val PREF_RACE_PC = "race_slow_pc"
         const val PREF_AFTER = "after_dictation_transform"
         private const val KEY_PREFIX = "ai:"
+        /** The app a memo's pieces go to the PC as (the protocol's MEMO_APP): a transcript, without cleanup or Style. */
+        const val MEMO = "memo"
         const val PREF_MODEL = "speech_model"
         const val PREF_AUTO_CLIP = "auto_clipboard"
         const val PREF_KEEP_LISTENING = "keep_listening_without_keyboard"

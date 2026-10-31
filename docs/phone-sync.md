@@ -194,7 +194,10 @@ with its own speech model, which is bigger and quicker than the phone's. The pho
 kind of app the text is for, as Style names it (`personal`, `work`, `email`, `documents`, `ai`,
 `code`, `other`); the phone sorts the app in front by its package, and leaves `app` out when it
 doesn't know. The PC runs the recording through its model and the same Dictionary, snippets,
-cleanup and Style as a dictation on the PC in that kind of app, and answers with the same `id`:
+cleanup and Style as a dictation on the PC in that kind of app, and answers with the same `id`.
+`"app": "memo"` is a piece of a voice memo: the PC answers with the transcript as its own Notes
+keep it (the Dictionary, fillers removed), without cleanup, transforms or Style. A PC older than
+that reads it as an unknown app.
 
 ```json
 {"type":"transcript","id":"…","text":"See you at noon."}

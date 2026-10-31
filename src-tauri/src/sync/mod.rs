@@ -1085,6 +1085,15 @@ impl hub::Events for AppEvents {
             if heard.text.trim().is_empty() {
                 return Ok(String::new());
             }
+            // A piece of a voice memo is a transcript, kept as this PC keeps
+            // its own notes' lines: no cleanup, transform or Style.
+            if app.as_deref() == Some(protocol::MEMO_APP) {
+                log::info!(
+                    "Transcribed {seconds:.1} s of a memo from {device} in {:.1} s",
+                    started.elapsed().as_secs_f32()
+                );
+                return Ok(heard.text);
+            }
             // The same Dictionary, snippets, cleanup and Style as a
             // dictation on the PC, in the kind of app the phone typed into.
             let target = phone_app(app.as_deref());
