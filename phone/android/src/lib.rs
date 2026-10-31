@@ -412,24 +412,25 @@ impl Core {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// Records a dictation made on this phone, so Home and the PC see it.
-    pub fn dictate(&self, text: String) -> Result<(), CoreError> {
+    /// Records a dictation made on this phone into `app` (the app's name),
+    /// so Home and the PC see it.
+    pub fn dictate(&self, text: String, app: String) -> Result<(), CoreError> {
         let text = text.trim();
         if text.is_empty() {
             return Ok(());
         }
-        self.phone.dictate(text)?;
+        self.phone.dictate(text, &app)?;
         self.changed()
     }
 
     /// Keeps the words of a dictation cancelled on this phone, so Home can
     /// still copy them.
-    pub fn keep_cancelled(&self, text: String) -> Result<(), CoreError> {
+    pub fn keep_cancelled(&self, text: String, app: String) -> Result<(), CoreError> {
         let text = text.trim();
         if text.is_empty() {
             return Ok(());
         }
-        self.phone.keep_cancelled(text)?;
+        self.phone.keep_cancelled(text, &app)?;
         self.changed()
     }
 

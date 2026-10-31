@@ -214,7 +214,7 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
                     legato.run { deleteHistory(e.id) }
                     scope.launch {
                         val r = snackbar.showSnackbar("Dictation deleted", actionLabel = "Undo", duration = SnackbarDuration.Short)
-                        if (r == SnackbarResult.ActionPerformed) legato.run { dictate(e.text) }
+                        if (r == SnackbarResult.ActionPerformed) legato.run { dictate(e.text, e.app) }
                     }
                 },
             ),

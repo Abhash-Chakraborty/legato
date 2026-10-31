@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
             "" => false,
             "word" => phone.add_word(rest).map(|_| true)?,
             "unword" => phone.remove_word(rest).map(|_| true)?,
-            "dictate" => phone.dictate(rest).map(|_| true)?,
+            "dictate" => phone.dictate(rest, "").map(|_| true)?,
             "snippet" | "scratch" => {
                 let Some((a, b)) = pair() else {
                     println!("· {command} needs `<name> = <text>`");

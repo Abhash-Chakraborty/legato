@@ -18,6 +18,14 @@
     <!-- Installing an update downloaded from GitHub Releases (you confirm it). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Names the app a dictation went into (Chrome, WhatsApp) in Home. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:name=".LegatoApplication"
         android:allowBackup="false"

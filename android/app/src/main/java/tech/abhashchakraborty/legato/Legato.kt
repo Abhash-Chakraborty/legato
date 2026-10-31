@@ -117,6 +117,15 @@ class Legato(private val context: Context) : CoreListener {
         }
     }
 
+    /** An app's name from its package, for Home's rows; the package when Android won't say. */
+    fun appLabel(pkg: String?): String {
+        if (pkg.isNullOrBlank()) return ""
+        return runCatching {
+            val pm = context.packageManager
+            pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+        }.getOrDefault(pkg)
+    }
+
     /** Tries the PC now, if paired and not connected, rather than after the backoff. */
     fun wakeLink() {
         if (state.value.paired && !state.value.online) runCatching { core.connect() }
@@ -328,7 +337,7 @@ class Legato(private val context: Context) : CoreListener {
         if (!was && state.value.pcTranscribes && usePcModel) {
             scope.launch(Dispatchers.IO) {
                 KeptMemos.writeUpAllOnPc(context)
-                if (cancelled.value?.failed != null) writeUpCancelled()
+                if (cancelled.value?.failed != null) writeUpCancelled(race = false)
             }
         }
     }
@@ -417,23 +426,26 @@ class Legato(private val context: Context) : CoreListener {
             }.onFailure { onLine("Couldn't keep the dictation: ${it.message}"); return@launch }
             cancelled.value = Kept(samples.size / 16_000, failed, app)
             onLine(if (failed == null) "Kept the cancelled dictation" else "Kept the dictation to try again")
-            if (failed == null && pcWillTranscribe()) writeUpCancelled()
+            if (failed == null && pcWillTranscribe()) writeUpCancelled(race = false)
         }
     }
 
-    /** Writes up the kept dictation into Home. Blocks; call it off the main thread. */
-    fun writeUpCancelled(): Boolean {
+    /**
+     * Writes up the kept dictation into Home; without `race` (nobody waits)
+     * the PC alone does it. Blocks; call it off the main thread.
+     */
+    fun writeUpCancelled(race: Boolean = true): Boolean {
         val bytes = runCatching { cancelledFile.readBytes() }.getOrNull() ?: return false
         val app = cancelled.value?.app
         val samples = FloatArray(bytes.size / 2) { i ->
             ((bytes[2 * i].toInt() and 0xff) or (bytes[2 * i + 1].toInt() shl 8)).toShort() / 32768f
         }
-        val text = runCatching { transcribe(samples, app) }.getOrElse { e ->
+        val text = runCatching { transcribe(samples, app, race) }.getOrElse { e ->
             onLine("Couldn't write up the kept dictation: ${e.message}")
             cancelled.value = cancelled.value?.copy(failed = e.message ?: "Transcription failed")
             return false
         }
-        if (text.isNotBlank()) runCatching { core.keepCancelled(text) }
+        if (text.isNotBlank()) runCatching { core.keepCancelled(text, appLabel(app)) }
         discardCancelled()
         bump()
         return text.isNotBlank()

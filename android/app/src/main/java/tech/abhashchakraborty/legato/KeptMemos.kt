@@ -71,10 +71,11 @@ object KeptMemos {
 
     /**
      * Writes up what's kept of memo `id` and adds it to the memo. Parts that
-     * fail again stay for next time. Returns how many parts were written up.
+     * fail again stay for next time; without `race` (nobody waits) the PC
+     * alone writes them up. Returns how many parts were written up.
      * Blocks; call it off the main thread.
      */
-    fun writeUp(context: Context, id: Long): Int {
+    fun writeUp(context: Context, id: Long, race: Boolean = true): Int {
         synchronized(busy) { if (!busy.add(id)) return 0 }
         try {
             val legato = context.legato
@@ -90,7 +91,7 @@ object KeptMemos {
                     val samples = FloatArray(part.samples) { i ->
                         ((bytes[2 * i].toInt() and 0xff) or (bytes[2 * i + 1].toInt() shl 8)).toShort() / 32768f
                     }
-                    val text = runCatching { legato.transcribe(samples, Legato.MEMO) }.getOrElse { e ->
+                    val text = runCatching { legato.transcribe(samples, Legato.MEMO, race) }.getOrElse { e ->
                         legato.onLine("A memo part still wasn't written up: ${e.message}")
                         left += part
                         null
@@ -125,6 +126,6 @@ object KeptMemos {
     fun writeUpAllOnPc(context: Context) {
         val legato = context.legato
         if (!legato.pcWillTranscribe()) return
-        for (id in _pending.value.keys) writeUp(context, id)
+        for (id in _pending.value.keys) writeUp(context, id, race = false)
     }
 }

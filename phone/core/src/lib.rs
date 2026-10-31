@@ -652,24 +652,26 @@ impl Phone {
         Ok(())
     }
 
-    /// A dictation taken on the phone.
-    pub fn dictate(&self, text: &str) -> Result<()> {
-        self.save_dictation(text, "pasted")
+    /// A dictation taken on the phone, into `app` (the app's name; empty
+    /// when unknown).
+    pub fn dictate(&self, text: &str, app: &str) -> Result<()> {
+        self.save_dictation(text, app, "pasted")
     }
 
     /// The words of a dictation cancelled on the phone (✕, say), kept so
     /// they can still be copied.
-    pub fn keep_cancelled(&self, text: &str) -> Result<()> {
-        self.save_dictation(text, "cancelled")
+    pub fn keep_cancelled(&self, text: &str, app: &str) -> Result<()> {
+        self.save_dictation(text, app, "cancelled")
     }
 
-    fn save_dictation(&self, text: &str, status: &str) -> Result<()> {
+    fn save_dictation(&self, text: &str, app: &str, status: &str) -> Result<()> {
         let words = text.split_whitespace().count() as i64;
+        let app = if app.trim().is_empty() { "Phone" } else { app.trim() };
         self.conn()?.execute(
             "INSERT INTO transcription_history (file_name, timestamp, title, transcription_text,
                 app_name, word_count, status)
-             VALUES ('', ?1, 'Phone', ?2, 'Gboard', ?3, ?4)",
-            params![now_s(), text, words, status],
+             VALUES ('', ?1, 'Phone', ?2, ?3, ?4, ?5)",
+            params![now_s(), text, app, words, status],
         )?;
         Ok(())
     }

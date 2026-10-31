@@ -265,8 +265,8 @@ async fn a_phone_pairs_syncs_both_ways_merges_and_shares_the_clipboard() {
 
     let pixel = phone("Pixel 8");
     pixel.add_word("Netbird").unwrap();
-    pixel.dictate("lunch at noon").unwrap();
-    pixel.keep_cancelled("words cut off by ✕").unwrap();
+    pixel.dictate("lunch at noon", "Chrome").unwrap();
+    pixel.keep_cancelled("words cut off by ✕", "").unwrap();
     pixel.refresh().unwrap();
     pixel
         .save_pc(&PairedPc {

@@ -204,7 +204,7 @@ class DictationService : Service() {
                 if (wake.isHeld) wake.release()
                 pending--
                 // Cancelled while it was written up: the words stay in Home.
-                if (text.isNotBlank() && mine <= cancelled) runCatching { legato.core.keepCancelled(text) }
+                if (text.isNotBlank() && mine <= cancelled) runCatching { legato.core.keepCancelled(text, legato.appLabel(app)) }
                 if (text.isNotBlank() && mine > cancelled && target == Dictation.Target.Screen) {
                     Dictation.forScreen.value = listOfNotNull(Dictation.forScreen.value, text).joinToString(" ")
                 } else if (text.isNotBlank() && mine > cancelled) {
@@ -218,7 +218,7 @@ class DictationService : Service() {
                         Toast.makeText(this@DictationService, getString(R.string.not_typed), Toast.LENGTH_LONG).show()
                         legato.onLine("Couldn't type into this field, so the text is on the clipboard")
                     }
-                    legato.run { dictate(text) }
+                    legato.run { dictate(text, legato.appLabel(app)) }
                 }
                 if (!recorder.isRecording) {
                     Dictation.set(Dictation.State.Idle)
