@@ -32,6 +32,7 @@ import tech.abhashchakraborty.legato.Legato
 val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
     "0.4.1" to listOf(
         "Installing an update no longer turns off the Legato bubble in Accessibility, and no longer stops at a Settings page first on Xiaomi devices.",
+        "This one update still came the old way: if the bubble is off, open Legato's App info, choose Allow restricted settings, then turn it on in Accessibility. Settings › Bubble over Gboard shows the way.",
     ),
     "0.4.0" to listOf(
         "Legato updates from GitHub Releases: it checks when it opens, Settings › About has the update and a switch, and Android asks you to confirm the install.",
