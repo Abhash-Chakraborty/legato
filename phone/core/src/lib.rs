@@ -438,7 +438,8 @@ impl Phone {
                 }
                 Err(e) => {
                     failures += 1;
-                    let wait = retry_after(failures, jitter(), self.screen_on.load(Ordering::Relaxed));
+                    let wait =
+                        retry_after(failures, jitter(), self.screen_on.load(Ordering::Relaxed));
                     self.say(format!(
                         "Can't reach {}: {e:#}. Trying again in {} s.",
                         pc.name,

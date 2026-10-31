@@ -608,6 +608,15 @@ impl Core {
         }
     }
 
+    /// The CPU threads the next `load_model` gives the model; 0 picks them
+    /// from the cores. For timing a model at several counts.
+    pub fn set_threads(&self, threads: i32) {
+        #[cfg(feature = "speech")]
+        speech::set_threads(threads);
+        #[cfg(not(feature = "speech"))]
+        let _ = threads;
+    }
+
     /// Turns a recording (16 kHz mono, signed 16-bit little-endian) into text
     /// with the loaded model.
     /// `language` is an ISO code for a model that's told what to expect, or

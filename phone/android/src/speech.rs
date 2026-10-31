@@ -1,6 +1,7 @@
 //! Speech on the phone: one transcribe-cpp model held in memory, CPU only.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Mutex, Once};
 
 use legato_phone::pieces;
@@ -9,8 +10,23 @@ use transcribe_cpp::{Model, RunOptions, Session, SessionOptions};
 /// CPU threads for the model. Phones pair a few fast cores with slow ones;
 /// past four, more threads cost battery and heat for little speed.
 fn threads() -> i32 {
-    let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
-    cores.clamp(2, 4) as i32
+    match THREADS.load(Ordering::Relaxed) {
+        0 => {
+            let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+            cores.clamp(2, 4) as i32
+        }
+        n => n,
+    }
+}
+
+/// Threads asked for by `set_threads`; 0 picks them from the cores. Read
+/// when a model loads.
+static THREADS: AtomicI32 = AtomicI32::new(0);
+
+/// Sets the threads the next model load uses (0 for the default), for
+/// timing a model at several counts.
+pub fn set_threads(n: i32) {
+    THREADS.store(n.max(0), Ordering::Relaxed);
 }
 
 use crate::CoreError;

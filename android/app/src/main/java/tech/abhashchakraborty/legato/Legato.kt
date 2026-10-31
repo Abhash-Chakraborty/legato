@@ -601,6 +601,44 @@ class Legato(private val context: Context) : CoreListener {
     private val modelLock = Any()
     private var unloadJob: kotlinx.coroutines.Job? = null
 
+    /**
+     * A recording put in the app's files over adb (`bench.wav`, 16 kHz mono
+     * 16-bit) for timing the models; the speed test shows only when it's there.
+     */
+    val benchFile: File? get() = File(context.filesDir, "bench.wav").takeIf { it.exists() }
+
+    /**
+     * Times every downloaded model on [benchFile] at several thread counts,
+     * best of two runs each, into the log. Blocks.
+     */
+    fun speedTest() {
+        val wav = benchFile ?: return
+        val pcm = wav.readBytes().let { it.copyOfRange(44.coerceAtMost(it.size), it.size) }
+        val seconds = "%.1f".format(pcm.size / 32_000f)
+        synchronized(modelLock) {
+            try {
+                for (m in PhoneModels.all.filter { isDownloaded(it) }) {
+                    for (n in listOf(2, 3, 4, 6, 8)) {
+                        core.setThreads(n)
+                        val t0 = System.currentTimeMillis()
+                        core.loadModel(modelFile(m).absolutePath)
+                        val load = System.currentTimeMillis() - t0
+                        val runs = (1..2).map {
+                            val t = System.currentTimeMillis()
+                            core.transcribe(pcm, m.language())
+                            System.currentTimeMillis() - t
+                        }
+                        onLine("Speed test: ${m.name}, $n threads: loads in $load ms, writes up $seconds s in ${runs.min()} ms")
+                    }
+                }
+            } finally {
+                core.setThreads(0)
+                core.unloadModel()
+                model.value = if (modelFile().exists()) ModelStatus.Downloaded else ModelStatus.Missing
+            }
+        }
+    }
+
     /** Loads the model if it isn't in memory. Blocks; hold [modelLock]. */
     private fun ensureModel() {
         if (core.modelLoaded()) return

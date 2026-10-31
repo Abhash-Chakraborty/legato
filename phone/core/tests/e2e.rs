@@ -839,7 +839,11 @@ fn only_the_newest_image_stays_in_memory() {
     let pixel = phone("Pixel 9");
     let clip = |id: &str, png: Option<&str>, text: Option<&str>| Clip {
         id: id.into(),
-        kind: if png.is_some() { ClipKind::Image } else { ClipKind::Text },
+        kind: if png.is_some() {
+            ClipKind::Image
+        } else {
+            ClipKind::Text
+        },
         text: text.map(Into::into),
         png: png.map(Into::into),
         age_ms: 0,

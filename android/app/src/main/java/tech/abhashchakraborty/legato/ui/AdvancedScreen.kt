@@ -80,6 +80,15 @@ fun AdvancedScreen(onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
         ) {
+            // Only with a test recording put in place over adb, for timing the models.
+            if (legato.benchFile != null) item {
+                Group("Speed test") {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Time each downloaded model on bench.wav", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        OutlinedButton(onClick = { scope.launch(kotlinx.coroutines.Dispatchers.Default) { legato.speedTest() } }) { Text("Run") }
+                    }
+                }
+            }
             item {
                 Group("Connection") {
                     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
