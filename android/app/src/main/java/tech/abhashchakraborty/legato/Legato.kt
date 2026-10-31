@@ -471,10 +471,11 @@ class Legato(private val context: Context) : CoreListener {
      * answered within [HEDGE_MS] (a weak Wi-Fi, a busy PC) is raced by it,
      * and the first text back wins. With `app`, the package typed into,
      * this device's text gets the Dictionary, snippets, cleanup and Style
-     * for that kind of app, as the PC's does. Blocks; call it off the main
-     * thread.
+     * for that kind of app, as the PC's does. Without `race` (nobody waits on
+     * the text) the PC alone writes it up, and this device only if the PC
+     * fails. Blocks; call it off the main thread.
      */
-    fun transcribe(samples: FloatArray, app: String? = null): String {
+    fun transcribe(samples: FloatArray, app: String? = null, race: Boolean = true): String {
         if (!readyToTranscribe() && pcMayTranscribe()) error("Couldn't reach ${state.value.pcName ?: "your PC"} to write this up")
         val pcm = pcm16(samples)
         val seconds = "%.1f".format(samples.size / 16_000f)
@@ -488,7 +489,7 @@ class Legato(private val context: Context) : CoreListener {
             onLine("${selectedModel.name} wrote up $seconds s in ${took()} s" + if (it.isBlank()) ", and heard no words" else "")
         }
         if (!pcWillTranscribe()) return here()
-        if (!modelFile().exists() || !raceSlowPc) {
+        if (!modelFile().exists() || !raceSlowPc || !race) {
             return try {
                 onPc()
             } catch (e: Exception) {

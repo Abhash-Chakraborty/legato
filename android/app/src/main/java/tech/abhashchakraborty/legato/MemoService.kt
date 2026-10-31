@@ -113,7 +113,10 @@ class MemoService : Service() {
             val end = quietest(window, 0)
             if (!quiet(window, 0, end)) {
                 val text = try {
-                    legato.transcribe(window.copyOfRange(0, end), Legato.MEMO).trim()
+                    // Nobody waits on these, so the PC doesn't race the
+                    // device's model, which would only take the CPU from
+                    // the recording.
+                    legato.transcribe(window.copyOfRange(0, end), Legato.MEMO, race = false).trim()
                 } catch (e: Exception) {
                     legato.onLine("The memo will be written up when it stops (${e.message ?: "transcription failed"})")
                     return
