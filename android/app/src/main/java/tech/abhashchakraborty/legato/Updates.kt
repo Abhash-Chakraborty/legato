@@ -1,10 +1,11 @@
 package tech.abhashchakraborty.legato
 
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
-import androidx.core.content.FileProvider
+import android.content.pm.PackageInstaller
+import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -127,25 +128,60 @@ object Updates {
     }
 
     /**
-     * Hands the APK to Android's installer. The first time, Android asks to
-     * let Legato install apps; that opens its page, and Install again
-     * carries on from there.
+     * Hands the APK to Android's installer in a session, which asks you to
+     * confirm (and, the first time, to let Legato install apps). An update
+     * installed this way keeps its accessibility service on: Android
+     * restricts apps opened from a downloaded file, and turned the bubble
+     * off after an update that went that way.
      */
     fun install(context: Context) {
         val r = _state.value as? State.Ready ?: return
-        if (!context.packageManager.canRequestPackageInstalls()) {
-            context.startActivity(
-                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-            return
+        val legato = context.legato
+        legato.scope.launch(Dispatchers.IO) {
+            try {
+                val installer = context.packageManager.packageInstaller
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+                    setAppPackageName(context.packageName)
+                    setSize(r.file.length())
+                    // Once Legato installed itself, later updates need no second confirmation.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                }
+                val id = installer.createSession(params)
+                installer.openSession(id).use { session ->
+                    session.openWrite("legato.apk", 0, r.file.length()).use { out ->
+                        r.file.inputStream().use { it.copyTo(out) }
+                        session.fsync(out)
+                    }
+                    val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+                    val done = PendingIntent.getBroadcast(context, id, Intent(context, UpdateReceiver::class.java), flags)
+                    session.commit(done.intentSender)
+                }
+                legato.onLine("Handed Legato ${r.version} to Android's installer")
+            } catch (e: Exception) {
+                _state.value = State.Failed("Couldn't install ${r.version}: ${e.message ?: "the installer refused it"}")
+            }
         }
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", r.file)
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, "application/vnd.android.package-archive")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
+    }
+
+    /** What the installer said about the session [install] committed. */
+    internal fun installerSaid(context: Context, intent: Intent) {
+        when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                @Suppress("DEPRECATION")
+                val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
+                context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+            // Android closes Legato to replace it; the bubble's service comes back on its own.
+            PackageInstaller.STATUS_SUCCESS -> {}
+            // Cancelled in the confirmation: Install stays there for later.
+            PackageInstaller.STATUS_FAILURE_ABORTED -> {}
+            else -> {
+                val why = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "status $status"
+                context.legato.onLine("The update didn't install: $why")
+                _state.value = State.Failed("The update didn't install ($why)")
+            }
+        }
     }
 
     private class Conn(val c: HttpURLConnection) : AutoCloseable {
@@ -180,4 +216,9 @@ object Updates {
     }
 
     private fun get(address: String): ByteArray = open(address).use { it.inputStream.use { s -> s.readBytes() } }
+}
+
+/** Receives the installer's answers for [Updates.install]. */
+class UpdateReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) = Updates.installerSaid(context, intent)
 }

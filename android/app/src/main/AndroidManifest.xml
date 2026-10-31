@@ -122,15 +122,9 @@
             android:name=".MemoService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
-        <!-- Hands a downloaded update to Android's installer. -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.updates"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/update_paths" />
-        </provider>
+        <!-- Hears back from Android's installer about a downloaded update. -->
+        <receiver
+            android:name=".UpdateReceiver"
+            android:exported="false" />
     </application>
 </manifest>
