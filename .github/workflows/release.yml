@@ -76,10 +76,33 @@ jobs:
       no-cache: true
     secrets: inherit
 
+  android:
+    # Legato for Android, signed with the key every earlier APK used.
+    needs: create-release
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+
+  attach-android:
+    # The APK and legato-android.json on the draft, where the app's update
+    # check finds them under releases/latest.
+    needs: [create-release, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: legato-android
+          path: dist
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "v${{ needs.create-release.outputs.version }}" dist/* --clobber -R "${{ github.repository }}"
+
   publish-release:
-    # Publishes the draft once both installers are on it. The release
-    # environment lists each one under Deployments, linked to its page.
-    needs: [create-release, publish-tauri]
+    # Publishes the draft once the installers and the APK are on it. The
+    # release environment lists each one under Deployments, linked to its page.
+    needs: [create-release, publish-tauri, attach-android]
     runs-on: ubuntu-latest
     permissions:
       contents: write

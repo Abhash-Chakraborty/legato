@@ -168,4 +168,5 @@ fun LegatoApp(pairingLink: String?) {
         }
     }
     WhatsNew(legato)
+    UpdateOffer(legato)
 }

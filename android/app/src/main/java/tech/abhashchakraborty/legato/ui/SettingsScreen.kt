@@ -180,6 +180,8 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit, onGuide: () -> Unit)
             Group("About") {
                 SettingRow("Legato for Android", "${tech.abhashchakraborty.legato.BuildConfig.VERSION_NAME} · core ${coreVersion()}")
                 Hairline()
+                UpdateRows(legato)
+                Hairline()
                 SettingRow("Setup guide", "The first-run steps again.", onClick = onGuide, trailing = { Chevron() })
                 Hairline()
                 SettingRow("Advanced", "Connection details and the log.", onClick = onDebug, trailing = { Chevron() })

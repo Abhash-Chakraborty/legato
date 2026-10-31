@@ -17,8 +17,8 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
-    // CI hands over one key for all test builds (see android.yml), so each
-    // APK updates the last instead of needing an uninstall.
+    // CI hands over one key for all builds (see android.yml), so each APK
+    // updates the last instead of needing an uninstall.
     val keystore = System.getenv("LEGATO_KEYSTORE")?.let { file(it) }?.takeIf { it.exists() }
     signingConfigs {
         if (keystore != null) {
@@ -37,6 +37,9 @@ android {
             if (keystore != null) signingConfig = signingConfigs.getByName("legato")
         }
         release {
+            // The same key as the test builds, so the release installs over
+            // them, and every later release over it.
+            if (keystore != null) signingConfig = signingConfigs.getByName("legato")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

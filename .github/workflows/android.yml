@@ -18,9 +18,11 @@ on:
       - "phone/**"
       - "src-tauri/src/sync/**"
   workflow_dispatch:
+  # The release workflow builds the APK it attaches to the release here.
+  workflow_call:
 
 concurrency:
-  group: android-${{ github.ref }}
+  group: android-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -97,11 +99,29 @@ jobs:
             echo "LEGATO_KEYSTORE=$RUNNER_TEMP/legato-debug.p12" >> "$GITHUB_ENV"
           fi
 
-      - name: Build the debug APK
+      - name: Build the debug and release APKs
         working-directory: android
         env:
           LEGATO_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
-        run: gradle --no-daemon assembleDebug
+        run: gradle --no-daemon assembleDebug assembleRelease
+
+      # The release APK under the name GitHub Releases carries, and
+      # legato-android.json beside it: what the app's update check reads.
+      - name: Release APK and its manifest
+        run: |
+          set -euo pipefail
+          GRADLE=android/app/build.gradle.kts
+          NAME=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' "$GRADLE")
+          CODE=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' "$GRADLE")
+          mkdir -p dist
+          APK="Legato-android-$NAME.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/$APK"
+          SHA=$(sha256sum "dist/$APK" | cut -d' ' -f1)
+          SIZE=$(stat -c %s "dist/$APK")
+          URL="https://github.com/${{ github.repository }}/releases/latest/download/$APK"
+          printf '{"versionName":"%s","versionCode":%s,"apk":"%s","sha256":"%s","size":%s}\n' \
+            "$NAME" "$CODE" "$URL" "$SHA" "$SIZE" > dist/legato-android.json
+          cat dist/legato-android.json
 
       - name: Tests on the host
         working-directory: phone
@@ -111,4 +131,10 @@ jobs:
         with:
           name: legato-android-debug
           path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: legato-android
+          path: dist/*
           if-no-files-found: error
