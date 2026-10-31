@@ -1543,15 +1543,26 @@ fn clean_tags(tags: &[String]) -> Vec<String> {
 
 /// Whether a note still has the name Legato gave it when it began, such as
 /// "Meeting · Oct 22, 2:29 PM" or "Zoom call · Oct 22, 2:29 PM" from a
-/// call's card, so a suggested title may replace it. A title you typed, or
-/// a meeting's name from your calendar, stays.
+/// call's card, or "Voice memo · 20:00" from a phone on a 24-hour clock, so
+/// a suggested title may replace it. A title you typed, or a meeting's name
+/// from your calendar, stays.
 pub fn is_default_title(title: &str) -> bool {
     let Some((kind, when)) = title.split_once(" · ") else {
         return false;
     };
     (matches!(kind, "Meeting" | "Voice memo") || kind.ends_with(" call"))
         && when.chars().any(|c| c.is_ascii_digit())
-        && (when.ends_with(" AM") || when.ends_with(" PM"))
+        && (when.ends_with(" AM") || when.ends_with(" PM") || ends_with_clock(when))
+}
+
+/// Whether text ends in a 24-hour time such as "9:05" or "20:00".
+fn ends_with_clock(text: &str) -> bool {
+    let last = text.rsplit(' ').next().unwrap_or_default();
+    let Some((h, m)) = last.split_once(':') else {
+        return false;
+    };
+    let digits = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+    digits(h) && digits(m) && h.len() <= 2 && m.len() == 2
 }
 
 /// The suggested tags written the way an existing tag is, so "Backend"
@@ -2251,6 +2262,11 @@ mod tests {
         assert!(!is_default_title("Meeting · design review"));
         assert!(is_default_title("Google Meet call · Oct 23, 3:04 PM"));
         assert!(!is_default_title("Sales call · pricing"));
+        // A memo from a phone set to a 24-hour clock.
+        assert!(is_default_title("Voice memo · 20:00"));
+        assert!(is_default_title("Voice memo · 9:05"));
+        assert!(!is_default_title("Voice memo · ideas for 2027"));
+        assert!(!is_default_title("Meeting · room 4:30pm"));
     }
 
     #[test]
