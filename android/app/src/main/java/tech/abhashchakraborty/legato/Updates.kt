@@ -44,6 +44,10 @@ object Updates {
     private const val PREF_LAST = "update_checked_at"
     private const val PREF_OFFERED = "update_offered"
 
+    /** Debug builds can check another address, to try an update before it's released. */
+    private fun manifest(context: Context): String =
+        if (BuildConfig.DEBUG) context.legato.prefs.getString("update_manifest", null) ?: MANIFEST else MANIFEST
+
     fun autoCheck(context: Context): Boolean = context.legato.prefs.getBoolean(PREF_AUTO, true)
 
     fun lastChecked(context: Context): Long = context.legato.prefs.getLong(PREF_LAST, 0L)
@@ -62,7 +66,7 @@ object Updates {
         val legato = context.legato
         legato.scope.launch(Dispatchers.IO) {
             _state.value = try {
-                val json = JSONObject(get(MANIFEST).decodeToString())
+                val json = JSONObject(get(manifest(context)).decodeToString())
                 legato.prefs.edit().putLong(PREF_LAST, System.currentTimeMillis()).apply()
                 val code = json.getInt("versionCode")
                 if (code <= BuildConfig.VERSION_CODE) State.UpToDate
