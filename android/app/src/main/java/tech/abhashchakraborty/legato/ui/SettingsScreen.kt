@@ -609,6 +609,15 @@ fun BubbleRows() {
     PermissionRow("Legato under Accessibility", "Lets the bubble see the keyboard open and type into the field.", serviceOn) {
         openAccessibilitySettings(context)
     }
+    // Android 13+ greys the switch out for an APK opened from a download.
+    if (!serviceOn && android.os.Build.VERSION.SDK_INT >= 33) {
+        PermissionRow(
+            "Greyed out as a restricted setting?",
+            "Open App info and choose Allow restricted settings (in the ⋮ menu, or further down on some phones), then turn Legato on again.",
+            false,
+            "App info",
+        ) { openAppInfo(context) }
+    }
     PermissionRow("Display over other apps", "So the bubble can sit over the app you're typing in.", overlayOn) {
         openOverlaySettings(context)
     }
