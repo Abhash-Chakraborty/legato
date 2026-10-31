@@ -137,7 +137,7 @@ pub fn count(conn: &Connection, kind: &str) -> Result<i64> {
         "dictionary" => "SELECT COUNT(*) FROM dictionary_entry",
         "snippets" => "SELECT COUNT(*) FROM snippet",
         "history" => "SELECT COUNT(*) FROM transcription_history WHERE status IS NOT 'failed'",
-        "notes" => "SELECT COUNT(*) FROM note WHERE status = 'ready'",
+        "notes" => "SELECT COUNT(*) FROM note WHERE status IN ('summarising', 'ready')",
         "scratchpad" => "SELECT COUNT(*) FROM scratch_note",
         _ => bail!("{kind} isn't kept in the database"),
     };
@@ -536,7 +536,7 @@ fn export_notes(conn: &Connection, me: &str) -> Result<Vec<Item>> {
         "SELECT n.id, l.key, n.title, n.kind, n.started_at, n.duration_ms, n.app, n.my_notes,
             n.summary, n.decisions, l.device, n.folder
          FROM note n LEFT JOIN sync_local l ON l.kind = 'notes' AND l.local_id = n.id
-         WHERE n.status = 'ready' ORDER BY n.id",
+         WHERE n.status IN ('summarising', 'ready') ORDER BY n.id",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
@@ -943,6 +943,26 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM note_line", [], |r| r.get(0))
             .unwrap();
         assert_eq!(lines, 1);
+    }
+
+    /// A note keeps syncing while its summary is written: missing from the
+    /// export for those seconds, it read as deleted, and the phone that
+    /// recorded it threw its own memo away for good.
+    #[test]
+    fn a_note_being_summarised_is_still_exported() {
+        let mut pc = db();
+        let memo = json!({"title": "Voice memo", "kind": "memo", "started_at": 1,
+            "lines": [{"at_ms": 0, "end_ms": 900, "text": "Ship the test build tomorrow"}]});
+        apply(&mut pc, "notes", "phone:1", Some(&memo), "Pixel 8", "pc", 2).unwrap();
+        pc.execute("UPDATE note SET status = 'summarising'", [])
+            .unwrap();
+        let items = export(&pc, "notes", "pc").unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].key, "phone:1");
+        assert_eq!(count(&pc, "notes").unwrap(), 1);
+        pc.execute("UPDATE note SET status = 'recording'", [])
+            .unwrap();
+        assert!(export(&pc, "notes", "pc").unwrap().is_empty());
     }
 
     /// A memo recorded on the phone arrives with no summary, once, so the

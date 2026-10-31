@@ -341,7 +341,8 @@ Rules per kind:
   dictation the PC passes on to a tablet shows the phone's name there too. A device sets it to
   the sender's name when a row arrives without one, and own rows go out without it. The ledger's
   hash leaves `device` out, so a device older than the field can't start a row bouncing.
-- **Notes** sync once they're ready (not while recording or transcribing). The phone records
+- **Notes** sync once the transcript is done (not while recording or transcribing), and go on
+  syncing while the summary is written, so a note never reads as deleted. The phone records
   voice memos too: `kind` is `memo`, each stretch of about 30 seconds is a line with `who` set to
   `you`, and the recording itself stays on the phone only until it's written up. A memo that
   arrives on the PC without a `summary` gets one from the PC's AI for Notes (with a title and tags
