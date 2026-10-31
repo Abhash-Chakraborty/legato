@@ -1,7 +1,9 @@
 package tech.abhashchakraborty.legato.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,6 +20,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material3.Checkbox
@@ -30,8 +34,10 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
@@ -92,7 +98,7 @@ private fun NoteRow.meta(): String = listOfNotNull(
  * A memo is written up when you stop, by the PC's model while connected or
  * this device's own, and syncs to the PC as a note.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun NotesScreen(onOpen: (Long) -> Unit) {
     val legato = rememberLegato()
@@ -103,12 +109,29 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    var menuFor by remember { mutableStateOf<NoteRow?>(null) }
+    // Deleted, while Undo is offered; the note goes once the offer does.
+    var hidden by remember { mutableStateOf(setOf<Long>()) }
+    val shown = notes.filter { it.id !in hidden }
+
+    fun delete(n: NoteRow) {
+        hidden = hidden + n.id
+        scope.launch {
+            var undone = false
+            try {
+                val r = snackbar.showSnackbar("Deleted ${n.title}", actionLabel = "Undo", duration = SnackbarDuration.Short)
+                undone = r == SnackbarResult.ActionPerformed
+            } finally {
+                if (undone) hidden = hidden - n.id else legato.run { deleteNote(n.id) }
+            }
+        }
+    }
 
     // The memo under way, and a note just added (the memo saved, or one from
     // the PC), show at the top: the list keeps its place by the row in view,
     // so they'd otherwise arrive out of sight above it.
     val list = rememberLazyListState()
-    val newest = notes.firstOrNull()?.id
+    val newest = shown.firstOrNull()?.id
     LaunchedEffect(memo.recording) { if (memo.recording) list.animateScrollToItem(0) }
     LaunchedEffect(newest) { if (list.firstVisibleItemIndex <= 2) list.animateScrollToItem(0) }
 
@@ -189,10 +212,10 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
                 }
                 Spacer(Modifier.height(12.dp))
             }
-            if (notes.isEmpty() && !memo.recording) item {
+            if (shown.isEmpty() && !memo.recording) item {
                 Empty(Icons.Outlined.GraphicEq, "Record a memo here, or meetings and memos from your PC show up after a sync.")
             }
-            notes.groupBy { dayLabel(it.startedAt) }.forEach { (day, rows) ->
+            shown.groupBy { dayLabel(it.startedAt) }.forEach { (day, rows) ->
                 item(key = "day-$day") { DayHeader(day) }
                 itemsIndexed(rows, key = { _, n -> n.id }) { i, n ->
                     Column(Modifier.animateItem()) {
@@ -207,13 +230,27 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
                                 },
                                 leadingContent = { NoteMark(n.device != null) },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                modifier = Modifier.clickable { onOpen(n.id) },
+                                modifier = Modifier.combinedClickable(onClick = { onOpen(n.id) }, onLongClick = { menuFor = n }),
                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    menuFor?.let { n ->
+        val pc = n.device
+        MenuSheet(
+            title = n.title,
+            // A PC's note is deleted there, where Recently deleted keeps it a while.
+            subtitle = if (pc != null) "Made on $pc; delete it there." else n.meta(legato.device),
+            actions = listOfNotNull(
+                MenuAction("Open", Icons.Default.Edit) { onOpen(n.id) },
+                if (pc == null) MenuAction("Delete", Icons.Default.Delete, danger = true) { delete(n) } else null,
+            ),
+            onDismiss = { menuFor = null },
+        )
     }
 }
 

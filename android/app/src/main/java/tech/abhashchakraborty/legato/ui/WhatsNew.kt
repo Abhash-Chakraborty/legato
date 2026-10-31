@@ -39,6 +39,7 @@ val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
         "Transforms run on this device with the AI key your PC shares, so they don't depend on the link to the PC.",
         "Legato lets go of its speech model when Android runs short of memory.",
         "A voice memo is written up while you talk, half a minute at a time, so Stop leaves only the last bit. Your PC adds a summary, a title, tags and open actions.",
+        "Long-press a memo made on this device to delete it, with Undo. Your PC's notes are deleted on the PC.",
         "A new Scratchpad note opens ready to type, and the mic stays above the keyboard.",
     ),
     "0.2.0" to listOf(

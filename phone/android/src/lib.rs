@@ -944,6 +944,33 @@ impl Core {
         self.changed()
     }
 
+    /// Deletes a note made on this device, such as a memo recorded by
+    /// mistake; the deletion syncs. False for a note from the PC: deleted
+    /// there, Recently deleted keeps it a while, and here nothing would.
+    pub fn delete_note(&self, id: i64) -> Result<bool, CoreError> {
+        let conn = self.phone.conn()?;
+        let from_pc: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_local WHERE kind = 'notes' AND local_id = ?1)",
+            [id],
+            |r| r.get(0),
+        )?;
+        if from_pc {
+            return Ok(false);
+        }
+        for table in [
+            "note_line",
+            "note_tag",
+            "note_action",
+            "note_failed_line",
+            "note_speaker",
+        ] {
+            conn.execute(&format!("DELETE FROM {table} WHERE note_id = ?1"), [id])?;
+        }
+        conn.execute("DELETE FROM note WHERE id = ?1", [id])?;
+        self.changed()?;
+        Ok(true)
+    }
+
     pub fn notes(&self) -> Result<Vec<NoteRow>, CoreError> {
         let conn = self.phone.conn()?;
         let mut stmt = conn.prepare(
