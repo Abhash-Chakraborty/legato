@@ -218,6 +218,24 @@ private class NoteSaver(private val legato: Legato, var id: Long?) {
     fun loaded(title: String, text: String) {
         last = title to text
     }
+
+    /** The last save on the way out; a note left empty goes, as on the PC. */
+    fun close(title: String, text: String) {
+        if (title.isNotBlank() || text.isNotBlank()) return save(title, text)
+        legato.scope.launch {
+            lock.withLock {
+                val gone = id ?: return@withLock
+                try {
+                    legato.core.deleteScratch(gone)
+                    id = null
+                    last = null
+                    legato.bump()
+                } catch (e: Exception) {
+                    legato.notice(e.message ?: "Couldn't remove the empty note")
+                }
+            }
+        }
+    }
 }
 
 /** One Scratchpad note: a title, the text, and the mic to dictate at the cursor. */
@@ -265,7 +283,7 @@ fun ScratchEditScreen(id: Long, onBack: () -> Unit) {
     val latest by androidx.compose.runtime.rememberUpdatedState(title to body.text)
     DisposableEffect(Unit) {
         onDispose {
-            if (loaded) saver.save(latest.first, latest.second)
+            if (loaded) saver.close(latest.first, latest.second)
         }
     }
 
