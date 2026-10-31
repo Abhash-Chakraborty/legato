@@ -72,10 +72,17 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
 static LAST_MIC_LEVEL_EMIT: AtomicU64 = AtomicU64::new(0);
 /// Set while the main window shows a level meter (Home's right rail).
 static MAIN_WANTS_MIC_LEVEL: AtomicBool = AtomicBool::new(false);
+static SCRATCHPAD_WANTS_MIC_LEVEL: AtomicBool = AtomicBool::new(false);
 
-/// Lets the main window ask for microphone levels while it shows a meter.
-pub fn set_main_wants_mic_level(enabled: bool) {
-    MAIN_WANTS_MIC_LEVEL.store(enabled, Ordering::Relaxed);
+/// Lets the main window or the Scratchpad ask for microphone levels while
+/// it shows a meter.
+pub fn set_wants_mic_level(window: &str, enabled: bool) {
+    let wants = if window == crate::scratchpad::WINDOW {
+        &SCRATCHPAD_WANTS_MIC_LEVEL
+    } else {
+        &MAIN_WANTS_MIC_LEVEL
+    };
+    wants.store(enabled, Ordering::Relaxed);
 }
 const EMIT_THROTTLE_MS: u64 = 33; // ~30 FPS
 
@@ -941,9 +948,14 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // Skip emission when the overlay is disabled. The recording_overlay
     // window is created at boot regardless of overlay_style, so without this
     // guard a hidden overlay's webview would still process every event. The
-    // bubble's meter still wants them with the bar off.
+    // bubble's, Home's and the Scratchpad's meters still want them with the
+    // bar off.
     let overlay = OVERLAY_ENABLED.load(Ordering::Relaxed);
-    if !overlay && !crate::bubble::wants_levels() {
+    if !overlay
+        && !crate::bubble::wants_levels()
+        && !MAIN_WANTS_MIC_LEVEL.load(Ordering::Relaxed)
+        && !SCRATCHPAD_WANTS_MIC_LEVEL.load(Ordering::Relaxed)
+    {
         return;
     }
 
@@ -978,6 +990,9 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     }
     if crate::bubble::wants_levels() {
         let _ = app_handle.emit_to(crate::bubble::WINDOW, "mic-level", levels);
+    }
+    if SCRATCHPAD_WANTS_MIC_LEVEL.load(Ordering::Relaxed) {
+        let _ = app_handle.emit_to(crate::scratchpad::WINDOW, "mic-level", levels);
     }
 }
 
@@ -1171,10 +1186,10 @@ pub fn island_cover_changed(app_handle: &AppHandle, covered: bool) {
 
 /// The island's window covers more of the screen than its shape, so clicks
 /// pass through it except over the shape, which the page reports. A thread
-/// checks the cursor against the shape 30 times a second while the island
-/// shows, and sleeps while it doesn't.
+/// checks the cursor against the shape 30 times a second while the pointer
+/// is near the island (8 while it's away), and sleeps while it doesn't show.
 pub mod island_hit {
-    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU8, Ordering};
     use std::sync::{Condvar, Mutex, Once};
     use std::time::Duration;
 
@@ -1183,6 +1198,10 @@ pub mod island_hit {
     /// the edge so it's easy to hit.
     static SHAPE: Mutex<(f64, f64, f64, f64)> = Mutex::new((0.0, 0.0, 0.0, 0.0));
     static ARMED: Mutex<Option<tauri::webview::WebviewWindow>> = Mutex::new(None);
+    /// The armed window's handle, looked up once: Tauri asks the main
+    /// thread for it on every call, which woke it many times a second for
+    /// as long as the island showed.
+    static HWND_OF: AtomicIsize = AtomicIsize::new(0);
     static WAKE: Condvar = Condvar::new();
     static STARTED: Once = Once::new();
     /// Whether the window takes clicks now.
@@ -1217,6 +1236,7 @@ pub mod island_hit {
         });
         take_clicks(window, false);
         TOLD.store(UNTOLD, Ordering::SeqCst);
+        HWND_OF.store(window.hwnd().map_or(0, |h| h.0 as isize), Ordering::SeqCst);
         *ARMED.lock().unwrap_or_else(|e| e.into_inner()) = Some(window.clone());
         WAKE.notify_all();
     }
@@ -1241,7 +1261,7 @@ pub mod island_hit {
             };
             let mut near = true;
             if let Some(window) = window {
-                let (inside, close) = cursor_on_shape(&window);
+                let (inside, close) = cursor_on_shape(HWND_OF.load(Ordering::SeqCst));
                 near = close;
                 // The window may have been disarmed while we looked.
                 if ARMED.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
@@ -1270,7 +1290,7 @@ pub mod island_hit {
     /// while the island is up, otherwise anywhere on the bar's window.
     pub fn pointer_on(window: &tauri::webview::WebviewWindow) -> bool {
         if ARMED.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
-            return cursor_on_shape(window).0;
+            return cursor_on_shape(HWND_OF.load(Ordering::SeqCst)).0;
         }
         use windows::Win32::Foundation::{POINT, RECT};
         use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
@@ -1290,12 +1310,13 @@ pub mod island_hit {
 
     /// Whether the cursor is on the island's shape, and whether it's within
     /// a short reach of its window.
-    fn cursor_on_shape(window: &tauri::webview::WebviewWindow) -> (bool, bool) {
-        use windows::Win32::Foundation::{POINT, RECT};
+    fn cursor_on_shape(hwnd: isize) -> (bool, bool) {
+        use windows::Win32::Foundation::{HWND, POINT, RECT};
         use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
-        let Ok(hwnd) = window.hwnd() else {
+        if hwnd == 0 {
             return (false, false);
-        };
+        }
+        let hwnd = HWND(hwnd as _);
         let mut cursor = POINT::default();
         let mut rect = RECT::default();
         // SAFETY: plain queries into stack values on our own window.

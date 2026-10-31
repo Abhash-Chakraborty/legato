@@ -302,6 +302,43 @@ pub fn apply_capture_privacy(app: &AppHandle, window: &tauri::WebviewWindow) {
     let _ = app.run_on_main_thread(move || set_capture_hidden(&window, hide));
 }
 
+/// A window going away (`resting`) or coming back. Hidden, its webview stops
+/// drawing and is asked to give back what memory it can, which WebView2
+/// does by trimming the page's caches and heap; shown, it draws again at
+/// once. The main window and the Scratchpad spend most of the day hidden.
+pub fn webview_resting(window: &tauri::WebviewWindow, resting: bool) {
+    #[cfg(windows)]
+    {
+        let label = window.label().to_string();
+        let _ = window.with_webview(move |webview| unsafe {
+            use webview2_com::Microsoft::Web::WebView2::Win32::{
+                ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW,
+                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+            };
+            use windows::core::Interface;
+            let controller = webview.controller();
+            if let Err(e) = controller.SetIsVisible(!resting) {
+                warn!(
+                    "Couldn't {} the '{label}' webview: {e}",
+                    if resting { "hide" } else { "show" }
+                );
+            }
+            let level = if resting {
+                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+            } else {
+                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+            };
+            // Older WebView2 runtimes lack the call; they keep their memory.
+            let _ = controller
+                .CoreWebView2()
+                .and_then(|core| core.cast::<ICoreWebView2_19>())
+                .and_then(|core| core.SetMemoryUsageTargetLevel(level));
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = (window, resting);
+}
+
 /// The setting changed: the floating windows made so far follow it now.
 pub fn capture_privacy_changed(app: &AppHandle) {
     use tauri::Manager;

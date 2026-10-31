@@ -955,10 +955,28 @@ mod win {
         users
     }
 
-    /// The executables with an active recording session on any microphone.
-    /// Unlike the privacy records, which Windows may only write when a
-    /// stream stops, these show a call while it is going.
-    pub fn capturing_exes() -> Vec<String> {
+    thread_local! {
+        /// Each microphone's session manager, and when they were found.
+        /// Finding them asks Windows' audio service for every microphone,
+        /// which is wasted work every two seconds; a microphone plugged in
+        /// meanwhile is seen at the next refresh, and the privacy records
+        /// still show a call on it before then.
+        static MANAGERS: std::cell::RefCell<(Option<std::time::Instant>, Vec<IAudioSessionManager2>)> =
+            const { std::cell::RefCell::new((None, Vec::new())) };
+    }
+    const MANAGERS_FOR: Duration = Duration::from_secs(30);
+
+    fn session_managers() -> Vec<IAudioSessionManager2> {
+        MANAGERS.with_borrow_mut(|(found, managers)| {
+            if found.is_none_or(|at| at.elapsed() >= MANAGERS_FOR) {
+                *managers = find_session_managers();
+                *found = Some(std::time::Instant::now());
+            }
+            managers.clone()
+        })
+    }
+
+    fn find_session_managers() -> Vec<IAudioSessionManager2> {
         // SAFETY: COM calls on this thread, which initialises COM first.
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -970,14 +988,25 @@ mod win {
             let Ok(devices) = enumerator.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE) else {
                 return Vec::new();
             };
-            let mut exes = Vec::new();
-            for d in 0..devices.GetCount().unwrap_or(0) {
-                let Ok(device) = devices.Item(d) else {
-                    continue;
-                };
-                let Ok(manager) = device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else {
-                    continue;
-                };
+            (0..devices.GetCount().unwrap_or(0))
+                .filter_map(|d| devices.Item(d).ok())
+                .filter_map(|device| {
+                    device
+                        .Activate::<IAudioSessionManager2>(CLSCTX_ALL, None)
+                        .ok()
+                })
+                .collect()
+        }
+    }
+
+    /// The executables with an active recording session on any microphone.
+    /// Unlike the privacy records, which Windows may only write when a
+    /// stream stops, these show a call while it is going.
+    pub fn capturing_exes() -> Vec<String> {
+        let mut exes = Vec::new();
+        for manager in session_managers() {
+            // SAFETY: COM calls on the thread that made the manager.
+            unsafe {
                 let Ok(sessions) = manager.GetSessionEnumerator() else {
                     continue;
                 };
@@ -1002,8 +1031,8 @@ mod win {
                     }
                 }
             }
-            exes
         }
+        exes
     }
 
     fn exe_of_process(pid: u32) -> Option<String> {

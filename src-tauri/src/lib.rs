@@ -166,6 +166,7 @@ fn handle_second_instance(app: &AppHandle, args: &[String]) {
 
 pub(crate) fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
+        desktop::webview_resting(&main_window, false);
         if let Err(e) = main_window.unminimize() {
             log::error!("Failed to unminimize webview window: {}", e);
         }
@@ -1555,6 +1556,17 @@ pub fn run(cli_args: CliArgs) {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _res = window.hide();
+                if let Some(w) = window.app_handle().get_webview_window(window.label()) {
+                    desktop::webview_resting(&w, true);
+                }
+            }
+            // Shown some way other than show_main_window: draw again.
+            tauri::WindowEvent::Focused(true)
+                if matches!(window.label(), "main" | scratchpad::WINDOW) =>
+            {
+                if let Some(w) = window.app_handle().get_webview_window(window.label()) {
+                    desktop::webview_resting(&w, false);
+                }
             }
             // Moved to a screen with another scale, or the scale changed.
             tauri::WindowEvent::ScaleFactorChanged { .. } => match window.label() {

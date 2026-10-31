@@ -454,6 +454,7 @@ pub fn show(app: &AppHandle, note: Option<i64>) -> Result<()> {
     let Some(window) = build_window(app) else {
         return Ok(());
     };
+    crate::desktop::webview_resting(&window, false);
     let _ = window.show();
     let _ = window.unminimize();
     let _ = window.set_focus();
@@ -471,6 +472,7 @@ pub fn show_new(app: &AppHandle) -> Result<()> {
 pub fn hide(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.hide();
+        crate::desktop::webview_resting(&window, true);
     }
 }
 

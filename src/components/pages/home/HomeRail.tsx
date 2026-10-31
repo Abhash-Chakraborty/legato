@@ -38,7 +38,11 @@ const LevelMeter: React.FC = () => {
   const [level, setLevel] = useState(0);
 
   useEffect(() => {
-    commands.watchMicLevel(true).catch(() => {});
+    // Only while the window shows: closed to the tray, it keeps Home but
+    // has no use for 30 levels a second during a dictation.
+    const want = () => commands.watchMicLevel(!document.hidden).catch(() => {});
+    want();
+    document.addEventListener("visibilitychange", want);
     let decay: ReturnType<typeof setTimeout> | undefined;
     const unlisten = listen<number[]>("mic-level", ({ payload }) => {
       const peak = Math.max(0, ...payload.slice(0, 8));
@@ -48,6 +52,7 @@ const LevelMeter: React.FC = () => {
     });
     return () => {
       clearTimeout(decay);
+      document.removeEventListener("visibilitychange", want);
       commands.watchMicLevel(false).catch(() => {});
       unlisten.then((fn) => fn());
     };
@@ -85,10 +90,12 @@ const Fact: React.FC<{
 
 const Step: React.FC<{
   icon: LucideIcon;
+  /** The move its icon plays on hover (`.im-*` in controls.css). */
+  motion: string;
   title: string;
   detail: string;
   onClick: () => void;
-}> = ({ icon: Icon, title, detail, onClick }) => (
+}> = ({ icon: Icon, motion, title, detail, onClick }) => (
   <li>
     <button
       type="button"
@@ -96,7 +103,10 @@ const Step: React.FC<{
       className="group flex w-full items-center gap-3 rounded-[var(--r-sm)] px-1.5 py-1.5 text-start transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0"
     >
       <span className="grid h-7 w-7 flex-none place-items-center rounded-full border border-line text-text-2 group-hover:text-text">
-        <Icon className="h-3.5 w-3.5 stroke-[1.75]" aria-hidden="true" />
+        <Icon
+          className={`im im-${motion} h-3.5 w-3.5 stroke-[1.75]`}
+          aria-hidden="true"
+        />
       </span>
       <span className="min-w-0">
         <span className="block text-sm text-text">{title}</span>
@@ -243,12 +253,14 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
         <ol className="flex flex-col">
           <Step
             icon={AudioLines}
+            motion="meter"
             title={t("home.rail.steps.transcribe")}
             detail={modelName}
             onClick={open("models")}
           />
           <Step
             icon={BookA}
+            motion="tilt"
             title={t("home.rail.steps.dictionary")}
             detail={t(
               aiPass
@@ -260,6 +272,7 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
           />
           <Step
             icon={Eraser}
+            motion="erase"
             title={t("home.rail.steps.cleanup")}
             detail={
               settings?.filler_word_removal_enabled
@@ -270,6 +283,7 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
           />
           <Step
             icon={Replace}
+            motion="swap"
             title={t("home.rail.steps.transform")}
             detail={
               settings?.post_process_enabled
@@ -284,6 +298,7 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
           />
           <Step
             icon={ClipboardPaste}
+            motion="paste"
             title={t("home.rail.steps.paste")}
             detail={pasteLabel}
             onClick={open("settings", "output")}
