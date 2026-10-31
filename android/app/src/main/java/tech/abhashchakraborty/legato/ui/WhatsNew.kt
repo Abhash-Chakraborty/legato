@@ -40,7 +40,7 @@ val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
         "Legato lets go of its speech model when Android runs short of memory.",
         "A voice memo is written up while you talk, half a minute at a time, so Stop leaves only the last bit. Your PC adds a summary, a title, tags and open actions.",
         "Long-press a memo made on this device to delete it, with Undo. Your PC's notes are deleted on the PC.",
-        "A new Scratchpad note opens ready to type, and the mic stays above the keyboard.",
+        "A new Scratchpad note opens ready to type, the mic stays above the keyboard, and a note you empty goes away.",
     ),
     "0.2.0" to listOf(
         "What you copy on this phone goes to your PC by itself, not only when you open Legato.",
