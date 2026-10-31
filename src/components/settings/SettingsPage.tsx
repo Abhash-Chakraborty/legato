@@ -222,7 +222,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               >
                 <Icon
                   aria-hidden
-                  className={`h-[17px] w-[17px] flex-none stroke-[1.75] ${on ? "text-text" : "text-text-3 group-hover:text-text-2"}`}
+                  className={`im im-${s.motion ?? "none"} h-[17px] w-[17px] flex-none stroke-[1.75] ${on ? "text-text" : "text-text-3 group-hover:text-text-2"}`}
                 />
                 <span className="truncate">
                   {t(`settings.sections.${s.id}.title`)}

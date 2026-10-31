@@ -8,6 +8,7 @@ import React, {
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { DictationMeter } from "../components/scratchpad/DictationMeter";
 import {
   Bold,
   Bot,
@@ -1093,10 +1094,10 @@ export const ScratchpadWindow: React.FC = () => {
                   ? t("scratchpad.transform.cancelTip")
                   : t("scratchpad.transform.tip")
               }
-              className={`${railItem} disabled:cursor-not-allowed disabled:opacity-45`}
+              className={`${railItem} group disabled:cursor-not-allowed disabled:opacity-45`}
             >
               <Replace
-                className={`h-[17px] w-[17px] flex-none ${transforming ? "animate-pulse text-teal-700" : ""}`}
+                className={`im h-[17px] w-[17px] flex-none ${transforming ? "im-swap-loop text-teal-700" : "im-swap"}`}
                 aria-hidden="true"
               />
               {panel && (
@@ -1261,17 +1262,20 @@ export const ScratchpadWindow: React.FC = () => {
                       ? t("scratchpad.window.listening")
                       : t("scratchpad.window.dictateTip")
                   }
-                  className={`pointer-events-auto grid h-9 w-9 flex-none place-items-center rounded-full border transition-colors duration-[var(--dur-1)] hover:duration-0 active:scale-[0.95] ${
+                  className={`pointer-events-auto flex h-9 flex-none items-center justify-center gap-2 rounded-full border transition-[background-color,border-color,width] duration-[var(--dur-2)] hover:duration-0 active:scale-[0.95] ${
                     dictating
-                      ? "border-teal-500 bg-teal-50 text-teal-700"
-                      : "border-line-strong bg-surface text-text-2 hover:bg-surface-2 hover:text-text"
+                      ? "w-[68px] border-teal-500 bg-teal-50 text-teal-700"
+                      : "w-9 border-line-strong bg-surface text-text-2 hover:bg-surface-2 hover:text-text"
                   }`}
                 >
                   {dictating ? (
-                    <Square
-                      className="h-3.5 w-3.5 fill-current"
-                      aria-hidden="true"
-                    />
+                    <>
+                      <DictationMeter />
+                      <Square
+                        className="h-3.5 w-3.5 fill-current"
+                        aria-hidden="true"
+                      />
+                    </>
                   ) : (
                     <Mic className="h-4 w-4" aria-hidden="true" />
                   )}

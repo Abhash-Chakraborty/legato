@@ -184,6 +184,8 @@ export interface SettingsGroupDef {
 export interface SectionDef {
   id: SettingsSection;
   icon: LucideIcon;
+  /** The move its icon plays on hover (`.im-*` in controls.css). */
+  motion?: string;
   groups: SettingsGroupDef[];
   /** Debug only shows in debug mode (Ctrl+Shift+D). */
   hidden?: (settings: AppSettings | null) => boolean;
@@ -250,6 +252,7 @@ export const buildSections = (
   {
     id: "general",
     icon: Settings2,
+    motion: "slide",
     groups: [
       {
         id: "you",
@@ -394,6 +397,7 @@ export const buildSections = (
   {
     id: "shortcuts",
     icon: Keyboard,
+    motion: "keys",
     groups: [
       {
         id: "dictation",
@@ -833,6 +837,7 @@ export const buildSections = (
   {
     id: "output",
     icon: ClipboardPaste,
+    motion: "paste",
     groups: [
       {
         id: "paste",
@@ -1034,6 +1039,7 @@ export const buildSections = (
   {
     id: "calls",
     icon: PhoneIncoming,
+    motion: "call",
     groups: [
       {
         id: "calls-master",
@@ -1404,6 +1410,7 @@ export const buildSections = (
   {
     id: "devices",
     icon: Smartphone,
+    motion: "lift",
     groups: [
       {
         id: "phone",

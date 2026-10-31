@@ -374,6 +374,9 @@ textarea {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .im-swap-loop {
+    animation: im-fade 2s ease-in-out infinite;
+  }
   .grow-x,
   .grow-y,
   .cell-in {
@@ -519,4 +522,229 @@ textarea {
   border-radius: 3px;
   background: var(--teal-100);
   padding: 0 2px;
+}
+
+/* ------------------------------------------------------- icon motion */
+/* Sidebar icons play one short move when their row is hovered or focused:
+   Notes' bars bounce like a level meter, Transforms' arrow travels to the
+   new box, Insights' columns grow, Settings' gear turns one tooth. One
+   pass per hover, never a loop, and nothing with reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .im > * {
+    transform-box: fill-box;
+  }
+  .group:is(:hover, :focus-visible) .im-lift {
+    animation: im-lift 320ms var(--ease-out);
+  }
+  .group:is(:hover, :focus-visible) .im-tilt {
+    animation: im-tilt 360ms var(--ease-out);
+  }
+  /* The blades open about the screw at (12, 12), given in each path's own box. */
+  .group:is(:hover, :focus-visible) .im-snip > :nth-child(3) {
+    transform-origin: 32.7% 67.3%;
+    animation: im-snip 300ms var(--ease-out);
+  }
+  .group:is(:hover, :focus-visible) .im-snip > :nth-child(2) {
+    transform-origin: 100% 100%;
+    animation: im-snip-back 300ms var(--ease-out);
+  }
+  .group:is(:hover, :focus-visible) .im-snip > :nth-child(5) {
+    transform-origin: -53.8% -53.8%;
+    animation: im-snip-back 300ms var(--ease-out);
+  }
+  .group:is(:hover, :focus-visible) .im-type > :nth-child(1) {
+    transform-origin: center bottom;
+    animation: im-type 320ms var(--ease-out);
+  }
+  .group:is(:hover, :focus-visible) .im-swap > :nth-child(5),
+  .group:is(:hover, :focus-visible) .im-swap > :nth-child(6) {
+    animation: im-swap 460ms var(--ease-out);
+  }
+  .group:is(:hover, :focus-visible) .im-meter > * {
+    transform-origin: center;
+    animation: im-meter 520ms var(--ease-out);
+  }
+  .group:is(:hover, :focus-visible) .im-meter > :nth-child(2) {
+    --lo: 0.5;
+    animation-delay: 40ms;
+  }
+  .group:is(:hover, :focus-visible) .im-meter > :nth-child(3) {
+    --lo: 0.3;
+    animation-delay: 80ms;
+  }
+  .group:is(:hover, :focus-visible) .im-meter > :nth-child(4) {
+    --lo: 1.5;
+    animation-delay: 120ms;
+  }
+  .group:is(:hover, :focus-visible) .im-meter > :nth-child(5) {
+    --lo: 0.45;
+    animation-delay: 160ms;
+  }
+  .group:is(:hover, :focus-visible) .im-write > :last-child {
+    animation: im-write 420ms var(--ease-out);
+  }
+  .group:is(:hover, :focus-visible) .im-bars > :not(:first-child) {
+    transform-origin: center bottom;
+    animation: grow-y 420ms var(--ease-out) both;
+  }
+  .group:is(:hover, :focus-visible) .im-bars > :nth-child(3) {
+    animation-delay: 50ms;
+  }
+  .group:is(:hover, :focus-visible) .im-bars > :nth-child(2) {
+    animation-delay: 100ms;
+  }
+  .group:is(:hover, :focus-visible) .im-chip > :last-child {
+    transform-origin: center;
+    animation: im-chip 360ms var(--ease-out);
+  }
+  .group:is(:hover, :focus-visible) .im-turn {
+    animation: im-turn 480ms var(--ease-out);
+  }
+  /* A transform running: the arrow keeps travelling until it's done. */
+  .im-swap-loop > :nth-child(5),
+  .im-swap-loop > :nth-child(6) {
+    animation: im-swap 900ms var(--ease-out) infinite;
+  }
+  .group:is(:hover, :focus-visible) .im-erase {
+    animation: im-erase 420ms var(--ease-out);
+  }
+  /* Pasting: the arrow and its line push out of the clipboard. */
+  .group:is(:hover, :focus-visible) .im-paste > :nth-child(1),
+  .group:is(:hover, :focus-visible) .im-paste > :nth-child(3) {
+    animation: im-paste 420ms var(--ease-out);
+  }
+  /* A call coming in: the arrow arrives from the corner. */
+  .group:is(:hover, :focus-visible) .im-call > :nth-child(1),
+  .group:is(:hover, :focus-visible) .im-call > :nth-child(2) {
+    animation: im-call 460ms var(--ease-out);
+  }
+  /* A shortcut typing: the keys go down one after another, left to right
+     and row by row, then the space bar. */
+  .group:is(:hover, :focus-visible) .im-keys > :not(:last-child) {
+    animation: im-key 180ms var(--ease-out) both;
+  }
+  .group:is(:hover, :focus-visible) .im-keys > :nth-child(1) {
+    animation-delay: 45ms;
+  }
+  .group:is(:hover, :focus-visible) .im-keys > :nth-child(3) {
+    animation-delay: 90ms;
+  }
+  .group:is(:hover, :focus-visible) .im-keys > :nth-child(5) {
+    animation-delay: 135ms;
+  }
+  .group:is(:hover, :focus-visible) .im-keys > :nth-child(8) {
+    animation-delay: 180ms;
+  }
+  .group:is(:hover, :focus-visible) .im-keys > :nth-child(2) {
+    animation-delay: 225ms;
+  }
+  .group:is(:hover, :focus-visible) .im-keys > :nth-child(4) {
+    animation-delay: 270ms;
+  }
+  .group:is(:hover, :focus-visible) .im-keys > :nth-child(7) {
+    animation-delay: 330ms;
+  }
+  .group:is(:hover, :focus-visible) .im-slide > :nth-child(3) {
+    animation: im-slide-left 380ms var(--ease-out);
+  }
+  .group:is(:hover, :focus-visible) .im-slide > :nth-child(4) {
+    animation: im-slide-right 380ms var(--ease-out);
+  }
+}
+@keyframes im-lift {
+  40% {
+    transform: translateY(-2px);
+  }
+}
+@keyframes im-tilt {
+  40% {
+    transform: rotate(-9deg);
+  }
+}
+@keyframes im-snip {
+  45% {
+    transform: rotate(-7deg);
+  }
+}
+@keyframes im-snip-back {
+  45% {
+    transform: rotate(7deg);
+  }
+}
+@keyframes im-type {
+  45% {
+    transform: scaleY(0.7);
+  }
+}
+@keyframes im-swap {
+  45% {
+    transform: translateY(2.5px);
+    opacity: 0.4;
+  }
+  46% {
+    transform: translateY(-2px);
+  }
+}
+@keyframes im-meter {
+  40% {
+    transform: scaleY(var(--lo, 0.4));
+  }
+}
+@keyframes im-write {
+  30% {
+    transform: translate(-1.5px, 1.5px);
+  }
+  65% {
+    transform: translate(1px, -0.5px);
+  }
+}
+@keyframes im-chip {
+  45% {
+    transform: scale(0.75);
+  }
+}
+@keyframes im-turn {
+  to {
+    transform: rotate(60deg);
+  }
+}
+@keyframes im-erase {
+  30% {
+    transform: translateX(-1.5px) rotate(-6deg);
+  }
+  65% {
+    transform: translateX(1px) rotate(3deg);
+  }
+}
+@keyframes im-paste {
+  45% {
+    transform: translateX(2.5px);
+    opacity: 0.3;
+  }
+}
+@keyframes im-call {
+  0% {
+    transform: translate(3px, -3px);
+    opacity: 0;
+  }
+}
+@keyframes im-key {
+  50% {
+    opacity: 0.15;
+  }
+}
+@keyframes im-slide-left {
+  45% {
+    transform: translateX(-5px);
+  }
+}
+@keyframes im-slide-right {
+  45% {
+    transform: translateX(5px);
+  }
+}
+@keyframes im-fade {
+  50% {
+    opacity: 0.45;
+  }
 }

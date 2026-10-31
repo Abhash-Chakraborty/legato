@@ -27,26 +27,40 @@ interface NavItem {
   gapBefore?: boolean;
   /** The Settings › Features switch the page goes with. */
   feature?: "notes_enabled" | "scratchpad_enabled" | "insights_enabled";
+  /** The move its icon plays on hover (`.im-*` in controls.css). */
+  motion: string;
 }
 
 // What you do with dictation first, then the words and prompts you keep,
 // then what you record and jot down, and how you use it; configuration sits
 // at the bottom.
 const TOP: NavItem[] = [
-  { id: "home", labelKey: "sidebar.home", icon: House },
+  { id: "home", labelKey: "sidebar.home", icon: House, motion: "lift" },
   {
     id: "dictionary",
     labelKey: "sidebar.dictionary",
     icon: BookA,
+    motion: "tilt",
     gapBefore: true,
   },
-  { id: "snippets", labelKey: "sidebar.snippets", icon: Scissors },
-  { id: "style", labelKey: "sidebar.style", icon: Type },
-  { id: "transforms", labelKey: "sidebar.transforms", icon: Replace },
+  {
+    id: "snippets",
+    labelKey: "sidebar.snippets",
+    icon: Scissors,
+    motion: "snip",
+  },
+  { id: "style", labelKey: "sidebar.style", icon: Type, motion: "type" },
+  {
+    id: "transforms",
+    labelKey: "sidebar.transforms",
+    icon: Replace,
+    motion: "swap",
+  },
   {
     id: "notes",
     labelKey: "sidebar.notes",
     icon: AudioLines,
+    motion: "meter",
     gapBefore: true,
     feature: "notes_enabled",
   },
@@ -54,18 +68,25 @@ const TOP: NavItem[] = [
     id: "scratchpad",
     labelKey: "sidebar.scratchpad",
     icon: NotebookPen,
+    motion: "write",
     feature: "scratchpad_enabled",
   },
   {
     id: "insights",
     labelKey: "sidebar.insights",
     icon: ChartColumn,
+    motion: "bars",
     feature: "insights_enabled",
   },
 ];
 const BOTTOM: NavItem[] = [
-  { id: "models", labelKey: "sidebar.models", icon: Cpu },
-  { id: "settings", labelKey: "sidebar.settings", icon: Settings },
+  { id: "models", labelKey: "sidebar.models", icon: Cpu, motion: "chip" },
+  {
+    id: "settings",
+    labelKey: "sidebar.settings",
+    icon: Settings,
+    motion: "turn",
+  },
 ];
 
 /** Whether a page shows: its feature is on (settings saved before the
@@ -113,7 +134,7 @@ const NavButton: React.FC<{
       )}
       <Icon
         aria-hidden
-        className={`h-[18px] w-[18px] flex-none stroke-[1.75] ${current ? "text-text" : "text-text-2 group-hover:text-text"}`}
+        className={`im im-${item.motion} h-[18px] w-[18px] flex-none stroke-[1.75] ${current ? "text-text" : "text-text-2 group-hover:text-text"}`}
       />
       {!collapsed && (
         <span className="min-w-0 flex-1 truncate text-start">{label}</span>
