@@ -3044,6 +3044,8 @@
       "failedWith": "No summary: {{problem}}.",
       "stale": "You corrected the transcript after this summary was written.",
       "update": "Update summary",
+      "due": "The summary updates with your corrections in a few seconds.",
+      "updateNow": "Update now",
       "details": "Details",
       "people": "People",
       "playFrom": "Play from {{time}}",

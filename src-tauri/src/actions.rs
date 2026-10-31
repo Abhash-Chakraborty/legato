@@ -961,6 +961,7 @@ impl ShortcutAction for TranscribeAction {
                             fixes,
                             heard,
                             fillers,
+                            ..
                         }) => {
                             debug!(
                                 "Transcription completed in {:?}: '{}'",

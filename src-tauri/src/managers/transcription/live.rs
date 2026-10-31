@@ -87,6 +87,7 @@ impl<'a> LiveSession<'a> {
             setup: self.setup,
             text,
             model_detected_language,
+            words: Vec::new(),
         }))
     }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -12,14 +12,106 @@ import {
 import { commands, type NoteLine, type WordFix } from "@/bindings";
 import { useNotesStore } from "../../stores/notesStore";
 import { ActionMenu, type ActionMenuItem } from "../ui/ActionMenu";
+import type { NoteAudio } from "../pages/notes/NoteAudio";
 import { ADD_WORD_EVENT, pickedWords } from "./AddWord";
-import { speakerLabel, type Voice } from "./notes";
+import {
+  lineWords,
+  speakerLabel,
+  wordAt,
+  wordAtOffset,
+  type LineWord,
+  type Voice,
+} from "./notes";
 import { useSpeakerNames } from "./SpeakerTag";
+
+type Playback = Pick<NoteAudio, "audio" | "playing" | "playFrom">;
+
+/** A word plays from a moment before the model says it starts, so its
+ *  first sound isn't cut. */
+const LEAD_IN_MS = 150;
+
+/** The playing line, word by word, with the word under the playhead
+ *  marked. Follows the audio every frame while it plays and re-renders
+ *  only when the word changes. */
+const SpokenWords: React.FC<{
+  text: string;
+  words: LineWord[];
+  player: Playback;
+}> = ({ text, words, player }) => {
+  const [active, setActive] = useState(-1);
+  const { audio, playing } = player;
+
+  useEffect(() => {
+    const el = audio.current;
+    if (!el) return;
+    let frame = 0;
+    const update = () => setActive(wordAt(words, el.currentTime * 1000));
+    const follow = () => {
+      update();
+      frame = requestAnimationFrame(follow);
+    };
+    update();
+    if (playing) frame = requestAnimationFrame(follow);
+    el.addEventListener("seeked", update);
+    return () => {
+      cancelAnimationFrame(frame);
+      el.removeEventListener("seeked", update);
+    };
+  }, [audio, playing, words]);
+
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  words.forEach((w, i) => {
+    if (w.from > last) parts.push(text.slice(last, w.from));
+    parts.push(
+      <span
+        key={i}
+        data-w={i}
+        className={`rounded-[var(--r-xs)] transition-[background-color,box-shadow] duration-[var(--dur-1)] motion-reduce:transition-none ${
+          i === active
+            ? "bg-teal-100 shadow-[0_0_0_2px_var(--teal-100)]"
+            : "shadow-[0_0_0_2px_transparent]"
+        }`}
+      >
+        {w.text}
+      </span>,
+    );
+    last = w.to;
+  });
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
+};
+
+/** How many characters of `root`'s text come before the caret. */
+const offsetIn = (root: HTMLElement, caret: Range) => {
+  const before = document.createRange();
+  before.setStart(root, 0);
+  before.setEnd(caret.startContainer, caret.startOffset);
+  return before.toString().length;
+};
+
+/** Whether a click at (x, y) landed on `word` of a line shown as plain
+ *  text, not in the empty space after it. */
+const onWord = (root: HTMLElement, word: LineWord, x: number, y: number) => {
+  const node = root.firstChild;
+  if (root.childNodes.length !== 1 || !(node instanceof Text)) return true;
+  const range = document.createRange();
+  range.setStart(node, Math.min(word.from, node.length));
+  range.setEnd(node, Math.min(word.to, node.length));
+  return [...range.getClientRects()].some(
+    (r) =>
+      x >= r.left - 2 &&
+      x <= r.right + 2 &&
+      y >= r.top - 2 &&
+      y <= r.bottom + 2,
+  );
+};
 
 /** A transcript line's words, which can be corrected in place (double-click,
  *  or Edit in its menu), given to someone else or deleted, during the
  *  recording and after it. A corrected word is offered for the note's other
- *  lines and the Dictionary. */
+ *  lines and the Dictionary. With the note's audio, clicking a word plays
+ *  from it, and the playing line marks the word being said. */
 export const LineText: React.FC<{
   line: NoteLine;
   /** The words of a line still being spoken: shown, not editable. */
@@ -30,7 +122,19 @@ export const LineText: React.FC<{
    *  AddWordFromSelection is mounted around the line). */
   canAddWord?: boolean;
   className?: string;
-}> = ({ line, preview, voices = [], canAddWord = false, className = "" }) => {
+  /** The note's recording, when it has one. */
+  player?: Playback;
+  /** This line is the one playing. */
+  current?: boolean;
+}> = ({
+  line,
+  preview,
+  voices = [],
+  canAddWord = false,
+  className = "",
+  player,
+  current = false,
+}) => {
   const { t } = useTranslation();
   const names = useSpeakerNames();
   const speakers = useNotesStore(
@@ -50,6 +154,25 @@ export const LineText: React.FC<{
   const open = useRef(false);
   const more = useRef<HTMLButtonElement>(null);
   const other = line.who === "you" ? "them" : "you";
+  const words = useMemo(() => lineWords(line), [line]);
+
+  // A click on a word plays the recording from it; a drag that selects
+  // words, or the second click of a double-click, doesn't.
+  const seek = (e: React.MouseEvent<HTMLSpanElement>) => {
+    const root = textRef.current;
+    if (!player || !root || e.detail !== 1 || !words.length) return;
+    if (!(window.getSelection()?.isCollapsed ?? true)) return;
+    const hit = (e.target as HTMLElement).closest("[data-w]");
+    let i = hit ? Number(hit.getAttribute("data-w")) : -1;
+    if (i < 0) {
+      const caret = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+      if (!caret || !root.contains(caret.startContainer)) return;
+      i = wordAtOffset(words, offsetIn(root, caret));
+      if (words[i] && !onWord(root, words[i], e.clientX, e.clientY)) return;
+    }
+    const word = words[i];
+    if (word) player.playFrom(Math.max(line.at_ms, word.start - LEAD_IN_MS));
+  };
 
   // Fit the box to the words as they're typed.
   useEffect(() => {
@@ -244,10 +367,15 @@ export const LineText: React.FC<{
         <span
           ref={textRef}
           data-line-text
+          onClick={seek}
           onDoubleClick={edit}
           className={`${className} block select-text pe-7`}
         >
-          {line.text}
+          {current && player ? (
+            <SpokenWords text={line.text} words={words} player={player} />
+          ) : (
+            line.text
+          )}
         </span>
       )}
       {!editing && (

@@ -8,6 +8,9 @@ import {
   inFilter,
   lineAt,
   lineMatches,
+  lineWords,
+  wordAt,
+  wordAtOffset,
   linesToFix,
   replaceWords,
   longClock,
@@ -276,4 +279,50 @@ assert.deepEqual(
 assert.deepEqual(notesAnswerParts("Nothing about that."), [
   { kind: "text", text: "Nothing about that." },
 ]);
+// A line's words follow the model's times, or spread across the line.
+{
+  const timed: NoteLine = {
+    ...line(1_000, "them", "We ship  Friday."),
+    word_ms: [
+      [1_000, 1_200],
+      [1_300, 1_700],
+      [2_000, 2_600],
+    ],
+  };
+  const words = lineWords(timed);
+  assert.deepEqual(
+    words.map((w) => [w.text, w.from, w.to, w.start, w.end]),
+    [
+      ["We", 0, 2, 1_000, 1_200],
+      ["ship", 3, 7, 1_300, 1_700],
+      ["Friday.", 9, 16, 2_000, 2_600],
+    ],
+  );
+  assert.equal(wordAt(words, 900), -1);
+  assert.equal(wordAt(words, 1_250), 0);
+  assert.equal(wordAt(words, 1_800), 1);
+  assert.equal(wordAt(words, 2_800), 2);
+  assert.equal(wordAt(words, 3_000), -1);
+  assert.equal(wordAtOffset(words, 4), 1);
+  assert.equal(wordAtOffset(words, 8), 2);
+  assert.equal(wordAtOffset(words, 99), 2);
+  // Times that don't fit the words (or none, from Whisper) are spread.
+  const spreadOut = lineWords({
+    ...line(1_000, "you", "ab abcd ab"),
+    end_ms: 1_800,
+  });
+  assert.deepEqual(
+    spreadOut.map((w) => [w.start, w.end]),
+    [
+      [1_000, 1_200],
+      [1_200, 1_600],
+      [1_600, 1_800],
+    ],
+  );
+  assert.deepEqual(
+    lineWords({ ...timed, text: "two words" }).map((w) => w.start),
+    [1_000, 1_750],
+  );
+  assert.deepEqual(lineWords(line(0, "you", "  ")), []);
+}
 console.log("notes: ok");

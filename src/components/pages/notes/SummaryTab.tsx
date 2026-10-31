@@ -447,14 +447,21 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
       ) : hasSummary ? (
         <>
           {stale && enabled && hasAi && (
-            <p className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--r-md)] bg-surface-2 px-3 py-2 text-[13px] text-text-2">
-              {t("notes.summary.stale")}
+            <p
+              role="status"
+              className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--r-md)] bg-surface-2 px-3 py-2 text-[13px] text-text-2"
+            >
+              {note.summary_due
+                ? t("notes.summary.due")
+                : t("notes.summary.stale")}
               <button
                 type="button"
                 onClick={regenerate}
                 className="font-medium text-teal-700 underline-offset-2 hover:underline"
               >
-                {t("notes.summary.update")}
+                {note.summary_due
+                  ? t("notes.summary.updateNow")
+                  : t("notes.summary.update")}
               </button>
             </p>
           )}

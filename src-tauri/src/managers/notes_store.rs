@@ -141,6 +141,9 @@ pub struct Note {
     /// The folder the note is in, by name.
     #[serde(default)]
     pub folder: Option<String>,
+    /// Corrections to the transcript will update the summary shortly.
+    #[serde(default)]
+    pub summary_due: bool,
 }
 
 /// A folder of notes, with how many it holds.
@@ -163,6 +166,11 @@ pub struct NoteLine {
     /// apart; None before that, or when it couldn't tell.
     #[serde(default)]
     pub speaker: Option<i64>,
+    /// When each word of `text` was said, as (start, end) in milliseconds
+    /// from the start of the recording, one pair per word; None when the
+    /// speech model gave no word times (Whisper).
+    #[serde(default)]
+    pub word_ms: Option<Vec<(i64, i64)>>,
 }
 
 /// A name given to one of a note's voices.
@@ -188,7 +196,7 @@ pub struct Voice {
     pub used_at: i64,
 }
 
-const LINE_COLUMNS: &str = "id, note_id, at_ms, end_ms, who, text, speaker";
+const LINE_COLUMNS: &str = "id, note_id, at_ms, end_ms, who, text, speaker, word_ms";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct NoteAction {
@@ -280,11 +288,13 @@ fn map(row: &Row<'_>) -> rusqlite::Result<Note> {
             .and_then(|a| serde_json::from_str(&a).ok())
             .unwrap_or_default(),
         folder: row.get("folder")?,
+        summary_due: false,
     })
 }
 
 fn map_line(row: &Row<'_>) -> rusqlite::Result<NoteLine> {
     let who: String = row.get("who")?;
+    let word_ms: Option<String> = row.get("word_ms")?;
     Ok(NoteLine {
         id: row.get("id")?,
         note_id: row.get("note_id")?,
@@ -293,7 +303,13 @@ fn map_line(row: &Row<'_>) -> rusqlite::Result<NoteLine> {
         who: Speaker::parse(&who),
         text: row.get("text")?,
         speaker: row.get("speaker")?,
+        word_ms: word_ms.and_then(|w| serde_json::from_str(&w).ok()),
     })
+}
+
+/// Word times as the `word_ms` column keeps them.
+fn word_ms_json(word_ms: Option<&[(i64, i64)]>) -> Option<String> {
+    word_ms.and_then(|w| serde_json::to_string(w).ok())
 }
 
 fn fill(conn: &Connection, mut note: Note) -> Result<Note> {
@@ -380,6 +396,8 @@ pub fn lines(conn: &Connection, note_id: i64) -> Result<Vec<NoteLine>> {
     Ok(lines)
 }
 
+/// A line without word times, as tests add them.
+#[cfg(test)]
 pub fn add_line(
     conn: &Connection,
     note_id: i64,
@@ -388,9 +406,30 @@ pub fn add_line(
     who: Speaker,
     text: &str,
 ) -> Result<NoteLine> {
+    add_timed_line(conn, note_id, at_ms, end_ms, who, text, None)
+}
+
+/// A line with when each of its words was said, when the model said so.
+pub fn add_timed_line(
+    conn: &Connection,
+    note_id: i64,
+    at_ms: i64,
+    end_ms: i64,
+    who: Speaker,
+    text: &str,
+    word_ms: Option<Vec<(i64, i64)>>,
+) -> Result<NoteLine> {
     conn.execute(
-        "INSERT INTO note_line (note_id, at_ms, end_ms, who, text) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![note_id, at_ms, end_ms, who.as_str(), text],
+        "INSERT INTO note_line (note_id, at_ms, end_ms, who, text, word_ms)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            note_id,
+            at_ms,
+            end_ms,
+            who.as_str(),
+            text,
+            word_ms_json(word_ms.as_deref())
+        ],
     )?;
     Ok(NoteLine {
         id: conn.last_insert_rowid(),
@@ -400,6 +439,7 @@ pub fn add_line(
         who,
         text: text.to_string(),
         speaker: None,
+        word_ms,
     })
 }
 
@@ -418,7 +458,8 @@ pub fn line(conn: &Connection, line_id: i64) -> Result<Option<NoteLine>> {
         .optional()?)
 }
 
-/// A line's corrected words, or who said it.
+/// A line's corrected words, or who said it. New words keep to the audio:
+/// their times follow from the line's old words (`align_words`).
 pub fn update_line(
     conn: &Connection,
     line_id: i64,
@@ -429,6 +470,20 @@ pub fn update_line(
     let text = text.trim();
     if text.is_empty() {
         return Err(anyhow!("A line needs some words; delete it instead"));
+    }
+    let before = line(conn, line_id)?.ok_or_else(|| anyhow!("That line is gone"))?;
+    if before.text != text {
+        let word_ms = crate::notes_rules::realign_words(
+            &before.text,
+            before.word_ms.as_deref(),
+            text,
+            before.at_ms,
+            before.end_ms,
+        );
+        conn.execute(
+            "UPDATE note_line SET word_ms = ?2 WHERE id = ?1",
+            params![line_id, word_ms_json(word_ms.as_deref())],
+        )?;
     }
     // Given to someone by hand: later passes of the speaker model leave it.
     conn.execute(
@@ -455,8 +510,8 @@ pub fn mark_edited(conn: &Connection, note_id: i64, at: i64) -> Result<()> {
 /// Puts a deleted line back as it was, id and all.
 pub fn restore_line(conn: &Connection, line: &NoteLine) -> Result<()> {
     conn.execute(
-        "INSERT OR REPLACE INTO note_line (id, note_id, at_ms, end_ms, who, text, speaker)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT OR REPLACE INTO note_line (id, note_id, at_ms, end_ms, who, text, speaker, word_ms)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             line.id,
             line.note_id,
@@ -464,7 +519,8 @@ pub fn restore_line(conn: &Connection, line: &NoteLine) -> Result<()> {
             line.end_ms,
             line.who.as_str(),
             line.text,
-            line.speaker
+            line.speaker,
+            word_ms_json(line.word_ms.as_deref())
         ],
     )?;
     Ok(())
@@ -767,12 +823,20 @@ pub fn set_summary(
             serde_json::to_string(&summary.outline)?
         ],
     )?;
+    // A step ticked off stays ticked when the new summary lists it again.
+    let done: Vec<String> = {
+        let mut stmt = tx.prepare("SELECT text FROM note_action WHERE note_id = ?1 AND done")?;
+        let rows = stmt.query_map(params![id], |r| r.get::<_, String>(0))?;
+        rows.map(|t| t.map(|t| t.trim().to_lowercase()))
+            .collect::<rusqlite::Result<_>>()?
+    };
     tx.execute("DELETE FROM note_action WHERE note_id = ?1", params![id])?;
     for (position, (owner, text)) in summary.actions.iter().enumerate() {
+        let was_done = done.contains(&text.trim().to_lowercase());
         tx.execute(
             "INSERT INTO note_action (note_id, owner, text, done, position)
-             VALUES (?1, ?2, ?3, 0, ?4)",
-            params![id, owner, text, position as i64],
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, owner, text, was_done, position as i64],
         )?;
     }
     tx.commit()?;
@@ -1065,8 +1129,8 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
     }
     for l in &deleted.lines {
         tx.execute(
-            "INSERT INTO note_line (id, note_id, at_ms, end_ms, who, text, speaker)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO note_line (id, note_id, at_ms, end_ms, who, text, speaker, word_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 l.id,
                 n.id,
@@ -1074,7 +1138,8 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
                 l.end_ms,
                 l.who.as_str(),
                 l.text,
-                l.speaker
+                l.speaker,
+                word_ms_json(l.word_ms.as_deref())
             ],
         )?;
     }
@@ -1452,6 +1517,74 @@ mod tests {
         assert_eq!(lines[0].who, Speaker::You);
         set_action_done(&conn, got.actions[0].id, true).unwrap();
         assert!(get(&conn, note.id).unwrap().unwrap().actions[0].done);
+
+        // A summary written again keeps the steps already ticked off.
+        set_summary(
+            &mut conn,
+            note.id,
+            &NotesSummary {
+                summary: "Dokploy moves to the ARM box.".into(),
+                actions: vec![
+                    ("Abhash".into(), "Check the routes".into()),
+                    ("Samir".into(), "move dokploy ".into()),
+                ],
+                ..Default::default()
+            },
+            "Ollama · qwen2.5:7b",
+            1_760_704_000,
+        )
+        .unwrap();
+        let actions = get(&conn, note.id).unwrap().unwrap().actions;
+        assert_eq!(
+            actions.iter().map(|a| a.done).collect::<Vec<_>>(),
+            vec![false, true]
+        );
+    }
+
+    #[test]
+    fn word_times_follow_a_corrected_line() {
+        let conn = db();
+        let note = meeting(&conn);
+        let timed = add_timed_line(
+            &conn,
+            note.id,
+            1_000,
+            3_000,
+            Speaker::Them,
+            "ship cubernetes today",
+            Some(vec![(1_100, 1_400), (1_500, 2_200), (2_300, 2_900)]),
+        )
+        .unwrap();
+        assert_eq!(super::line(&conn, timed.id).unwrap().unwrap(), timed);
+        let fixed = update_line(
+            &conn,
+            timed.id,
+            Speaker::Them,
+            None,
+            "ship Kube r netes today",
+        )
+        .unwrap();
+        assert_eq!(
+            fixed.word_ms,
+            Some(vec![
+                (1_100, 1_400),
+                (1_500, 1_780),
+                (1_780, 1_850),
+                (1_850, 2_200),
+                (2_300, 2_900)
+            ])
+        );
+        // Who said it changes; the times don't.
+        let given = update_line(&conn, timed.id, Speaker::You, None, &fixed.text).unwrap();
+        assert_eq!(given.word_ms, fixed.word_ms);
+        remove_line(&conn, timed.id).unwrap();
+        restore_line(&conn, &given).unwrap();
+        assert_eq!(super::line(&conn, timed.id).unwrap().unwrap(), given);
+
+        // A line without times stays without them.
+        let plain = add_line(&conn, note.id, 4_000, 5_000, Speaker::You, "hello").unwrap();
+        let plain = update_line(&conn, plain.id, Speaker::You, None, "hello there").unwrap();
+        assert_eq!(plain.word_ms, None);
     }
 
     #[test]

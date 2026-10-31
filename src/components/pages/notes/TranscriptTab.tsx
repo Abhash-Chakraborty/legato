@@ -28,8 +28,23 @@ import { FixReview } from "./FixReview";
 import type { NoteAudio } from "./NoteAudio";
 import type { Jump } from "./NoteDetail";
 
+/** How long the transcript leaves the scroll to you after you scroll it
+ *  while the recording plays. */
+const HANDS_OFF_MS = 4_000;
+
+/** The nearest ancestor that scrolls. */
+const scroller = (el: HTMLElement | null): HTMLElement | null => {
+  for (let p = el?.parentElement; p; p = p.parentElement) {
+    const { overflowY } = getComputedStyle(p);
+    if (/(auto|scroll)/.test(overflowY) && p.scrollHeight > p.clientHeight)
+      return p;
+  }
+  return document.scrollingElement as HTMLElement | null;
+};
+
 /** The transcript, line by line with who spoke and when; plays the
- *  recording from any line, and searches it. */
+ *  recording from any line or word, follows it word by word, and searches
+ *  it. */
 export const TranscriptTab: React.FC<{
   note: Note;
   jump: Jump | null;
@@ -63,6 +78,9 @@ export const TranscriptTab: React.FC<{
     aiStatus.kind !== "none" &&
     note.status === "ready";
   const listRef = useRef<HTMLOListElement>(null);
+  // When the transcript last scrolled itself, and when you last did.
+  const autoScrolled = useRef(0);
+  const youScrolled = useRef(0);
 
   useEffect(watchAi, []);
   useEffect(() => setReviewing(false), [note.id]);
@@ -107,6 +125,41 @@ export const TranscriptTab: React.FC<{
   );
   const current = playing || at > 0 ? lineAt(lines ?? [], at) : -1;
   const currentId = current >= 0 ? lines?.[current]?.id : undefined;
+
+  // Scrolling that the transcript didn't do itself is yours.
+  useEffect(() => {
+    const onScroll = () => {
+      if (Date.now() - autoScrolled.current > 800)
+        youScrolled.current = Date.now();
+    };
+    document.addEventListener("scroll", onScroll, true);
+    return () => document.removeEventListener("scroll", onScroll, true);
+  }, []);
+
+  // Keep the playing line in view, unless you just scrolled away.
+  useEffect(() => {
+    if (!playing || currentId === undefined) return;
+    if (Date.now() - youScrolled.current < HANDS_OFF_MS) return;
+    const el = listRef.current?.querySelector<HTMLElement>(
+      `[data-line="${currentId}"]`,
+    );
+    const box = scroller(el ?? null);
+    if (!el || !box) return;
+    const view =
+      box === document.scrollingElement
+        ? { top: 0, bottom: window.innerHeight }
+        : box.getBoundingClientRect();
+    const line = el.getBoundingClientRect();
+    const height = view.bottom - view.top;
+    if (
+      line.top >= view.top + height * 0.15 &&
+      line.bottom <= view.bottom - height * 0.25
+    )
+      return;
+    autoScrolled.current = Date.now();
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+  }, [currentId, playing]);
 
   useTextHighlight(
     listRef,
@@ -375,7 +428,13 @@ export const TranscriptTab: React.FC<{
                   {clock(line.at_ms)}
                 </button>
                 <SpeakerTag line={line} className="text-[13px]" />
-                <LineText line={line} voices={voices} canAddWord />
+                <LineText
+                  line={line}
+                  voices={voices}
+                  canAddWord
+                  player={src ? player : undefined}
+                  current={now}
+                />
               </li>
             );
           })}

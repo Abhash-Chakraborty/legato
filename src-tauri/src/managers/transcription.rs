@@ -11,6 +11,7 @@ use crate::engine_supervisor::{
 };
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::model::ModelManager;
+use crate::notes_rules::TimedWord;
 use crate::settings::{
     get_settings, AppSettings, ChineseScript, ModelUnloadTimeout, TranscribeAcceleratorSetting,
 };
@@ -1223,11 +1224,13 @@ impl TranscriptionManager {
             })
             .map_err(engine_error)?;
         let setup = setup.ok_or_else(|| anyhow::anyhow!("The model didn't load on the CPU"))?;
+        let words = model_words(std::slice::from_ref(&transcript));
         let (text, model_detected_language) = join_chunks(vec![transcript]);
         Ok(RunOutcome {
             setup,
             text,
             model_detected_language,
+            words,
         })
     }
 
@@ -1254,13 +1257,14 @@ impl TranscriptionManager {
             return Ok(FinishedText::default());
         }
 
-        let outcome = match live {
+        let mut outcome = match live {
             Some(outcome) => outcome,
             None => self.decode_batch(audio)?,
         };
         let settings = get_settings(&self.app_handle);
         let lexicon = crate::managers::dictionary::lexicon();
         let heard = normalize_transcription_output(outcome.text.trim());
+        let words = std::mem::take(&mut outcome.words);
         let (final_result, (fixes, fillers)) = finish_text(outcome, &settings, &lexicon.corrector);
 
         let translation_note = if settings.translate_to_english {
@@ -1295,6 +1299,7 @@ impl TranscriptionManager {
             fixes,
             heard,
             fillers,
+            words,
         })
     }
 
@@ -1393,11 +1398,13 @@ impl TranscriptionManager {
             .map_err(engine_error)?,
             BatchDecode::Whole => vec![whole(audio)?],
         };
+        let words = model_words(&transcripts);
         let (text, model_detected_language) = join_chunks(transcripts);
         Ok(RunOutcome {
             setup,
             text,
             model_detected_language,
+            words,
         })
     }
 
@@ -1429,6 +1436,8 @@ struct RunOutcome {
     text: String,
     /// The language the model itself detected, if it reported one.
     model_detected_language: Option<String>,
+    /// The model's words with their times, when it gave them.
+    words: Vec<TimedWord>,
 }
 
 /// A finished transcription and the Dictionary's fixes to it.
@@ -1440,6 +1449,10 @@ pub struct FinishedText {
     pub heard: String,
     /// Filler words removed, with how many times each.
     pub fillers: Vec<(String, i64)>,
+    /// The words the model heard (`heard`, not `text`) and when, in ms from
+    /// the start of the audio; empty when the model gives no word times
+    /// (Whisper) or the audio was decoded in chunks.
+    pub words: Vec<TimedWord>,
 }
 
 /// The Dictionary's fixes and the filler words removed, with how many times
@@ -1457,6 +1470,7 @@ fn finish_text(
         setup,
         text,
         model_detected_language,
+        ..
     } = outcome;
     let output_language = setup.output_language(settings, model_detected_language);
     debug!("Output language evidence: {:?}", output_language);
@@ -1590,6 +1604,21 @@ fn join_chunks(transcripts: Vec<Transcript>) -> (String, Option<String>) {
         }
     };
     (text, language)
+}
+
+/// The words of a transcription decoded in one run, with their times. A
+/// chunked one has none: its chunks' times don't say where each chunk began.
+fn model_words(transcripts: &[Transcript]) -> Vec<TimedWord> {
+    let [one] = transcripts else {
+        return Vec::new();
+    };
+    one.words
+        .iter()
+        .filter_map(|w| {
+            let text = w.text.trim();
+            (!text.is_empty()).then(|| (text.to_string(), w.t0_ms, w.t1_ms.max(w.t0_ms)))
+        })
+        .collect()
 }
 
 fn emit_stream_text(app_handle: &AppHandle, committed: &str, tentative: &str) {

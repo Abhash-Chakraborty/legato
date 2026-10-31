@@ -436,6 +436,10 @@ pub static MIGRATIONS: &[M] = &[
             created_at INTEGER NOT NULL
          );",
     ),
+    // Notes: when each word of a line was said, as JSON [[start, end], …]
+    // in ms from the start of the recording, one pair per word of its
+    // text; NULL when the model gave no word times.
+    M::up("ALTER TABLE note_line ADD COLUMN word_ms TEXT;"),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.

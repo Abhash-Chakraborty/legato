@@ -15,6 +15,8 @@ export interface NoteAudio {
   /** The full player shows once something has played. */
   open: boolean;
   playFrom: (ms: number) => void;
+  /** Plays or pauses; plays from the start the first time. */
+  toggle: () => void;
 }
 
 export const useNoteAudio = (note: Note): NoteAudio => {
@@ -75,8 +77,25 @@ export const useNoteAudio = (note: Note): NoteAudio => {
     el.play().catch(() => {});
   };
 
-  return { audio, src, at, playing, open, playFrom };
+  const toggle = () => {
+    const el = audio.current;
+    if (!el) return;
+    if (!open) playFrom(0);
+    else if (el.paused) el.play().catch(() => {});
+    else el.pause();
+  };
+
+  return { audio, src, at, playing, open, playFrom, toggle };
 };
+
+/** Space plays and pauses, except while typing or on a control that takes
+ *  Space itself. */
+const takesSpace = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable ||
+    !!target.closest(
+      "input, textarea, select, button, a, [role=button], [role=menu], [role=menuitem], [role=dialog], [role=slider], [role=tab]",
+    ));
 
 /** Play recording, then play, a seek bar and the time. Holds the audio
  *  element, so it stays mounted while tabs change. */
@@ -85,7 +104,21 @@ export const NotePlayer: React.FC<{ note: Note; player: NoteAudio }> = ({
   player,
 }) => {
   const { t } = useTranslation();
-  const { audio, src, at, playing, open, playFrom } = player;
+  const { audio, src, at, playing, open, playFrom, toggle } = player;
+
+  useEffect(() => {
+    if (!src) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== " " || e.repeat || e.defaultPrevented) return;
+      if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+      if (takesSpace(e.target)) return;
+      e.preventDefault();
+      toggle();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   if (!src) return null;
   const total = Math.max(note.duration_ms, at);
   return (
@@ -94,12 +127,7 @@ export const NotePlayer: React.FC<{ note: Note; player: NoteAudio }> = ({
         <>
           <button
             type="button"
-            onClick={() => {
-              const el = audio.current;
-              if (!el) return;
-              if (el.paused) el.play().catch(() => {});
-              else el.pause();
-            }}
+            onClick={toggle}
             aria-label={
               playing ? t("notes.transcript.pause") : t("notes.transcript.play")
             }

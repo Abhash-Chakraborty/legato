@@ -1345,6 +1345,10 @@ pub struct NoteOutline {
     /// The kind's own sections, such as Blockers in a 1:1.
     #[serde(default)]
     pub sections: Vec<OutlineSection>,
+    /// The title the summary suggested, so a later summary may replace it
+    /// while the note still has it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 #[derive(
@@ -1469,6 +1473,7 @@ pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
             .and_then(meeting_kind)
             .map(str::to_string),
         kind_by_you: false,
+        title: None,
         sections: value
             .get("sections")
             .and_then(|v| v.as_array())
@@ -2048,6 +2053,168 @@ pub fn unique_docx(base: &str, taken: impl Fn(&str) -> bool) -> String {
         }
         n += 1;
     }
+}
+
+/// A word and when it was said: (word, start, end), in milliseconds.
+pub type TimedWord = (String, i64, i64);
+
+/// Past this many old words times new ones, a line isn't compared word by
+/// word; its words are spread across it instead. Lines are 15 s at most,
+/// so only text pasted into a line gets near it.
+const ALIGN_MAX_CELLS: usize = 250_000;
+
+/// When each word of `new_text` was said, from an earlier text of the same
+/// line and its word times: what the model heard, or the line before a
+/// correction. A word that matches keeps its time. Words put in place of
+/// others share those words' time, split by length. A word only added
+/// fits in the gap between its neighbours. With no times at all, the words
+/// are spread across the line by length. One pair per whitespace-separated
+/// word of `new_text`, in the same units as the times given.
+pub fn align_words(
+    old: &[TimedWord],
+    new_text: &str,
+    line_start: i64,
+    line_end: i64,
+) -> Vec<(i64, i64)> {
+    let new: Vec<&str> = new_text.split_whitespace().collect();
+    if new.is_empty() {
+        return Vec::new();
+    }
+    let line_end = line_end.max(line_start);
+    // One old entry can hold several words (a model's "New York").
+    let old: Vec<(&str, i64, i64)> = old
+        .iter()
+        .flat_map(|(text, start, end)| {
+            let parts: Vec<&str> = text.split_whitespace().collect();
+            let times = split_span(&parts, *start, (*end).max(*start));
+            parts
+                .into_iter()
+                .zip(times)
+                .map(|(w, (s, e))| (w, s, e))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    if old.is_empty() || old.len() * new.len() > ALIGN_MAX_CELLS {
+        return split_span(&new, line_start, line_end);
+    }
+    let a: Vec<String> = old.iter().map(|w| align_key(w.0)).collect();
+    let b: Vec<String> = new.iter().map(|w| align_key(w)).collect();
+    let mut out = vec![(line_start, line_start); new.len()];
+    // The next old and new word not yet placed, and where the last placed
+    // word ended.
+    let (mut oi, mut ni, mut last_end) = (0, 0, line_start);
+    let end_mark = (old.len(), new.len());
+    for (i, j) in common_words(&a, &b).into_iter().chain([end_mark]) {
+        // new[ni..j] took the place of old[oi..i].
+        let next_start = old.get(i).map_or(line_end, |w| w.1).max(last_end);
+        if ni < j {
+            let (start, end) = if oi < i {
+                (old[oi].1, old[i - 1].2.max(old[oi].1))
+            } else {
+                (last_end, next_start)
+            };
+            for (k, time) in split_span(&new[ni..j], start, end).into_iter().enumerate() {
+                out[ni + k] = time;
+            }
+        }
+        if oi < i {
+            last_end = last_end.max(old[i - 1].2);
+        }
+        if let Some(&(_, start, end)) = old.get(i) {
+            out[j] = (start, end.max(start));
+            last_end = last_end.max(end);
+        }
+        (oi, ni) = (i + 1, j + 1);
+    }
+    out
+}
+
+/// Word times for a line's new text from its old text and times; None when
+/// the old line had no times, or not one pair per word.
+pub fn realign_words(
+    old_text: &str,
+    old_ms: Option<&[(i64, i64)]>,
+    new_text: &str,
+    line_start: i64,
+    line_end: i64,
+) -> Option<Vec<(i64, i64)>> {
+    let old = timed_words(old_text, old_ms?)?;
+    Some(align_words(&old, new_text, line_start, line_end))
+}
+
+/// A line's words with their times, when there is one pair per word.
+pub fn timed_words(text: &str, ms: &[(i64, i64)]) -> Option<Vec<TimedWord>> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    (words.len() == ms.len()).then(|| {
+        words
+            .into_iter()
+            .zip(ms)
+            .map(|(w, &(s, e))| (w.to_string(), s, e))
+            .collect()
+    })
+}
+
+/// A word as compared: lowercase letters and digits only, so "Hello," and
+/// "hello" match. A word of punctuation alone compares as itself.
+fn align_key(word: &str) -> String {
+    let key: String = word
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    if key.is_empty() {
+        word.to_lowercase()
+    } else {
+        key
+    }
+}
+
+/// The longest run of words `a` and `b` share in order, as index pairs.
+fn common_words(a: &[String], b: &[String]) -> Vec<(usize, usize)> {
+    let (n, m) = (a.len(), b.len());
+    // dp[i * (m + 1) + j]: how many words a[i..] and b[j..] share.
+    let mut dp = vec![0u32; (n + 1) * (m + 1)];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            dp[i * (m + 1) + j] = if a[i] == b[j] {
+                dp[(i + 1) * (m + 1) + j + 1] + 1
+            } else {
+                dp[(i + 1) * (m + 1) + j].max(dp[i * (m + 1) + j + 1])
+            };
+        }
+    }
+    let (mut i, mut j, mut pairs) = (0, 0, Vec::new());
+    while i < n && j < m {
+        if a[i] == b[j] {
+            pairs.push((i, j));
+            i += 1;
+            j += 1;
+        } else if dp[(i + 1) * (m + 1) + j] >= dp[i * (m + 1) + j + 1] {
+            i += 1;
+        } else {
+            j += 1;
+        }
+    }
+    pairs
+}
+
+/// `start..end` shared among `words` by their length in characters.
+fn split_span(words: &[&str], start: i64, end: i64) -> Vec<(i64, i64)> {
+    let end = end.max(start);
+    let weights: Vec<i64> = words
+        .iter()
+        .map(|w| w.chars().count().max(1) as i64)
+        .collect();
+    let total: i64 = weights.iter().sum::<i64>().max(1);
+    let mut done = 0;
+    weights
+        .iter()
+        .map(|w| {
+            let from = start + (end - start) * done / total;
+            done += w;
+            (from, start + (end - start) * done / total)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -2931,6 +3098,137 @@ mod tests {
         assert_eq!(
             parse_summary(r#"{"summary": "Hi."}"#).unwrap().outline.kind,
             None
+        );
+    }
+
+    fn timed(words: &[(&str, i64, i64)]) -> Vec<TimedWord> {
+        words
+            .iter()
+            .map(|&(w, s, e)| (w.to_string(), s, e))
+            .collect()
+    }
+
+    /// "we ship on friday" said from 1 s to 3 s.
+    fn heard() -> Vec<TimedWord> {
+        timed(&[
+            ("we", 1_000, 1_200),
+            ("ship", 1_300, 1_700),
+            ("on", 1_800, 1_900),
+            ("friday", 2_000, 2_600),
+        ])
+    }
+
+    #[test]
+    fn words_that_match_keep_their_times() {
+        let times = align_words(&heard(), "We ship on Friday.", 900, 3_000);
+        assert_eq!(
+            times,
+            vec![
+                (1_000, 1_200),
+                (1_300, 1_700),
+                (1_800, 1_900),
+                (2_000, 2_600)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_replaced_word_takes_the_time_of_the_one_it_replaced() {
+        let times = align_words(&heard(), "we ship on monday", 900, 3_000);
+        assert_eq!(times[3], (2_000, 2_600));
+        assert_eq!(times[..3], [(1_000, 1_200), (1_300, 1_700), (1_800, 1_900)]);
+    }
+
+    #[test]
+    fn one_word_split_into_three_shares_its_time_by_length() {
+        let old = timed(&[("call", 0, 400), ("kubernetes", 500, 1_500)]);
+        let times = align_words(&old, "call cube a netties", 0, 2_000);
+        assert_eq!(times[0], (0, 400));
+        // 4, 1 and 7 characters of 1000 ms.
+        assert_eq!(times[1..], [(500, 833), (833, 916), (916, 1_500)]);
+    }
+
+    #[test]
+    fn three_words_joined_into_one_take_their_whole_span() {
+        let old = timed(&[
+            ("in", 0, 200),
+            ("yon", 300, 600),
+            ("app", 700, 1_000),
+            ("works", 1_100, 1_500),
+        ]);
+        let times = align_words(&old, "Inyonapp works", 0, 2_000);
+        // "in yon app" has nothing in common with "inyonapp".
+        assert_eq!(times, vec![(0, 1_000), (1_100, 1_500)]);
+        // Two of the three are replaced, one matches.
+        let times = align_words(&old, "Inyon app works", 0, 2_000);
+        assert_eq!(times, vec![(0, 600), (700, 1_000), (1_100, 1_500)]);
+    }
+
+    #[test]
+    fn an_added_word_fits_between_its_neighbours() {
+        let times = align_words(&heard(), "we ship it on friday", 900, 3_000);
+        assert_eq!(times[1], (1_300, 1_700));
+        assert_eq!(times[2], (1_700, 1_800));
+        assert_eq!(times[3], (1_800, 1_900));
+        // At either end, it fills the line up to the next word.
+        let times = align_words(&heard(), "so we ship on friday then", 900, 3_000);
+        assert_eq!(times[0], (900, 1_000));
+        assert_eq!(times[5], (2_600, 3_000));
+    }
+
+    #[test]
+    fn a_removed_word_leaves_the_others_where_they_were() {
+        let times = align_words(&heard(), "we ship friday", 900, 3_000);
+        assert_eq!(times, vec![(1_000, 1_200), (1_300, 1_700), (2_000, 2_600)]);
+        // A word added where one was removed takes that word's time.
+        let times = align_words(&heard(), "we ship by friday", 900, 3_000);
+        assert_eq!(times[2], (1_800, 1_900));
+    }
+
+    #[test]
+    fn without_times_words_are_spread_across_the_line() {
+        let times = align_words(&[], "ab abcd ab", 1_000, 1_800);
+        assert_eq!(times, vec![(1_000, 1_200), (1_200, 1_600), (1_600, 1_800)]);
+        assert!(align_words(&[], "", 0, 1_000).is_empty());
+        assert!(align_words(&heard(), "   ", 0, 1_000).is_empty());
+        // A line whose end is before its start doesn't go backwards.
+        assert_eq!(align_words(&[], "hi", 500, 100), vec![(500, 500)]);
+    }
+
+    #[test]
+    fn everything_replaced_spreads_over_the_old_words() {
+        let times = align_words(&heard(), "totally different", 900, 3_000);
+        assert_eq!(times, vec![(1_000, 1_700), (1_700, 2_600)]);
+        // The model's entry with two words in it counts as two.
+        let old = timed(&[("new york", 0, 1_000), ("today", 1_000, 1_500)]);
+        assert_eq!(
+            align_words(&old, "New York today", 0, 2_000),
+            vec![(0, 428), (428, 1_000), (1_000, 1_500)]
+        );
+    }
+
+    #[test]
+    fn times_follow_the_line_through_corrections() {
+        let ms: Vec<(i64, i64)> = heard().iter().map(|w| (w.1, w.2)).collect();
+        assert_eq!(
+            realign_words(
+                "we ship on friday",
+                Some(&ms),
+                "we ship on monday",
+                900,
+                3_000
+            ),
+            Some(ms.clone())
+        );
+        // No times before, none after; nor when they don't fit the words.
+        assert_eq!(realign_words("we ship", None, "we sail", 0, 1_000), None);
+        assert_eq!(
+            realign_words("we ship", Some(&ms), "we sail", 0, 1_000),
+            None
+        );
+        assert_eq!(
+            timed_words("a b", &[(0, 1), (1, 2)]).map(|w| w.len()),
+            Some(2)
         );
     }
 }

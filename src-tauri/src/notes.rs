@@ -13,7 +13,7 @@ use crate::managers::notes_store::{
     self as store, DeletedRecording, NewNote, Note, NoteKind, NoteLine, NoteMatch, NoteStatus,
     Speaker,
 };
-use crate::managers::transcription::TranscriptionManager;
+use crate::managers::transcription::{FinishedText, TranscriptionManager};
 use crate::managers::trash_store::{self, NewTrash, TrashKind};
 use crate::notes_rules::{self, Segmenter, Utterance, RATE};
 use crate::settings::get_settings;
@@ -321,11 +321,20 @@ impl NotesManager {
     }
 
     pub fn list(&self) -> Result<Vec<Note>> {
-        store::list(&self.conn()?)
+        let mut notes = store::list(&self.conn()?)?;
+        let due = lock(&SUMMARY_DUE);
+        for note in &mut notes {
+            note.summary_due = due.iter().any(|(id, _)| *id == note.id);
+        }
+        Ok(notes)
     }
 
     pub fn get(&self, id: i64) -> Result<Option<Note>> {
-        store::get(&self.conn()?, id)
+        let mut note = store::get(&self.conn()?, id)?;
+        if let Some(note) = &mut note {
+            note.summary_due = lock(&SUMMARY_DUE).iter().any(|(n, _)| *n == id);
+        }
+        Ok(note)
     }
 
     pub fn lines(&self, id: i64) -> Result<Vec<NoteLine>> {
@@ -392,11 +401,45 @@ impl NotesManager {
         Ok(())
     }
 
-    /// Notes the transcript changed, so an older summary says so.
+    /// Notes the transcript changed, so an older summary says so, and
+    /// writes the summary again shortly.
     fn mark_edited(&self, conn: &Connection, note_id: i64) {
         if let Err(e) = store::mark_edited(conn, note_id, chrono::Utc::now().timestamp()) {
             error!("Couldn't note a transcript edit: {e}");
         }
+        self.summary_soon(note_id);
+    }
+
+    /// Writes the summary again `RESUMMARISE_AFTER` the last correction, so
+    /// it, the next steps and a title it gave follow the fixed words. Only
+    /// for a note that has a summary, when Notes may use an AI.
+    fn summary_soon(&self, note_id: i64) {
+        if notes_ai(&self.app).is_err() || current_note() == Some(note_id) {
+            return;
+        }
+        match self.get(note_id) {
+            Ok(Some(note)) if !note.summary.trim().is_empty() => {}
+            _ => return,
+        }
+        let mark = SUMMARY_DUE_NEXT.fetch_add(1, Ordering::Relaxed);
+        {
+            let mut due = lock(&SUMMARY_DUE);
+            due.retain(|(id, _)| *id != note_id);
+            due.push((note_id, mark));
+        }
+        let app = self.app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(RESUMMARISE_AFTER).await;
+            {
+                let mut due = lock(&SUMMARY_DUE);
+                // A later correction waits on its own.
+                if !due.contains(&(note_id, mark)) {
+                    return;
+                }
+                due.retain(|(id, _)| *id != note_id);
+            }
+            update_summary(&app, note_id).await;
+        });
     }
 
     /// Corrects a line's words, or who said it.
@@ -790,7 +833,9 @@ impl NotesManager {
     }
 
     /// Saves a line, unless it's the microphone hearing the call through the
-    /// speakers; a call line drops the microphone's echo of it.
+    /// speakers; a call line drops the microphone's echo of it. `words` are
+    /// the model's, timed from the start of the utterance; the line keeps
+    /// when each of its final words was said.
     fn save_line(
         &self,
         note_id: i64,
@@ -798,6 +843,7 @@ impl NotesManager {
         who: Speaker,
         utterance: &Utterance,
         text: &str,
+        words: &[notes_rules::TimedWord],
     ) -> Result<()> {
         let conn = self.conn()?;
         let (at, end) = (utterance.start_ms(), utterance.end_ms());
@@ -825,7 +871,14 @@ impl NotesManager {
                 }
             }
         }
-        let line = store::add_line(&conn, note_id, at, end, who, text)?;
+        let word_ms = (!words.is_empty()).then(|| {
+            let heard: Vec<notes_rules::TimedWord> = words
+                .iter()
+                .map(|(w, s, e)| (w.clone(), at + s, at + e))
+                .collect();
+            notes_rules::align_words(&heard, text, at, end)
+        });
+        let line = store::add_timed_line(&conn, note_id, at, end, who, text, word_ms)?;
         let _ = NoteLineAdded { line }.emit(&self.app);
         Ok(())
     }
@@ -1823,17 +1876,23 @@ fn transcribe_lines(
             continue;
         }
         // A cancelled dictation can stop a run in flight; one retry covers it.
-        let text = ensure_model(&tm)
+        let finished = ensure_model(&tm)
             .and_then(|_| tm.transcribe(job.utterance.samples.clone()))
             .or_else(|e| {
                 debug!("A Notes line failed once ({e}); retrying");
                 ensure_model(&tm).and_then(|_| tm.transcribe(job.utterance.samples.clone()))
-            })
-            .map(|f| f.text);
+            });
         shared.pending.fetch_sub(1, Ordering::Relaxed);
-        match text {
-            Ok(text) if text.trim().is_empty() => {}
-            Ok(text) => match m.save_line(note_id, meeting, job.who, &job.utterance, text.trim()) {
+        match finished {
+            Ok(f) if f.text.trim().is_empty() => {}
+            Ok(f) => match m.save_line(
+                note_id,
+                meeting,
+                job.who,
+                &job.utterance,
+                f.text.trim(),
+                &f.words,
+            ) {
                 Ok(()) => saved += 1,
                 Err(e) => {
                     error!("Couldn't save a Notes line: {e}");
@@ -1894,21 +1953,19 @@ pub fn retry_failed_lines(app: &AppHandle, note_id: i64) -> Result<RetryResult> 
             .map_while(Result::ok)
             .map(|s| s as f32 / i16::MAX as f32)
             .collect();
-        let text = if samples.is_empty() {
-            Ok(String::new())
+        let finished = if samples.is_empty() {
+            Ok(Default::default())
         } else {
-            ensure_model(&tm)
-                .and_then(|_| tm.transcribe(samples.clone()))
-                .map(|f| f.text)
+            ensure_model(&tm).and_then(|_| tm.transcribe(samples.clone()))
         };
-        match text {
-            Ok(text) => {
+        match finished {
+            Ok(FinishedText { text, words, .. }) => {
                 let utterance = Utterance {
                     start: start as usize,
                     samples,
                 };
                 if !text.trim().is_empty() {
-                    m.save_line(note_id, meeting, line.who, &utterance, text.trim())?;
+                    m.save_line(note_id, meeting, line.who, &utterance, text.trim(), &words)?;
                 }
                 store::resolve_failed_line(&m.conn()?, &line)?;
                 result.transcribed += 1;
@@ -2268,6 +2325,9 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
         return;
     };
     let m = manager(app);
+    // The summary is as new as the transcript it reads: a correction made
+    // while it's written leaves it out of date.
+    let read_at = chrono::Utc::now().timestamp();
     let lines = match m.lines(note_id) {
         Ok(lines) => lines,
         Err(e) => {
@@ -2323,6 +2383,8 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
     let words = dictionary_for_ai(app, SUMMARY_WORDS);
     let you = get_settings(app).your_name;
     let you = Some(you.trim()).filter(|n| !n.is_empty());
+    // The title the last summary gave, which this one may replace.
+    let given_title = note.as_ref().and_then(|n| n.outline.title.clone());
     // A kind you chose stays for every summary after.
     let chosen = note
         .as_ref()
@@ -2342,6 +2404,8 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
     {
         Ok(mut summary) => {
             summary.outline.fit_to(last_ms);
+            summary.outline.title =
+                Some(summary.title.trim().to_string()).filter(|t| !t.is_empty());
             if chosen.is_some() {
                 summary.outline.kind = chosen;
                 summary.outline.kind_by_you = true;
@@ -2352,12 +2416,12 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
                 "cloud"
             };
             let model = format!("{} · {} · {local}", config.provider.label, config.model);
-            let at = chrono::Utc::now().timestamp();
             save(
-                m.conn()
-                    .and_then(|mut c| store::set_summary(&mut c, note_id, &summary, &model, at)),
+                m.conn().and_then(|mut c| {
+                    store::set_summary(&mut c, note_id, &summary, &model, read_at)
+                }),
             );
-            name_from_summary(&m, note_id, &summary, &tags_in_use);
+            name_from_summary(&m, note_id, &summary, &tags_in_use, given_title.as_deref());
             info!("Note summarised in {:?}", started.elapsed());
         }
         Err(problem) => {
@@ -2377,19 +2441,23 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
 }
 
 /// Gives the note the summary's title while it still has the one Legato
-/// gave it, and the summary's tags while it has none. A title or tags you
-/// set are never changed, and either can be edited afterwards.
+/// or the last summary (`given_title`) gave it, and the summary's tags
+/// while it has none. A title or tags you set are never changed, and
+/// either can be edited afterwards.
 fn name_from_summary(
     m: &NotesManager,
     note_id: i64,
     summary: &notes_rules::NotesSummary,
     tags_in_use: &[String],
+    given_title: Option<&str>,
 ) {
     let Ok(Some(note)) = m.get(note_id) else {
         return;
     };
+    let ours = notes_rules::is_default_title(&note.title)
+        || given_title.is_some_and(|t| t.trim() == note.title.trim());
     let result = m.conn().and_then(|c| {
-        if !summary.title.is_empty() && notes_rules::is_default_title(&note.title) {
+        if !summary.title.is_empty() && ours {
             store::rename(&c, note_id, &summary.title)?;
         }
         if note.tags.is_empty() {
@@ -2404,11 +2472,53 @@ fn name_from_summary(
     }
 }
 
+/// How long after the last correction a note's summary is written again.
+const RESUMMARISE_AFTER: Duration = Duration::from_secs(20);
+
+/// Notes whose summary waits on corrections, each with the number of its
+/// latest correction; only that one's timer writes the summary.
+static SUMMARY_DUE: Mutex<Vec<(i64, u64)>> = Mutex::new(Vec::new());
+static SUMMARY_DUE_NEXT: AtomicU64 = AtomicU64::new(1);
+
+/// The summary written again after corrections, unless Update summary
+/// already did it or the note went away.
+async fn update_summary(app: &AppHandle, note_id: i64) {
+    let m = manager(app);
+    let note = match m.get(note_id) {
+        Ok(Some(note)) => note,
+        _ => return m.changed(),
+    };
+    if note.edited_at <= note.summary_at || current_note() == Some(note_id) {
+        return m.changed();
+    }
+    match note.status {
+        NoteStatus::Ready => {}
+        // One is being written now, maybe from the words before these.
+        NoteStatus::Summarising => return m.summary_soon(note_id),
+        // Still being finished: its summary comes then.
+        _ => return m.changed(),
+    }
+    match resummarise(app, note_id).await {
+        Ok(()) => info!("Updated a note's summary after corrections"),
+        Err(code) => warn!("Couldn't update a note's summary after corrections: {code}"),
+    }
+}
+
 /// Writes the summary again, with the AI as it is set up now.
 pub async fn resummarise(app: &AppHandle, note_id: i64) -> Result<(), String> {
     notes_ai(app)?;
     if current_note() == Some(note_id) {
         return Err("recording".to_string());
+    }
+    // This covers the corrections waiting to update it.
+    let was_due = {
+        let mut due = lock(&SUMMARY_DUE);
+        let before = due.len();
+        due.retain(|(id, _)| *id != note_id);
+        due.len() != before
+    };
+    if was_due {
+        manager(app).changed();
     }
     summarise(app, note_id).await;
     let note = manager(app)

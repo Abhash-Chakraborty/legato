@@ -46,6 +46,78 @@ export const lineAt = (lines: NoteLine[], ms: number): number => {
   return found;
 };
 
+/** A word of a transcript line: where it sits in the text, and when it
+ *  was said in ms from the start of the recording. */
+export interface LineWord {
+  text: string;
+  from: number;
+  to: number;
+  start: number;
+  end: number;
+}
+
+/** `start..end` shared among words by their length, as the backend
+ *  spreads a line's words when the model gave no times. */
+const spread = (
+  words: string[],
+  start: number,
+  end: number,
+): [number, number][] => {
+  const span = Math.max(end, start) - start;
+  const weights = words.map((w) => Math.max(1, [...w].length));
+  const total = Math.max(
+    1,
+    weights.reduce((a, b) => a + b, 0),
+  );
+  let done = 0;
+  return weights.map((w) => {
+    const from = start + Math.floor((span * done) / total);
+    done += w;
+    return [from, start + Math.floor((span * done) / total)];
+  });
+};
+
+/** A line's words with their times: the speech model's when it gave them,
+ *  else spread across the line. */
+export const lineWords = (line: NoteLine): LineWord[] => {
+  const found = [...line.text.matchAll(/\S+/g)].map((m) => ({
+    text: m[0],
+    from: m.index ?? 0,
+    to: (m.index ?? 0) + m[0].length,
+  }));
+  const times =
+    line.word_ms && line.word_ms.length === found.length
+      ? line.word_ms
+      : spread(
+          found.map((w) => w.text),
+          line.at_ms,
+          line.end_ms,
+        );
+  return found.map((w, i) => ({ ...w, start: times[i][0], end: times[i][1] }));
+};
+
+/** The word being said at `ms`: the last one that started, until the next
+ *  starts or a moment after it ends; -1 before the first or after the
+ *  last. */
+export const wordAt = (words: LineWord[], ms: number): number => {
+  let found = -1;
+  for (let i = 0; i < words.length; i++) {
+    if (words[i].start <= ms) found = i;
+    else break;
+  }
+  if (found < 0) return -1;
+  const next = words[found + 1];
+  const until = next ? next.start : words[found].end + 300;
+  return ms < Math.max(until, words[found].end) ? found : -1;
+};
+
+/** The word at a character offset in the line's text, or the next one
+ *  when the offset falls between words. */
+export const wordAtOffset = (words: LineWord[], offset: number): number => {
+  const i = words.findIndex((w) => offset < w.to);
+  return i < 0 ? words.length - 1 : i;
+};
+
 export type AnswerPart =
   | { kind: "text"; text: string }
   | { kind: "time"; label: string; ms: number };

@@ -3209,7 +3209,11 @@ outline?: NoteOutline;
 /**
  * The folder the note is in, by name.
  */
-folder?: string | null }
+folder?: string | null; 
+/**
+ * Corrections to the transcript will update the summary shortly.
+ */
+summary_due?: boolean }
 /**
  * A folder of notes, with how many it holds.
  */
@@ -3231,7 +3235,12 @@ kind_by_you?: boolean;
 /**
  * The two sections the kind adds, such as Questions and Concerns.
  */
-sections?: OutlineSection[] }
+sections?: OutlineSection[]; 
+/**
+ * The title the summary suggested, so a later summary may replace it
+ * while the note still has it.
+ */
+title?: string | null }
 export type OutlineSection = { heading: string; points: string[] }
 export type OutlineTopic = { heading: string; text: string }
 export type OutlineDetail = { heading: string; text: string; 
@@ -3251,7 +3260,13 @@ at_ms: number; end_ms: number; who: Speaker; text: string;
  * Which voice said it, 1, 2, …, when the speaker model told voices
  * apart; None before that, or when it couldn't tell.
  */
-speaker?: number | null }
+speaker?: number | null; 
+/**
+ * When each word of `text` was said, as (start, end) in milliseconds
+ * from the start of the recording, one pair per word; None when the
+ * speech model gave no word times (Whisper).
+ */
+word_ms?: [number, number][] | null }
 /**
  * Many of a note's lines changed at once (speakers were found), so an
  * open transcript reloads.

@@ -37,7 +37,7 @@ Legato is a dictation app and meeting notetaker for Windows. Speech recognition 
 - **Transforms and Ask.** Rewrite the selection or your last dictation with Ollama, OpenAI, Anthropic, OpenRouter, Groq or another provider.
 - **Out of the way.** A bar, an island at the top of the screen or a bubble at the edge shows Legato is listening. It steps aside for fullscreen apps and stays out of screenshots and screen shares.
 - **No accounts.** Word copies of notes for Google Docs or OneDrive, calendars from secret iCal addresses, follow-ups that open your calendar filled in. Legato never signs in anywhere.
-- **More.** A Scratchpad for drafts and failed pastes, Insights on your dictation, MCP for AI apps (`legato --mcp`), questions from [Inyon](https://github.com/Abhash-Chakraborty/inyon)'s coding agents on the bar, and an Android app in development that syncs over Wi-Fi or Bluetooth ([how](docs/phone-sync.md)).
+- **More.** A Scratchpad for drafts and failed pastes, Insights on your dictation, MCP for AI apps (`legato --mcp`), questions from [Inyon](https://github.com/Abhash-Chakraborty/inyon)'s coding agents on the bar, and an Android app that syncs over Wi-Fi or Bluetooth ([how](docs/phone-sync.md)).
 
 ## How it works
 
@@ -54,6 +54,8 @@ Download `Legato_<version>_x64-setup.exe` (or `arm64` for Windows on Arm) from t
 The installers aren't code-signed yet, so SmartScreen may say "Windows protected your PC": choose More info, then Run anyway. You can [verify a download](docs/verify.md) against the release signature first.
 
 To use Legato in apps run as administrator, install the `.msi` instead (for all users), then turn on Settings › General › Work in apps run as administrator.
+
+For Android (10 or later), download `Legato-android-<version>.apk` from the same release on the phone and open it; Android asks once to allow installs from your browser. Pair it from Settings › Devices on the PC. It checks this page for updates when it opens and asks before installing one.
 
 Uninstalling keeps your data unless you tick "Delete app data". Downloaded models stay in the shared Hugging Face cache (`%USERPROFILE%\.cache\huggingface`), since other tools may use them.
 
@@ -73,9 +75,9 @@ Built with Tauri 2 (Rust and React), transcribe.cpp on GGML, Silero VAD and SQLi
 
 Legato is in development and used daily on Windows 11. What to know:
 
-- Windows only, on x64 and ARM64. ARM64 builds run the speech model on the CPU.
-- The installers aren't code-signed yet.
-- The Android app is in development and not released.
+- Windows on x64 and ARM64, plus a companion app for Android. ARM64 builds run the speech model on the CPU.
+- The installers and the APK aren't code-signed yet.
+- The Android app is in beta and needs Legato on a PC for sync, though it can write up speech on its own.
 - Hiding from screen capture needs Windows 10 version 2004 or later.
 
 Something not working? See [Troubleshooting](docs/troubleshooting.md) or [open an issue](https://github.com/Abhash-Chakraborty/legato/issues/new/choose).
