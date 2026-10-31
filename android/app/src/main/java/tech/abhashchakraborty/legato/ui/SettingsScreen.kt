@@ -339,6 +339,17 @@ private fun PcModelRow(legato: Legato, paired: Boolean, pcName: String?) {
         enabled = paired,
         trailing = { Switch(checked = on && paired, enabled = paired, onCheckedChange = { on = it; legato.usePcModel = it }) },
     )
+    if (!paired) return
+    var race by remember { mutableStateOf(legato.raceSlowPc) }
+    Hairline()
+    SettingRow(
+        "Don't wait for a slow PC",
+        if (!on) "Turn on your PC's model first."
+        else if (race) "If ${pcName ?: "your PC"} takes more than a couple of seconds, this ${legato.device} writes up your words itself, without the PC's AI cleanup."
+        else "Always waits for ${pcName ?: "your PC"}, for its AI cleanup, however long it takes.",
+        enabled = on,
+        trailing = { Switch(checked = race && on, enabled = on, onCheckedChange = { race = it; legato.raceSlowPc = it }) },
+    )
 }
 
 /** Whether a dictation listens on when the keyboard closes. */

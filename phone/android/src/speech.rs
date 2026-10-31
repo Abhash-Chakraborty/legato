@@ -7,13 +7,15 @@ use std::sync::{Mutex, Once};
 use legato_phone::pieces;
 use transcribe_cpp::{Model, RunOptions, Session, SessionOptions};
 
-/// CPU threads for the model. Phones pair a few fast cores with slow ones;
-/// past four, more threads cost battery and heat for little speed.
+/// CPU threads for the model: every core, up to eight. Phones pair a few
+/// fast cores with slow ones, and timed on a Redmi Pad (two fast, six slow)
+/// eight threads wrote up 12 s of speech 20-25% sooner than four, in every
+/// model tried; the work is over in a second or two either way.
 fn threads() -> i32 {
     match THREADS.load(Ordering::Relaxed) {
         0 => {
             let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
-            cores.clamp(2, 4) as i32
+            cores.clamp(2, 8) as i32
         }
         n => n,
     }

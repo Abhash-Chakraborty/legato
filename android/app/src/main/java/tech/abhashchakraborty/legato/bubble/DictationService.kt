@@ -135,7 +135,7 @@ class DictationService : Service() {
         val legato = applicationContext.legato
         // The PC lost a race lately: this device's model loads while you
         // talk, ready to write it up at once.
-        if (legato.pcWillTranscribe() && legato.pcSlowLately() && legato.modelFile().exists()) legato.loadModel()
+        if (legato.pcWillTranscribe() && legato.raceSlowPc && legato.pcSlowLately() && legato.modelFile().exists()) legato.loadModel()
         if (!legato.pcWillTranscribe()) {
             when {
                 // Loads while you talk (it's let go after a while unused).

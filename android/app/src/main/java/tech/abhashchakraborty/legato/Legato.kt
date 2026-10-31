@@ -407,6 +407,14 @@ class Legato(private val context: Context) : CoreListener {
         get() = prefs.getBoolean(PREF_PC_MODEL, true)
         set(value) { prefs.edit().putBoolean(PREF_PC_MODEL, value).apply() }
 
+    /**
+     * Whether this device's model writes up a recording the PC is slow with
+     * (see [transcribe]). Its text skips the PC's AI cleanup, so it's a choice.
+     */
+    var raceSlowPc: Boolean
+        get() = prefs.getBoolean(PREF_RACE_PC, true)
+        set(value) { prefs.edit().putBoolean(PREF_RACE_PC, value).apply() }
+
     /** The PC will write up what you say right now. */
     fun pcWillTranscribe(): Boolean = usePcModel && core.state().pcTranscribes
 
@@ -480,7 +488,15 @@ class Legato(private val context: Context) : CoreListener {
             onLine("${selectedModel.name} wrote up $seconds s in ${took()} s" + if (it.isBlank()) ", and heard no words" else "")
         }
         if (!pcWillTranscribe()) return here()
-        if (!modelFile().exists()) return onPc()
+        if (!modelFile().exists() || !raceSlowPc) {
+            return try {
+                onPc()
+            } catch (e: Exception) {
+                if (!modelFile().exists()) throw e
+                onLine("$pcName couldn't transcribe (${e.message}); used this device's model")
+                here()
+            }
+        }
 
         val results = java.util.concurrent.LinkedBlockingQueue<Pair<Boolean, Result<String>>>()
         writers.execute { results.put(true to runCatching { onPc() }) }
@@ -731,6 +747,7 @@ class Legato(private val context: Context) : CoreListener {
 
     companion object {
         const val PREF_PC_MODEL = "pc_model"
+        const val PREF_RACE_PC = "race_slow_pc"
         const val PREF_AFTER = "after_dictation_transform"
         private const val KEY_PREFIX = "ai:"
         const val PREF_MODEL = "speech_model"
