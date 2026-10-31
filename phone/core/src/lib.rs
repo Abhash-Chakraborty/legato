@@ -11,8 +11,12 @@ pub mod sync;
 pub mod transforms;
 
 // The app's pure text rules, compiled here as they are in the app.
+#[path = "../../../src-tauri/src/ai_rules.rs"]
+pub mod ai_rules;
 #[path = "../../../src-tauri/src/cleanup_rules.rs"]
 pub mod cleanup_rules;
+#[path = "../../../src-tauri/src/inyon_rules.rs"]
+pub mod inyon_rules;
 #[path = "../../../src-tauri/src/learn_rules.rs"]
 pub mod learn_rules;
 #[path = "../../../src-tauri/src/snippet_rules.rs"]
@@ -380,6 +384,26 @@ impl Phone {
     pub fn finish_dictation(&self, raw: &str, package: &str) -> Result<String> {
         let category = finish::category_of(package);
         finish::finish(&self.conn()?, raw, category, chrono::Local::now())
+    }
+
+    /// The request that cleans up the phone's text as the PC's Cleanup at
+    /// Medium would, when the PC shared a provider for it.
+    pub fn cleanup_ask(&self, raw: &str, package: &str) -> Result<Option<finish::CleanupAsk>> {
+        let category = finish::category_of(package);
+        finish::cleanup_ask(&self.conn()?, raw, category, &self.ai_share())
+    }
+
+    /// [`Self::finish_dictation`] with the provider's answer to
+    /// [`Self::cleanup_ask`], used when it passes the PC's checks.
+    pub fn finish_cleaned(&self, raw: &str, package: &str, answer: &str) -> Result<String> {
+        let category = finish::category_of(package);
+        finish::finish_cleaned(
+            &self.conn()?,
+            raw,
+            category,
+            chrono::Local::now(),
+            Some(answer),
+        )
     }
 
     /// How the phone is connected: "lan", "netbird" or "bluetooth".

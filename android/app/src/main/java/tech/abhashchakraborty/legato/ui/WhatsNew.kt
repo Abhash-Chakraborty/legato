@@ -33,6 +33,7 @@ val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
     "0.3.1" to listOf(
         "The checkmark no longer waits on a slow PC: when it hasn't answered in a couple of seconds, this device's model writes your words up too, and the first text back is typed (Settings › Don't wait for a slow PC).",
         "This device's own model writes up 20–25% sooner, using every core.",
+        "What this device writes up gets the same AI cleanup as on your PC, with the AI key your PC shares.",
         "While your words are written up, the bar folds into a small dot with a spinner.",
         "Transform a dictation in Home, a Scratchpad note (or just the selected part) or a note's transcript, from its menu or the bar at the top.",
         "Transforms run on this device with the AI key your PC shares, so they don't depend on the link to the PC.",

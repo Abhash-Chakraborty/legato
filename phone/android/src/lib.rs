@@ -109,6 +109,15 @@ pub struct TransformRequest {
     pub model: String,
 }
 
+/// What the app sends to clean up a dictation from this device's model, as
+/// the PC's Cleanup at Medium would: `request` carries the prompt and where
+/// to send it, `message` the text to send.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct CleanupRequest {
+    pub request: TransformRequest,
+    pub message: String,
+}
+
 /// An AI provider the PC shared, for the words in Settings; never its key.
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct ProviderInfo {
@@ -587,6 +596,43 @@ impl Core {
     /// for the app `package`: the Dictionary, snippets, cleanup and Style.
     pub fn finish_dictation(&self, raw: String, package: String) -> Result<String, CoreError> {
         Ok(self.phone.finish_dictation(&raw, &package)?)
+    }
+
+    /// The request that cleans up `raw` (this device's model's text, for the
+    /// app `package`) as the PC would; None when the PC runs no Cleanup at
+    /// Medium with a provider this device can reach, or there's nothing to
+    /// clean up.
+    pub fn cleanup_request(
+        &self,
+        raw: String,
+        package: String,
+    ) -> Result<Option<CleanupRequest>, CoreError> {
+        Ok(self
+            .phone
+            .cleanup_ask(&raw, &package)?
+            .map(|ask| CleanupRequest {
+                request: TransformRequest {
+                    system: ask.system,
+                    provider_id: ask.provider.id,
+                    provider_label: ask.provider.label,
+                    base_url: ask.provider.base_url,
+                    api_format: ask.provider.api_format,
+                    model: ask.model,
+                },
+                message: ask.message,
+            }))
+    }
+
+    /// [`Self::finish_dictation`] with the provider's `answer` to
+    /// [`Self::cleanup_request`] in place of the rule-based text, when it
+    /// passes the PC's checks.
+    pub fn finish_cleaned(
+        &self,
+        raw: String,
+        package: String,
+        answer: String,
+    ) -> Result<String, CoreError> {
+        Ok(self.phone.finish_cleaned(&raw, &package, &answer)?)
     }
 
     /// Asks the PC to load its speech model now, as the user starts talking.

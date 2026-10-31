@@ -88,6 +88,7 @@ impl Events for Recorder {
                 key: Some("sk-test".into()),
             }],
             own_models: Vec::new(),
+            cleanup: None,
         })
     }
     fn transform(

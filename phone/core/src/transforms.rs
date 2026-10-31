@@ -209,6 +209,7 @@ mod tests {
                 provider_id: "anthropic".into(),
                 model: "claude-sonnet".into(),
             }],
+            cleanup: None,
         };
         let (p, m) = provider_for(&share, "polish").unwrap();
         assert_eq!((p.id.as_str(), m.as_str()), ("anthropic", "claude-sonnet"));

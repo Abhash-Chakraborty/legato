@@ -14,7 +14,7 @@ import java.net.URL
  */
 object LlmClient {
     /** The model's answer to `text`. Blocks; throws with a plain reason. */
-    fun complete(request: TransformRequest, key: String?, text: String): String {
+    fun complete(request: TransformRequest, key: String?, text: String, timeoutMs: Int = 60_000): String {
         val base = request.baseUrl.trimEnd('/')
         if (!base.startsWith("https://")) error("${request.providerLabel} isn't on an HTTPS address, so this phone won't send to it")
         val anthropic = request.apiFormat == "anthropic"
@@ -34,8 +34,8 @@ object LlmClient {
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             instanceFollowRedirects = false
-            connectTimeout = 15_000
-            readTimeout = 60_000
+            connectTimeout = minOf(15_000, timeoutMs)
+            readTimeout = timeoutMs
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             if (!key.isNullOrBlank()) {

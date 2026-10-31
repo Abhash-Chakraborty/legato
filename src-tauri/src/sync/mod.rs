@@ -920,7 +920,7 @@ impl SyncManager {
 }
 
 /// What the hub reports, turned into app events.
-/// The AI providers this PC's transforms run on, for a phone. Keys go only
+/// The AI providers this PC's transforms and Cleanup at Medium run on, for a phone. Keys go only
 /// while Settings › Devices shares them. A provider only this PC can reach
 /// (Ollama, a local address) stays out: its transforms run on the phone
 /// only through this PC.
@@ -962,6 +962,18 @@ fn ai_share(settings: &AppSettings) -> protocol::AiShare {
                     transform_id: transform.id.clone(),
                     provider_id: config.provider.id.clone(),
                     model: config.model.clone(),
+                });
+            }
+        }
+    }
+    if settings.cleanup_level == crate::settings::CleanupLevel::Medium {
+        if let Some(config) = AiConfig::for_task(settings, AiTask::Dictation) {
+            if add(&config, &mut share) {
+                share.cleanup = Some(protocol::SharedCleanup {
+                    provider_id: config.provider.id.clone(),
+                    model: config.model.clone(),
+                    min_words: settings.ai_min_words,
+                    dictionary: settings.ai_correction_enabled,
                 });
             }
         }

@@ -258,12 +258,22 @@ again when the setting changes, the PC sends:
       "provider_id": "anthropic",
       "model": "claude-haiku-4-5"
     }
-  ]
+  ],
+  "cleanup": {
+    "provider_id": "openai",
+    "model": "gpt-5-nano",
+    "min_words": 3,
+    "dictionary": true
+  }
 }
 ```
 
 - The first provider is the one Settings › AI picks for transforms; `own_models` lists transforms
   that use a model of their own.
+- `cleanup` is there while the PC runs Cleanup at Medium on dictations with a provider the phone
+  can reach. The phone then cleans up what its own model writes up the same way: the PC's prompt,
+  the Dictionary along when `dictionary` is set, nothing shorter than `min_words`, and the PC's
+  checks on the answer. A slow (over 5 seconds) or failed answer leaves the rule-based text.
 - Providers on this PC only (a local server) are left out.
 - `key` is there only while Settings › Devices › Share AI keys with your phone is on (the
   default). Turning it off sends the list again without keys, and the phone drops the ones it

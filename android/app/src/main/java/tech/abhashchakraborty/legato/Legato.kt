@@ -548,9 +548,30 @@ class Legato(private val context: Context) : CoreListener {
         }
         // The PC's text comes finished; this device's is finished here, for the app.
         if (app == null || heard.isBlank()) return heard
+        cleanedUp(heard, app)?.let { return it }
         return runCatching { core.finishDictation(heard, app) }.getOrElse { e ->
             onLine("Couldn't apply the Dictionary and Style: ${e.message}")
             heard
+        }
+    }
+
+    /**
+     * This device's text cleaned up as the PC's Cleanup at Medium would, with
+     * the key the PC shared; null when the PC shared none, or the provider
+     * was slow or failed, and the rule-based text goes out instead.
+     */
+    private fun cleanedUp(heard: String, app: String): String? {
+        val ask = runCatching { core.cleanupRequest(heard, app) }.getOrNull() ?: return null
+        val key = vault.get(KEY_PREFIX + ask.request.providerId) ?: return null
+        val started = System.currentTimeMillis()
+        return try {
+            val answer = LlmClient.complete(ask.request, key, ask.message, CLEANUP_TIMEOUT_MS)
+            core.finishCleaned(heard, app, answer).also {
+                onLine("Cleaned up here in ${System.currentTimeMillis() - started} ms")
+            }
+        } catch (e: Exception) {
+            onLine("Cleanup didn't run here (${e.message ?: e.javaClass.simpleName}); kept the text as written up")
+            null
         }
     }
 
@@ -763,6 +784,8 @@ class Legato(private val context: Context) : CoreListener {
         private const val HEDGE_MS = 2_500L
         /** How long a PC that lost the race counts as slow. */
         private const val SLOW_FOR_MS = 3 * 60 * 1000L
+        /** How long cleanup of this device's text may take before the text goes out without it. */
+        private const val CLEANUP_TIMEOUT_MS = 5_000
         private const val LOG_LINES = 300
 
         /** A recording as signed 16-bit little-endian PCM, which crosses to the core in one copy. */

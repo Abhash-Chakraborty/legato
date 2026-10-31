@@ -116,6 +116,23 @@ pub struct AiShare {
     /// Transforms with a provider and model of their own.
     #[serde(default)]
     pub own_models: Vec<TransformModel>,
+    /// Cleanup at Medium, when the PC runs it on dictations with a provider
+    /// the phone can reach: the phone cleans up what its own model writes
+    /// the same way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleanup: Option<SharedCleanup>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SharedCleanup {
+    /// One of `providers` by id.
+    pub provider_id: String,
+    pub model: String,
+    /// Shorter dictations aren't sent.
+    pub min_words: u32,
+    /// The Dictionary goes along, so misheard words are fixed in the same
+    /// request (Settings › AI › Fix misheard Dictionary words).
+    pub dictionary: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
