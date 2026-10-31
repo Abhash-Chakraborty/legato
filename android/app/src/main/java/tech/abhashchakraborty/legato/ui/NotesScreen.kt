@@ -1,5 +1,6 @@
 package tech.abhashchakraborty.legato.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -163,7 +164,22 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
             Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
         ) {
-            if (notes.isEmpty()) item {
+            // The memo so far, written up half a minute at a time as you talk.
+            if (memo.recording) item(key = "heard") {
+                Card(first = true, last = true) {
+                    Column(Modifier.padding(16.dp).animateContentSize()) {
+                        Text("Recording", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            memo.heard.ifBlank { "Your words show here half a minute at a time as you talk." },
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (memo.heard.isBlank()) LocalStatus.current.faint else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+            if (notes.isEmpty() && !memo.recording) item {
                 Empty(Icons.Outlined.GraphicEq, "Record a memo here, or meetings and memos from your PC show up after a sync.")
             }
             notes.groupBy { dayLabel(it.startedAt) }.forEach { (day, rows) ->

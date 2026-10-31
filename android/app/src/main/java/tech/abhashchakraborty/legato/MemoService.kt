@@ -12,6 +12,9 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -28,6 +31,8 @@ object Memo {
         val level: Float = 0f,
         /** "Writing up" while the text is on its way, else null. */
         val writing: String? = null,
+        /** What's written up so far while it records, half a minute at a time. */
+        val heard: String = "",
     )
 
     val state = MutableStateFlow(State())
@@ -46,11 +51,16 @@ object Memo {
  * hearing you with the screen off or another app in front, then writes it
  * up: by the PC's model while connected, else this device's. Long memos go
  * in pieces of about half a minute, cut where it's quietest, each a line of
- * the transcript. The note syncs to the PC like any other.
+ * the transcript, written up while you're still talking, so Stop leaves
+ * only the last piece. The note syncs to the PC like any other.
  */
 class MemoService : Service() {
     private val recorder = Recorder()
     private val main = Handler(Looper.getMainLooper())
+    /** Lines written up while recording, and the sample they reach. */
+    private val lines = ArrayList<MemoLine>()
+    @Volatile private var writtenTo = 0
+    private var live: Job? = null
     private val tick = object : Runnable {
         override fun run() {
             if (recorder.isRecording) {
@@ -82,6 +92,40 @@ class MemoService : Service() {
         recorder.start()
         Memo.state.value = Memo.State(recording = true, startedAt = System.currentTimeMillis())
         main.post(tick)
+        synchronized(lines) { lines.clear() }
+        writtenTo = 0
+        val take = recorder.take
+        live = take?.let { applicationContext.legato.scope.launch(Dispatchers.IO) { writeAsYouGo(it) } }
+    }
+
+    /**
+     * Writes up each half minute once there's more than that past the last
+     * cut, while the recording goes on. A piece that fails, or no model to
+     * write with, leaves the rest for Stop.
+     */
+    private suspend fun writeAsYouGo(take: Recorder.Take) {
+        val legato = applicationContext.legato
+        val rate = Recorder.SAMPLE_RATE
+        while (take.running.get()) {
+            delay(2_000)
+            if (take.heard - writtenTo <= PIECE * rate || !legato.canTranscribe()) continue
+            val window = take.slice(writtenTo, writtenTo + PIECE * rate)
+            val end = quietest(window, 0)
+            if (!quiet(window, 0, end)) {
+                val text = try {
+                    legato.transcribe(window.copyOfRange(0, end)).trim()
+                } catch (e: Exception) {
+                    legato.onLine("The memo will be written up when it stops (${e.message ?: "transcription failed"})")
+                    return
+                }
+                if (text.isNotEmpty()) {
+                    val line = MemoLine(atMs = writtenTo / 16L, endMs = (writtenTo + end) / 16L, text = text)
+                    val heard = synchronized(lines) { lines += line; lines.joinToString(" ") { it.text } }
+                    Memo.state.update { if (it.recording) it.copy(heard = heard) else it }
+                }
+            }
+            writtenTo += end
+        }
     }
 
     private fun finish() {
@@ -97,12 +141,15 @@ class MemoService : Service() {
             .apply { acquire(15 * 60_000L) }
         legato.scope.launch {
             try {
-                if (!legato.readyToTranscribe()) {
+                // A piece being written up as it stopped finishes first (a
+                // write-up isn't interrupted, only the wait for the next).
+                live?.let { it.cancel(); it.join() }
+                val lines = synchronized(this@MemoService.lines) { ArrayList(this@MemoService.lines) }
+                val pieces = cut(samples, writtenTo)
+                if (pieces.isNotEmpty() && !legato.readyToTranscribe()) {
                     legato.notice("Couldn't reach ${legato.state.value.pcName ?: "your PC"}, so the memo wasn't written up.")
                     return@launch
                 }
-                val pieces = cut(samples)
-                val lines = ArrayList<MemoLine>()
                 for ((n, piece) in pieces.withIndex()) {
                     if (pieces.size > 1) Memo.state.value = Memo.State(writing = "Writing up · ${n + 1} of ${pieces.size}")
                     val (from, to) = piece
@@ -138,31 +185,39 @@ class MemoService : Service() {
 
     override fun onDestroy() {
         main.removeCallbacks(tick)
+        live?.cancel()
         if (recorder.isRecording) recorder.stop()
         if (Memo.state.value.recording) Memo.state.value = Memo.State()
         super.onDestroy()
     }
 
-    /** Pieces of at most 30 s, each cut at the quietest 100 ms after the 20 s mark. */
-    private fun cut(samples: FloatArray): List<Pair<Int, Int>> {
+    /** Pieces of at most 30 s from sample `start` on, each cut at the quietest 100 ms after the 20 s mark. */
+    private fun cut(samples: FloatArray, start: Int = 0): List<Pair<Int, Int>> {
         val rate = Recorder.SAMPLE_RATE
         val out = ArrayList<Pair<Int, Int>>()
-        var from = 0
+        var from = start
         while (from < samples.size) {
-            if (samples.size - from <= 30 * rate) { out += from to samples.size; break }
-            var best = from + 30 * rate
-            var bestEnergy = Double.MAX_VALUE
-            var at = from + 20 * rate
-            while (at + rate / 10 <= from + 30 * rate) {
-                var e = 0.0
-                for (i in at until at + rate / 10) e += samples[i] * samples[i]
-                if (e < bestEnergy) { bestEnergy = e; best = at + rate / 20 }
-                at += rate / 10
-            }
+            if (samples.size - from <= PIECE * rate) { out += from to samples.size; break }
+            val best = quietest(samples, from)
             out += from to best
             from = best
         }
         return out
+    }
+
+    /** Where to end a piece starting at `from`: the middle of the quietest 100 ms between 20 and 30 s in. */
+    private fun quietest(samples: FloatArray, from: Int): Int {
+        val rate = Recorder.SAMPLE_RATE
+        var best = from + PIECE * rate
+        var bestEnergy = Double.MAX_VALUE
+        var at = from + 20 * rate
+        while (at + rate / 10 <= minOf(from + PIECE * rate, samples.size)) {
+            var e = 0.0
+            for (i in at until at + rate / 10) e += samples[i] * samples[i]
+            if (e < bestEnergy) { bestEnergy = e; best = at + rate / 20 }
+            at += rate / 10
+        }
+        return minOf(best, samples.size)
     }
 
     /** A stretch with no speech in it; the models make words up from silence. */
@@ -205,5 +260,7 @@ class MemoService : Service() {
         private const val CHANNEL = "memo_shown"
         private const val OLD_CHANNEL = "memo"
         private const val NOTIFICATION_ID = 2
+        /** The longest piece written up at once, in seconds. */
+        private const val PIECE = 30
     }
 }
