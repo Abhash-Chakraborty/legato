@@ -546,10 +546,13 @@ class Legato(private val context: Context) : CoreListener {
             ensureModel()
             try { core.transcribe(pcm, selectedModel.language()) } finally { idleUnload() }
         }
-        // The PC's text comes finished; this device's is finished here, for the app.
-        if (app == null || app == MEMO || heard.isBlank()) return heard
-        cleanedUp(heard, app)?.let { return it }
-        return runCatching { core.finishDictation(heard, app) }.getOrElse { e ->
+        // The PC's text comes finished; this device's is finished here, for
+        // the app (none, as in the Scratchpad, is "other" there too). A memo
+        // stays a transcript.
+        if (app == MEMO || heard.isBlank()) return heard
+        val into = app ?: ""
+        cleanedUp(heard, into)?.let { return it }
+        return runCatching { core.finishDictation(heard, into) }.getOrElse { e ->
             onLine("Couldn't apply the Dictionary and Style: ${e.message}")
             heard
         }
