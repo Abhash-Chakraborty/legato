@@ -116,13 +116,26 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
                 Spacer(Modifier.height(14.dp))
                 SearchField(query, { query = it }, "Search your dictations")
             }
-            cancelled?.let { seconds ->
+            cancelled?.let { kept ->
                 item(key = "cancelled") {
                     Spacer(Modifier.height(10.dp))
                     Card(first = true, last = true) {
                         ListItem(
-                            headlineContent = { Text(if (writing) "Writing it up…" else "Cancelled dictation, $seconds s") },
-                            supportingContent = { Text("Kept in case cancelling was a slip.", color = LocalStatus.current.faint) },
+                            headlineContent = {
+                                Text(
+                                    when {
+                                        writing -> "Writing it up…"
+                                        kept.failed != null -> "Dictation not written up, ${kept.seconds} s"
+                                        else -> "Cancelled dictation, ${kept.seconds} s"
+                                    },
+                                )
+                            },
+                            supportingContent = {
+                                Text(
+                                    kept.failed?.let { "$it. The audio is kept." } ?: "Kept in case cancelling was a slip.",
+                                    color = LocalStatus.current.faint,
+                                )
+                            },
                             leadingContent = { AppDot(false) },
                             trailingContent = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -136,10 +149,17 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
                                             scope.launch {
                                                 val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { legato.writeUpCancelled() }
                                                 writing = false
-                                                snackbar.showSnackbar(if (ok) "Written up below" else "No words in it")
+                                                val left = legato.cancelled.value
+                                                snackbar.showSnackbar(
+                                                    when {
+                                                        ok -> "Written up below"
+                                                        left != null -> "Still not written up. ${left.failed ?: ""}".trim()
+                                                        else -> "No words in it"
+                                                    },
+                                                )
                                             }
                                         },
-                                    ) { Text("Write it up") }
+                                    ) { Text(if (kept.failed != null) "Try again" else "Write it up") }
                                 }
                             },
                             colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),

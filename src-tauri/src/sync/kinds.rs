@@ -673,9 +673,14 @@ fn apply_note(
         decisions,
         folder
     ];
-    let mut fresh = false;
+    let mut lines_before = 0_i64;
     let id = match row {
         Some((id, _)) => {
+            lines_before = conn.query_row(
+                "SELECT COUNT(*) FROM note_line WHERE note_id = ?1",
+                [id],
+                |r| r.get(0),
+            )?;
             conn.execute(
                 &format!(
                     "UPDATE note SET title = ?1, kind = ?2, started_at = ?3, duration_ms = ?4,
@@ -701,7 +706,6 @@ fn apply_note(
             )?;
             let id = conn.last_insert_rowid();
             ledger::map_local(conn, "notes", id, key, device)?;
-            fresh = true;
             id
         }
     };
@@ -746,10 +750,14 @@ fn apply_note(
             params![id, text(action, "owner"), text(action, "text"), flag(action, "done"), position as i64],
         )?;
     }
-    let has_lines = body["lines"].as_array().is_some_and(|l| !l.is_empty());
+    // A memo with more lines than before wants a summary: a new one, or one
+    // whose failed parts the phone wrote up later (then over its old summary).
+    let lines_now = body["lines"].as_array().map_or(0, |l| l.len() as i64);
+    let wants_summary = kind == "memo"
+        && lines_now > lines_before
+        && (summary.trim().is_empty() || lines_before > 0);
     Ok(Applied {
-        unsummarised_note: (fresh && kind == "memo" && summary.trim().is_empty() && has_lines)
-            .then_some(id),
+        unsummarised_note: wants_summary.then_some(id),
         ..Applied::default()
     })
 }
@@ -967,7 +975,7 @@ mod tests {
 
     /// A memo recorded on the phone arrives with no summary, once, so the
     /// PC can write one; a summarised or empty memo, a meeting and a later
-    /// version of the same memo don't ask for one.
+    /// version of the same memo don't ask for one, unless it has more lines.
     #[test]
     fn a_new_memo_without_a_summary_asks_for_one() {
         let mut pc = db();
@@ -1010,6 +1018,29 @@ mod tests {
         )
         .unwrap();
         assert_eq!(empty.unsummarised_note, None);
+
+        // Parts that failed are written up later on the phone: the memo with
+        // more lines asks again, over its summary; one that was empty asks too.
+        let mut more = done.clone();
+        more["lines"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"at_ms": 900, "end_ms": 1800, "text": "and the notes"}));
+        let more = apply(&mut pc, "notes", "phone:2", Some(&more), "Pixel 8", "pc", 7).unwrap();
+        assert!(more.unsummarised_note.is_some());
+        let filled = json!({"title": "Voice memo", "kind": "memo", "started_at": 1,
+            "lines": [{"at_ms": 0, "end_ms": 900, "text": "Call back"}]});
+        let filled = apply(
+            &mut pc,
+            "notes",
+            "phone:4",
+            Some(&filled),
+            "Pixel 8",
+            "pc",
+            8,
+        )
+        .unwrap();
+        assert!(filled.unsummarised_note.is_some());
     }
 
     /// A phone's dictation the PC passes on to a tablet is the phone's on

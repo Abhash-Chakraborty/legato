@@ -454,6 +454,24 @@ impl Core {
         Ok(id)
     }
 
+    /// Adds lines written up later to memo `id` (parts that failed when it
+    /// was recorded); false when the memo is gone.
+    pub fn add_memo_lines(&self, id: i64, lines: Vec<MemoLine>) -> Result<bool, CoreError> {
+        let lines: Vec<(i64, i64, String)> = lines
+            .into_iter()
+            .map(|l| (l.at_ms, l.end_ms, l.text.trim().to_string()))
+            .filter(|l| !l.2.is_empty())
+            .collect();
+        if lines.is_empty() {
+            return Ok(true);
+        }
+        let added = self.phone.add_memo_lines(id, &lines)?;
+        if added {
+            self.changed()?;
+        }
+        Ok(added)
+    }
+
     /// Sends what's on the phone's clipboard to the PC. False when not connected.
     pub fn send_clip(&self, text: String) -> Result<bool, CoreError> {
         let Some(pc) = self.phone.paired_pc() else {

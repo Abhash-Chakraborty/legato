@@ -344,9 +344,11 @@ Rules per kind:
 - **Notes** sync once the transcript is done (not while recording or transcribing), and go on
   syncing while the summary is written, so a note never reads as deleted. The phone records
   voice memos too: `kind` is `memo`, each stretch of about 30 seconds is a line with `who` set to
-  `you`, and the recording itself stays on the phone only until it's written up. A memo that
-  arrives on the PC without a `summary` gets one from the PC's AI for Notes (with a title and tags
-  while it still has the default ones), and the edit goes back like any other. Once the
+  `you`, and the recording itself stays on the phone only until it's written up. Parts that
+  couldn't be written up (no PC, no model, a dropped link) keep their audio on the phone and are
+  added as lines later. A memo that arrives on the PC without a `summary`, or with more lines than
+  before, gets one from the PC's AI for Notes (with a title and tags while it still has the
+  default ones), and the edit goes back like any other. Once the
   PC's speaker model has told voices apart, a line carries `speaker` (1, 2, …) and the note
   `speakers`, a list of `{speaker, name}` for the voices given a name; both are left out when
   unset, so older notes hash as before. Saved voice clips stay on the PC. A note in a folder

@@ -702,6 +702,30 @@ impl Phone {
         Ok(id)
     }
 
+    /// Adds lines written up later to a memo, such as parts that failed when
+    /// it was recorded. False when the memo is gone.
+    pub fn add_memo_lines(&self, id: i64, lines: &[(i64, i64, String)]) -> Result<bool> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM note WHERE id = ?1)",
+            [id],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            return Ok(false);
+        }
+        for (at_ms, end_ms, text) in lines {
+            tx.execute(
+                "INSERT INTO note_line (note_id, at_ms, end_ms, who, text)
+                 VALUES (?1, ?2, ?3, 'you', ?4)",
+                params![id, at_ms, end_ms, text],
+            )?;
+        }
+        tx.commit()?;
+        Ok(true)
+    }
+
     /// Writes a Scratchpad note, or replaces the text of the one titled so.
     pub fn scratch(&self, title: &str, text: &str) -> Result<()> {
         let conn = self.conn()?;

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material3.Checkbox
@@ -113,6 +114,28 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
     // Deleted, while Undo is offered; the note goes once the offer does.
     var hidden by remember { mutableStateOf(setOf<Long>()) }
     val shown = notes.filter { it.id !in hidden }
+    // Memos with parts not written up yet, their audio kept to try again.
+    val kept by tech.abhashchakraborty.legato.KeptMemos.pending.collectAsStateWithLifecycle()
+    var retrying by remember { mutableStateOf(setOf<Long>()) }
+
+    fun tryAgain(n: NoteRow) {
+        if (n.id in retrying) return
+        retrying = retrying + n.id
+        scope.launch {
+            val done = withContext(Dispatchers.IO) {
+                if (legato.readyToTranscribe()) tech.abhashchakraborty.legato.KeptMemos.writeUp(context, n.id) else -1
+            }
+            retrying = retrying - n.id
+            val left = n.id in tech.abhashchakraborty.legato.KeptMemos.pending.value
+            snackbar.showSnackbar(
+                when {
+                    done < 0 -> "Nothing can write it up yet: connect to your PC or download a model."
+                    !left -> "Written up"
+                    else -> "Part of it still wasn't written up; it stays kept."
+                },
+            )
+        }
+    }
 
     fun delete(n: NoteRow) {
         hidden = hidden + n.id
@@ -122,7 +145,11 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
                 val r = snackbar.showSnackbar("Deleted ${n.title}", actionLabel = "Undo", duration = SnackbarDuration.Short)
                 undone = r == SnackbarResult.ActionPerformed
             } finally {
-                if (undone) hidden = hidden - n.id else legato.run { deleteNote(n.id) }
+                if (undone) hidden = hidden - n.id
+                else {
+                    tech.abhashchakraborty.legato.KeptMemos.forget(context, n.id)
+                    legato.run { deleteNote(n.id) }
+                }
             }
         }
     }
@@ -225,6 +252,12 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
                                 supportingContent = {
                                     Column {
                                         Text(n.meta(legato.device), color = LocalStatus.current.faint)
+                                        kept[n.id]?.let { seconds ->
+                                            Text(
+                                                if (n.id in retrying) "Writing up the rest…" else "${clock(seconds * 1000L)} not written up yet · long-press to try again",
+                                                color = MaterialTheme.colorScheme.error,
+                                            )
+                                        }
                                         if (n.summary.isNotBlank()) Text(n.summary, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 },
@@ -247,6 +280,7 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
             subtitle = if (pc != null) "Made on $pc; delete it there." else n.meta(legato.device),
             actions = listOfNotNull(
                 MenuAction("Open", Icons.Default.Edit) { onOpen(n.id) },
+                if (n.id in kept) MenuAction("Try again", Icons.Default.Refresh) { tryAgain(n) } else null,
                 if (pc == null) MenuAction("Delete", Icons.Default.Delete, danger = true) { delete(n) } else null,
             ),
             onDismiss = { menuFor = null },

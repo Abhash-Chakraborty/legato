@@ -81,6 +81,7 @@ class Legato(private val context: Context) : CoreListener {
             prefs.edit().putString(PREF_MODEL, "moonshine-base").apply()
         }
         if (modelFile().exists()) model.value = ModelStatus.Downloaded
+        KeptMemos.load(context)
         // Whatever woke this process (the bubble, a memo, a share) may need the
         // PC, and Android restarts it in the background without the app open.
         if (state.value.paired) run { connect() }
@@ -320,7 +321,16 @@ class Legato(private val context: Context) : CoreListener {
     }
 
     fun refresh() {
+        val was = state.value.pcTranscribes
         state.value = core.state()
+        // The PC is back: what failed to be written up while it was away
+        // goes to it now (cheap for this device).
+        if (!was && state.value.pcTranscribes && usePcModel) {
+            scope.launch(Dispatchers.IO) {
+                KeptMemos.writeUpAllOnPc(context)
+                if (cancelled.value?.failed != null) writeUpCancelled()
+            }
+        }
     }
 
     /** Runs a core call off the main thread and reports a failure as a line. */
@@ -353,15 +363,30 @@ class Legato(private val context: Context) : CoreListener {
         get() = prefs.getBoolean(PREF_KEEP_LISTENING, true)
         set(value) { prefs.edit().putBoolean(PREF_KEEP_LISTENING, value).apply() }
 
-    // ---- a cancelled dictation --------------------------------------------
+    // ---- a kept dictation ---------------------------------------------------
 
-    /** The audio of the last dictation cancelled before its words were written up. */
+    /**
+     * The last dictation whose words weren't written up: cancelled, or failed
+     * (no PC, no model, a dropped link). [seconds] long; [failed] says why it
+     * failed, null for a cancelled one; [app] is the app it was for.
+     */
+    data class Kept(val seconds: Int, val failed: String?, val app: String?)
+
+    /** Its audio, and what it was for beside it. */
     private val cancelledFile = File(context.filesDir, "cancelled.pcm")
+    private val keptAbout = File(context.filesDir, "cancelled.json")
 
-    /** How long the dictation waiting in [cancelledFile] is, in seconds; null when none waits. */
-    val cancelled = MutableStateFlow(
-        cancelledFile.takeIf { it.exists() }?.let { (it.length() / 32_000L).toInt() },
-    )
+    val cancelled = MutableStateFlow(readKept())
+
+    private fun readKept(): Kept? {
+        if (!cancelledFile.exists()) return null
+        val about = runCatching { org.json.JSONObject(keptAbout.readText()) }.getOrNull()
+        return Kept(
+            seconds = (cancelledFile.length() / 32_000L).toInt(),
+            failed = about?.optString("failed")?.takeIf { it.isNotEmpty() },
+            app = about?.takeIf { it.has("app") }?.optString("app"),
+        )
+    }
 
     /**
      * Keeps a cancelled dictation (✕, or Cancel in the notification) so its
@@ -369,26 +394,43 @@ class Legato(private val context: Context) : CoreListener {
      * (cheap for the phone); otherwise its audio waits for Home's Write it up,
      * as loading this device's model for it would cost more than a tap.
      */
-    fun keepCancelled(samples: FloatArray) {
+    fun keepCancelled(samples: FloatArray) = keep(samples, failed = null, app = null)
+
+    /**
+     * Keeps a dictation that failed to be written up, with the app it was
+     * for, so Home's Try again writes it up as it would have been.
+     */
+    fun keepFailed(samples: FloatArray, why: String, app: String?) = keep(samples, failed = why, app = app)
+
+    private fun keep(samples: FloatArray, failed: String?, app: String?) {
         // Under a second is a slip of the finger, not words.
         if (samples.size < 16_000) return
         scope.launch(Dispatchers.IO) {
-            runCatching { cancelledFile.writeBytes(pcm16(samples)) }
-                .onFailure { onLine("Couldn't keep the cancelled dictation: ${it.message}"); return@launch }
-            cancelled.value = samples.size / 16_000
-            onLine("Kept the cancelled dictation")
-            if (pcWillTranscribe()) writeUpCancelled()
+            runCatching {
+                cancelledFile.writeBytes(pcm16(samples))
+                keptAbout.writeText(
+                    org.json.JSONObject().apply {
+                        failed?.let { put("failed", it) }
+                        app?.let { put("app", it) }
+                    }.toString(),
+                )
+            }.onFailure { onLine("Couldn't keep the dictation: ${it.message}"); return@launch }
+            cancelled.value = Kept(samples.size / 16_000, failed, app)
+            onLine(if (failed == null) "Kept the cancelled dictation" else "Kept the dictation to try again")
+            if (failed == null && pcWillTranscribe()) writeUpCancelled()
         }
     }
 
-    /** Writes up the cancelled dictation into Home. Blocks; call it off the main thread. */
+    /** Writes up the kept dictation into Home. Blocks; call it off the main thread. */
     fun writeUpCancelled(): Boolean {
         val bytes = runCatching { cancelledFile.readBytes() }.getOrNull() ?: return false
+        val app = cancelled.value?.app
         val samples = FloatArray(bytes.size / 2) { i ->
             ((bytes[2 * i].toInt() and 0xff) or (bytes[2 * i + 1].toInt() shl 8)).toShort() / 32768f
         }
-        val text = runCatching { transcribe(samples, null) }.getOrElse { e ->
-            onLine("Couldn't write up the cancelled dictation: ${e.message}")
+        val text = runCatching { transcribe(samples, app) }.getOrElse { e ->
+            onLine("Couldn't write up the kept dictation: ${e.message}")
+            cancelled.value = cancelled.value?.copy(failed = e.message ?: "Transcription failed")
             return false
         }
         if (text.isNotBlank()) runCatching { core.keepCancelled(text) }
@@ -399,6 +441,7 @@ class Legato(private val context: Context) : CoreListener {
 
     fun discardCancelled() {
         cancelledFile.delete()
+        keptAbout.delete()
         cancelled.value = null
     }
 

@@ -30,6 +30,11 @@ import tech.abhashchakraborty.legato.Legato
  * release; the sheet shows the one for the version just installed, once.
  */
 val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
+    "0.4.0" to listOf(
+        "Legato updates from GitHub Releases: it checks when it opens, Settings › About has the update and a switch, and Android asks you to confirm the install.",
+        "A dictation that fails (no PC, no model, a dropped link) keeps its audio in Home with Try again, and goes to your PC on its own once it's back.",
+        "A memo that can't be written up is saved anyway with its audio kept. The rest is written up when your PC is back, or from Try again in the memo's menu, and the PC writes the summary again.",
+    ),
     "0.3.3" to listOf(
         "The checkmark no longer waits on a slow PC: when it hasn't answered in a couple of seconds, this device's model writes your words up too, and the first text back is typed (Settings › Don't wait for a slow PC).",
         "This device's own model writes up 20–25% sooner, using every core.",

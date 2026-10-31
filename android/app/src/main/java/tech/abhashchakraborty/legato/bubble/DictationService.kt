@@ -195,7 +195,9 @@ class DictationService : Service() {
             }.getOrElse { e ->
                 val why = e.message ?: "Transcription failed"
                 legato.onLine(why)
-                withContext(Dispatchers.Main) { Toast.makeText(this@DictationService, why, Toast.LENGTH_LONG).show() }
+                // The audio waits in Home for Try again, with the app it was for.
+                legato.keepFailed(samples, why, app)
+                withContext(Dispatchers.Main) { Toast.makeText(this@DictationService, "$why. It's kept in Home to try again.", Toast.LENGTH_LONG).show() }
                 ""
             }
             withContext(Dispatchers.Main) {

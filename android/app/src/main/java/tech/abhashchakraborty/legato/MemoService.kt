@@ -149,27 +149,39 @@ class MemoService : Service() {
                 live?.let { it.cancel(); it.join() }
                 val lines = synchronized(this@MemoService.lines) { ArrayList(this@MemoService.lines) }
                 val pieces = cut(samples, writtenTo)
-                if (pieces.isNotEmpty() && !legato.readyToTranscribe()) {
-                    legato.notice("Couldn't reach ${legato.state.value.pcName ?: "your PC"}, so the memo wasn't written up.")
-                    return@launch
-                }
+                // What can't be written up now keeps its audio for later, so
+                // no PC, no model or a dropped link loses nothing.
+                val failed = ArrayList<Pair<Int, Int>>()
+                val reachable = pieces.isEmpty() || legato.readyToTranscribe()
                 for ((n, piece) in pieces.withIndex()) {
-                    if (pieces.size > 1) Memo.state.value = Memo.State(writing = "Writing up · ${n + 1} of ${pieces.size}")
                     val (from, to) = piece
                     if (quiet(samples, from, to)) continue
+                    if (!reachable) { failed += piece; continue }
+                    if (pieces.size > 1) Memo.state.value = Memo.State(writing = "Writing up · ${n + 1} of ${pieces.size}")
                     val text = runCatching { legato.transcribe(samples.copyOfRange(from, to), Legato.MEMO) }.getOrElse { e ->
-                        legato.onLine(e.message ?: "Transcription failed"); ""
+                        legato.onLine(e.message ?: "Transcription failed")
+                        failed += piece
+                        ""
                     }.trim()
                     if (text.isNotEmpty()) lines += MemoLine(atMs = from / 16L, endMs = to / 16L, text = text)
                 }
-                if (lines.isEmpty()) {
+                if (lines.isEmpty() && failed.isEmpty()) {
                     legato.notice("Legato heard no words, so the memo wasn't saved.")
                 } else {
                     val title = "Voice memo · " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(started))
-                    legato.core.addMemo(title, started / 1000, samples.size / 16L, lines)
+                    val id = legato.core.addMemo(title, started / 1000, samples.size / 16L, lines)
+                    KeptMemos.keep(applicationContext, id, samples, failed)
                     legato.bump()
                     val pc = legato.state.value
-                    legato.notice(if (pc.paired) "Memo saved; it syncs to ${pc.pcName ?: "your PC"}." else "Memo saved.")
+                    legato.notice(
+                        when {
+                            failed.isNotEmpty() && lines.isEmpty() ->
+                                "Memo saved, not written up yet: ${if (reachable) "transcription failed" else "couldn't reach ${pc.pcName ?: "your PC"}"}. Its audio is kept to try again."
+                            failed.isNotEmpty() -> "Memo saved; part of it wasn't written up. Its audio is kept to try again."
+                            pc.paired -> "Memo saved; it syncs to ${pc.pcName ?: "your PC"}."
+                            else -> "Memo saved."
+                        },
+                    )
                 }
             } catch (e: Exception) {
                 legato.notice(e.message ?: "Couldn't save the memo")
