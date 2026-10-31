@@ -75,6 +75,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -94,7 +96,15 @@ import tech.abhashchakraborty.legato.ModelStatus
 import tech.abhashchakraborty.legato.core.ScratchNote
 
 private fun ScratchNote.heading(): String =
-    title.ifBlank { text.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(80) ?: "" }.ifBlank { "Untitled" }
+    title.ifBlank { text.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.let(::clip) ?: "" }.ifBlank { "Untitled" }
+
+/** The first line up to 80 characters, ending on a whole word. */
+private fun clip(line: String): String {
+    if (line.length <= 80) return line
+    val cut = line.take(80)
+    val space = cut.lastIndexOf(' ')
+    return (if (space > 40) cut.take(space) else cut).trimEnd(',', ';', ':', ' ') + "…"
+}
 
 /** Scratchpad notes from both devices, the last edited first. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -231,8 +241,11 @@ fun ScratchEditScreen(id: Long, onBack: () -> Unit) {
     val heard by Dictation.forScreen.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val bodyFocus = remember { FocusRequester() }
 
     LaunchedEffect(id) {
+        // A new note is for writing: the cursor waits in it with the keyboard up.
+        if (id <= 0) runCatching { bodyFocus.requestFocus() }
         if (id > 0) {
             val note = withContext(Dispatchers.Default) { runCatching { legato.core.scratchNotes().find { it.id == id } }.getOrNull() }
             if (note != null) {
@@ -349,7 +362,8 @@ fun ScratchEditScreen(id: Long, onBack: () -> Unit) {
             FloatingActionButton(
                 onClick = { talk() },
                 containerColor = if (recording) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.width(width),
+                // Above the keyboard, not behind it.
+                modifier = Modifier.imePadding().width(width),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp)) {
                     when {
@@ -377,7 +391,7 @@ fun ScratchEditScreen(id: Long, onBack: () -> Unit) {
                 placeholder = { Text("Type, or tap the mic and talk.") },
                 textStyle = MaterialTheme.typography.bodyLarge,
                 colors = fieldColors,
-                modifier = Modifier.fillMaxWidth().weight(1f),
+                modifier = Modifier.fillMaxWidth().weight(1f).focusRequester(bodyFocus),
             )
             Surface(color = Color.Transparent, modifier = Modifier.height(72.dp)) {}
         }
