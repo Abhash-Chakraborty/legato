@@ -425,10 +425,13 @@ fn note_to_open(app: &AppHandle) -> Result<i64> {
     let pick = match settings.scratchpad_open {
         ScratchpadOpen::New => None,
         ScratchpadOpen::Pinned => m.last_pinned()?.map(|n| n.id),
+        // With every tab closed, the note last written in: a blank new one
+        // isn't resuming anything.
         ScratchpadOpen::Resume => settings
             .scratchpad_last_note
             .filter(|id| m.get(*id).ok().flatten().is_some())
-            .or_else(|| m.tabs().ok().and_then(|t| t.last().map(|n| n.id))),
+            .or_else(|| m.tabs().ok().and_then(|t| t.last().map(|n| n.id)))
+            .or_else(|| m.list().ok().and_then(|l| l.first().map(|n| n.id))),
     };
     match pick {
         Some(id) => Ok(id),
