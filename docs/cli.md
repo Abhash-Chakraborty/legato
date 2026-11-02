@@ -66,4 +66,4 @@ legato --list-devices                      # Compute devices the speech engine c
 | `--repeat <n>`            | Runs the transcription n times and reports the fastest                         |
 | `--json`                  | Prints the result, or the model list, as JSON                                  |
 
-Legato is a windowed app, so PowerShell shows what it prints only when you pipe or redirect it, for example `legato --list-models | Out-String` or `legato --help > help.txt`.
+These print into the terminal you ran them from. Legato is a windowed app, so PowerShell shows the prompt again before the output arrives; press Enter to get a clean prompt, or pipe the output, for example `legato --list-models | Out-String`.

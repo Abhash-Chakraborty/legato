@@ -31,6 +31,10 @@ fn main() {
         std::process::exit(legato_app_lib::mcp::run());
     }
 
-    let cli_args = CliArgs::parse();
+    let cli_args = CliArgs::try_parse().unwrap_or_else(|e| {
+        // --help, --version or a bad flag: say so in the terminal.
+        legato_app_lib::attach_parent_console();
+        e.exit()
+    });
     legato_app_lib::run(cli_args)
 }

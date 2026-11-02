@@ -127,6 +127,18 @@ pub fn cancel_current_operation(app: &AppHandle) {
     info!("Operation cancellation completed - returned to idle state");
 }
 
+/// Release builds are windowed apps with no console, so `legato --help` or a
+/// mistyped flag printed nowhere. Writes into the terminal that started
+/// Legato instead, when there is one.
+pub fn attach_parent_console() {
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+        // Fails when started from Explorer or already in a console; nothing to do then.
+        let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
 /// Returns true when the environment variable is set to a truthy value
 /// (e.g. "1", "true", "yes", "on").
 /// "0", "false", "no", "off" and empty string are treated as falsy (case-insensitive).
