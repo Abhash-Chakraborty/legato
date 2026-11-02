@@ -88,6 +88,46 @@ pub struct CaptureSink {
     /// counts; readiness is not speech.
     ready: Option<mpsc::Sender<()>>,
     samples: Vec<f32>,
+    #[cfg(debug_assertions)]
+    debug_feed: Option<DebugFeed>,
+}
+
+/// Debug builds: `LEGATO_DEBUG_MIC_WAV` names a 16 kHz mono WAV that each
+/// recording hears from its start in place of the microphone, then silence.
+/// For testing dictation on a machine nobody can speak to.
+#[cfg(debug_assertions)]
+struct DebugFeed {
+    samples: Vec<f32>,
+    at: usize,
+    chunk: Vec<f32>,
+}
+
+#[cfg(debug_assertions)]
+impl DebugFeed {
+    fn from_env() -> Option<Self> {
+        let path = std::env::var_os("LEGATO_DEBUG_MIC_WAV")?;
+        match super::read_wav_samples(&path) {
+            Ok(samples) => Some(Self {
+                samples,
+                at: 0,
+                chunk: Vec::new(),
+            }),
+            Err(e) => {
+                log::warn!("LEGATO_DEBUG_MIC_WAV couldn't be read: {e}");
+                None
+            }
+        }
+    }
+
+    /// The next `len` samples of the file, padded with silence past its end.
+    fn next(&mut self, len: usize) -> &[f32] {
+        let end = (self.at + len).min(self.samples.len());
+        self.chunk.clear();
+        self.chunk.extend_from_slice(&self.samples[self.at..end]);
+        self.chunk.resize(len, 0.0);
+        self.at = end;
+        &self.chunk
+    }
 }
 
 /// Spectrum window at 16 kHz: 32 ms, near the overlay's ~30 Hz refresh.
@@ -123,6 +163,8 @@ impl CaptureSink {
             on_audio,
             ready: Some(ready),
             samples: Vec::new(),
+            #[cfg(debug_assertions)]
+            debug_feed: DebugFeed::from_env(),
         }
     }
 
@@ -167,6 +209,14 @@ impl Sink for CaptureSink {
         if let Some(ready) = self.ready.take() {
             let _ = ready.send(());
         }
+        #[cfg(debug_assertions)]
+        let chunk = match self.debug_feed.as_mut() {
+            Some(feed) => AudioChunk {
+                samples: feed.next(chunk.samples.len()),
+                ..chunk
+            },
+            None => chunk,
+        };
 
         // Mono by construction: the recorder mixes down or picks one channel.
         let real = &chunk.samples[..chunk.valid_frames];
