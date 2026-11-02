@@ -786,7 +786,7 @@
     "privacy": {
       "rememberApp": {
         "title": "Remember which app I dictated into",
-        "description": "Shows the app on each dictation so Home can filter by it. Off, Legato keeps no app names or window titles."
+        "description": "Shows the app on each dictation so Home can filter by it. Off, Legato keeps no app names or window titles; Style still uses the app in front while you dictate."
       }
     },
     "ai": {

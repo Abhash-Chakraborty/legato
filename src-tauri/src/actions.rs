@@ -245,11 +245,18 @@ fn keeps_when_cancelled(mode: DictationMode) -> bool {
     ) && crate::setup::scene_target().is_none()
 }
 
-fn kept_app(mode: DictationMode, front: Option<&context::ForegroundWindow>) -> Option<AppFields> {
+fn kept_app(
+    remember_app: bool,
+    mode: DictationMode,
+    front: Option<&context::ForegroundWindow>,
+) -> Option<AppFields> {
     if mode == DictationMode::Scratchpad {
         Some(scratchpad_fields())
     } else {
-        front.map(context::resolve).map(app_fields)
+        front
+            .filter(|_| remember_app)
+            .map(context::resolve)
+            .map(app_fields)
     }
 }
 
@@ -276,7 +283,7 @@ pub(crate) fn keep_cancelled(app: &AppHandle, heard: Option<Vec<f32>>) {
     let transcribe = tm.is_model_loaded()
         && get_settings(app).model_unload_timeout
             != crate::settings::ModelUnloadTimeout::Immediately;
-    let app_info = kept_app(mode, front.as_ref());
+    let app_info = kept_app(get_settings(app).remember_app, mode, front.as_ref());
     tauri::async_runtime::spawn_blocking(move || {
         let speech_ms = (samples.len() / 16) as i64;
         let file_name = format!("legato-{}.wav", chrono::Utc::now().timestamp_millis());
@@ -616,8 +623,8 @@ impl ShortcutAction for TranscribeAction {
             }
         }
 
-        let remember_app = get_settings(app).remember_app;
-        let front = if remember_app { front } else { None };
+        // Style needs the app in front even when Legato keeps no app names;
+        // with Settings › Privacy › Remember which app off, nothing stores it.
         *RECORDING_FOR.lock().unwrap_or_else(|e| e.into_inner()) = Some((self.mode, front.clone()));
         app.state::<DictationContext>().set(front);
 
@@ -940,7 +947,7 @@ impl ShortcutAction for TranscribeAction {
                                     file_name,
                                     transcription_text: text,
                                     post_process_requested: post_process,
-                                    app: kept_app(mode, started_in.as_ref()),
+                                    app: kept_app(remember_app, mode, started_in.as_ref()),
                                     speech_ms: Some(speech_ms),
                                     model_id: Some(model_id),
                                     model_name,
@@ -1052,7 +1059,7 @@ impl ShortcutAction for TranscribeAction {
                                         file_name: file_name.clone(),
                                         transcription_text: text.to_string(),
                                         post_process_requested: post_process,
-                                        app: kept_app(mode, started_in.as_ref()),
+                                        app: kept_app(remember_app, mode, started_in.as_ref()),
                                         speech_ms: Some(speech_ms),
                                         model_id: Some(model_id.clone()),
                                         model_name: model_name.clone(),
@@ -1114,6 +1121,7 @@ impl ShortcutAction for TranscribeAction {
                                     &words,
                                     app_info
                                         .as_ref()
+                                        .filter(|_| remember_app)
                                         .map(|a| (a.name.as_str(), Some(a.exe_path.as_str()))),
                                 );
                             }
@@ -1123,6 +1131,7 @@ impl ShortcutAction for TranscribeAction {
                                     &processed.snippet_hits,
                                     app_info
                                         .as_ref()
+                                        .filter(|_| remember_app)
                                         .map(|a| (a.name.as_str(), Some(a.exe_path.as_str()))),
                                 );
 
@@ -1138,7 +1147,7 @@ impl ShortcutAction for TranscribeAction {
                                     app: if mode == DictationMode::Scratchpad {
                                         Some(scratchpad_fields())
                                     } else {
-                                        app_info.clone().map(app_fields)
+                                        app_info.clone().filter(|_| remember_app).map(app_fields)
                                     },
                                     speech_ms: Some(speech_ms),
                                     model_id: Some(model_id.clone()),
@@ -1277,14 +1286,14 @@ impl ShortcutAction for TranscribeAction {
                                         crate::edit_reader::watch(
                                             &ah_clone,
                                             &fallback_text,
-                                            app_info.as_ref(),
+                                            app_info.as_ref().filter(|_| remember_app),
                                         );
                                     }
                                     if let Err(reason) = &paste_result {
                                         let note_id = crate::scratchpad::save_failed_paste(
                                             &ah_clone,
                                             &fallback_text,
-                                            app_info.as_ref(),
+                                            app_info.as_ref().filter(|_| remember_app),
                                             reason,
                                         );
                                         if !quiet {
@@ -1384,7 +1393,10 @@ impl ShortcutAction for TranscribeAction {
                             let _ = ah.emit("transcription-error", err.to_string());
                             // Save entry with empty text so user can retry
                             if wav_saved && mode != DictationMode::Ask {
-                                let app_info = started_in.as_ref().map(context::resolve);
+                                let app_info = started_in
+                                    .as_ref()
+                                    .filter(|_| remember_app)
+                                    .map(context::resolve);
                                 if let Err(save_err) = hm.save_entry(NewEntry {
                                     file_name,
                                     post_process_requested: post_process,

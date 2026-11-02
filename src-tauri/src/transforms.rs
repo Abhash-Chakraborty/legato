@@ -484,8 +484,17 @@ where
         transform_id: job.transform_id.clone(),
         name: job.name.clone(),
         source: Some(captured.source),
-        app_name: captured.app.as_ref().map(|a| a.name.clone()),
-        app_path: captured.app.as_ref().map(|a| a.exe_path.clone()),
+        // Settings › Privacy › Remember which app: off, runs keep no app.
+        app_name: captured
+            .app
+            .as_ref()
+            .filter(|_| settings.remember_app)
+            .map(|a| a.name.clone()),
+        app_path: captured
+            .app
+            .as_ref()
+            .filter(|_| settings.remember_app)
+            .map(|a| a.exe_path.clone()),
         in_words: rules::word_count(&captured.text) as i64,
         ms,
         ..Default::default()
@@ -834,8 +843,16 @@ pub fn after_dictation_paste(app: &AppHandle, done: AfterPaste) {
                 transform_id: t.id.clone(),
                 name: t.name.clone(),
                 source: Some(RunSource::Dictation),
-                app_name: done.app.as_ref().map(|a| a.name.clone()),
-                app_path: done.app.as_ref().map(|a| a.exe_path.clone()),
+                app_name: done
+                    .app
+                    .as_ref()
+                    .filter(|_| settings.remember_app)
+                    .map(|a| a.name.clone()),
+                app_path: done
+                    .app
+                    .as_ref()
+                    .filter(|_| settings.remember_app)
+                    .map(|a| a.exe_path.clone()),
                 in_words: rules::word_count(&t.before) as i64,
                 out_words: rules::word_count(&t.after) as i64,
                 ms: t.ms,

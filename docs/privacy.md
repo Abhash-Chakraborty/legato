@@ -72,7 +72,7 @@ API keys, calendar addresses, the Inyon hub's token and this PC's phone sync ide
 - **Dictations:** Settings › Privacy › History. Keep at most sets how many (500 to start with), and Keep recordings sets how long dictations and their recordings stay (After 2 weeks to start with). Never keeps them until you delete them.
 - **Note audio:** Settings › Context & calls › Recordings › Keep note audio. Older audio is deleted; the transcript, summary and tags stay, but you can't play those notes back or name their speakers. New installs start at 3 months. Settings from before this option keep audio forever.
 - **Notes and Scratchpad notes** stay until you delete them.
-- **App names:** Settings › Privacy › Apps › Remember which app I dictated into. Off, Legato keeps no app names or window titles.
+- **App names:** Settings › Privacy › Apps › Remember which app I dictated into. Off, Legato keeps no app names or window titles in history, the Dictionary, transform runs or the Scratchpad. Style still uses the app in front while you dictate, and forgets it once the text is pasted.
 
 ## Keep Legato out of screen shares
 

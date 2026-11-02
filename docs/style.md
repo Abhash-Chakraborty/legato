@@ -6,7 +6,7 @@ Style formats each dictation for the kind of app you're dictating into: the tone
 
 When a dictation starts, Legato reads the window in front: the program, and in a browser the tab's title. Each app or website belongs to one kind of app, and that kind decides the style. Reading the window is a few Windows calls, done on this PC.
 
-> **Note:** Style needs to know the app. With Settings › Privacy › Remember which app I dictated into turned off, Legato keeps no app names, so every dictation gets the Other tone and the Settings › Output paste settings. A speech model picked per kind of app still applies.
+> **Note:** Style works with Settings › Privacy › Remember which app I dictated into turned off. Legato still looks at the app in front while you dictate, and keeps no record of it afterwards.
 
 Legato knows these apps out of the box:
 
