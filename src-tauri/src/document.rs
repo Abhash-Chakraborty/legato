@@ -259,7 +259,7 @@ mod tests {
     fn a_word_file_holds_the_parts_word_and_docs_need() {
         let bytes = docx(&sample()).unwrap();
         let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
-        let mut names: Vec<String> = zip.file_names().map(String::from).collect();
+        let mut names: Vec<String> = zip.file_names().map(|n| n.unwrap().into_owned()).collect();
         names.sort();
         assert_eq!(
             names,
