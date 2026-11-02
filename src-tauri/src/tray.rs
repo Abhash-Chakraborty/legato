@@ -436,18 +436,11 @@ fn version_label() -> String {
 /// `update_checks_forced_disabled()`, which cannot change during a run.
 fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri::Wry>, String)> {
     let strings = tray_strings();
-    let (settings_accelerator, quit_accelerator) = (Some("Ctrl+,"), Some("Ctrl+Q"));
 
     // Create common menu items
     let version_label = version_label();
     let version_i = MenuItem::with_id(app, "version", &version_label, false, None::<&str>)?;
-    let settings_i = MenuItem::with_id(
-        app,
-        "settings",
-        &strings.settings,
-        true,
-        settings_accelerator,
-    )?;
+    let settings_i = MenuItem::with_id(app, "settings", &strings.settings, true, None::<&str>)?;
     let check_updates_i = MenuItem::with_id(
         app,
         "check_updates",
@@ -462,7 +455,8 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         true,
         None::<&str>,
     )?;
-    let quit_i = MenuItem::with_id(app, "quit", &strings.quit, true, quit_accelerator)?;
+    // No Ctrl+, or Ctrl+Q beside these: nothing on Windows listens for them.
+    let quit_i = MenuItem::with_id(app, "quit", &strings.quit, true, None::<&str>)?;
     let separator = || PredefinedMenuItem::separator(app);
 
     let menu = if inputs.busy {

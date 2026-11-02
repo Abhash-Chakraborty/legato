@@ -644,9 +644,16 @@ impl SyncManager {
         settings.clipboard && !settings.clipboard_paused(now_s()) && self.any_online()
     }
 
-    /// The first paired phone's name, for the tray.
+    /// The phone the tray and Send now name: a connected one, since that's
+    /// where a clip goes, or else the first one paired.
     pub fn phone_name(&self) -> Option<String> {
-        self.hub.peers().ok()?.into_iter().next().map(|p| p.name)
+        let peers = self.hub.peers().ok()?;
+        let online = self.online.lock().unwrap_or_else(|e| e.into_inner());
+        peers
+            .iter()
+            .find(|p| online.contains_key(&p.device_id))
+            .or(peers.first())
+            .map(|p| p.name.clone())
     }
 
     /// Sends a clip to every connected phone and keeps it in Recent clips.
