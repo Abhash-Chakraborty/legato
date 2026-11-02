@@ -71,6 +71,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
@@ -105,6 +106,7 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
     val legato = rememberLegato()
     val context = LocalContext.current
     val model by legato.model.collectAsStateWithLifecycle()
+    val state by legato.state.collectAsStateWithLifecycle()
     val notes by coreList { notes() }
     val memo by Memo.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -261,7 +263,7 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
                                         if (n.summary.isNotBlank()) Text(n.summary, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 },
-                                leadingContent = { NoteMark(n.device != null) },
+                                leadingContent = { NoteMark(n.device != null, otherPhone = n.device.isOtherPhone(state.pcName)) },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                 modifier = Modifier.combinedClickable(onClick = { onOpen(n.id) }, onLongClick = { menuFor = n }),
                             )
@@ -289,12 +291,12 @@ fun NotesScreen(onOpen: (Long) -> Unit) {
 }
 
 @Composable
-private fun NoteMark(fromPc: Boolean) {
+private fun NoteMark(fromPc: Boolean, otherPhone: Boolean = false) {
     Box(
         Modifier.size(36.dp).background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(if (fromPc) Icons.Default.Computer else Icons.Outlined.GraphicEq, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(18.dp))
+        Icon(if (otherPhone) Icons.Default.Smartphone else if (fromPc) Icons.Default.Computer else Icons.Outlined.GraphicEq, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(18.dp))
     }
 }
 

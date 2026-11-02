@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.ContentCopy
@@ -187,7 +188,7 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
                             trailingContent = {
                                 IconButton(onClick = { menuFor = e }) { Icon(Icons.Default.MoreVert, contentDescription = "More for this dictation", tint = LocalStatus.current.faint) }
                             },
-                            leadingContent = { AppDot(e.device != null) },
+                            leadingContent = { AppDot(e.device != null, otherPhone = e.device.isOtherPhone(state.pcName)) },
                             colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                             modifier = Modifier.combinedClickable(
                                 onClick = { copy(context, e.text); scope.launch { snackbar.showSnackbar("Copied") } },
@@ -237,13 +238,19 @@ fun SyncChip(status: PcStatus, onClick: () -> Unit) {
     }
 }
 
+/**
+ * True for a name that isn't the paired PC's: with two phones paired, one's
+ * dictations reach the other through the PC under the first phone's name.
+ */
+fun String?.isOtherPhone(pcName: String?): Boolean = this != null && pcName != null && this != pcName
+
 @Composable
-fun AppDot(fromPc: Boolean) {
+fun AppDot(fromPc: Boolean, otherPhone: Boolean = false) {
     Box(
         Modifier.size(36.dp).background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(if (fromPc) Icons.Default.Computer else Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(18.dp))
+        Icon(if (otherPhone) Icons.Default.Smartphone else if (fromPc) Icons.Default.Computer else Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(18.dp))
     }
 }
 

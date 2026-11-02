@@ -34,6 +34,7 @@ val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
         "Installing an update no longer turns off the Legato bubble in Accessibility, and no longer stops at a Settings page first on Xiaomi devices.",
         "This one update still came the old way: if the bubble is off, open Legato's App info, choose Allow restricted settings, then turn it on in Accessibility. Settings › Bubble over Gboard shows the way.",
         "Install shows that it's opening Android's installer, so a second tap no longer asks twice, and a newer version waits until this list is closed.",
+        "With two devices paired, Home and Notes mark the other one's dictations and memos with a phone instead of a PC.",
     ),
     "0.4.0" to listOf(
         "Legato updates from GitHub Releases: it checks when it opens, Settings › About has the update and a switch, and Android asks you to confirm the install.",
