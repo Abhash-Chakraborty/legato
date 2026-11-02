@@ -291,18 +291,29 @@ function link(href: string, from: string): string {
   return BLOB + repoPath + (hash ? `#${hash}` : "");
 }
 
-const plain = (html: string) =>
-  html
-    // block ends become spaces, so table cells and list items don't run together
-    .replace(/<\/?(?:p|li|td|th|tr|h[1-6]|br|div|blockquote|pre)\b[^>]*>/g, " ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
+const plain = (html: string) => {
+  // block ends become spaces, so table cells and list items don't run together
+  let text = html.replace(
+    /<\/?(?:p|li|td|th|tr|h[1-6]|br|div|blockquote|pre)\b[^>]*>/g,
+    " ",
+  );
+  // until none are left, so a tag split around another can't join up
+  for (let before = ""; before !== text; ) {
+    before = text;
+    text = text.replace(/<[^>]*>/g, "");
+  }
+  return (
+    text
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      // last, so "&amp;lt;" reads "&lt;" and not "<"
+      .replace(/&amp;/g, "&")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+};
 
 type Heading = { id: string; text: string; level: number };
 type Page = {

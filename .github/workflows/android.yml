@@ -25,6 +25,9 @@ concurrency:
   group: android-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   apk:
     runs-on: ubuntu-latest

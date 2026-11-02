@@ -79,6 +79,8 @@ jobs:
   android:
     # Legato for Android, signed with the key every earlier APK used.
     needs: create-release
+    permissions:
+      contents: read
     uses: ./.github/workflows/android.yml
     secrets: inherit
 
@@ -130,6 +132,8 @@ jobs:
     # without one the job is skipped.
     needs: [create-release, publish-release]
     runs-on: windows-latest
+    permissions:
+      contents: read
     env:
       WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
     steps:
