@@ -1108,7 +1108,7 @@
         "expired": "This code ran out",
         "making": "Making a code…",
         "steps": {
-          "open": "Open Legato on your phone and tap Pair with a PC.",
+          "open": "Open Legato on your phone and tap Pair with your PC.",
           "scan": "Scan the code.",
           "confirm": "Tap Pair when the phone shows {{pc}}."
         },
@@ -1380,7 +1380,7 @@
     "speakers": {
       "toggle": {
         "title": "Tell speakers apart",
-        "help": "After a meeting, and every so often during it, each line gets the voice that said it: Speaker 1, Speaker 2, or the name you give them. Up to four voices per meeting."
+        "help": "After a meeting, and every so often during it, each line gets the voice that said it: Speaker 1, Speaker 2, or the name you give them. After a big call, Legato listens again a minute at a time, so more than four people stay apart."
       },
       "model": {
         "title": "Speaker model",

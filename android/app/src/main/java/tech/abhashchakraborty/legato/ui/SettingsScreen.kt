@@ -283,7 +283,7 @@ private fun ClipModeSheet(pc: String, auto: Boolean, onPick: (Boolean) -> Unit, 
             Text("Shared clipboard", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 4.dp))
             Spacer(Modifier.height(8.dp))
             listOf(
-                true to ("Automatic" to "Copies on $pc land on this clipboard at once. What you copy here goes to $pc when you open Legato, since Android lets apps read the clipboard only while they're open."),
+                true to ("Automatic" to "Copies on $pc land on this clipboard at once. What you copy here goes to $pc at once while the Legato bubble is on (Android 13 and later), and otherwise when you open Legato."),
                 false to ("Manual" to "Nothing moves on its own. Send from here, the share menu or selected text, and pick $pc's copies from Recent clips."),
             ).forEach { (value, words) ->
                 Row(
