@@ -98,6 +98,13 @@ import tech.abhashchakraborty.legato.core.ScratchNote
 private fun ScratchNote.heading(): String =
     title.ifBlank { text.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.let(::clip) ?: "" }.ifBlank { "Untitled" }
 
+/** The text under the heading, without what the heading already shows. */
+private fun ScratchNote.preview(): String {
+    val body = text.trim()
+    val shown = if (title.isBlank()) body.removePrefix(heading().removeSuffix("…")) else body
+    return shown.trimStart(',', ';', ':', ' ', '\n').replace(Regex("\\s+"), " ").trim()
+}
+
 /** The first line up to 80 characters, ending on a whole word. */
 private fun clip(line: String): String {
     if (line.length <= 80) return line
@@ -166,8 +173,7 @@ fun ScratchpadScreen(onOpen: (Long) -> Unit) {
                             ListItem(
                                 headlineContent = { Text(n.heading(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 supportingContent = {
-                                    val body = n.text.trim().replace(Regex("\\s+"), " ")
-                                    Text(listOf(ago(n.updatedAt), body).filter { it.isNotBlank() }.joinToString(" · "), maxLines = 2, overflow = TextOverflow.Ellipsis, color = LocalStatus.current.faint)
+                                    Text(listOf(ago(n.updatedAt), n.preview()).filter { it.isNotBlank() }.joinToString(" · "), maxLines = 2, overflow = TextOverflow.Ellipsis, color = LocalStatus.current.faint)
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                 modifier = Modifier.combinedClickable(onClick = { onOpen(n.id) }, onLongClick = { menuFor = n }),

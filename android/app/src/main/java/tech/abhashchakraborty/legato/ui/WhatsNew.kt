@@ -36,6 +36,7 @@ val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
         "Install shows that it's opening Android's installer, so a second tap no longer asks twice, and a newer version waits until this list is closed.",
         "With two devices paired, Home and Notes mark the other one's dictations and memos with a phone instead of a PC.",
         "The synced time next to your PC's name stays current, instead of showing when something last changed before Legato opened.",
+        "A Scratchpad note without a title no longer repeats its first line under it in the list.",
     ),
     "0.4.0" to listOf(
         "Legato updates from GitHub Releases: it checks when it opens, Settings › About has the update and a switch, and Android asks you to confirm the install.",
