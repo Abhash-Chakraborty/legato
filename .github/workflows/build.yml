@@ -362,6 +362,11 @@ jobs:
             if ("${{ inputs.target }}" -like "aarch64*" -and $deviceOutput -notmatch "kind=cpu") {
               throw "$Label Windows ARM64 package did not expose its required CPU compute device"
             }
+            # legato.exe is a GUI app: its output can end before the process
+            # does, and the folder can't be removed while it still runs.
+            Get-Process legato -ErrorAction SilentlyContinue |
+              Where-Object { $_.Path -and $_.Path.StartsWith($Root) } |
+              Wait-Process -Timeout 60 -ErrorAction SilentlyContinue
           }
 
           $nsisPackages = Get-ChildItem (Join-Path $bundleBase "nsis") -Filter "*.exe" -ErrorAction SilentlyContinue
