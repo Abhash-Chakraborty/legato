@@ -136,9 +136,10 @@ const MAX_FEED: usize = 16 * 1024 * 1024;
 /// calendar's password, so no error carries it (reqwest's do, which is why
 /// they're never shown as they are).
 async fn fetch(url: &str, name: &str) -> Result<Vec<Meeting>, String> {
-    if rules::feed_url(url).is_none() {
+    // The checked address, so a webcal:// one is fetched over https too.
+    let Some(url) = rules::feed_url(url) else {
         return Err("Calendars need an https address; add it again".into());
-    }
+    };
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(25))
@@ -154,7 +155,7 @@ async fn fetch(url: &str, name: &str) -> Result<Vec<Meeting>, String> {
         }))
         .build()
         .map_err(|_| "Couldn't start the calendar fetch".to_string())?;
-    let mut response = client.get(url).send().await.map_err(|e| {
+    let mut response = client.get(&url).send().await.map_err(|e| {
         if e.is_timeout() {
             "The calendar took too long to answer".to_string()
         } else {
