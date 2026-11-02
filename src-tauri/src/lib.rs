@@ -1254,13 +1254,22 @@ pub fn run(cli_args: CliArgs) {
             managers::transcription::StreamPhaseEvent,
         ]);
 
-    #[cfg(debug_assertions)] // <- Only export on non-release builds
-    specta_builder
-        .export(
-            Typescript::default().bigint(BigIntExportBehavior::Number),
-            "../src/bindings.ts",
-        )
-        .expect("Failed to export typescript bindings");
+    // Debug builds refresh the bindings in the source tree they were built
+    // from. A debug build run on another PC (a test MSI) has no such tree,
+    // and a path relative to the working folder once pointed into System32
+    // and ended the app, so this only writes where the tree is.
+    #[cfg(debug_assertions)]
+    {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        if src.is_dir() {
+            if let Err(e) = specta_builder.export(
+                Typescript::default().bigint(BigIntExportBehavior::Number),
+                src.join("bindings.ts"),
+            ) {
+                log::warn!("Couldn't export the TypeScript bindings: {e}");
+            }
+        }
+    }
 
     let invoke_handler = specta_builder.invoke_handler();
 
