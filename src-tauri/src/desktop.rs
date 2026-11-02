@@ -1,5 +1,6 @@
 //! Windows shell integration: the app ID the taskbar groups Legato's windows
-//! under, the jump list, notifications that keep quiet during Do not disturb,
+//! under, the jump list, notifications that keep quiet during a presentation
+//! or a full-screen app,
 //! and Mica behind the main window on Windows 11.
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -110,14 +111,16 @@ pub enum Click {
     Main,
 }
 
-/// Whether Windows would show a notification now: not during Do not disturb
-/// (Focus assist on Windows 10), a presentation, or a full-screen game.
+/// Whether Windows would show a notification now: not during a
+/// presentation, a full-screen game or Focus assist on Windows 10.
+/// Windows 11's Do not disturb doesn't show in this state (still "accepts
+/// notifications" on build 26300 with it on); there Windows holds the
+/// banner back itself and files the notification in the notification centre.
 pub fn accepts_notifications() -> bool {
     #[cfg(windows)]
     unsafe {
         use windows::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_ACCEPTS_NOTIFICATIONS};
-        // Windows 11's Do not disturb reads as "quiet time"; if the state
-        // can't be read, Windows still holds the banner back itself.
+        // If the state can't be read, Windows still applies its own rules.
         SHQueryUserNotificationState().map_or(true, |state| state == QUNS_ACCEPTS_NOTIFICATIONS)
     }
     #[cfg(not(windows))]
@@ -128,7 +131,7 @@ pub fn accepts_notifications() -> bool {
 /// Only for things that need them: a paste that went nowhere, an update.
 pub fn notify(app: &AppHandle, title: &str, body: &str, click: Click) {
     if !accepts_notifications() {
-        debug!("Notification held back: Do not disturb");
+        debug!("Notification held back: Windows is presenting, full screen or quiet");
         return;
     }
     let id = app.config().identifier.clone();
