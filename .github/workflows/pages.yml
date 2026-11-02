@@ -1,15 +1,19 @@
 name: "Project page"
 
-# The page at abhash-chakraborty.github.io/legato: site/ plus the pictures
-# and font it shares with the README and the app.
+# The page and docs at legato.abhashchakraborty.tech: site/build.ts puts site/,
+# docs/*.md and the pictures and font it shares with the README together, with
+# download links to the latest release's files. It runs again after each release,
+# since a release published with GITHUB_TOKEN starts no push or release event.
 on:
   push:
     branches: [main]
     paths:
       - "site/**"
-      - "docs/*.webp"
-      - "docs/*.svg"
+      - "docs/**"
       - ".github/workflows/pages.yml"
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -23,19 +27,20 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
-      - name: Put the page together
-        run: |
-          mkdir -p _site/fonts
-          cp site/index.html _site/
-          cp docs/hero-light.webp docs/hero-dark.webp docs/how-it-works-anim.svg _site/
-          cp src/assets/legato-icon.svg _site/
-          cp src/assets/fonts/figtree-latin.woff2 src/assets/fonts/Figtree-OFL.txt _site/fonts/
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Put the page and docs together
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bun site/build.ts
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

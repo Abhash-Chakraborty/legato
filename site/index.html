@@ -6,244 +6,19 @@
     <title>Legato</title>
     <meta
       name="description"
-      content="Dictation and meeting notes for Windows, transcribed on your PC."
+      content="Dictation and meeting notes for Windows, transcribed on your PC, with a phone app that dictates in any app."
     />
     <meta property="og:title" content="Legato" />
     <meta
       property="og:description"
-      content="Dictation and meeting notes for Windows, transcribed on your PC."
+      content="Dictation and meeting notes for Windows, transcribed on your PC, with a phone app that dictates in any app."
     />
-    <meta
-      property="og:image"
-      content="https://abhash-chakraborty.github.io/legato/hero-light.webp"
-    />
+    <meta property="og:image" content="{{site}}hero-light.webp" />
+    <link rel="canonical" href="{{site}}" />
+    <meta property="og:url" content="{{site}}" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="legato-icon.svg" type="image/svg+xml" />
-    <style>
-      @font-face {
-        font-family: "Figtree";
-        src: url("fonts/figtree-latin.woff2") format("woff2");
-        font-weight: 300 900;
-        font-display: swap;
-      }
-      :root {
-        --bg: #f3f2ee;
-        --surface: #fcfcfb;
-        --border: #ebe8e1;
-        --border-strong: #d9d5cc;
-        --text: #1a1a1a;
-        --text-2: #4a4845;
-        --text-3: #8a8580;
-        --teal: #1a5c5c;
-        --teal-fill: #1a5c5c;
-        --teal-fill-hover: #247872;
-        color-scheme: light;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #161716;
-          --surface: #1e1f1e;
-          --border: #2a2c2a;
-          --border-strong: #383a37;
-          --text: #f1f0ec;
-          --text-2: #c7c5bf;
-          --text-3: #8e8b85;
-          --teal: #66b8ad;
-          --teal-fill: #1d6f6a;
-          --teal-fill-hover: #23807a;
-          color-scheme: dark;
-        }
-      }
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-      body {
-        background: var(--bg);
-        color: var(--text);
-        font:
-          16px/1.6 "Figtree",
-          system-ui,
-          sans-serif;
-        -webkit-font-smoothing: antialiased;
-      }
-      a {
-        color: var(--teal);
-      }
-      a:focus-visible,
-      .button:focus-visible {
-        outline: 2px solid var(--teal);
-        outline-offset: 2px;
-      }
-      .wrap {
-        max-width: 1040px;
-        margin: 0 auto;
-        padding: 0 16px;
-      }
-      header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 20px 0;
-      }
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-weight: 600;
-        font-size: 18px;
-        color: var(--text);
-        text-decoration: none;
-      }
-      .brand img {
-        width: 30px;
-        height: 30px;
-      }
-      nav {
-        display: flex;
-        gap: 18px;
-        font-size: 14px;
-      }
-      nav a {
-        color: var(--text-2);
-        text-decoration: none;
-      }
-      nav a:hover {
-        color: var(--text);
-      }
-      .intro {
-        padding: 48px 0 32px;
-        max-width: 680px;
-      }
-      h1 {
-        font-size: clamp(32px, 6vw, 46px);
-        line-height: 1.12;
-        font-weight: 600;
-        letter-spacing: -0.02em;
-      }
-      .lede {
-        margin-top: 16px;
-        font-size: 18px;
-        color: var(--text-2);
-      }
-      .actions {
-        margin-top: 28px;
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 12px 20px;
-      }
-      .button {
-        display: inline-flex;
-        align-items: center;
-        height: 44px;
-        padding: 0 20px;
-        border-radius: 10px;
-        background: var(--teal-fill);
-        color: #fff;
-        font-weight: 600;
-        text-decoration: none;
-        transition: background 100ms;
-      }
-      .button:hover {
-        background: var(--teal-fill-hover);
-        transition-duration: 0ms;
-      }
-      .button:active {
-        transform: scale(0.97);
-      }
-      .note {
-        font-size: 14px;
-        color: var(--text-3);
-      }
-      .shot {
-        margin: 16px 0 64px;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        overflow: hidden;
-        background: var(--surface);
-      }
-      .shot img {
-        display: block;
-        width: 100%;
-        height: auto;
-      }
-      h2 {
-        font-size: 24px;
-        font-weight: 600;
-        letter-spacing: -0.01em;
-      }
-      .features {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 28px 40px;
-        margin: 24px 0 64px;
-      }
-      .features h3 {
-        font-size: 16px;
-        font-weight: 600;
-      }
-      .features p {
-        margin-top: 4px;
-        color: var(--text-2);
-        font-size: 15px;
-      }
-      .how {
-        margin: 24px 0 16px;
-        border-radius: 12px;
-        overflow: hidden;
-        border: 1px solid var(--border);
-      }
-      .how img {
-        display: block;
-        width: 100%;
-        height: auto;
-      }
-      .how-text {
-        max-width: 680px;
-        color: var(--text-2);
-        margin-bottom: 64px;
-      }
-      .install {
-        border-top: 1px solid var(--border);
-        padding: 40px 0;
-        display: grid;
-        gap: 12px;
-        max-width: 680px;
-      }
-      .install p {
-        color: var(--text-2);
-      }
-      code {
-        font-family: ui-monospace, "Cascadia Mono", monospace;
-        font-size: 0.92em;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 1px 6px;
-      }
-      footer {
-        border-top: 1px solid var(--border);
-        padding: 24px 0 40px;
-        font-size: 14px;
-        color: var(--text-3);
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px 24px;
-        justify-content: space-between;
-      }
-      footer a {
-        color: var(--text-2);
-      }
-      @media (max-width: 560px) {
-        nav a.hide-small {
-          display: none;
-        }
-        .intro {
-          padding-top: 24px;
-        }
-      }
-    </style>
+    <link rel="stylesheet" href="site.css" />
   </head>
   <body>
     <div class="wrap">
@@ -253,8 +28,14 @@
         >
         <nav>
           <a href="#features" class="hide-small">Features</a>
-          <a href="#how" class="hide-small">How it works</a>
-          <a href="https://github.com/Abhash-Chakraborty/legato">GitHub</a>
+          <a href="#phone" class="hide-small">Phone</a>
+          <a href="#download">Download</a>
+          <a href="docs/install/">Docs</a>
+          <a
+            href="https://github.com/Abhash-Chakraborty/legato"
+            class="hide-small"
+            >GitHub</a
+          >
         </nav>
       </header>
 
@@ -267,13 +48,20 @@
           a meeting and get a transcript with each voice told apart.
         </p>
         <div class="actions">
-          <a
-            class="button"
-            href="https://github.com/Abhash-Chakraborty/legato/releases/latest"
+          <a class="button" id="get" href="{{x64}}" data-android="{{apk}}"
             >Download for Windows</a
           >
-          <span class="note">x64 and ARM64 · free and open source (MIT)</span>
+          <a
+            class="link-action"
+            id="get-other"
+            href="#phone"
+            data-android="#download"
+            >Also on Android</a
+          >
         </div>
+        <p class="note actions-note" id="get-note">
+          Version {{version}} · x64 and ARM64 · free and open source (MIT)
+        </p>
       </section>
 
       <div class="shot">
@@ -337,6 +125,43 @@
         </div>
       </div>
 
+      <h2 id="phone">On your phone</h2>
+      <p class="phone-text">
+        Legato for Android puts a small bubble beside the keyboard in any app.
+        Tap it, talk, and the words land in the field. Gboard stays your
+        keyboard.
+      </p>
+      <div class="features two">
+        <div>
+          <h3>Your PC's model, or the phone's</h3>
+          <p>
+            Paired, your PC writes up what you say with your Dictionary. Away
+            from it, a speech model on the phone does it with no internet.
+          </p>
+        </div>
+        <div>
+          <h3>In step with your PC</h3>
+          <p>
+            Dictionary, snippets, history, notes and Scratchpad sync over Wi-Fi,
+            or Bluetooth when there's no shared network. No account, no server.
+          </p>
+        </div>
+        <div>
+          <h3>Voice memos</h3>
+          <p>
+            Written up while you talk. Your PC adds a summary, a title and tags
+            once the phone reaches it.
+          </p>
+        </div>
+        <div>
+          <h3>One clipboard</h3>
+          <p>
+            What you copy on the PC lands on the phone, and the other way. Send
+            selected text or a share to the PC, or transform it in place.
+          </p>
+        </div>
+      </div>
+
       <h2 id="how">How it works</h2>
       <div class="how">
         <img
@@ -353,26 +178,51 @@
         suit the app in front.
       </p>
 
-      <section class="install">
-        <h2>Install</h2>
-        <p>
-          Download <code>Legato_&lt;version&gt;_x64-setup.exe</code> from the
-          <a href="https://github.com/Abhash-Chakraborty/legato/releases/latest"
-            >latest release</a
-          >
-          and run it. Setup checks your microphone and downloads a speech model
-          for your languages (0.5 to 1.6 GB).
-        </p>
-        <p>
-          The installer isn't code-signed yet, so SmartScreen may warn you:
-          choose More info, then Run anyway.
-        </p>
-      </section>
+      <h2 id="download">Download</h2>
+      <div class="downloads">
+        <div class="dl">
+          <div>
+            <div class="dl-what">Windows</div>
+            <div class="dl-file">{{x64-name}}{{x64-size}}</div>
+          </div>
+          <a class="dl-get" href="{{x64}}">Download</a>
+        </div>
+        <div class="dl">
+          <div>
+            <div class="dl-what">Windows on Arm</div>
+            <div class="dl-file">{{arm64-name}}{{arm64-size}}</div>
+          </div>
+          <a class="dl-get" href="{{arm64}}">Download</a>
+        </div>
+        <div class="dl">
+          <div>
+            <div class="dl-what">For apps run as administrator</div>
+            <div class="dl-file">{{msi-name}}{{msi-size}}</div>
+          </div>
+          <a class="dl-get" href="{{msi}}">Download</a>
+        </div>
+        <div class="dl">
+          <div>
+            <div class="dl-what">Android 10 or later</div>
+            <div class="dl-file">{{apk-name}}{{apk-size}}</div>
+          </div>
+          <a class="dl-get" href="{{apk}}">Download</a>
+        </div>
+      </div>
+      <p class="dl-meta">
+        {{released}}<a href="{{release}}">What's new</a> ·
+        <a href="docs/install/">Install on Windows</a> ·
+        <a href="docs/android/">Set up the phone</a> ·
+        <a href="docs/verify/">Verify a download</a>. Not code-signed yet:
+        Windows may say "Windows protected your PC" (More info, then Run
+        anyway), and Android asks once to allow installs from your browser.
+      </p>
 
       <footer>
         <span>Legato by Abhash Chakraborty</span>
         <span
-          ><a href="https://github.com/Abhash-Chakraborty/legato">Source</a> ·
+          ><a href="docs/install/">Docs</a> ·
+          <a href="https://github.com/Abhash-Chakraborty/legato">Source</a> ·
           <a
             href="https://github.com/Abhash-Chakraborty/legato/blob/main/LICENSE"
             >MIT licence</a
@@ -380,5 +230,19 @@
         >
       </footer>
     </div>
+    <script>
+      // On a phone, the main button gets the APK instead of the Windows setup.
+      if (/Android/i.test(navigator.userAgent)) {
+        for (const id of ["get", "get-other"]) {
+          const a = document.getElementById(id);
+          a.href = a.dataset.android;
+        }
+        document.getElementById("get").textContent = "Download for Android";
+        document.getElementById("get-other").textContent =
+          "Windows and other downloads";
+        document.getElementById("get-note").textContent =
+          "Android 10 or later · free and open source (MIT)";
+      }
+    </script>
   </body>
 </html>

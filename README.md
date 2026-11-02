@@ -15,6 +15,7 @@
 </p>
 
 <p align="center">
+  <a href="https://legato.abhashchakraborty.tech/">Website</a> ·
   <a href="https://github.com/Abhash-Chakraborty/legato/releases/latest">Download</a> ·
   <a href="#install">Install</a> ·
   <a href="#what-it-does">What it does</a> ·
@@ -55,7 +56,7 @@ The installers aren't code-signed yet, so SmartScreen may say "Windows protected
 
 To use Legato in apps run as administrator, install the `.msi` instead (for all users), then turn on Settings › General › Work in apps run as administrator.
 
-For Android (10 or later), download `Legato-android-<version>.apk` from the same release on the phone and open it; Android asks once to allow installs from your browser, and Play Protect may offer to scan the app first. On Android 13 and later, the bubble's Accessibility switch is greyed out for an app installed from a download: open Legato's App info, choose Allow restricted settings, then turn it on. Pair it from Settings › Devices on the PC. It checks this page for updates when it opens and asks before installing one.
+For Android (10 or later), download `Legato-android-<version>.apk` from the same release on the phone and open it; Android asks once to allow installs from your browser, and Play Protect may offer to scan the app first. On Android 13 and later, the bubble's Accessibility switch is greyed out for an app installed from a download: open Legato's App info, choose Allow restricted settings, then turn it on. Pair it from Settings › Devices on the PC. It checks this page for updates when it opens and asks before installing one. [Legato for Android](https://legato.abhashchakraborty.tech/docs/android/) covers setup, sync and the bubble.
 
 Uninstalling keeps your data unless you tick "Delete app data". Downloaded models stay in the shared Hugging Face cache (`%USERPROFILE%\.cache\huggingface`), since other tools may use them.
 
