@@ -208,14 +208,14 @@ mod win {
     }
 
     pub fn pause() -> windows::core::Result<Vec<Session>> {
-        let manager = Manager::RequestAsync()?.get()?;
+        let manager = Manager::RequestAsync()?.join()?;
         let mut paused = Vec::new();
         for session in manager.GetSessions()? {
             let playing = session
                 .GetPlaybackInfo()
                 .and_then(|info| info.PlaybackStatus())
                 .is_ok_and(|status| status == Status::Playing);
-            if playing && session.TryPauseAsync()?.get().unwrap_or(false) {
+            if playing && session.TryPauseAsync()?.join().unwrap_or(false) {
                 paused.push(session);
             }
         }
@@ -226,7 +226,7 @@ mod win {
         for session in paused {
             // Paused by hand meanwhile would read as Paused too; there's no
             // telling the two apart, so play resumes either way.
-            if let Err(e) = session.TryPlayAsync().and_then(|op| op.get()) {
+            if let Err(e) = session.TryPlayAsync().and_then(|op| op.join()) {
                 log::debug!("A player didn't resume: {e}");
             }
         }
