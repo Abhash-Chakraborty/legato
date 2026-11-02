@@ -1,248 +1,525 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Legato</title>
-    <meta
-      name="description"
-      content="Dictation and meeting notes for Windows, transcribed on your PC, with a phone app that dictates in any app."
-    />
-    <meta property="og:title" content="Legato" />
-    <meta
-      property="og:description"
-      content="Dictation and meeting notes for Windows, transcribed on your PC, with a phone app that dictates in any app."
-    />
-    <meta property="og:image" content="{{site}}hero-light.webp" />
-    <link rel="canonical" href="{{site}}" />
-    <meta property="og:url" content="{{site}}" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <link rel="icon" href="legato-icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="site.css" />
-  </head>
-  <body>
-    <div class="wrap">
-      <header>
-        <a class="brand" href="./"
-          ><img src="legato-icon.svg" alt="" />Legato</a
-        >
-        <nav>
-          <a href="#features" class="hide-small">Features</a>
-          <a href="#phone" class="hide-small">Phone</a>
-          <a href="#download">Download</a>
-          <a href="docs/install/">Docs</a>
-          <a
-            href="https://github.com/Abhash-Chakraborty/legato"
-            class="hide-small"
-            >GitHub</a
+  <!--head-->
+  <body class="home">
+    <a class="skip" href="#main">Skip to the page</a>
+    <!--header-->
+    <main id="main">
+      <section class="hero wrap">
+        <div class="hero-text">
+          <a class="news" href="#meetings" data-reveal
+            ><span class="news-dot"></span>New in {{version}}: word-by-word
+            meeting playback{{icon:arrow-right}}</a
           >
-        </nav>
-      </header>
-
-      <section class="intro">
-        <h1>
-          Dictation and meeting notes for Windows, transcribed on your PC.
-        </h1>
-        <p class="lede">
-          Hold a shortcut, speak, and the text lands where you're typing. Record
-          a meeting and get a transcript with each voice told apart.
-        </p>
-        <div class="actions">
-          <a class="button" id="get" href="{{x64}}" data-android="{{apk}}"
-            >Download for Windows</a
-          >
-          <a
-            class="link-action"
-            id="get-other"
-            href="#phone"
-            data-android="#download"
-            >Also on Android</a
-          >
+          <h1 data-reveal>
+            Dictation and meeting notes for Windows, transcribed on your PC.
+          </h1>
+          <p class="lede" data-reveal>
+            Hold a shortcut, speak, and the text lands where you're typing,
+            tidied. Record a meeting and get a transcript with each voice told
+            apart. Your phone dictates too.
+          </p>
+          <div class="cta" data-reveal>
+            <a class="btn btn-lg" id="get" href="{{x64}}" data-android="{{apk}}"
+              >{{icon:download}}<span>Download for Windows</span></a
+            >
+            <a
+              class="btn btn-lg btn-quiet"
+              id="get-other"
+              href="#download"
+              data-android="#download"
+              ><span>All downloads</span></a
+            >
+          </div>
+          <p class="cta-note" id="get-note" data-reveal>
+            Version {{version}} · Windows 10 and 11, x64 and Arm · Android 10 or
+            later · free and open source
+          </p>
         </div>
-        <p class="note actions-note" id="get-note">
-          Version {{version}} · x64 and ARM64 · free and open source (MIT)
-        </p>
+
+        <figure class="dictate" data-dictate data-reveal>
+          <div class="dictate-win" aria-hidden="true">
+            <div class="win-bar">
+              <span class="win-dots"><i></i><i></i><i></i></span
+              ><span># release</span>
+            </div>
+            <div class="msg">
+              <span class="av" style="--h: 210">P</span>
+              <div>
+                <strong>Priya</strong>
+                <p>Is the Arm build ready for Thursday?</p>
+              </div>
+            </div>
+            <div class="msg msg-me" data-sent hidden>
+              <span class="av" style="--h: 168">Y</span>
+              <div>
+                <strong>You</strong>
+                <p data-sent-text></p>
+              </div>
+            </div>
+            <div class="compose">
+              <span class="compose-text" data-typed></span
+              ><span class="caret"></span>
+              <span class="compose-hint" data-hint>Message # release</span>
+            </div>
+          </div>
+          <div class="dictate-under" aria-hidden="true">
+            <div class="keys" data-keys>
+              <kbd>Ctrl</kbd><span>+</span><kbd>Space</kbd>
+            </div>
+            <div class="lbar" data-lbar data-state="idle">
+              <span class="lbar-wave"
+                ><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+              ></span>
+              <span class="lbar-spin"></span>
+              <span class="lbar-ok">{{icon:check}}</span>
+              <span class="lbar-label" data-lbar-label>Ready</span>
+            </div>
+          </div>
+          <p class="heard" aria-hidden="true">
+            <span>You said</span> <q data-heard></q>
+          </p>
+          <figcaption class="sr">
+            A dictation in a chat app: you hold Ctrl and Space and say "um so
+            the Arm build is uh ready, we can ship it on Thursday". The Legato
+            bar listens, writes it up on your PC, and pastes "The Arm build is
+            ready, so we can ship it on Thursday."
+          </figcaption>
+          <button
+            class="replay"
+            type="button"
+            data-replay
+            aria-label="Play the dictation again"
+          >
+            {{icon:rotate-ccw}}
+          </button>
+        </figure>
       </section>
 
-      <div class="shot">
-        <picture>
-          <source
-            media="(prefers-color-scheme: dark)"
-            srcset="hero-dark.webp"
-          />
-          <img
-            src="hero-light.webp"
-            width="1440"
-            height="900"
-            alt="Legato's Notes page: a weekly meeting with its summary, topics, decisions, next steps with owners, and details that jump to the moment in the recording"
-          />
-        </picture>
-      </div>
-
-      <h2 id="features">What it does</h2>
-      <div class="features">
-        <div>
-          <h3>Dictation in any app</h3>
-          <p>
-            Filler words go, numbers and lists are tidied, and the tone follows
-            the kind of app in front.
-          </p>
-        </div>
-        <div>
-          <h3>Your words</h3>
-          <p>
-            The Dictionary keeps names spelled your way and learns from the
-            words you fix.
-          </p>
-        </div>
-        <div>
-          <h3>Meeting notes</h3>
-          <p>
-            A live transcript with voices told apart. With your own AI provider,
-            summaries with decisions and next steps.
-          </p>
-        </div>
-        <div>
-          <h3>Speech stays on the PC</h3>
-          <p>
-            Parakeet and Whisper run on your computer, on the GPU through
-            Vulkan. An AI provider is asked only if you add one.
-          </p>
-        </div>
-        <div>
-          <h3>Out of the way</h3>
-          <p>
-            A bar, an island or a bubble shows Legato is listening, and stays
-            out of screenshots and screen shares.
-          </p>
-        </div>
-        <div>
-          <h3>No accounts</h3>
-          <p>
-            Word copies of notes for Google Docs, calendars from iCal addresses.
-            Legato never signs in anywhere.
-          </p>
+      <div class="wrap">
+        <div class="shot" data-reveal>
+          <picture>
+            <source
+              media="(prefers-color-scheme: dark)"
+              srcset="hero-dark.webp"
+            />
+            <img
+              src="hero-light.webp"
+              width="1440"
+              height="900"
+              alt="Legato's Notes page: a weekly meeting with its summary, topics, decisions, next steps with owners, and details that jump to the moment in the recording"
+              data-hero
+            />
+          </picture>
         </div>
       </div>
 
-      <h2 id="phone">On your phone</h2>
-      <p class="phone-text">
-        Legato for Android puts a small bubble beside the keyboard in any app.
-        Tap it, talk, and the words land in the field. Gboard stays your
-        keyboard.
-      </p>
-      <div class="features two">
-        <div>
-          <h3>Your PC's model, or the phone's</h3>
+      <section class="wrap section" id="features">
+        <div class="section-head" data-reveal>
+          <h2>What it does</h2>
           <p>
-            Paired, your PC writes up what you say with your Dictionary. Away
-            from it, a speech model on the phone does it with no internet.
+            Everything runs in one small app that starts with Windows and stays
+            out of sight.
           </p>
         </div>
-        <div>
-          <h3>In step with your PC</h3>
-          <p>
-            Dictionary, snippets, history, notes and Scratchpad sync over Wi-Fi,
-            or Bluetooth when there's no shared network. No account, no server.
-          </p>
-        </div>
-        <div>
-          <h3>Voice memos</h3>
-          <p>
-            Written up while you talk. Your PC adds a summary, a title and tags
-            once the phone reaches it.
-          </p>
-        </div>
-        <div>
-          <h3>One clipboard</h3>
-          <p>
-            What you copy on the PC lands on the phone, and the other way. Send
-            selected text or a share to the PC, or transform it in place.
-          </p>
-        </div>
-      </div>
-
-      <h2 id="how">How it works</h2>
-      <div class="how">
-        <img
-          src="how-it-works-anim.svg"
-          width="1200"
-          height="640"
-          alt="One dictation in four steps: the shortcut and microphone with voice detection, the speech model on the PC, the Dictionary and style, then the paste into the app in front; an AI provider is an optional side step"
-        />
-      </div>
-      <p class="how-text">
-        The speech model runs in its own worker process through transcribe.cpp,
-        so a GPU driver crash can't take the app down. The text goes through
-        your Dictionary, snippets and cleanup, and is pasted with the keys that
-        suit the app in front.
-      </p>
-
-      <h2 id="download">Download</h2>
-      <div class="downloads">
-        <div class="dl">
-          <div>
-            <div class="dl-what">Windows</div>
-            <div class="dl-file">{{x64-name}}{{x64-size}}</div>
-          </div>
-          <a class="dl-get" href="{{x64}}">Download</a>
-        </div>
-        <div class="dl">
-          <div>
-            <div class="dl-what">Windows on Arm</div>
-            <div class="dl-file">{{arm64-name}}{{arm64-size}}</div>
-          </div>
-          <a class="dl-get" href="{{arm64}}">Download</a>
-        </div>
-        <div class="dl">
-          <div>
-            <div class="dl-what">For apps run as administrator</div>
-            <div class="dl-file">{{msi-name}}{{msi-size}}</div>
-          </div>
-          <a class="dl-get" href="{{msi}}">Download</a>
-        </div>
-        <div class="dl">
-          <div>
-            <div class="dl-what">Android 10 or later</div>
-            <div class="dl-file">{{apk-name}}{{apk-size}}</div>
-          </div>
-          <a class="dl-get" href="{{apk}}">Download</a>
-        </div>
-      </div>
-      <p class="dl-meta">
-        {{released}}<a href="{{release}}">What's new</a> ·
-        <a href="docs/install/">Install on Windows</a> ·
-        <a href="docs/android/">Set up the phone</a> ·
-        <a href="docs/verify/">Verify a download</a>. Not code-signed yet:
-        Windows may say "Windows protected your PC" (More info, then Run
-        anyway), and Android asks once to allow installs from your browser.
-      </p>
-
-      <footer>
-        <span>Legato by Abhash Chakraborty</span>
-        <span
-          ><a href="docs/install/">Docs</a> ·
-          <a href="https://github.com/Abhash-Chakraborty/legato">Source</a> ·
+        <div class="cards">
+          <a class="card" href="docs/dictation/" data-reveal>
+            <span class="card-i">{{icon:mic}}</span>
+            <strong>Dictation in any app</strong>
+            <span
+              >Filler words go, numbers and lists are tidied, and the text is
+              pasted with the keys that suit the app in front.</span
+            >
+            <em>Dictation{{icon:arrow-right}}</em>
+          </a>
+          <a class="card" href="docs/dictionary/" data-reveal>
+            <span class="card-i">{{icon:book-a}}</span>
+            <strong>Your words, spelled your way</strong>
+            <span
+              >The Dictionary keeps names right, learns from the words you fix,
+              and snippets expand a phrase into saved text.</span
+            >
+            <em>Dictionary and snippets{{icon:arrow-right}}</em>
+          </a>
+          <a class="card" href="docs/style/" data-reveal>
+            <span class="card-i">{{icon:sliders-horizontal}}</span>
+            <strong>A style for each kind of app</strong>
+            <span
+              >Casual in personal chats, formal in email, lowercase in code
+              editors and terminals. Each kind of app can use its own speech
+              model.</span
+            >
+            <em>Style{{icon:arrow-right}}</em>
+          </a>
+          <a class="card" href="docs/transforms/" data-reveal>
+            <span class="card-i">{{icon:square-pen}}</span>
+            <strong>Transforms and Ask</strong>
+            <span
+              >Rewrite the selection or your last dictation, or ask about it,
+              with an AI provider you choose. Keep or undo from the bar.</span
+            >
+            <em>Transforms and Ask{{icon:arrow-right}}</em>
+          </a>
           <a
-            href="https://github.com/Abhash-Chakraborty/legato/blob/main/LICENSE"
-            >MIT licence</a
-          ></span
-        >
-      </footer>
-    </div>
-    <script>
-      // On a phone, the main button gets the APK instead of the Windows setup.
-      if (/Android/i.test(navigator.userAgent)) {
-        for (const id of ["get", "get-other"]) {
-          const a = document.getElementById(id);
-          a.href = a.dataset.android;
-        }
-        document.getElementById("get").textContent = "Download for Android";
-        document.getElementById("get-other").textContent =
-          "Windows and other downloads";
-        document.getElementById("get-note").textContent =
-          "Android 10 or later · free and open source (MIT)";
-      }
-    </script>
+            class="card"
+            href="docs/dictation/#the-bar-the-island-and-the-bubble"
+            data-reveal
+          >
+            <span class="card-i">{{icon:eye-off}}</span>
+            <strong>Out of the way</strong>
+            <span
+              >A bar, an island at the top edge or a desktop bubble shows Legato
+              is listening, and stays out of screenshots and screen
+              shares.</span
+            >
+            <em>The bar{{icon:arrow-right}}</em>
+          </a>
+          <a class="card" href="docs/scratchpad/" data-reveal>
+            <span class="card-i">{{icon:rotate-ccw}}</span>
+            <strong>Nothing lost</strong>
+            <span
+              >A dictation that fails or that you cancel keeps its audio in Home
+              with Try again. A paste that can't land goes to the
+              Scratchpad.</span
+            >
+            <em>Home and Scratchpad{{icon:arrow-right}}</em>
+          </a>
+        </div>
+      </section>
+
+      <section class="band" id="meetings">
+        <div class="wrap split">
+          <div class="split-text" data-reveal>
+            <p class="kicker">{{icon:notebook-pen}}Notes and meetings</p>
+            <h2>Every word of the meeting, tied to the moment it was said</h2>
+            <p>
+              Legato notices a call in Teams, Zoom, Meet, Slack and others and
+              offers to take notes. It records your microphone and the call's
+              audio, writes a live transcript, and tells the voices apart.
+            </p>
+            <ul class="ticks">
+              <li>
+                {{icon:check}}Play it back and follow the word being said. Click
+                any word to jump there.
+              </li>
+              <li>
+                {{icon:check}}Fix a misheard word, or several, and the fix stays
+                on that moment in the recording.
+              </li>
+              <li>
+                {{icon:check}}With your AI provider, a summary with decisions
+                and next steps that catches up after your fixes.
+              </li>
+              <li>
+                {{icon:check}}Copy it into Google Docs or save a Word file. No
+                sign-in anywhere.
+              </li>
+            </ul>
+            <a class="more" href="docs/notes/"
+              >Notes and meetings{{icon:arrow-right}}</a
+            >
+          </div>
+
+          <figure class="meet" data-meet data-reveal>
+            <div class="meet-top">
+              <button class="play" type="button" data-play aria-label="Play">
+                {{icon:play}}{{icon:pause}}
+              </button>
+              <div class="scrub" data-scrub><span data-scrub-fill></span></div>
+              <span class="time" data-time>0:00</span>
+            </div>
+            <div class="meet-lines" data-lines>
+              <div class="mline">
+                <span class="who" style="--h: 210">Priya</span
+                ><span class="ts">0:00</span>
+                <p data-words="0">
+                  The Arm installer still fails the clean
+                  <span
+                    class="misheard"
+                    data-fix="install"
+                    tabindex="0"
+                    role="button"
+                    aria-label="Misheard: in stall. Fix to install"
+                    >in stall</span
+                  >
+                  check, so I'd hold the release.
+                </p>
+              </div>
+              <div class="mline">
+                <span class="who" style="--h: 30">Marco</span
+                ><span class="ts">0:06</span>
+                <p data-words="6200">
+                  I can rerun it on two laptops tonight and send the results by
+                  Thursday.
+                </p>
+              </div>
+              <div class="mline">
+                <span class="who" style="--h: 168">You</span
+                ><span class="ts">0:12</span>
+                <p data-words="12400">
+                  Then let's move the launch review to Thursday and ship the
+                  installer fix first.
+                </p>
+              </div>
+            </div>
+            <div
+              class="meet-toast"
+              data-meet-toast
+              role="status"
+              aria-live="polite"
+            ></div>
+            <figcaption>
+              Click a word to jump there. The dotted words were misheard: click
+              Fix to correct them.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="wrap section split split-rev" id="phone">
+        <div class="split-text" data-reveal>
+          <p class="kicker">{{icon:smartphone}}Legato for Android</p>
+          <h2>Your phone dictates in any app too</h2>
+          <p>
+            A small bubble sits beside the keyboard whenever it's open. Tap it,
+            talk, tap the check, and the words land in the field. Gboard stays
+            your keyboard.
+          </p>
+          <ul class="ticks">
+            <li>
+              {{icon:check}}Paired, your PC writes up what you say with your
+              Dictionary. Away from it, a model on the phone does it with no
+              internet.
+            </li>
+            <li>
+              {{icon:check}}Dictionary, snippets, history, notes and Scratchpad
+              stay in step over Wi-Fi, or Bluetooth when there's no shared
+              network.
+            </li>
+            <li>
+              {{icon:check}}Voice memos written up while you talk, and one
+              clipboard across both.
+            </li>
+            <li>
+              {{icon:check}}No account and no server: the two connect directly
+              and check each other's certificate.
+            </li>
+          </ul>
+          <a class="more" href="docs/android/"
+            >Set up the phone{{icon:arrow-right}}</a
+          >
+        </div>
+        <figure class="phone" data-phone data-reveal>
+          <div class="phone-frame" aria-hidden="true">
+            <div class="phone-status">
+              <span>9:41</span><span class="phone-icons"><i></i><i></i></span>
+            </div>
+            <div class="phone-app">
+              <div class="phone-head">
+                <span class="av" style="--h: 30">S</span><strong>Samir</strong>
+              </div>
+              <div class="bubble-in">Are we still on for dinner tonight?</div>
+              <div class="bubble-out" data-p-sent hidden></div>
+            </div>
+            <div class="phone-field">
+              <span data-p-typed></span><span class="caret"></span
+              ><span class="phone-hint" data-p-hint>Message</span>
+            </div>
+            <div class="phone-kb">
+              <div class="lb" data-p-bubble data-state="idle">
+                <span class="lb-mic">{{icon:mic}}</span>
+                <span class="lb-x">{{icon:x}}</span>
+                <span class="lb-wave"><i></i><i></i><i></i><i></i><i></i></span>
+                <span class="lb-ok">{{icon:check}}</span>
+                <span class="lb-spin"></span>
+              </div>
+              <div class="kb-rows"><i></i><i></i><i></i><i></i></div>
+            </div>
+          </div>
+          <figcaption class="sr">
+            On the phone, the Legato bubble sits above the keyboard. You tap it,
+            say "yes, see you at eight, I'll book the table", tap the check, and
+            the text appears in the message field.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section class="band band-quiet" id="private">
+        <div class="wrap">
+          <div class="section-head" data-reveal>
+            <h2>Yours, on your own computer</h2>
+            <p>
+              Legato has no account and no server of its own. What you say is
+              written up where you said it.
+            </p>
+          </div>
+          <div class="facts">
+            <div class="fact" data-reveal>
+              <span class="card-i">{{icon:cpu}}</span>
+              <strong>Speech stays on the PC</strong>
+              <p>
+                Parakeet, Whisper, Canary and other models run on your computer:
+                on the GPU through Vulkan on x64, on the CPU on Arm.
+              </p>
+            </div>
+            <div class="fact" data-reveal>
+              <span class="card-i">{{icon:plug}}</span>
+              <strong>An AI provider only if you add one</strong>
+              <p>
+                Cleanup, transforms and summaries can use Ollama on your PC, or
+                a hosted provider with your own key, kept in Windows Credential
+                Manager.
+              </p>
+            </div>
+            <div class="fact" data-reveal>
+              <span class="card-i">{{icon:lock}}</span>
+              <strong>No sign-ins</strong>
+              <p>
+                Calendars come from secret iCal addresses and notes go to Word
+                files in a folder you pick. Legato never signs in to Google or
+                Microsoft.
+              </p>
+            </div>
+          </div>
+          <p class="center" data-reveal>
+            <a class="more" href="docs/privacy/"
+              >Privacy and your data{{icon:arrow-right}}</a
+            >
+          </p>
+        </div>
+      </section>
+
+      <section class="wrap section" id="how">
+        <div class="section-head" data-reveal>
+          <h2>How a dictation works</h2>
+          <p>
+            The speech model runs in its own worker process through
+            transcribe.cpp, so a GPU driver crash can't take the app down. The
+            text then goes through your Dictionary, snippets and style, and is
+            pasted into the app in front.
+          </p>
+        </div>
+        <div class="how" data-reveal>
+          <img
+            src="how-it-works-anim.svg"
+            width="1200"
+            height="640"
+            loading="lazy"
+            alt="One dictation in four steps: the shortcut and microphone with voice detection, the speech model on the PC, the Dictionary and style, then the paste into the app in front; an AI provider is an optional side step"
+          />
+        </div>
+      </section>
+
+      <section class="band" id="download">
+        <div class="wrap">
+          <div class="section-head" data-reveal>
+            <h2>Download</h2>
+            <p>
+              Version {{version}}{{released}}. Free and open source under the
+              MIT licence. Both apps update themselves from GitHub Releases, and
+              ask first.
+            </p>
+          </div>
+          <div class="dls">
+            <a class="dl" href="{{x64}}" data-dl="win" data-reveal>
+              <span class="card-i">{{icon:laptop}}</span>
+              <span class="dl-text"
+                ><strong>Windows</strong><span>{{x64-name}}</span></span
+              >
+              <span class="dl-size">{{x64-size}}</span>
+              <span class="dl-get">{{icon:download}}</span>
+              <span class="dl-badge" data-dl-badge>For this device</span>
+            </a>
+            <a class="dl" href="{{arm64}}" data-dl="arm" data-reveal>
+              <span class="card-i">{{icon:cpu}}</span>
+              <span class="dl-text"
+                ><strong>Windows on Arm</strong
+                ><span>{{arm64-name}}</span></span
+              >
+              <span class="dl-size">{{arm64-size}}</span>
+              <span class="dl-get">{{icon:download}}</span>
+              <span class="dl-badge" data-dl-badge>For this device</span>
+            </a>
+            <a class="dl" href="{{apk}}" data-dl="android" data-reveal>
+              <span class="card-i">{{icon:smartphone}}</span>
+              <span class="dl-text"
+                ><strong>Android 10 or later</strong
+                ><span>{{apk-name}}</span></span
+              >
+              <span class="dl-size">{{apk-size}}</span>
+              <span class="dl-get">{{icon:download}}</span>
+              <span class="dl-badge" data-dl-badge>For this device</span>
+            </a>
+            <a class="dl" href="{{msi}}" data-dl="msi" data-reveal>
+              <span class="card-i">{{icon:shield-check}}</span>
+              <span class="dl-text"
+                ><strong>For apps run as administrator</strong
+                ><span>{{msi-name}}</span></span
+              >
+              <span class="dl-size">{{msi-size}}</span>
+              <span class="dl-get">{{icon:download}}</span>
+            </a>
+          </div>
+          <div class="dl-help" data-reveal>
+            <p>
+              {{icon:info}}<span
+                >The installers aren't code-signed yet. Windows may say "Windows
+                protected your PC": choose More info, then Run anyway. Android
+                asks once to allow installs from your browser.</span
+              >
+            </p>
+            <p class="dl-links">
+              <a href="docs/install/">Install on Windows</a>
+              <a href="docs/android/">Set up the phone</a>
+              <a href="docs/verify/">Verify a download</a>
+              <a href="{{msiarm}}">MSI for Windows on Arm</a>
+              <a href="{{release}}">What's new in {{version}}</a>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="wrap section" id="docs">
+        <div class="section-head" data-reveal>
+          <h2>Learn it in a few minutes</h2>
+          <p>
+            The docs cover every setting, written for people who just want it to
+            work.
+          </p>
+        </div>
+        <div class="docmap">
+          <div data-reveal>
+            <h3>Start here</h3>
+            <a href="docs/getting-started/">Getting started</a>
+            <a href="docs/install/">Install on Windows</a>
+            <a href="docs/android/">Legato for Android</a>
+          </div>
+          <div data-reveal>
+            <h3>Using Legato</h3>
+            <a href="docs/dictation/">Dictation</a>
+            <a href="docs/dictionary/">Dictionary and snippets</a>
+            <a href="docs/style/">Style</a>
+            <a href="docs/notes/">Notes and meetings</a>
+            <a href="docs/transforms/">Transforms and Ask</a>
+            <a href="docs/scratchpad/">Home, Scratchpad and Insights</a>
+          </div>
+          <div data-reveal>
+            <h3>Settings and privacy</h3>
+            <a href="docs/settings/">Settings</a>
+            <a href="docs/connections/">Connections</a>
+            <a href="docs/privacy/">Privacy and your data</a>
+          </div>
+          <div data-reveal>
+            <h3>Reference</h3>
+            <a href="docs/troubleshooting/">Troubleshooting</a>
+            <a href="docs/verify/">Verify a download</a>
+            <a href="docs/cli/">Command line</a>
+            <a href="docs/phone-sync/">Phone sync protocol</a>
+          </div>
+        </div>
+      </section>
+    </main>
+    <!--footer-->
+    <!--search-->
   </body>
 </html>
