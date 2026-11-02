@@ -12,8 +12,8 @@ android {
         applicationId = "tech.abhashchakraborty.legato"
         minSdk = 29 // Android 10: the clipboard rules the design is built around start here
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.4.1"
+        versionCode = 9
+        versionName = "0.4.2-test"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
