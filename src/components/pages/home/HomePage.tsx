@@ -284,6 +284,12 @@ export const HomePage: React.FC = () => {
   };
 
   const today = summary?.today;
+  // Today's numbers count this PC; a phone's dictations still list below.
+  const phoneToday = visible.some(
+    (e) =>
+      e.device !== null &&
+      new Date(e.timestamp * 1000).toDateString() === new Date().toDateString(),
+  );
   const counts = summary?.counts;
   const filtering =
     search.trim() !== "" || filter !== "all" || app !== null || day !== null;
@@ -366,14 +372,14 @@ export const HomePage: React.FC = () => {
 
         <p className="mb-6 text-sm text-text-2">
           {today && today.dictations > 0
-            ? t("home.today", {
+            ? t(phoneToday ? "home.todayHere" : "home.today", {
                 dictations: t("home.counts.dictations", {
                   count: today.dictations,
                 }),
                 words: t("home.counts.words", { count: today.words }),
                 speech: formatSpeech(today.speech_ms),
               })
-            : t("home.nothingToday")}
+            : t(phoneToday ? "home.nothingTodayHere" : "home.nothingToday")}
         </p>
 
         {!fixHintHidden && !learnedAny && visible.length > 0 && (

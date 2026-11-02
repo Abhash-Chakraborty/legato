@@ -7,6 +7,7 @@ import {
   type AppCategory,
   type AppRule,
   type CategoryStyle,
+  type HistoryEntry,
   type StyleApp,
 } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
@@ -68,6 +69,18 @@ export const StylePage: React.FC = () => {
     () => recent.find((e) => asCategory(e.category) === tab) ?? null,
     [recent, tab],
   );
+  // A recent dictation short enough to read at a glance: a long one
+  // turned the whole page into its transcript.
+  const cleanupExample = useMemo(() => {
+    const heard = recent.filter((e) => e.heard_text);
+    const words = (e: HistoryEntry) =>
+      (e.heard_text ?? "").split(/\s+/).filter(Boolean).length;
+    return (
+      heard.find((e) => words(e) >= 6 && words(e) <= 60) ??
+      heard.sort((a, b) => words(a) - words(b))[0] ??
+      null
+    );
+  }, [recent]);
   const enabled = settings?.style_enabled ?? true;
   const now = Math.floor(Date.now() / 1000);
 
@@ -167,7 +180,7 @@ export const StylePage: React.FC = () => {
         </div>
       )}
 
-      <CleanupCard latest={recent.find((e) => e.heard_text) ?? null} />
+      <CleanupCard latest={cleanupExample} />
 
       <h2 className="mb-3 text-[17px] font-semibold">
         {t("style.perKind.title")}

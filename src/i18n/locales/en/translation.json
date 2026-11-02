@@ -1714,6 +1714,8 @@
     },
     "today": "Today · {{dictations}} · {{words}} · {{speech}} of speech",
     "nothingToday": "Nothing dictated today yet.",
+    "todayHere": "Today on this PC · {{dictations}} · {{words}} · {{speech}} of speech",
+    "nothingTodayHere": "Nothing dictated on this PC today yet.",
     "counts": {
       "dictations_one": "{{count}} dictation",
       "dictations_other": "{{count}} dictations",

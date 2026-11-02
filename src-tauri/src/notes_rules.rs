@@ -1390,12 +1390,36 @@ impl NoteOutline {
     }
 }
 
+/// "You" is the transcript's label for the person who recorded. Copied into
+/// prose mid-sentence it read as a name ("and tasked You to"), so there it
+/// becomes "you", as do "Your", "Yours" and "Yourself".
+fn lower_you(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find("You") {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 3..];
+        let tail: String = after.chars().take_while(|c| c.is_alphabetic()).collect();
+        let whole_word = matches!(tail.as_str(), "" | "r" | "rs" | "rself")
+            && !out.ends_with(char::is_alphanumeric);
+        // Mid-sentence: a space after a word or a comma, not after a full stop.
+        let mid = out.ends_with(' ')
+            && out
+                .trim_end()
+                .ends_with(|c: char| c.is_alphanumeric() || c == ',' || c == ';');
+        out.push_str(if whole_word && mid { "you" } else { "You" });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Reads the model's JSON, also when it is wrapped in a code fence or text.
 pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
     let start = answer.find('{')?;
     let end = answer.rfind('}')?;
     let value: serde_json::Value = serde_json::from_str(answer.get(start..=end)?).ok()?;
-    let summary = value.get("summary")?.as_str()?.trim().to_string();
+    let summary = lower_you(value.get("summary")?.as_str()?.trim());
     let strings = |key: &str| -> Vec<String> {
         value
             .get(key)
@@ -1409,7 +1433,7 @@ pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
             })
             .unwrap_or_default()
     };
-    let decisions = strings("decisions");
+    let decisions: Vec<String> = strings("decisions").iter().map(|d| lower_you(d)).collect();
     let actions = value
         .get("actions")
         .and_then(|v| v.as_array())
@@ -1423,7 +1447,7 @@ pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
                         .map(str::trim)
                         .filter(|o| !o.is_empty())
                         .unwrap_or("You");
-                    (!text.is_empty()).then(|| (owner.to_string(), text.to_string()))
+                    (!text.is_empty()).then(|| (owner.to_string(), lower_you(text)))
                 })
                 .collect()
         })
@@ -1442,7 +1466,7 @@ pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
                 a.iter()
                     .filter_map(|item| {
                         let heading = item.get("heading")?.as_str()?.trim().to_string();
-                        let text = item.get("text")?.as_str()?.trim().to_string();
+                        let text = lower_you(item.get("text")?.as_str()?.trim());
                         let at = item.get("at").and_then(|v| v.as_str()).map(str::to_string);
                         (!text.is_empty()).then_some((heading, text, at))
                     })
@@ -1486,7 +1510,7 @@ pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
                             .as_array()?
                             .iter()
                             .filter_map(|p| p.as_str())
-                            .map(|p| p.trim().to_string())
+                            .map(|p| lower_you(p.trim()))
                             .filter(|p| !p.is_empty())
                             .collect();
                         (!heading.is_empty() && !points.is_empty())
@@ -2219,6 +2243,20 @@ fn split_span(words: &[&str], start: i64, end: i64) -> Vec<(i64, i64)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn you_label_is_lowercase_mid_sentence() {
+        assert_eq!(
+            lower_you(
+                "You demoed it and the team tasked You to fix Your build. You agreed, as Yourself."
+            ),
+            "You demoed it and the team tasked you to fix your build. You agreed, as yourself."
+        );
+        assert_eq!(
+            lower_you("Ask Youssef, then YouTube."),
+            "Ask Youssef, then YouTube."
+        );
+        assert_eq!(lower_you("Thank You"), "Thank you");
+    }
     use super::*;
 
     const FRAME: usize = 512;

@@ -322,7 +322,35 @@ const MEET_LABELS: &[(&str, &str)] = &[
 ];
 
 /// What Meet adds after a name: a shared screen, yourself, the host.
-const MEET_SUFFIXES: &[&str] = &[" (Presentation)", " (You)", " (Meeting host)", " (Host)"];
+const MEET_SUFFIXES: &[&str] = &[
+    " (Presentation)",
+    "'s presentation",
+    "\u{2019}s presentation",
+    " (You)",
+    " (Meeting host)",
+    " (Host)",
+];
+
+/// Lowercase words a name can hold: "Ana de Souza", "Ludwig van Beethoven".
+const NAME_PARTICLES: &[&str] = &[
+    "al", "bin", "binti", "da", "de", "del", "der", "di", "du", "el", "la", "le", "ter", "van",
+    "von", "y",
+];
+
+/// Whether a tile's label reads as a person rather than the title of a
+/// shared tab or window ("Java program with template"), which Meet's tile
+/// controls carry the same way.
+fn looks_like_person(name: &str) -> bool {
+    if name.chars().any(|c| "+#/\\|@:;()[]{}<>=_*".contains(c)) {
+        return false;
+    }
+    let words: Vec<&str> = name.split_whitespace().collect();
+    let lowercase = words
+        .iter()
+        .filter(|w| w.starts_with(char::is_lowercase) && !NAME_PARTICLES.contains(w))
+        .count();
+    words.len() <= 5 && !(words.len() >= 3 && lowercase >= 2)
+}
 
 /// Who is in a Meet call, each once, in the order first seen: the names
 /// in the People panel's "Participants" list, then any a tile's controls
@@ -342,11 +370,16 @@ pub fn meet_people(listed: &[String], labels: &[String]) -> Vec<String> {
         for suffix in MEET_SUFFIXES {
             name = name.strip_suffix(suffix).unwrap_or(name);
         }
+        // Pronouns or a team after the name: "Karol Nowak (he/him)".
+        if let Some(i) = name.rfind(" (").filter(|_| name.ends_with(')')) {
+            name = &name[..i];
+        }
         let name = name.trim();
         let plausible = !name.is_empty()
             && name.chars().count() <= 60
             && !name.eq_ignore_ascii_case("you")
-            && !name.eq_ignore_ascii_case("yourself");
+            && !name.eq_ignore_ascii_case("yourself")
+            && looks_like_person(name);
         if plausible && !out.iter().any(|n| n.eq_ignore_ascii_case(name)) {
             out.push(name.to_string());
         }
@@ -386,6 +419,26 @@ mod tests {
             ["Priya Shah", "Karol Nowak", "Samir"]
         );
         assert!(meet_people(&[], &["Pin  to your main screen".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn meet_people_skips_shared_tabs_and_keeps_presenters() {
+        let labels: Vec<String> = [
+            "Pin Rahul Raj's presentation to your main screen",
+            "Pin C++ code implementation to your main screen",
+            "More options for Java program with template",
+            "More options for Ana de Souza",
+            "More options for Monk",
+            "More options for priya",
+            "More options for Karol Nowak (he/him)",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            meet_people(&[], &labels),
+            ["Rahul Raj", "Ana de Souza", "Monk", "priya", "Karol Nowak"]
+        );
     }
 
     #[test]
