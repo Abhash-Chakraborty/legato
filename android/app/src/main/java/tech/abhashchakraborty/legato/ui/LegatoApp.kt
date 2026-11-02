@@ -167,6 +167,6 @@ fun LegatoApp(pairingLink: String?) {
             }
         }
     }
-    WhatsNew(legato)
-    UpdateOffer(legato)
+    // A newer version is offered once What's new is closed, not over it.
+    if (!WhatsNew(legato)) UpdateOffer(legato)
 }

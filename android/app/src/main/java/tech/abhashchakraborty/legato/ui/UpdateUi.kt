@@ -52,6 +52,7 @@ fun UpdateOffer(legato: Legato) {
         is Updates.State.Available -> s.version
         is Updates.State.Downloading -> s.version
         is Updates.State.Ready -> s.version
+        is Updates.State.Installing -> s.version
         else -> null
     }
     ModalBottomSheet(
@@ -81,6 +82,11 @@ private fun UpdateAction(state: Updates.State, onLater: (() -> Unit)? = null) {
             Text("Downloading… ${(state.progress * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(8.dp))
             LinearProgressIndicator(progress = { state.progress }, modifier = Modifier.fillMaxWidth())
+        }
+        is Updates.State.Installing -> {
+            Text("Opening Android's installer…", style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
         is Updates.State.Failed -> {
             Text(state.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
@@ -112,6 +118,7 @@ fun UpdateRows(legato: Legato) {
         is Updates.State.Available -> "${s.version} is out. Tap to download it." to { Updates.download(context) }
         is Updates.State.Downloading -> "Downloading ${s.version}… ${(s.progress * 100).toInt()}%" to null
         is Updates.State.Ready -> "${s.version} is downloaded. Tap to install it." to { Updates.install(context) }
+        is Updates.State.Installing -> "Installing ${s.version}…" to null
         is Updates.State.Failed -> s.message to { Updates.check(context) }
         is Updates.State.Idle -> (checked?.let { "Checked $it. Tap to check now." } ?: "Tap to check now.") to { Updates.check(context) }
     }

@@ -33,6 +33,7 @@ val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
     "0.4.1" to listOf(
         "Installing an update no longer turns off the Legato bubble in Accessibility, and no longer stops at a Settings page first on Xiaomi devices.",
         "This one update still came the old way: if the bubble is off, open Legato's App info, choose Allow restricted settings, then turn it on in Accessibility. Settings › Bubble over Gboard shows the way.",
+        "Install shows that it's opening Android's installer, so a second tap no longer asks twice, and a newer version waits until this list is closed.",
     ),
     "0.4.0" to listOf(
         "Legato updates from GitHub Releases: it checks when it opens, Settings › About has the update and a switch, and Android asks you to confirm the install.",
@@ -64,11 +65,12 @@ val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
 
 /**
  * Shows the notes of every version since the one last seen, once, after an
- * update; a fresh install just records the version.
+ * update; a fresh install just records the version. Returns whether it's
+ * showing, so nothing else opens a sheet over it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WhatsNew(legato: Legato) {
+fun WhatsNew(legato: Legato): Boolean {
     val version = BuildConfig.VERSION_NAME
     var open by remember {
         val seen = legato.prefs.getString(PREF_SEEN, null)
@@ -80,7 +82,7 @@ fun WhatsNew(legato: Legato) {
         val seen = legato.prefs.getString(PREF_SEEN, null)
         RELEASE_NOTES.filterKeys { v -> seen == null || newer(v, seen) }
     }
-    if (!open) return
+    if (!open) return false
     val close = {
         legato.prefs.edit().putString(PREF_SEEN, version).apply()
         open = false
@@ -110,6 +112,7 @@ fun WhatsNew(legato: Legato) {
             Button(onClick = close, modifier = Modifier.fillMaxWidth()) { Text("Got it") }
         }
     }
+    return true
 }
 
 private const val PREF_SEEN = "whats_new_seen"

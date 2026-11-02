@@ -32,6 +32,8 @@ object Updates {
         data class Available(val version: String, val code: Int, val apk: String, val sha256: String, val size: Long) : State
         data class Downloading(val version: String, val progress: Float) : State
         data class Ready(val version: String, val file: File) : State
+        /** Copying into Android's installer, then waiting on its confirmation. */
+        data class Installing(val version: String, val file: File) : State
         data class Failed(val message: String) : State
     }
 
@@ -61,7 +63,7 @@ object Updates {
 
     fun check(context: Context) {
         val s = _state.value
-        if (s is State.Checking || s is State.Downloading) return
+        if (s is State.Checking || s is State.Downloading || s is State.Installing) return
         _state.value = State.Checking
         val legato = context.legato
         legato.scope.launch(Dispatchers.IO) {
@@ -141,6 +143,8 @@ object Updates {
     fun install(context: Context) {
         val r = _state.value as? State.Ready ?: return
         val legato = context.legato
+        // Copying a large APK takes a moment; a second tap would open a second confirmation.
+        _state.value = State.Installing(r.version, r.file)
         legato.scope.launch(Dispatchers.IO) {
             try {
                 val installer = context.packageManager.packageInstaller
@@ -179,7 +183,10 @@ object Updates {
             // Android closes Legato to replace it; the bubble's service comes back on its own.
             PackageInstaller.STATUS_SUCCESS -> {}
             // Cancelled in the confirmation: Install stays there for later.
-            PackageInstaller.STATUS_FAILURE_ABORTED -> {}
+            PackageInstaller.STATUS_FAILURE_ABORTED -> {
+                val s = _state.value
+                if (s is State.Installing) _state.value = State.Ready(s.version, s.file)
+            }
             else -> {
                 val why = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "status $status"
                 context.legato.onLine("The update didn't install: $why")
