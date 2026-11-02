@@ -35,6 +35,7 @@ val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
         "This one update still came the old way: if the bubble is off, open Legato's App info, choose Allow restricted settings, then turn it on in Accessibility. Settings › Bubble over Gboard shows the way.",
         "Install shows that it's opening Android's installer, so a second tap no longer asks twice, and a newer version waits until this list is closed.",
         "With two devices paired, Home and Notes mark the other one's dictations and memos with a phone instead of a PC.",
+        "The synced time next to your PC's name stays current, instead of showing when something last changed before Legato opened.",
     ),
     "0.4.0" to listOf(
         "Legato updates from GitHub Releases: it checks when it opens, Settings › About has the update and a switch, and Android asks you to confirm the install.",

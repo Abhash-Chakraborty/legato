@@ -331,7 +331,11 @@ class Legato(private val context: Context) : CoreListener {
 
     fun refresh() {
         val was = state.value.pcTranscribes
+        val wasOnline = state.value.online
         state.value = core.state()
+        // Just connected: the catch-up lands a moment later, quietly when it
+        // brings nothing new, so look again for its time.
+        if (!wasOnline && state.value.online) scope.launch { delay(2_000); refresh() }
         // The PC is back: what failed to be written up while it was away
         // goes to it now (cheap for this device).
         if (!was && state.value.pcTranscribes && usePcModel) {

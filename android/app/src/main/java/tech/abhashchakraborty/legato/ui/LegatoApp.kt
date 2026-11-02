@@ -45,7 +45,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -79,6 +85,18 @@ fun LegatoApp(pairingLink: String?) {
     val snackbar = remember { SnackbarHostState() }
     // Failures from anywhere; the connection chatter stays in Advanced.
     LaunchedEffect(Unit) { legato.notices.collect { snackbar.showSnackbar(it) } }
+    // While Legato is on screen, read the link's state again now and then: a
+    // catch-up that brought nothing new says nothing, and "synced 2 min ago"
+    // should move on by itself.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                delay(30_000)
+                withContext(Dispatchers.Default) { legato.refresh() }
+            }
+        }
+    }
     // A model downloaded on an earlier run loads in the background.
     // Ready for the first recording, unless the PC writes them up; put away again after a while unused.
     LaunchedEffect(Unit) { if (legato.model.value is ModelStatus.Downloaded && !legato.pcWillTranscribe()) legato.loadModel() }
