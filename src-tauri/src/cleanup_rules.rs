@@ -1419,14 +1419,50 @@ fn named_items(sentence: &[String]) -> Option<(Vec<String>, Vec<Vec<String>>)> {
         return None;
     }
     let first = parts[0].clone();
+    let ends_lead = |w: &String| LEAD_ENDS.contains(&core(w).as_str());
+    // "For the weekend I need, oat milk, eggs…": the first part is all
+    // lead-in.
+    if first.last().is_some_and(ends_lead) {
+        return (parts.len() > 3).then(|| (first, parts[1..].to_vec()));
+    }
     if first.len() <= size {
         return None;
     }
-    let lead = first[..first.len() - size].to_vec();
-    let mut items = vec![first[first.len() - size..].to_vec()];
+    // The first thing starts after the word that ends the lead-in ("I need
+    // oat milk"), or else is as long as the longest of the others.
+    let cut = (first.len() - 1 - size..first.len() - 1)
+        .rev()
+        .find(|&p| ends_lead(&first[p]))
+        .map_or(first.len() - size, |p| p + 1);
+    let lead = first[..cut].to_vec();
+    let mut items = vec![first[cut..].to_vec()];
     items.extend(parts[1..].iter().cloned());
     Some((lead, items))
 }
+
+/// Words a lead-in ends on, just before the first thing named: "I need
+/// milk, eggs…", "the kit includes a tent, …".
+const LEAD_ENDS: &[&str] = &[
+    "need",
+    "needs",
+    "want",
+    "wants",
+    "buy",
+    "get",
+    "grab",
+    "bring",
+    "pack",
+    "order",
+    "include",
+    "includes",
+    "including",
+    "are",
+    "were",
+    "is",
+    "was",
+    "have",
+    "has",
+];
 
 /// In documents (and the Notes and Structured tones), three or more things
 /// named in a row become a list under their lead-in.
@@ -1762,6 +1798,18 @@ mod tests {
             ),
             "Check:\n1. The logs\n2. The routes\n3. The certs\n\nThen deploy."
         );
+        // The lead-in ends at "need", not after as many words as the
+        // longest item, with or without a comma after it.
+        for said in [
+            "For the weekend I need oat milk, eggs, two packs of spinach, coffee beans and bin bags.",
+            "For the weekend I need, oat milk, eggs, two packs of spinach, coffee beans and bin bags.",
+        ] {
+            assert_eq!(
+                light(said, &rules, ListStyle::Bullets),
+                "For the weekend I need:\n- Oat milk\n- Eggs\n- Two packs of spinach\n- Coffee beans\n- Bin bags",
+                "{said}"
+            );
+        }
         // Long clauses stay a sentence.
         let prose =
             "I went home after the long meeting, ate a very late dinner with friends, and slept.";
