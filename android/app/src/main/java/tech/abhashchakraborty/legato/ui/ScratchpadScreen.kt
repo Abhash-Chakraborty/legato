@@ -101,7 +101,14 @@ private fun ScratchNote.heading(): String =
 /** The text under the heading, without what the heading already shows. */
 private fun ScratchNote.preview(): String {
     val body = text.trim()
-    val shown = if (title.isBlank()) body.removePrefix(heading().removeSuffix("…")) else body
+    // The heading is the first line, or the start of it, whether it was
+    // taken from the text or typed the same as it.
+    // A title "Ok" over "Okay, …" isn't the start of it: only a whole word
+    // or a heading cut short counts.
+    val head = heading()
+    val rest = body.removePrefix(head.removeSuffix("…"))
+    val atWord = head.endsWith("…") || rest.isEmpty() || !rest.first().isLetterOrDigit()
+    val shown = if (rest.length < body.length && atWord) rest else body
     return shown.trimStart(',', ';', ':', ' ', '\n').replace(Regex("\\s+"), " ").trim()
 }
 

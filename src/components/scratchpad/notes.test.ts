@@ -49,6 +49,11 @@ assert.equal(
   "…bring the open questions",
 );
 assert.equal(previewOf(note("Groceries", "Groceries")), "");
+// A title that only shares letters with the first word isn't its start.
+assert.equal(
+  previewOf(note("Ok", "Okay, see you at four")),
+  "Okay, see you at four",
+);
 assert.ok(matchesQuery(n, "karol"));
 assert.ok(matchesQuery(n, "DATEV"));
 assert.ok(!matchesQuery(n, "invoice"));

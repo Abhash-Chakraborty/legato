@@ -22,8 +22,13 @@ export const plainText = (text: string) => plainLines(text).join(" ");
  *  is the first line or the start of it. */
 export const previewOf = (note: ScratchNote) => {
   const lines = plainLines(note.text);
+  const cut = note.title.endsWith("…");
   const title = note.title.replace(/…$/, "").toLowerCase();
-  if (title && lines[0]?.toLowerCase().startsWith(title)) {
+  const next = lines[0]?.charAt(title.length) ?? "";
+  // A title "Ok" over "Okay, …" isn't the start of it: only a whole word or
+  // a title cut short counts.
+  const atWord = cut || next === "" || !/[\p{L}\p{N}]/u.test(next);
+  if (title && lines[0]?.toLowerCase().startsWith(title) && atWord) {
     const rest = lines[0].slice(title.length).trim();
     lines.splice(0, 1, ...(rest ? [`…${rest}`] : []));
   }
