@@ -1,6 +1,8 @@
 # Install on Windows
 
-Legato runs on Windows 10 and 11, on x64 and on Arm (Surface Pro X, Copilot+ PCs). Speech recognition runs on your PC: on the GPU through Vulkan on x64, and on the CPU on Arm.
+Legato runs on Windows 10 and 11, on x64 and on Arm (Surface Pro X, Copilot+ PCs).
+
+Speech recognition runs on your PC: on the GPU through Vulkan on x64, and on the CPU on Arm.
 
 ## Which file
 
@@ -16,9 +18,9 @@ All of them are on the [latest release](https://github.com/Abhash-Chakraborty/le
 
 1. Run the setup file. It installs for your account and needs no administrator rights.
 2. The installers aren't code-signed yet, so SmartScreen may say "Windows protected your PC". Choose More info, then Run anyway. You can [verify the download](verify.md) against the release signature first.
-3. Setup checks your microphone, picks a speech model for your languages and downloads it (0.5 to 1.6 GB).
+3. Setup checks your microphone and offers two speech models, the first chosen for your Windows input languages. It says how much the one you pick will download, then downloads it. [Getting started](getting-started.md) covers the rest of setup.
 
-Legato updates itself after that: it checks for a new version when it starts.
+After that, Legato looks for a new version when it starts and asks before installing it. Turn the check off in Settings › About.
 
 ## Apps run as administrator
 
@@ -30,4 +32,4 @@ Legato for Android dictates in any app on your phone and syncs with the PC over 
 
 ## Uninstall
 
-Uninstall Legato from Windows Settings › Apps. Your data stays unless you tick "Delete app data". Downloaded models stay in the shared Hugging Face cache (`%USERPROFILE%\.cache\huggingface`), since other tools may use them.
+Uninstall Legato from Windows Settings › Apps. If you installed it with the setup file, the uninstaller asks whether to delete the app data. Ticked, it removes Legato's data folders and the keys and addresses it kept in Windows Credential Manager. Unticked, they stay for a reinstall. Downloaded models stay in the shared Hugging Face cache (`%USERPROFILE%\.cache\huggingface`), since other tools may use them. [Privacy and your data](privacy.md#where-your-data-lives) lists every folder.

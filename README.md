@@ -16,6 +16,7 @@
 
 <p align="center">
   <a href="https://legato.abhashchakraborty.tech/">Website</a> ·
+  <a href="https://legato.abhashchakraborty.tech/docs/">Docs</a> ·
   <a href="https://github.com/Abhash-Chakraborty/legato/releases/latest">Download</a> ·
   <a href="#install">Install</a> ·
   <a href="#what-it-does">What it does</a> ·

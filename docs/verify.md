@@ -1,6 +1,10 @@
 # Verify a download
 
-Legato release artifacts are signed with Tauri's updater signature format. The public key is stored in [`src-tauri/tauri.conf.json`](../src-tauri/tauri.conf.json) under `plugins.updater.pubkey`.
+Legato release artifacts are signed with Tauri's updater signature format, so you can check a download wasn't changed.
+
+The public key is stored in [`src-tauri/tauri.conf.json`](../src-tauri/tauri.conf.json) under `plugins.updater.pubkey`.
+
+Each installer on the [release page](https://github.com/Abhash-Chakraborty/legato/releases/latest) has a matching `.sig` file; download both.
 
 To verify a release manually, set `$Artifact` to the filename you downloaded, save the `pubkey` value from `src-tauri/tauri.conf.json` to `legato.pub.b64`, then decode the public key and matching `.sig` file from base64 and verify the artifact with `minisign`. In PowerShell:
 
