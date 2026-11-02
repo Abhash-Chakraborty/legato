@@ -1533,8 +1533,8 @@ pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
 /// The longest suggested title kept; longer ones are dropped, not cut.
 const TITLE_MAX_CHARS: usize = 70;
 
-/// A suggested title without quotes or a closing period, or empty when it
-/// is too long to be a title.
+/// A suggested title without quotes or a closing period, starting with a
+/// capital, or empty when it is too long to be a title.
 fn clean_title(title: &str) -> String {
     let t = title
         .trim()
@@ -1544,7 +1544,16 @@ fn clean_title(title: &str) -> String {
     if t.chars().count() > TITLE_MAX_CHARS || t.contains('\n') {
         return String::new();
     }
-    t.to_string()
+    // Asked for sentence case, models still answer "deploy current build
+    // now". A first word with a capital inside (iPhone, macOS) is a name.
+    let first = t.split_whitespace().next().unwrap_or_default();
+    let mut chars = t.chars();
+    match chars.next() {
+        Some(c) if c.is_lowercase() && !first.chars().any(char::is_uppercase) => {
+            c.to_uppercase().chain(chars).collect()
+        }
+        _ => t.to_string(),
+    }
 }
 
 /// The longest tag kept.
@@ -2456,6 +2465,19 @@ mod tests {
             "word ".repeat(20)
         );
         assert!(parse_summary(&long).unwrap().title.is_empty());
+        // Sentence case even when the model forgets, but names stay as written.
+        let title = |t: &str| {
+            parse_summary(&format!("{{\"title\": \"{t}\", \"summary\": \"x\"}}"))
+                .unwrap()
+                .title
+        };
+        assert_eq!(
+            title("deploy current build now"),
+            "Deploy current build now"
+        );
+        assert_eq!(title("iPhone setup for Robert"), "iPhone setup for Robert");
+        assert_eq!(title("macOS build"), "macOS build");
+        assert_eq!(title("éclair pricing"), "Éclair pricing");
     }
 
     #[test]
