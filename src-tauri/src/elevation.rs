@@ -337,6 +337,33 @@ pub fn restart(app: &AppHandle, elevated: bool, hidden: bool) -> Result<(), Stri
 }
 
 /// Whether the Legato that handed over would have started hidden; read once.
+/// Windows drops the message a normal process sends to an elevated one, so
+/// an elevated Legato never heard a second launch: the Start menu, the jump
+/// list and `--toggle-transcription` scripts quietly did nothing. Lets the
+/// single-instance plugin's message through; it carries only the fixed
+/// flags `handle_second_instance` knows, never a path or a command.
+pub fn accept_second_launches(app: &AppHandle) {
+    use windows::core::HSTRING;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        ChangeWindowMessageFilterEx, FindWindowW, MSGFLT_ALLOW, WM_COPYDATA,
+    };
+    if !is_elevated() {
+        return;
+    }
+    // The names tauri-plugin-single-instance gives its message window.
+    let id = &app.config().identifier;
+    let class = HSTRING::from(format!("{id}-sic"));
+    let name = HSTRING::from(format!("{id}-siw"));
+    // SAFETY: finds this process's own message window and changes its filter.
+    let allowed = unsafe {
+        FindWindowW(&class, &name)
+            .and_then(|hwnd| ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, MSGFLT_ALLOW, None))
+    };
+    if let Err(e) = allowed {
+        log::warn!("A second launch won't reach this elevated Legato: {e}");
+    }
+}
+
 pub fn take_hidden_marker(app: &AppHandle) -> bool {
     marker(app).is_some_and(|p| std::fs::remove_file(p).is_ok())
 }

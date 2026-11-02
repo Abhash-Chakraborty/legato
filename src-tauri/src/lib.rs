@@ -1418,6 +1418,7 @@ pub fn run(cli_args: CliArgs) {
                 if elevation::hand_over_at_startup(app.handle(), hidden) {
                     std::process::exit(0);
                 }
+                elevation::accept_second_launches(app.handle());
             }
 
             // Before the first window, so the taskbar groups it under the
