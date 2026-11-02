@@ -51,7 +51,7 @@ export const SCENE_CATEGORY: Record<Scene, AppCategory> = {
  *  step offers to add to the Dictionary. */
 export const SCENE_TERMS: Record<Scene, string[]> = {
   message: [],
-  email: ["ALV", "Coolify"],
+  email: ["KPI", "Figma"],
   list: [],
 };
 

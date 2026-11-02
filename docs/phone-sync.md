@@ -15,7 +15,7 @@ protocol, for testing the PC before the Android app exists.
 Each device has:
 
 - a **device ID**, a random UUID made once;
-- a **name** the person can change ("Pixel 8", "Abhash's desk PC");
+- a **name** the person can change ("Pixel 8", "Sam's desk PC");
 - a **certificate**: self-signed X.509 with an ECDSA P-256 key, made once and kept.
 
 A device is known by its **fingerprint**, the SHA-256 of its certificate's DER bytes, written

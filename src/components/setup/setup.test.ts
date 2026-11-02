@@ -54,12 +54,11 @@ import {
 
 // Paragraphs and lists.
 {
-  const email =
-    "Hi Robert,\n\nThanks for the feedback.\n\nBest regards,\nAbhash";
+  const email = "Hi Maya,\n\nThanks for the feedback.\n\nBest regards,\nSam";
   assert.deepEqual(blocks(email), [
-    { kind: "p", lines: ["Hi Robert,"] },
+    { kind: "p", lines: ["Hi Maya,"] },
     { kind: "p", lines: ["Thanks for the feedback."] },
-    { kind: "p", lines: ["Best regards,", "Abhash"] },
+    { kind: "p", lines: ["Best regards,", "Sam"] },
   ]);
   const list = "For the weekend I need:\n- Oat milk\n- Eggs\n- Coffee beans";
   assert.deepEqual(blocks(list), [
@@ -74,34 +73,30 @@ import {
 
 // How a script's term came out.
 {
-  const script = "and the site now runs on Coolify. Can we go";
+  const script = "and the mockups are now in Figma. Can we go";
   assert.equal(
-    termAsHeard(
-      "Coolify",
-      script,
-      "and the site now runs on Coolify. Can we go",
-    ),
-    "Coolify",
+    termAsHeard("Figma", script, "and the mockups are now in Figma. Can we go"),
+    "Figma",
   );
   assert.equal(
     termAsHeard(
-      "Coolify",
+      "Figma",
       script,
-      "and the site now runs on cool if I. Can we go",
+      "and the mockups are now in fig ma. Can we go",
     ),
-    "cool if I",
+    "fig ma",
   );
   assert.equal(
     termAsHeard(
-      "ALV",
-      "feedback on the ALV draft",
-      "feedback on the a l v draft",
+      "KPI",
+      "feedback on the KPI deck",
+      "feedback on the k p i deck",
     ),
-    "a l v",
+    "k p i",
   );
   // Left out entirely: nothing to tell.
   assert.equal(
-    termAsHeard("ALV", "feedback on the ALV draft", "feedback on the draft"),
+    termAsHeard("KPI", "feedback on the KPI deck", "feedback on the deck"),
     null,
   );
   assert.equal(termAsHeard("Granola", script, "anything"), null);

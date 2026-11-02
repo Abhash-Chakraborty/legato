@@ -2416,7 +2416,7 @@
       "triggerEmpty": "A short phrase you wouldn't say by accident.",
       "dictionaryClash": "The Dictionary changes “{{heard}}” to “{{word}}” first; use that spelling in the trigger.",
       "text": "Text",
-      "textPlaceholder": "Best regards,\nAbhash",
+      "textPlaceholder": "Best regards,\nSam",
       "textHelp": "Pasted exactly as written; cleanup and Style don't change it.",
       "charsLeft_one": "{{count}} character left",
       "charsLeft_other": "{{count}} characters left",
@@ -2599,7 +2599,7 @@
     "samples": {
       "personal": "hey Karol, can we move the Datev review to Thursday? i'll bring the open questions",
       "work": "quick update, the release build passed. i'll push the installer after lunch",
-      "email": "hi Priya thanks for sending the contract. i'll review it by Friday. best regards Abhash",
+      "email": "hi Priya thanks for sending the contract. i'll review it by Friday. best regards Sam",
       "documents": "the Dokploy migration is blocked on the Netbird routes. the scraper moves to a browser extension.",
       "ai": "review this diff for correctness first, then readability. list concrete problems with file and line",
       "code": "fix the paste fallback when the clipboard is busy",
@@ -3647,21 +3647,21 @@
         "sendFirst": "Dictate your reply first"
       },
       "email": {
-        "title": "Write to Robert",
+        "title": "Write to Maya",
         "sub": "In an email, Legato puts the greeting, the body and the sign-off on their own lines.",
-        "script": "Hi Robert, um, thanks for the feedback on the ALV draft. The German copy is updated, and the site now runs on Coolify. Can we go through it on Friday at three, actually four? Best regards, Abhash.",
+        "script": "Hi Maya, um, thanks for the feedback on the KPI deck. The charts are updated, and the mockups are now in Figma. Can we go through it on Friday at three, actually four? Best regards, Sam.",
         "marks": ["um", "three, actually four"],
         "placeholder": "Write your email",
         "window": "New message · Outlook",
         "draft": "Draft",
         "sent": "Sent",
-        "sentAt": "Sent to Robert at {{time}}",
+        "sentAt": "Sent to Maya at {{time}}",
         "to": "To",
-        "who": "Robert",
-        "initial": "R",
+        "who": "Maya",
+        "initial": "M",
         "subjectLabel": "Subject",
-        "subject": "ALV website draft",
-        "field": "Email to Robert"
+        "subject": "KPI deck",
+        "field": "Email to Maya"
       },
       "list": {
         "title": "Make a shopping list",
@@ -3702,7 +3702,7 @@
         "cancel": "Cancelled. Try again whenever you're ready.",
         "sent": {
           "message": "Practice only. Samir's reply is scripted.",
-          "email": "Practice only. Nothing went to Robert.",
+          "email": "Practice only. Nothing went to Maya.",
           "list": ""
         }
       }
@@ -3743,7 +3743,7 @@
     },
     "words": {
       "title": "Teach Legato a word",
-      "subHeard": "In your email to Robert, Legato wrote “{{heard}}”, because {{word}} isn't in your Dictionary yet.",
+      "subHeard": "In your email to Maya, Legato wrote “{{heard}}”, because {{word}} isn't in your Dictionary yet.",
       "subDone": "Legato knows these words now.",
       "subKnown": "Every word from your practice is already in your Dictionary.",
       "also": "A word you add is spelled right in every app.",
@@ -3762,7 +3762,7 @@
       "skip": "Skip",
       "undo": "Undo",
       "undoLabel": "Undo {{word}}",
-      "preview": "Your email to Robert, next time you say it",
+      "preview": "Your email to Maya, next time you say it",
       "fixedTip": "{{word}} · from your Dictionary",
       "skipForNow": "Skip for now",
       "added_one": "{{count}} word added to your Dictionary",
