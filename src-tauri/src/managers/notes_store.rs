@@ -2264,6 +2264,52 @@ mod tests {
     }
 
     #[test]
+    fn a_meeting_that_drops_twice_merges_twice_and_the_second_undoes_alone() {
+        let mut conn = db();
+        let a = meeting(&conn);
+        let b = meeting(&conn);
+        let c = meeting(&conn);
+        add_timed_line(&conn, a.id, 0, 500, Speaker::Them, "First part", None).unwrap();
+        add_timed_line(&conn, b.id, 0, 500, Speaker::Them, "Second part", None).unwrap();
+        add_timed_line(&conn, c.id, 0, 500, Speaker::Them, "Third part", None).unwrap();
+        for (note, text) in [(a.id, "Send the deck"), (c.id, "Book a room")] {
+            conn.execute(
+                "INSERT INTO note_action (note_id, owner, text, done, position) VALUES (?1, '', ?2, 0, 0)",
+                params![note, text],
+            )
+            .unwrap();
+        }
+        finish_recording(&conn, a.id, 10_000, Some("note-a.wav"), 0).unwrap();
+        finish_recording(&conn, b.id, 5_000, Some("note-b.wav"), 0).unwrap();
+        finish_recording(&conn, c.id, 4_000, Some("note-c.wav"), 0).unwrap();
+
+        merge(&mut conn, a.id, b.id, 11_000, 16_000, Some("note-a.wav")).unwrap();
+        let joined = get(&conn, a.id).unwrap().unwrap();
+        let before = merge(&mut conn, a.id, c.id, 17_000, 21_000, Some("note-a.wav")).unwrap();
+        assert_eq!(before.kept.note, joined);
+        let l = lines(&conn, a.id).unwrap();
+        assert_eq!(
+            l.iter().map(|l| l.at_ms).collect::<Vec<_>>(),
+            vec![0, 11_000, 17_000]
+        );
+        let tasks: Vec<_> = get(&conn, a.id)
+            .unwrap()
+            .unwrap()
+            .actions
+            .into_iter()
+            .map(|t| t.text)
+            .collect();
+        assert_eq!(tasks, vec!["Send the deck", "Book a room"]);
+
+        // Undoing the second merge leaves the first in place.
+        unmerge(&mut conn, &before).unwrap();
+        assert_eq!(get(&conn, a.id).unwrap().unwrap(), joined);
+        assert_eq!(lines(&conn, a.id).unwrap().len(), 2);
+        assert_eq!(get(&conn, c.id).unwrap().unwrap(), before.merged.note);
+        assert_eq!(get(&conn, b.id).unwrap(), None);
+    }
+
+    #[test]
     fn a_saved_voice_heard_in_both_notes_keeps_one_number() {
         let mut conn = db();
         let a = meeting(&conn);
