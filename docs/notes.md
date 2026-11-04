@@ -73,6 +73,8 @@ The summary also names the note while it still has its default title, and tags i
 
 The summary is shaped for a kind of meeting, such as Team meeting, One-on-one, Sales call or Lecture. Pick another under Kind of meeting and it's written again that way, and later summaries of that note keep it. Regenerate writes it again with the AI as it's set up now.
 
+If the provider can't be reached, as when the PC is offline, answers too slowly or is rate limiting, Legato tries the summary again after 2, 5, 15 and 30 minutes. After that, Regenerate tries again.
+
 Tick next steps off as they're done. Next steps on the Notes page lists them from every note: Yours, Everyone's and Done. Set your name in Settings › General › Your name so steps meant for you say You.
 
 When you correct the transcript, the summary updates on its own about 20 seconds after your last correction. The next steps, and a title the summary gave, come with it; steps you ticked stay ticked. Update now does it straight away.

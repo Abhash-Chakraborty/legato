@@ -2610,6 +2610,7 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
             );
             name_from_summary(&m, note_id, &summary, &tags_in_use, given_title.as_deref());
             info!("Note summarised in {:?}", started.elapsed());
+            lock(&SUMMARY_RETRIES).retain(|(id, _)| *id != note_id);
         }
         Err(problem) => {
             warn!("No summary for the note: {:?}", problem.kind);
@@ -2618,6 +2619,13 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
                 m.conn()
                     .and_then(|c| store::set_summary_error(&c, note_id, Some(&code))),
             );
+            use crate::ai::AiStatusKind as Kind;
+            if matches!(
+                problem.kind,
+                Kind::Unreachable | Kind::Slow | Kind::RateLimited
+            ) {
+                retry_summary_later(app, note_id);
+            }
         }
     }
     save(
@@ -2665,6 +2673,44 @@ const RESUMMARISE_AFTER: Duration = Duration::from_secs(20);
 /// Notes whose summary waits on corrections, each with the number of its
 /// latest correction; only that one's timer writes the summary.
 static SUMMARY_DUE: Mutex<Vec<(i64, u64)>> = Mutex::new(Vec::new());
+/// Summaries that failed while the provider was out of reach, slow or rate
+/// limiting, and how many times each has been tried again.
+static SUMMARY_RETRIES: Mutex<Vec<(i64, u32)>> = Mutex::new(Vec::new());
+
+/// Writes a summary again a while after the provider couldn't give one,
+/// as when the PC was offline, a few times, further apart each time.
+fn retry_summary_later(app: &AppHandle, note_id: i64) {
+    let attempt = {
+        let mut retries = lock(&SUMMARY_RETRIES);
+        let attempt = retries
+            .iter()
+            .find(|(id, _)| *id == note_id)
+            .map_or(1, |(_, n)| n + 1);
+        retries.retain(|(id, _)| *id != note_id);
+        retries.push((note_id, attempt));
+        attempt
+    };
+    let Some(wait) = notes_rules::summary_retry_after(attempt) else {
+        lock(&SUMMARY_RETRIES).retain(|(id, _)| *id != note_id);
+        return;
+    };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(wait).await;
+        // Written meanwhile, by Update now or after a correction, or gone.
+        let failed = manager(&app)
+            .get(note_id)
+            .ok()
+            .flatten()
+            .is_some_and(|n| n.summary_error.is_some());
+        let tried = lock(&SUMMARY_RETRIES).contains(&(note_id, attempt));
+        if !failed || !tried || current_note() == Some(note_id) {
+            return;
+        }
+        info!("Writing note {note_id}'s summary again, try {attempt}");
+        summarise(&app, note_id).await;
+    });
+}
 static SUMMARY_DUE_NEXT: AtomicU64 = AtomicU64::new(1);
 
 /// The summary written again after corrections, unless Update summary

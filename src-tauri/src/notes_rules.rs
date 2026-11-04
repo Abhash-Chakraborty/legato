@@ -947,6 +947,18 @@ pub fn mix(a: &[i16], b: &[i16]) -> Vec<i16> {
         .collect()
 }
 
+/// How long to wait before writing a summary again that failed because
+/// the provider couldn't be reached, answered too slowly or was rate
+/// limiting, by attempt (1 for the first retry). After the last, the note
+/// waits for Update now.
+pub fn summary_retry_after(attempt: u32) -> Option<std::time::Duration> {
+    const MINUTES: [u64; 4] = [2, 5, 15, 30];
+    let i = attempt.checked_sub(1)? as usize;
+    MINUTES
+        .get(i)
+        .map(|m| std::time::Duration::from_secs(m * 60))
+}
+
 /// Transcripts longer than this are summarised in parts, then the parts'
 /// summaries are combined: local models often read only a few thousand
 /// words.
@@ -2267,6 +2279,16 @@ mod tests {
         assert_eq!(lower_you("Thank You"), "Thank you");
     }
     use super::*;
+
+    #[test]
+    fn a_failed_summary_is_tried_again_four_times_further_apart() {
+        let waits: Vec<u64> = (1..=5)
+            .filter_map(summary_retry_after)
+            .map(|d| d.as_secs() / 60)
+            .collect();
+        assert_eq!(waits, vec![2, 5, 15, 30]);
+        assert_eq!(summary_retry_after(0), None);
+    }
 
     const FRAME: usize = 512;
 
