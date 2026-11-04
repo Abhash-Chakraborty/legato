@@ -303,6 +303,16 @@ impl Tracker {
     }
 }
 
+/// A call that comes back this soon after its note stopped is offered as
+/// that meeting going on, in the same note.
+pub const CONTINUE_WITHIN_MS: u64 = 10 * 60_000;
+
+/// Whether a call starting in `call` at `now_ms` can carry on the note that
+/// stopped at `stopped_ms` for a call in `stopped_app`.
+pub fn continues(stopped_app: CallApp, stopped_ms: u64, call: CallApp, now_ms: u64) -> bool {
+    stopped_app == call && now_ms.saturating_sub(stopped_ms) <= CONTINUE_WITHIN_MS
+}
+
 /// When to offer notes again after Not now: `minutes` later, or never
 /// during this call when it is 0.
 pub fn offer_again_at(now_ms: u64, minutes: u32) -> Option<u64> {
@@ -491,6 +501,35 @@ mod tests {
             Some(&("msedge.exe".into(), CallApp::Zoom))
         ));
         assert!(!carries_call("chrome.exe", CallApp::Teams, Some(&in_edge)));
+    }
+
+    #[test]
+    fn a_call_back_soon_in_the_same_app_carries_on_its_note() {
+        let stopped = 1_000_000;
+        assert!(continues(
+            CallApp::Teams,
+            stopped,
+            CallApp::Teams,
+            stopped + 90_000
+        ));
+        assert!(continues(
+            CallApp::Teams,
+            stopped,
+            CallApp::Teams,
+            stopped + CONTINUE_WITHIN_MS
+        ));
+        assert!(!continues(
+            CallApp::Teams,
+            stopped,
+            CallApp::Teams,
+            stopped + CONTINUE_WITHIN_MS + 1
+        ));
+        assert!(!continues(
+            CallApp::Teams,
+            stopped,
+            CallApp::Zoom,
+            stopped + 90_000
+        ));
     }
 
     #[test]

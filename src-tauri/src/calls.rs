@@ -57,7 +57,11 @@ pub struct CallsChanged {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum CallAction {
+    /// Starts notes, or carries on the call's earlier note when the card
+    /// offers that.
     Start,
+    /// On a card that offers to carry on a note: starts a new one instead.
+    StartNew,
     NotNow,
     Never,
     StopNow,
@@ -89,6 +93,9 @@ enum CallCard {
         /// Notes start on their own after this long.
         countdown_ms: Option<u64>,
         test: bool,
+        /// The title of the note this call carries on, when it came back
+        /// soon after that note stopped.
+        continues: Option<String>,
     },
     Ended {
         app: CallApp,
@@ -121,6 +128,8 @@ struct Shown {
     app: CallApp,
     kind: CardKind,
     test: bool,
+    /// The note an offer carries on.
+    continues: Option<i64>,
 }
 
 /// When notes may be offered again for a call after Not now.
@@ -152,6 +161,12 @@ struct State {
     joined: Option<i64>,
     /// The note started for a call.
     note: Option<(i64, CallApp)>,
+    /// The last call's note that stopped, and when, for a call that comes
+    /// back soon to carry on.
+    stopped: Option<(i64, CallApp, u64)>,
+    /// A note carrying on an earlier one, joined to it once it's ready:
+    /// (new note, earlier note).
+    continuing: Option<(i64, i64)>,
     /// The app Never here last turned off, for Undo.
     never: Option<CallApp>,
 }
@@ -342,12 +357,17 @@ fn offer(app: &AppHandle, call: CallApp, test: bool) {
     let countdown_ms = settings
         .auto_start
         .then(|| settings.countdown_secs.clamp(1, 60) as u64 * 1000);
+    let stopped = lock().stopped;
+    let continues = stopped
+        .filter(|&(_, a, at)| !test && rules::continues(a, at, call, now_ms()))
+        .and_then(|(id, _, _)| notes::manager(app).get(id).ok().flatten());
     let browser = {
         let mut st = lock();
         st.card = Some(Shown {
             app: call,
             kind: CardKind::Offer,
             test,
+            continues: continues.as_ref().map(|n| n.id),
         });
         // A call card takes the place of a meeting's.
         st.meeting = None;
@@ -362,6 +382,7 @@ fn offer(app: &AppHandle, call: CallApp, test: bool) {
             app_path: app_path(call, browser.as_ref()),
             countdown_ms,
             test,
+            continues: continues.map(|n| n.title),
         }),
     );
     match countdown_ms {
@@ -389,7 +410,9 @@ fn when() -> String {
     chrono::Local::now().format("%b %-d, %-I:%M %p").to_string()
 }
 
-fn start_notes(app: &AppHandle, call: CallApp) {
+/// Starts notes for a call; with `continues`, they're joined to that note
+/// once they're ready.
+fn start_notes(app: &AppHandle, call: CallApp, continues: Option<i64>) {
     let browser = lock().call_browser.clone();
     let app_pid = crate::loopback::audio_apps()
         .into_iter()
@@ -410,7 +433,14 @@ fn start_notes(app: &AppHandle, call: CallApp) {
     );
     match result {
         Ok(note) => {
-            lock().note = Some((note.id, call));
+            {
+                let mut st = lock();
+                st.note = Some((note.id, call));
+                st.continuing = continues.map(|earlier| (note.id, earlier));
+            }
+            if let Some(earlier) = continues {
+                info!("Note {} carries on note {earlier}", note.id);
+            }
             save_calls(app, |c| {
                 if let Some(last) = c.last.as_mut().filter(|l| l.app == call) {
                     last.note_id = Some(note.id);
@@ -458,7 +488,12 @@ pub fn act(app: &AppHandle, action: CallAction) {
     let Some(call) = call else {
         return;
     };
-    if test && matches!(action, CallAction::Start | CallAction::NotNow) {
+    if test
+        && matches!(
+            action,
+            CallAction::Start | CallAction::StartNew | CallAction::NotNow
+        )
+    {
         let _ = CallTest {
             action,
             app: call,
@@ -468,9 +503,12 @@ pub fn act(app: &AppHandle, action: CallAction) {
         return;
     }
     match action {
-        CallAction::Start => {
+        CallAction::Start | CallAction::StartNew => {
+            let continues = shown
+                .and_then(|s| s.continues)
+                .filter(|_| action == CallAction::Start);
             if !notes::is_busy() {
-                start_notes(app, call);
+                start_notes(app, call, continues);
             }
         }
         CallAction::NotNow => {
@@ -584,6 +622,7 @@ fn ended(app: &AppHandle, call: CallApp) {
                 app: call,
                 kind: CardKind::Ended,
                 test: false,
+                continues: None,
             });
             st.call_browser.clone()
         };
@@ -610,7 +649,13 @@ fn ended(app: &AppHandle, call: CallApp) {
 
 /// Notes stopped: a call ended card has nothing left to stop.
 pub fn notes_stopped(app: &AppHandle) {
-    lock().joined = None;
+    {
+        let mut st = lock();
+        st.joined = None;
+        if let Some((id, call)) = st.note {
+            st.stopped = Some((id, call, now_ms()));
+        }
+    }
     let ended_card = lock().card.is_some_and(|c| c.kind == CardKind::Ended);
     if ended_card {
         hide_card(app);
@@ -619,6 +664,18 @@ pub fn notes_stopped(app: &AppHandle) {
 
 /// A note was merged into another: the last call's note is that one now.
 pub fn note_merged(app: &AppHandle, from: i64, into: i64) {
+    {
+        let mut st = lock();
+        if let Some(stopped) = st.stopped.as_mut().filter(|s| s.0 == from) {
+            stopped.0 = into;
+        }
+        if let Some(continuing) = st.continuing.as_mut().filter(|c| c.1 == from) {
+            continuing.1 = into;
+        }
+        if st.continuing.is_some_and(|c| c.0 == from) {
+            st.continuing = None;
+        }
+    }
     let points = get_settings(app)
         .calls
         .last
@@ -632,9 +689,21 @@ pub fn note_merged(app: &AppHandle, from: i64, into: i64) {
     }
 }
 
+/// The note a call's new note carries on, taken once: the new note is
+/// joined to it when it's ready.
+pub fn carries_on(note_id: i64) -> Option<i64> {
+    let mut st = lock();
+    let earlier = st.continuing.filter(|c| c.0 == note_id).map(|c| c.1);
+    if earlier.is_some() {
+        st.continuing = None;
+    }
+    earlier
+}
+
 /// A note is ready: opens it when it was taken for a call and Settings asks
-/// for that.
-pub fn note_ready(app: &AppHandle, note_id: i64) {
+/// for that. `shown` is the note it ended up in, which differs when it
+/// carried on an earlier one.
+pub fn note_ready(app: &AppHandle, note_id: i64, shown: i64) {
     let ours = {
         let mut st = lock();
         let ours = st.note.is_some_and(|(id, _)| id == note_id);
@@ -644,7 +713,7 @@ pub fn note_ready(app: &AppHandle, note_id: i64) {
         ours
     };
     if ours && get_settings(app).calls.open_note {
-        crate::open_page(app, "notes", Some(&note_id.to_string()));
+        crate::open_page(app, "notes", Some(&shown.to_string()));
     }
 }
 

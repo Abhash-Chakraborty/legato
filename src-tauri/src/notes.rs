@@ -2213,19 +2213,33 @@ impl FollowUp {
         if !busy {
             self.find_voices(app);
         }
-        tauri::async_runtime::block_on(summarise(app, self.note_id));
+        // Notes that carry on a call's earlier note join it, once their
+        // voices are known; with another recording running they'd be told
+        // apart later, so they stay a note of their own.
+        let (id, duration_ms) = match crate::calls::carries_on(self.note_id) {
+            Some(earlier) if !busy => match manager(app).merge(earlier, self.note_id) {
+                Ok(before) => {
+                    let id = before.kept.note.id;
+                    let joined = manager(app).get(id).ok().flatten();
+                    (id, joined.map_or(self.duration_ms, |n| n.duration_ms))
+                }
+                Err(e) => {
+                    warn!("Couldn't join note {} to note {earlier}: {e}", self.note_id);
+                    (self.note_id, self.duration_ms)
+                }
+            },
+            _ => (self.note_id, self.duration_ms),
+        };
+        tauri::async_runtime::block_on(summarise(app, id));
         // The bar belongs to a recording that started meanwhile.
         if !is_recording() {
             crate::overlay::show_overlay_notice_for(
                 app,
-                &BarNotice::NoteReady {
-                    id: self.note_id,
-                    duration_ms: self.duration_ms,
-                },
+                &BarNotice::NoteReady { id, duration_ms },
                 5000,
             );
         }
-        crate::calls::note_ready(app, self.note_id);
+        crate::calls::note_ready(app, self.note_id, id);
         if busy {
             while is_recording() {
                 std::thread::sleep(Duration::from_secs(10));

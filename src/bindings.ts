@@ -3546,7 +3546,16 @@ export type BubbleLayout = { expanded: boolean;
  * The dot's centre inside the window.
  */
 dot_x: number; dot_y: number; edge: Edge }
-export type CallAction = "start" | "not_now" | "never" | "stop_now" | "keep" | "undo_never" | 
+export type CallAction = 
+/**
+ * Starts notes, or carries on the call's earlier note when the card
+ * offers that.
+ */
+"start" | 
+/**
+ * On a card that offers to carry on a note: starts a new one instead.
+ */
+"start_new" | "not_now" | "never" | "stop_now" | "keep" | "undo_never" | 
 /**
  * On a meeting's card: opens its link.
  */

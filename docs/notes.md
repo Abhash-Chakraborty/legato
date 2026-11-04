@@ -37,6 +37,8 @@ When a call starts, the bar asks "Take notes? They stay on this PC." with Start 
 | Stop recording after          | A limit for every note, 2 hours unless you change it. Two minutes before, the bar offers Keep recording, which adds half an hour |
 | Open the note when it's ready | Opens Notes on the summary when it's done                                                                                        |
 
+When a call comes back in the same app within 10 minutes of its note stopping, the card offers Continue notes and New note instead. Continue notes records as usual and joins the earlier note when it's ready, as [Merge two notes of one meeting](#merge-two-notes-of-one-meeting) does. With Start notes automatically on, the countdown continues the note.
+
 Test detection shows the card as if a call had started, without recording anything. With a calendar connected, the bar can also offer Join and Join with notes a minute before a meeting; see [Connections](connections.md).
 
 If a recording ends with only a few words, the bar asks whether it was started by mistake, with Keep and Discard. Left alone, the note is kept. Discard moves it to Recently deleted.
@@ -117,7 +119,7 @@ A deleted note goes to Recently deleted with its recording. You can restore it f
 
 ## Merge two notes of one meeting
 
-When a call drops for longer than about 20 seconds, its note stops, and the call that comes back starts a new one. To put them back together, open either note and choose More actions › Merge with another note…. The list offers notes recorded within 12 hours of it, with the nearest one before it picked.
+When a call drops for longer than about 20 seconds, its note stops. If the call comes back within 10 minutes, Continue notes on the card adds to the same note. Otherwise, or if you started a new note anyway, the meeting is in two notes. To put them back together, open either note and choose More actions › Merge with another note…. The list offers notes recorded within 12 hours of it, with the nearest one before it picked.
 
 The two become the note that started first. Its recording carries on after a second of silence with the later one, the transcript and word times move along with it, and voices told apart in either keep their names. A voice Legato recognised in both keeps one number. Tags, tasks, attendees and My notes join, and the summary is written again over the whole meeting.
 

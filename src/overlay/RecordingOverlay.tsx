@@ -118,6 +118,8 @@ type CallCard =
       app_path: string | null;
       countdown_ms: number | null;
       test: boolean;
+      /** The title of the note this call carries on, back soon after it stopped. */
+      continues: string | null;
     }
   | {
       kind: "ended";
@@ -1546,13 +1548,18 @@ const RecordingOverlay: React.FC = () => {
         : Math.max(0, Math.ceil((total - (now - at)) / 1000));
     const recorded =
       card.kind === "ended" ? clock(card.elapsed_ms + (now - at)) : "";
+    const carryOn = card.kind === "offer" ? card.continues : null;
     const desc =
       card.kind === "offer"
-        ? left !== null
-          ? t("overlay.call.startsIn", { count: left })
-          : card.test
-            ? t("overlay.call.test")
-            : t("overlay.call.offer", { app: card.name })
+        ? carryOn !== null
+          ? left !== null
+            ? t("overlay.call.continuesIn", { count: left, title: carryOn })
+            : t("overlay.call.continueOffer", { title: carryOn })
+          : left !== null
+            ? t("overlay.call.startsIn", { count: left })
+            : card.test
+              ? t("overlay.call.test")
+              : t("overlay.call.offer", { app: card.name })
         : left !== null
           ? t("overlay.call.stopsIn", { count: left, recorded })
           : t("overlay.call.still", { recorded });
@@ -1597,22 +1604,35 @@ const RecordingOverlay: React.FC = () => {
                 className="sbtn primary"
                 onClick={() => commands.callCardAction("start")}
               >
-                {t("overlay.call.start")}
+                {carryOn !== null
+                  ? t("overlay.call.continue")
+                  : t("overlay.call.start")}
               </button>
+              {carryOn !== null && (
+                <button
+                  type="button"
+                  className="sbtn"
+                  onClick={() => commands.callCardAction("start_new")}
+                >
+                  {t("overlay.call.startNew")}
+                </button>
+              )}
               <button
                 type="button"
-                className="sbtn"
+                className={carryOn !== null ? "sbtn quiet" : "sbtn"}
                 onClick={() => commands.callCardAction("not_now")}
               >
                 {t("overlay.call.notNow")}
               </button>
-              <button
-                type="button"
-                className="sbtn quiet"
-                onClick={() => commands.callCardAction("never")}
-              >
-                {t("overlay.call.never")}
-              </button>
+              {carryOn === null && (
+                <button
+                  type="button"
+                  className="sbtn quiet"
+                  onClick={() => commands.callCardAction("never")}
+                >
+                  {t("overlay.call.never")}
+                </button>
+              )}
             </>
           ) : (
             <>
