@@ -24,20 +24,34 @@ interface NoteRowProps {
 /** What the row says about a note's state. */
 const useStatus = (note: Note, recording: boolean) => {
   const { t } = useTranslation();
-  if (recording) return { text: t("notes.status.recording"), live: true };
+  if (recording)
+    return { text: t("notes.status.recording"), live: true, failed: false };
   switch (note.status) {
     case "recording":
     case "transcribing":
-      return { text: t("notes.status.transcribing"), live: true };
+      return {
+        text: t("notes.status.transcribing"),
+        live: true,
+        failed: false,
+      };
     case "summarising":
-      return { text: t("notes.status.summarising"), live: true };
-    default:
+      return { text: t("notes.status.summarising"), live: true, failed: false };
+    default: {
+      // A summary that failed, not one that was never asked for.
+      const failed =
+        !note.summary.trim() &&
+        !!note.summary_error &&
+        !["short", "off", "none"].includes(note.summary_error);
       return {
         text: note.summary.trim()
           ? t("notes.status.summary")
-          : t("notes.status.transcript"),
+          : failed
+            ? t("notes.status.failed")
+            : t("notes.status.transcript"),
         live: false,
+        failed,
       };
+    }
   }
 };
 
@@ -101,7 +115,13 @@ export const NoteRow: React.FC<NoteRowProps> = ({
           </span>
           <span
             className={`inline-flex min-w-0 items-center gap-1 truncate ${
-              recording ? "text-danger" : status.live ? "text-teal-700" : ""
+              recording
+                ? "text-danger"
+                : status.live
+                  ? "text-teal-700"
+                  : status.failed
+                    ? "text-warn"
+                    : ""
             }`}
           >
             {recording && (

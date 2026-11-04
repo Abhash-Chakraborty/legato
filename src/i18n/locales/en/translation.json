@@ -2946,7 +2946,8 @@
       "transcribing": "Transcribing…",
       "summarising": "Summarising…",
       "summary": "Summary ready",
-      "transcript": "Transcript only"
+      "transcript": "Transcript only",
+      "failed": "Summary failed"
     },
     "row": {
       "delete": "Delete {{title}}"
