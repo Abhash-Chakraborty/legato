@@ -617,6 +617,21 @@ pub fn notes_stopped(app: &AppHandle) {
     }
 }
 
+/// A note was merged into another: the last call's note is that one now.
+pub fn note_merged(app: &AppHandle, from: i64, into: i64) {
+    let points = get_settings(app)
+        .calls
+        .last
+        .is_some_and(|l| l.note_id == Some(from));
+    if points {
+        save_calls(app, |c| {
+            if let Some(last) = c.last.as_mut() {
+                last.note_id = Some(into);
+            }
+        });
+    }
+}
+
 /// A note is ready: opens it when it was taken for a call and Settings asks
 /// for that.
 pub fn note_ready(app: &AppHandle, note_id: i64) {

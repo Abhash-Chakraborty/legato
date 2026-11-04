@@ -31,8 +31,10 @@ import {
   inFilter,
   type Filter,
   isYou,
+  mergeCandidates,
 } from "../../notes/notes";
 import { NoteDetail } from "./NoteDetail";
+import { MergeDialog } from "./MergeDialog";
 import { NoteRow } from "./NoteRow";
 import { RecordDialog } from "./RecordDialog";
 import { ScheduleDialog } from "../../notes/ScheduleDialog";
@@ -291,6 +293,36 @@ export const NotesPage: React.FC = () => {
           const back = await commands.restoreNote(removed).catch(() => null);
           if (back?.status === "ok") setSelectedId(note.id);
           else toast.error(t("notes.toast.restoreFailed"));
+        },
+      },
+    });
+  };
+
+  // Merging two notes of one meeting; Undo puts both back.
+  const [merging, setMerging] = useState<Note | null>(null);
+  const merge = async (note: Note, other: Note) => {
+    setMerging(null);
+    const result = await commands.mergeNotes(note.id, other.id);
+    if (result.status === "error") {
+      toast.error(t("notes.toast.mergeFailed"), { description: result.error });
+      return;
+    }
+    const before = result.data;
+    const kept = before.kept.note;
+    setHidden((h) => new Set(h).add(before.merged.note.id));
+    setSelectedId(kept.id);
+    // Longer than a toast's usual 4 s: a merge is bigger to take back.
+    toast(t("notes.toast.merged", { title: kept.title }), {
+      duration: 15000,
+      action: {
+        label: t("notes.toast.undo"),
+        onClick: async () => {
+          const back = await commands.unmergeNotes(before).catch(() => null);
+          if (back?.status === "ok") setSelectedId(note.id);
+          else
+            toast.error(t("notes.toast.unmergeFailed"), {
+              description: back?.status === "error" ? back.error : undefined,
+            });
         },
       },
     });
@@ -673,6 +705,11 @@ export const NotesPage: React.FC = () => {
                   selected.id === recordingId && session?.phase === "finishing"
                 }
                 onDelete={() => setAsking(selected)}
+                onMerge={
+                  mergeCandidates(all, selected).length > 0
+                    ? () => setMerging(selected)
+                    : null
+                }
               />
             ) : (
               <p className="px-7 py-14 text-center text-[13px] text-text-3">
@@ -684,6 +721,15 @@ export const NotesPage: React.FC = () => {
       )}
 
       <ScheduleDialog open={scheduling} onClose={() => setScheduling(false)} />
+
+      {merging && (
+        <MergeDialog
+          note={merging}
+          candidates={mergeCandidates(all, merging)}
+          onMerge={(other) => merge(merging, other)}
+          onCancel={() => setMerging(null)}
+        />
+      )}
 
       <AskNotes
         open={askingAll}

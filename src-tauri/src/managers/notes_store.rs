@@ -1160,6 +1160,231 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
     Ok(())
 }
 
+/// Two notes as they were before one was merged into the other, so Undo
+/// can put both back.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
+pub struct MergedNotes {
+    pub kept: DeletedRecording,
+    pub merged: DeletedRecording,
+    /// What a restore leaves out: the saved voice behind each named voice
+    /// (note, number, voice) and the lines whose speaker was set by hand.
+    #[serde(default)]
+    pub voices: Vec<(i64, i64, i64)>,
+    #[serde(default)]
+    pub fixed: Vec<i64>,
+    /// The two recordings were joined into one, so Undo needs the first
+    /// one's audio, set aside until Undo runs out.
+    #[serde(default)]
+    pub joined_audio: bool,
+}
+
+/// The note and what's in it, without removing anything.
+fn snapshot(conn: &Connection, id: i64) -> Result<DeletedRecording> {
+    let note = get(conn, id)?.ok_or_else(|| anyhow!("Note {id} is gone"))?;
+    Ok(DeletedRecording {
+        lines: lines(conn, id)?,
+        failed: failed_lines(conn, id)?,
+        note,
+    })
+}
+
+/// One named voice of a note: number, name, recognised, saved voice.
+type SpeakerRow = (i64, String, bool, Option<i64>);
+
+/// A note's named voices.
+fn speaker_rows(conn: &Connection, id: i64) -> Result<Vec<SpeakerRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT speaker, name, recognised, voice_id FROM note_speaker WHERE note_id = ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
+/// Puts `later`'s transcript after `earlier`'s, as one meeting, and removes
+/// `later`. Its lines and the stretches that couldn't be transcribed move on
+/// by `offset_ms`, where its audio starts in the joined recording; its voices
+/// get numbers after `earlier`'s, except one saved voice heard in both,
+/// which keeps `earlier`'s number; its tags, tasks, attendees and My notes
+/// join `earlier`'s. `duration_ms` and `audio_file` describe the joined
+/// recording. Returns both notes as they were, for Undo.
+pub fn merge(
+    conn: &mut Connection,
+    earlier: i64,
+    later: i64,
+    offset_ms: i64,
+    duration_ms: i64,
+    audio_file: Option<&str>,
+) -> Result<MergedNotes> {
+    if earlier == later {
+        return Err(anyhow!("A note can't be merged into itself"));
+    }
+    let kept = snapshot(conn, earlier)?;
+    let merged = snapshot(conn, later)?;
+    let ours = speaker_rows(conn, earlier)?;
+    let theirs = speaker_rows(conn, later)?;
+    let voices = [(earlier, &ours), (later, &theirs)]
+        .into_iter()
+        .flat_map(|(id, rows)| rows.iter().filter_map(move |s| Some((id, s.0, s.3?))))
+        .collect();
+    let fixed = {
+        let mut stmt = conn
+            .prepare("SELECT id FROM note_line WHERE note_id IN (?1, ?2) AND speaker_fixed = 1")?;
+        let ids = stmt
+            .query_map(params![earlier, later], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<i64>>>()?;
+        ids
+    };
+
+    let mut next = kept
+        .lines
+        .iter()
+        .filter_map(|l| l.speaker)
+        .chain(ours.iter().map(|s| s.0))
+        .max()
+        .unwrap_or(0)
+        .max(0);
+    let numbers: std::collections::BTreeSet<i64> = merged
+        .lines
+        .iter()
+        .filter_map(|l| l.speaker)
+        .chain(theirs.iter().map(|s| s.0))
+        .collect();
+    let mut map = std::collections::HashMap::new();
+    for n in numbers {
+        let voice = theirs.iter().find(|s| s.0 == n).and_then(|s| s.3);
+        let same = voice.and_then(|v| ours.iter().find(|s| s.3 == Some(v)).map(|s| s.0));
+        // THEM_SIDE names the whole other side in both notes alike.
+        let to = match same {
+            _ if n < 1 => n,
+            Some(s) => s,
+            None => {
+                next += 1;
+                next
+            }
+        };
+        map.insert(n, to);
+    }
+    let shift = |w: Vec<(i64, i64)>| -> Vec<(i64, i64)> {
+        w.into_iter()
+            .map(|(s, e)| (s + offset_ms, e + offset_ms))
+            .collect()
+    };
+
+    let tx = conn.transaction()?;
+    for l in &merged.lines {
+        tx.execute(
+            "UPDATE note_line SET note_id = ?2, at_ms = ?3, end_ms = ?4, speaker = ?5, word_ms = ?6
+             WHERE id = ?1",
+            params![
+                l.id,
+                earlier,
+                l.at_ms + offset_ms,
+                l.end_ms + offset_ms,
+                l.speaker.map(|s| map.get(&s).copied().unwrap_or(s)),
+                word_ms_json(l.word_ms.clone().map(shift).as_deref())
+            ],
+        )?;
+    }
+    tx.execute(
+        "UPDATE note_failed_line SET note_id = ?2, at_ms = at_ms + ?3, end_ms = end_ms + ?3
+         WHERE note_id = ?1",
+        params![later, earlier, offset_ms],
+    )?;
+    for (speaker, name, recognised, voice) in &theirs {
+        tx.execute(
+            "INSERT OR IGNORE INTO note_speaker (note_id, speaker, name, recognised, voice_id)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                earlier,
+                map.get(speaker).copied().unwrap_or(*speaker),
+                name,
+                recognised,
+                voice
+            ],
+        )?;
+    }
+    tx.execute(
+        "INSERT OR IGNORE INTO note_tag (note_id, tag) SELECT ?2, tag FROM note_tag WHERE note_id = ?1",
+        params![later, earlier],
+    )?;
+    let base: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(position) + 1, 0) FROM note_action WHERE note_id = ?1",
+        params![earlier],
+        |r| r.get(0),
+    )?;
+    tx.execute(
+        "UPDATE note_action SET note_id = ?2, position = position + ?3 WHERE note_id = ?1",
+        params![later, earlier, base],
+    )?;
+    let (a, b) = (&kept.note, &merged.note);
+    let my_notes = [a.my_notes.trim(), b.my_notes.trim()]
+        .into_iter()
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let attendees = crate::notes_rules::merge_people(
+        [&a.attendees, &b.attendees].map(Vec::as_slice).into_iter(),
+    );
+    let kind = if b.kind == NoteKind::Meeting {
+        b.kind
+    } else {
+        a.kind
+    };
+    tx.execute(
+        "UPDATE note SET duration_ms = ?2, audio_file = ?3, my_notes = ?4, attendees = ?5,
+            failed_lines = failed_lines + ?6, kind = ?7
+         WHERE id = ?1",
+        params![
+            earlier,
+            duration_ms,
+            audio_file,
+            my_notes,
+            serde_json::to_string(&attendees)?,
+            b.failed_lines,
+            kind.as_str()
+        ],
+    )?;
+    for table in ["note_tag", "note_speaker"] {
+        tx.execute(
+            &format!("DELETE FROM {table} WHERE note_id = ?1"),
+            params![later],
+        )?;
+    }
+    tx.execute("DELETE FROM note WHERE id = ?1", params![later])?;
+    tx.commit()?;
+    Ok(MergedNotes {
+        kept,
+        merged,
+        voices,
+        fixed,
+        joined_audio: false,
+    })
+}
+
+/// Undoes `merge`: both notes as they were, with their ids.
+pub fn unmerge(conn: &mut Connection, before: &MergedNotes) -> Result<()> {
+    delete(conn, before.kept.note.id)?;
+    restore(conn, &before.kept)?;
+    restore(conn, &before.merged)?;
+    for (note, speaker, voice) in &before.voices {
+        conn.execute(
+            "UPDATE note_speaker SET voice_id = ?3 WHERE note_id = ?1 AND speaker = ?2",
+            params![note, speaker, voice],
+        )?;
+    }
+    for id in &before.fixed {
+        conn.execute(
+            "UPDATE note_line SET speaker_fixed = 1 WHERE id = ?1",
+            params![id],
+        )?;
+    }
+    Ok(())
+}
+
 /// Finished notes started before `before` (Unix seconds) that still have
 /// audio, with its file name.
 pub fn audio_started_before(conn: &Connection, before: i64) -> Result<Vec<(i64, String)>> {
@@ -1960,5 +2185,113 @@ mod tests {
         assert_eq!(get(&conn, a.id).unwrap().unwrap().folder, None);
         set_folder(&mut conn, &[b.id], None).unwrap();
         assert_eq!(get(&conn, b.id).unwrap().unwrap().folder, None);
+    }
+
+    #[test]
+    fn a_cut_off_meeting_merges_into_the_note_before_and_comes_apart_again() {
+        let mut conn = db();
+        let a = meeting(&conn);
+        let b = meeting(&conn);
+        add_timed_line(
+            &conn,
+            a.id,
+            0,
+            900,
+            Speaker::Them,
+            "Let's start",
+            Some(vec![(0, 400), (400, 900)]),
+        )
+        .unwrap();
+        add_timed_line(
+            &conn,
+            b.id,
+            0,
+            700,
+            Speaker::Them,
+            "Sorry, I dropped",
+            Some(vec![(0, 300), (300, 700)]),
+        )
+        .unwrap();
+        add_timed_line(&conn, b.id, 800, 1500, Speaker::Them, "Where were we", None).unwrap();
+        let a_lines = lines(&conn, a.id).unwrap();
+        let b_lines = lines(&conn, b.id).unwrap();
+        set_speakers(&mut conn, a.id, &[(a_lines[0].id, Some(1))]).unwrap();
+        set_speakers(
+            &mut conn,
+            b.id,
+            &[(b_lines[0].id, Some(1)), (b_lines[1].id, Some(2))],
+        )
+        .unwrap();
+        name_speaker(&conn, a.id, 1, "Priya").unwrap();
+        name_speaker(&conn, b.id, 2, "Sahil").unwrap();
+        add_failed_line(&conn, b.id, 1600, 2000, Speaker::You).unwrap();
+        add_tag(&conn, a.id, "roadmap").unwrap();
+        add_tag(&conn, b.id, "Roadmap").unwrap();
+        add_tag(&conn, b.id, "hiring").unwrap();
+        set_my_notes(&conn, b.id, "ask about the budget").unwrap();
+        finish_recording(&conn, a.id, 60_000, Some("note-a.wav"), 0).unwrap();
+        finish_recording(&conn, b.id, 30_000, Some("note-b.wav"), 1).unwrap();
+
+        let before = merge(&mut conn, a.id, b.id, 61_000, 91_000, Some("note-a.wav")).unwrap();
+        assert_eq!(get(&conn, b.id).unwrap(), None);
+        let m = get(&conn, a.id).unwrap().unwrap();
+        assert_eq!((m.duration_ms, m.failed_lines, m.lines), (91_000, 1, 3));
+        assert_eq!(m.tags, vec!["hiring", "roadmap"]);
+        assert_eq!(m.my_notes, "ask about the budget");
+        let l = lines(&conn, a.id).unwrap();
+        assert_eq!((l[1].at_ms, l[1].end_ms), (61_000, 61_700));
+        assert_eq!(l[1].word_ms, Some(vec![(61_000, 61_300), (61_300, 61_700)]));
+        assert_eq!(l[0].word_ms, Some(vec![(0, 400), (400, 900)]));
+        // The second note's voices come after the first's: its 1 is 2 now,
+        // and Sahil, its 2, is 3.
+        assert_eq!(
+            l.iter().map(|l| l.speaker).collect::<Vec<_>>(),
+            vec![Some(1), Some(2), Some(3)]
+        );
+        let names: Vec<_> = m
+            .speakers
+            .iter()
+            .map(|s| (s.speaker, s.name.as_str()))
+            .collect();
+        assert_eq!(names, vec![(1, "Priya"), (3, "Sahil")]);
+        assert_eq!(failed_lines(&conn, a.id).unwrap()[0].at_ms, 62_600);
+
+        unmerge(&mut conn, &before).unwrap();
+        assert_eq!(get(&conn, a.id).unwrap().unwrap(), before.kept.note);
+        assert_eq!(get(&conn, b.id).unwrap().unwrap(), before.merged.note);
+        assert_eq!(lines(&conn, b.id).unwrap(), before.merged.lines);
+        assert!(merge(&mut conn, a.id, a.id, 0, 0, None).is_err());
+    }
+
+    #[test]
+    fn a_saved_voice_heard_in_both_notes_keeps_one_number() {
+        let mut conn = db();
+        let a = meeting(&conn);
+        let b = meeting(&conn);
+        add_timed_line(&conn, a.id, 0, 500, Speaker::Them, "Hi", None).unwrap();
+        add_timed_line(&conn, b.id, 0, 500, Speaker::Them, "Back", None).unwrap();
+        let (la, lb) = (lines(&conn, a.id).unwrap(), lines(&conn, b.id).unwrap());
+        set_speakers(&mut conn, a.id, &[(la[0].id, Some(2))]).unwrap();
+        set_speakers(&mut conn, b.id, &[(lb[0].id, Some(1))]).unwrap();
+        for (note, speaker) in [(a.id, 2), (b.id, 1)] {
+            conn.execute(
+                "INSERT INTO note_speaker (note_id, speaker, name, recognised, voice_id) VALUES (?1, ?2, 'Priya', 1, 7)",
+                params![note, speaker],
+            )
+            .unwrap();
+        }
+        let before = merge(&mut conn, a.id, b.id, 1_000, 2_000, None).unwrap();
+        let l = lines(&conn, a.id).unwrap();
+        assert_eq!(l[1].speaker, Some(2));
+        assert_eq!(get(&conn, a.id).unwrap().unwrap().speakers.len(), 1);
+        unmerge(&mut conn, &before).unwrap();
+        let voice: Option<i64> = conn
+            .query_row(
+                "SELECT voice_id FROM note_speaker WHERE note_id = ?1 AND speaker = 1",
+                params![b.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(voice, Some(7));
     }
 }

@@ -3023,6 +3023,7 @@
         "mine": "My notes"
       },
       "copyDocs": "Copy for Google Docs",
+      "merge": "Merge with another note…",
       "scheduleFollowUp": "Schedule a follow-up"
     },
     "summary": {
@@ -3132,7 +3133,10 @@
       "exported": "Note exported",
       "exportFailed": "Couldn't export the note",
       "summaryFailed": "Couldn't write the summary",
-      "docsCopied": "Copied with formatting. Paste it into a Google Doc."
+      "docsCopied": "Copied with formatting. Paste it into a Google Doc.",
+      "merged": "Merged into {{title}}",
+      "mergeFailed": "Couldn't merge the notes",
+      "unmergeFailed": "Couldn't undo the merge"
     },
     "callSettings": "Call detection settings",
     "calls": {
@@ -3203,6 +3207,14 @@
       "setUpHint": "Download the speaker model in Settings",
       "recognised": "{{name}}, recognised from an earlier meeting. Click to rename; clear the name if it's someone else.",
       "findAgain": "Find speakers again"
+    },
+    "merge": {
+      "title": "Merge with another note",
+      "description": "For one meeting saved as two notes, like a call that dropped and came back. The later recording follows the earlier one, and the summary is written again.",
+      "with": "Note to merge with",
+      "before": "Before this one · {{when}} · {{length}}",
+      "after": "After this one · {{when}} · {{length}}",
+      "confirm": "Merge"
     },
     "confirmDelete": {
       "title": "Delete “{{title}}”?",

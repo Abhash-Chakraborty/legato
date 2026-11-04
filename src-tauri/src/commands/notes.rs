@@ -4,7 +4,7 @@ use crate::loopback::{self, AudioApp};
 use crate::managers::dictionary_store::WordKind;
 use crate::managers::notes_store::Speaker;
 use crate::managers::notes_store::{
-    DeletedRecording, Note, NoteFolder, NoteLine, NoteMatch, Voice,
+    DeletedRecording, MergedNotes, Note, NoteFolder, NoteLine, NoteMatch, Voice,
 };
 use crate::notes::{
     self, LineEdit, NotesManager, SessionInfo, StartNotes, SuggestedFix, WordFix, WordFixed,
@@ -191,6 +191,33 @@ pub fn delete_note(notes: Notes<'_>, id: i64) -> Result<Option<DeletedRecording>
 #[specta::specta]
 pub fn restore_note(notes: Notes<'_>, deleted: DeletedRecording) -> Result<(), String> {
     text(notes.restore(&deleted))
+}
+
+/// Merges two notes into the one that started first, as one meeting, and
+/// writes its summary again. Returns both as they were, for Undo.
+#[tauri::command]
+#[specta::specta]
+pub fn merge_notes(
+    app: AppHandle,
+    notes: Notes<'_>,
+    a: i64,
+    b: i64,
+) -> Result<MergedNotes, String> {
+    let merged = text(notes.merge(a, b))?;
+    let id = merged.kept.note.id;
+    tauri::async_runtime::spawn(async move {
+        if let Err(code) = notes::resummarise(&app, id).await {
+            log::debug!("No new summary after the merge: {code}");
+        }
+    });
+    Ok(merged)
+}
+
+/// Undoes a merge, while the audio it set aside is still there.
+#[tauri::command]
+#[specta::specta]
+pub fn unmerge_notes(notes: Notes<'_>, before: MergedNotes) -> Result<(), String> {
+    text(notes.unmerge(&before))
 }
 
 /// The note's audio file, for the player.

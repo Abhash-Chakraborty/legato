@@ -15,6 +15,29 @@ export const durationLabel = (ms: number): string => {
   return rest ? `${h} h ${rest} min` : `${h} h`;
 };
 
+/** Notes worth merging `note` with, as parts of one meeting: the others
+ *  that began within 12 hours of it and aren't being recorded, nearest
+ *  first. The first is the nearest one before it, when there is one, since
+ *  a cut-off meeting goes on in the note after. */
+export const mergeCandidates = (notes: Note[], note: Note, max = 5): Note[] => {
+  const near = notes
+    .filter(
+      (n) =>
+        n.id !== note.id &&
+        n.status !== "recording" &&
+        n.status !== "transcribing" &&
+        Math.abs(n.started_at - note.started_at) <= 12 * 3600,
+    )
+    .sort(
+      (a, b) =>
+        Math.abs(a.started_at - note.started_at) -
+        Math.abs(b.started_at - note.started_at),
+    );
+  const before = near.find((n) => n.started_at <= note.started_at);
+  const ordered = before ? [before, ...near.filter((n) => n !== before)] : near;
+  return ordered.slice(0, max);
+};
+
 /** "0:04", "23:30" or "1:02:05", as transcripts show times. */
 export const clock = (ms: number): string => {
   const secs = Math.floor(Math.max(0, ms) / 1000);

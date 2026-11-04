@@ -2157,6 +2157,29 @@ async restoreNote(deleted: DeletedRecording) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Merges two notes into the one that started first, as one meeting, and
+ * writes its summary again. Returns both as they were, for Undo.
+ */
+async mergeNotes(a: number, b: number) : Promise<Result<MergedNotes, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("merge_notes", { a, b }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Undoes a merge, while the audio it set aside is still there.
+ */
+async unmergeNotes(before: MergedNotes) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("unmerge_notes", { before }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Recently deleted, newest first.
  */
 async listTrash() : Promise<Result<TrashItem[], string>> {
@@ -3176,6 +3199,21 @@ export type LearnMode =
  */
 export type AudioApp = { pid: number; name: string; exe_path: string; active: boolean; call: boolean }
 export type DeletedRecording = { note: Note; lines: NoteLine[]; failed?: FailedLine[] }
+/**
+ * Two notes as they were before one was merged into the other, so Undo
+ * can put both back.
+ */
+export type MergedNotes = { kept: DeletedRecording; merged: DeletedRecording; 
+/**
+ * What a restore leaves out: the saved voice behind each named voice
+ * (note, number, voice) and the lines whose speaker was set by hand.
+ */
+voices?: [number, number, number][]; fixed?: number[]; 
+/**
+ * The two recordings were joined into one, so Undo needs the first
+ * one's audio, set aside until Undo runs out.
+ */
+joined_audio?: boolean }
 /**
  * A stretch of a recording the speech model couldn't transcribe, kept so
  * it can be tried again from the note's audio.

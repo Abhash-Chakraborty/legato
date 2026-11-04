@@ -1172,6 +1172,8 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::keep_notes_recording,
             commands::notes::delete_note,
             commands::notes::restore_note,
+            commands::notes::merge_notes,
+            commands::notes::unmerge_notes,
             commands::trash::list_trash,
             commands::trash::restore_trash,
             commands::trash::delete_trash_forever,

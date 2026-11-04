@@ -9,6 +9,7 @@ import {
   FileText,
   Folder,
   FolderInput,
+  Merge,
   MoreVertical,
   Pencil,
   Plus,
@@ -205,6 +206,8 @@ interface NoteDetailProps {
   /** Recording stopped; the last lines are being transcribed. */
   finishing: boolean;
   onDelete: () => void;
+  /** Opens the merge dialog; null when no note is near enough to merge. */
+  onMerge: (() => void) | null;
 }
 
 /** One note: its title, when and where it was recorded, tags, and the
@@ -214,6 +217,7 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
   recording,
   finishing,
   onDelete,
+  onMerge,
 }) => {
   const { t, i18n } = useTranslation();
   const [tab, setTab] = useState<Tab>("summary");
@@ -384,6 +388,13 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
                     label: t("notes.detail.scheduleFollowUp"),
                     icon: CalendarPlus,
                     onSelect: () => setScheduling(true),
+                  },
+                  {
+                    id: "merge",
+                    label: t("notes.detail.merge"),
+                    icon: Merge,
+                    disabled: recording || !onMerge,
+                    onSelect: () => onMerge?.(),
                   },
                   "separator",
                   {

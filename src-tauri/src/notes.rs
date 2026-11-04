@@ -10,8 +10,8 @@ use crate::loopback::{self, Capture, Source};
 use crate::managers::dictionary::DictionaryManager;
 use crate::managers::dictionary_store::{self, DictionarySource, Learned, WordKind};
 use crate::managers::notes_store::{
-    self as store, DeletedRecording, NewNote, Note, NoteKind, NoteLine, NoteMatch, NoteStatus,
-    Speaker,
+    self as store, DeletedRecording, MergedNotes, NewNote, Note, NoteKind, NoteLine, NoteMatch,
+    NoteStatus, Speaker,
 };
 use crate::managers::transcription::{FinishedText, TranscriptionManager};
 use crate::managers::trash_store::{self, NewTrash, TrashKind};
@@ -35,6 +35,10 @@ use tauri_specta::Event;
 
 /// How often the meters and the clock update.
 const TICK: Duration = Duration::from_millis(125);
+/// The silence between two merged recordings, so the join is heard.
+const MERGE_GAP_MS: i64 = 1000;
+/// How long a merge can be undone, with the audio it set aside kept.
+const MERGE_UNDO_FOR: Duration = Duration::from_secs(120);
 /// How often a track's WAV header is rewritten, so a crash keeps the audio.
 const FLUSH_EVERY: Duration = Duration::from_secs(10);
 /// A line being spoken is previewed once it's this long, then again each
@@ -299,6 +303,9 @@ impl NotesManager {
                     Ok(()) => info!("Removed audio left by deleted note {id}"),
                     Err(e) => debug!("Couldn't remove {name}: {e}"),
                 }
+            } else if name.ends_with("-premerge.wav") {
+                // Set aside by a merge whose Undo ended with the last run.
+                let _ = std::fs::remove_file(entry.path());
             } else if name.ends_with("-them.wav") {
                 // Kept for telling voices apart after Stop, and Legato quit
                 // first; unfinished notes were mixed above, so it's spare.
@@ -809,6 +816,144 @@ impl NotesManager {
         crate::trash::changed(&self.app);
         self.changed();
         Ok(())
+    }
+
+    /// Merges `a` and `b` into the one that started first, as one meeting
+    /// (a call that dropped and came back): the later one's audio follows a
+    /// second of silence, its transcript moves along with it, and the
+    /// summary is written again. Returns both as they were, for Undo.
+    pub fn merge(&self, a: i64, b: i64) -> Result<MergedNotes> {
+        let (Some(a), Some(b)) = (self.get(a)?, self.get(b)?) else {
+            return Err(anyhow!("That note is gone"));
+        };
+        for n in [&a, &b] {
+            if current_note() == Some(n.id) || n.status == NoteStatus::Recording {
+                return Err(anyhow!("Stop the recording before merging it"));
+            }
+        }
+        let (earlier, later) = if (b.started_at, b.id) < (a.started_at, a.id) {
+            (b, a)
+        } else {
+            (a, b)
+        };
+        let path_of = |n: &Note| {
+            n.audio_file
+                .as_ref()
+                .map(|f| self.dir.join(f))
+                .filter(|p| p.exists())
+        };
+        let (first, second) = (path_of(&earlier), path_of(&later));
+        let gap = MERGE_GAP_MS;
+        let (offset_ms, duration_ms, audio_file) = match (&first, &second) {
+            (Some(first), Some(second)) => {
+                let out = self.audio_path(earlier.id);
+                let tmp = out.with_extension("wav.part");
+                let (first_ms, total_ms) =
+                    join_wavs(first, second, gap, &tmp).inspect_err(|_| {
+                        let _ = std::fs::remove_file(&tmp);
+                    })?;
+                std::fs::rename(first, self.premerge_path(earlier.id))?;
+                std::fs::rename(&tmp, &out)?;
+                (first_ms + gap, total_ms, Some(file_name(&out)))
+            }
+            // The later note's audio is gone: its lines still follow on.
+            (Some(first), None) => {
+                let first_ms = hound::WavReader::open(first)?.len() as i64 * 1000 / RATE as i64;
+                let offset = first_ms + gap;
+                (
+                    offset,
+                    offset + later.duration_ms,
+                    earlier.audio_file.clone(),
+                )
+            }
+            // With no audio to put it after, the later audio can't be kept.
+            (None, _) => {
+                let offset = earlier.duration_ms + gap;
+                (offset, offset + later.duration_ms, None)
+            }
+        };
+        let merged = self.conn().and_then(|mut c| {
+            store::merge(
+                &mut c,
+                earlier.id,
+                later.id,
+                offset_ms,
+                duration_ms,
+                audio_file.as_deref(),
+            )
+        });
+        let mut merged = match merged {
+            Ok(m) => m,
+            Err(e) => {
+                // Nothing changed in the notes: the audio goes back too.
+                if let (Some(first), Some(_)) = (&first, &second) {
+                    let _ = std::fs::remove_file(self.audio_path(earlier.id));
+                    let _ = std::fs::rename(self.premerge_path(earlier.id), first);
+                }
+                return Err(e);
+            }
+        };
+        merged.joined_audio = first.is_some() && second.is_some();
+        info!("Merged note {} into note {}", later.id, earlier.id);
+        self.forget_merge_audio_later(&merged);
+        crate::calls::note_merged(&self.app, later.id, earlier.id);
+        self.changed();
+        Ok(merged)
+    }
+
+    /// Puts two merged notes back as they were, audio included, while the
+    /// audio set aside by the merge is still there.
+    pub fn unmerge(&self, before: &MergedNotes) -> Result<()> {
+        let kept = before.kept.note.id;
+        if current_note() == Some(kept) {
+            return Err(anyhow!("Stop the recording first"));
+        }
+        let premerge = self.premerge_path(kept);
+        if before.joined_audio && !premerge.exists() {
+            return Err(anyhow!("Undo has run out for this merge"));
+        }
+        if premerge.exists() {
+            let _ = std::fs::remove_file(self.audio_path(kept));
+            // Back under its own name, which the note keeps.
+            let own = before
+                .kept
+                .note
+                .audio_file
+                .as_deref()
+                .map(Path::new)
+                .filter(|p| p.file_name() == Some(p.as_os_str()))
+                .map_or_else(|| self.audio_path(kept), |p| self.dir.join(p));
+            std::fs::rename(&premerge, own)?;
+        }
+        store::unmerge(&mut self.conn()?, before)?;
+        info!(
+            "Undid merging note {} into note {kept}",
+            before.merged.note.id
+        );
+        self.changed();
+        Ok(())
+    }
+
+    /// The first note's own audio while a merge can still be undone.
+    fn premerge_path(&self, id: i64) -> PathBuf {
+        self.dir.join(format!("note-{id}-premerge.wav"))
+    }
+
+    /// Once Undo has gone, the audio a merge set aside goes: the first
+    /// note's own recording and the merged note's. A restart's sweep takes
+    /// whatever is left.
+    fn forget_merge_audio_later(&self, merged: &MergedNotes) {
+        let app = self.app.clone();
+        let (kept, gone) = (merged.kept.note.id, merged.merged.clone());
+        std::thread::spawn(move || {
+            std::thread::sleep(MERGE_UNDO_FOR);
+            let m = manager(&app);
+            if m.get(gone.note.id).ok().flatten().is_some() {
+                return;
+            }
+            let _ = std::fs::remove_file(m.premerge_path(kept));
+            m.remove_deleted_audio(&gone);
+        });
     }
 
     /// Removes the audio of a note that leaves Recently deleted for good.
@@ -2013,6 +2158,34 @@ fn mix_tracks(you: &Path, them: Option<&Path>, out: &Path, keep_them: bool) -> R
         let _ = std::fs::remove_file(them);
     }
     Ok(written)
+}
+
+/// Writes `first`, `gap_ms` of silence, then `second` into `out`. Returns
+/// how long `first` is and the whole, in milliseconds.
+fn join_wavs(first: &Path, second: &Path, gap_ms: i64, out: &Path) -> Result<(i64, i64)> {
+    let a = hound::WavReader::open(first)?;
+    let b = hound::WavReader::open(second)?;
+    if a.spec() != b.spec() {
+        return Err(anyhow!("The two recordings aren't in the same format"));
+    }
+    let ms = |samples: u64| samples as i64 * 1000 / RATE as i64;
+    let mut writer = hound::WavWriter::create(out, a.spec())?;
+    let mut written = 0u64;
+    let mut first_len = 0u64;
+    for s in a.into_samples::<i16>().map_while(Result::ok) {
+        writer.write_sample(s)?;
+        first_len += 1;
+    }
+    for _ in 0..gap_ms * RATE as i64 / 1000 {
+        writer.write_sample(0i16)?;
+        written += 1;
+    }
+    for s in b.into_samples::<i16>().map_while(Result::ok) {
+        writer.write_sample(s)?;
+        written += 1;
+    }
+    writer.finalize()?;
+    Ok((ms(first_len), ms(first_len + written)))
 }
 
 /// What's left after a recording is saved: the slow part, kept off the

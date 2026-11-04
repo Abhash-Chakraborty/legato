@@ -106,6 +106,7 @@ A note's More actions menu has:
 - **Copy for Google Docs**, which copies the note with its headings and lists, ready to paste into a Google Doc
 - **Save as Word document** and **Export as Markdown**
 - **Copy summary** and **Copy transcript**
+- **Merge with another note…**, for one meeting saved as two notes (see below)
 - **Move to folder** and **Delete**
 
 To keep a Word copy of every note in a folder, such as your Google Drive or OneDrive folder, see [Connections](connections.md). Neither copy nor export goes over the network.
@@ -113,6 +114,14 @@ To keep a Word copy of every note in a folder, such as your Google Drive or OneD
 Folders hold notes you group together. Make one with New folder…; deleting a folder keeps its notes. Tags sit under the title, and Add tag offers the tags your other notes use. Show filters the list by Meetings, Memos or a tag, and search covers titles, tags, summaries, transcripts and your own notes.
 
 A deleted note goes to Recently deleted with its recording. You can restore it for 30 days, after which it's gone for good.
+
+## Merge two notes of one meeting
+
+When a call drops for longer than about 20 seconds, its note stops, and the call that comes back starts a new one. To put them back together, open either note and choose More actions › Merge with another note…. The list offers notes recorded within 12 hours of it, with the nearest one before it picked.
+
+The two become the note that started first. Its recording carries on after a second of silence with the later one, the transcript and word times move along with it, and voices told apart in either keep their names. A voice Legato recognised in both keeps one number. Tags, tasks, attendees and My notes join, and the summary is written again over the whole meeting.
+
+Undo on the message that follows puts both notes back as they were. If the earlier note's audio has already been deleted (see below), the later note's recording can't be kept.
 
 ## How long audio is kept
 

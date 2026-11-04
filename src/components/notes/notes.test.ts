@@ -14,6 +14,7 @@ import {
   linesToFix,
   replaceWords,
   longClock,
+  mergeCandidates,
   renamable,
   speakerLabel,
   voiceColour,
@@ -324,5 +325,27 @@ assert.deepEqual(notesAnswerParts("Nothing about that."), [
     [1_000, 1_750],
   );
   assert.deepEqual(lineWords(line(0, "you", "  ")), []);
+}
+// Merging: the nearest note before comes first, then the rest by distance.
+{
+  const at = 1_760_700_000;
+  const here = note({ id: 5, started_at: at });
+  const list = [
+    note({ id: 1, started_at: at - 13 * 3600 }),
+    note({ id: 2, started_at: at - 3000 }),
+    note({ id: 3, started_at: at + 600 }),
+    note({ id: 4, started_at: at + 900, status: "recording" }),
+    here,
+  ];
+  assert.deepEqual(
+    mergeCandidates(list, here).map((n) => n.id),
+    [2, 3],
+  );
+  assert.deepEqual(
+    mergeCandidates(list, note({ id: 2, started_at: at - 3000 })).map(
+      (n) => n.id,
+    ),
+    [5, 3],
+  );
 }
 console.log("notes: ok");
