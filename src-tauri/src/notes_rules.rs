@@ -947,6 +947,12 @@ pub fn mix(a: &[i16], b: &[i16]) -> Vec<i16> {
         .collect()
 }
 
+/// Whether a summary error saved on a note (`AiStatusKind` in snake case)
+/// can clear up by itself: the provider out of reach, slow or rate limiting.
+pub fn summary_error_passes(code: &str) -> bool {
+    matches!(code, "unreachable" | "slow" | "rate_limited")
+}
+
 /// How long to wait before writing a summary again that failed because
 /// the provider couldn't be reached, answered too slowly or was rate
 /// limiting, by attempt (1 for the first retry). After the last, the note
@@ -2288,6 +2294,10 @@ mod tests {
             .collect();
         assert_eq!(waits, vec![2, 5, 15, 30]);
         assert_eq!(summary_retry_after(0), None);
+        assert!(summary_error_passes("unreachable"));
+        assert!(summary_error_passes("rate_limited"));
+        assert!(!summary_error_passes("rejected"));
+        assert!(!summary_error_passes("short"));
     }
 
     const FRAME: usize = 512;

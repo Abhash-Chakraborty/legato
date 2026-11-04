@@ -228,6 +228,25 @@ impl NotesManager {
         }
         self.sweep_orphaned_audio();
         self.expire_audio();
+        self.retry_failed_summaries();
+    }
+
+    /// Recent notes whose summary failed for want of the provider are tried
+    /// again, as when Legato closed before the network came back.
+    fn retry_failed_summaries(&self) {
+        let since = chrono::Utc::now().timestamp() - RETRY_SUMMARIES_FOR.as_secs() as i64;
+        let Ok(notes) = self.list() else {
+            return;
+        };
+        for note in notes.iter().filter(|n| {
+            n.started_at >= since
+                && n.summary.trim().is_empty()
+                && n.summary_error
+                    .as_deref()
+                    .is_some_and(notes_rules::summary_error_passes)
+        }) {
+            retry_summary_later(&self.app, note.id);
+        }
     }
 
     /// Deletes the audio of notes older than Settings › Notes › Keep note
@@ -2677,6 +2696,8 @@ static SUMMARY_DUE: Mutex<Vec<(i64, u64)>> = Mutex::new(Vec::new());
 /// Summaries that failed while the provider was out of reach, slow or rate
 /// limiting, and how many times each has been tried again.
 static SUMMARY_RETRIES: Mutex<Vec<(i64, u32)>> = Mutex::new(Vec::new());
+/// How far back a failed summary is tried again when Legato starts.
+const RETRY_SUMMARIES_FOR: Duration = Duration::from_secs(2 * 24 * 3600);
 
 /// Writes a summary again a while after the provider couldn't give one,
 /// as when the PC was offline, a few times, further apart each time.
