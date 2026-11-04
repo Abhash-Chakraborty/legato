@@ -1512,6 +1512,7 @@ pub fn stop(app: &AppHandle) -> Result<()> {
         // The next recording can start now; voices and the summary follow.
         *lock(&FINISHING) = None;
         announce(&app);
+        crate::calls::notes_free(&app);
         match after {
             Some(after) if after.words.is_some() => ask_keep(&app, after),
             Some(after) => after.run(&app),

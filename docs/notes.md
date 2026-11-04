@@ -37,7 +37,7 @@ When a call starts, the bar asks "Take notes? They stay on this PC." with Start 
 | Stop recording after          | A limit for every note, 2 hours unless you change it. Two minutes before, the bar offers Keep recording, which adds half an hour |
 | Open the note when it's ready | Opens Notes on the summary when it's done                                                                                        |
 
-When a call comes back in the same app within 10 minutes of its note stopping, the card offers Continue notes and New note instead. Continue notes records as usual and joins the earlier note when it's ready, as [Merge two notes of one meeting](#merge-two-notes-of-one-meeting) does. With Start notes automatically on, the countdown continues the note.
+When a call comes back in the same app within 10 minutes of its note stopping, the card offers Continue notes and New note instead. Continue notes records as usual and joins the earlier note when it's ready, as [Merge two notes of one meeting](#merge-two-notes-of-one-meeting) does. With Start notes automatically on, the countdown continues the note. A call that starts while Legato is still saving the last note, or while another note records, gets its card once that's done.
 
 Test detection shows the card as if a call had started, without recording anything. With a calendar connected, the bar can also offer Join and Join with notes a minute before a meeting; see [Connections](connections.md).
 

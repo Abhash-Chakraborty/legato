@@ -144,6 +144,9 @@ struct Live {
     app: CallApp,
     since: i64,
     ask: Ask,
+    /// Started while Notes was busy with something else, so it wasn't
+    /// offered notes yet.
+    missed: bool,
 }
 
 #[derive(Default)]
@@ -558,11 +561,6 @@ fn started(app: &AppHandle, call: CallApp) {
     info!("Call started in {}", call.name());
     let resumed = {
         let mut st = lock();
-        st.live.push(Live {
-            app: call,
-            since,
-            ask: Ask::Yes,
-        });
         // Notes from Join with notes belong to this call now, so its end
         // stops them.
         if let Some(id) = st.joined.take() {
@@ -570,6 +568,13 @@ fn started(app: &AppHandle, call: CallApp) {
                 st.note = Some((id, call));
             }
         }
+        let ours = st.note.is_some_and(|(_, a)| a == call);
+        st.live.push(Live {
+            app: call,
+            since,
+            ask: Ask::Yes,
+            missed: notes::is_busy() && !ours,
+        });
         st.card
             .is_some_and(|c| c.app == call && c.kind == CardKind::Ended)
     };
@@ -714,6 +719,25 @@ pub fn note_ready(app: &AppHandle, note_id: i64, shown: i64) {
     };
     if ours && get_settings(app).calls.open_note {
         crate::open_page(app, "notes", Some(&shown.to_string()));
+    }
+}
+
+/// Notes is free again: a call that started while it was busy, such as
+/// one back while the last note was being saved, is offered notes now.
+pub fn notes_free(app: &AppHandle) {
+    let missed = {
+        let mut st = lock();
+        if st.card.is_some() || notes::is_busy() {
+            return;
+        }
+        let missed = st.live.iter_mut().find(|l| l.missed && l.ask == Ask::Yes);
+        missed.map(|l| {
+            l.missed = false;
+            l.app
+        })
+    };
+    if let Some(call) = missed {
+        offer(app, call, false);
     }
 }
 
