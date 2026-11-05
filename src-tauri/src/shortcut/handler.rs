@@ -34,6 +34,12 @@ pub fn handle_shortcut_event(
 ) {
     let settings = get_settings(app);
 
+    // Any other shortcut closes Correct first, so what it does goes to the
+    // app rather than the bar.
+    if is_pressed && binding_id != "correct_last" {
+        crate::correct::give_back(app);
+    }
+
     // Tap to open the Scratchpad, hold to dictate into it.
     if crate::scratchpad::is_shortcut(binding_id) {
         crate::scratchpad::shortcut(app, hotkey_string, is_pressed);

@@ -3,6 +3,7 @@
 //! teaches the Dictionary the words that changed.
 
 use crate::context::AppInfo;
+use crate::managers::audio::AudioRecordingManager;
 use crate::managers::dictionary::DictionaryManager;
 use crate::managers::dictionary_store::{DictionarySource, Learned};
 use crate::managers::history::HistoryManager;
@@ -62,6 +63,15 @@ fn heard_for(app: &AppHandle, pasted: &str) -> Option<String> {
 /// Opens the last paste in the bar, from its Correct button or the Correct
 /// last dictation shortcut.
 pub fn begin(app: &AppHandle) {
+    // The bar takes the keyboard, so a dictation under way would paste
+    // into it; its own text can be corrected once it's out.
+    let recording = app
+        .try_state::<Arc<AudioRecordingManager>>()
+        .is_some_and(|rm| rm.is_recording());
+    if recording || crate::actions::dictation_pending() {
+        info!("Correct waits for the dictation under way");
+        return;
+    }
     let Some((window, pasted)) = clipboard::last_paste(transforms::RESELECT_WITHIN) else {
         overlay::show_overlay_notice(app, &BarNotice::NothingToCorrect);
         return;
@@ -106,6 +116,18 @@ pub fn cancel(app: &AppHandle, refocus: bool) {
     if refocus {
         context::focus_window(session.window);
     }
+}
+
+/// Closes the editor before another shortcut acts, giving the app its
+/// focus back first so a dictation or transform goes there, not to the bar.
+pub fn give_back(app: &AppHandle) {
+    let Some(session) = open().take() else {
+        return;
+    };
+    overlay::set_bar_focus(app, false);
+    overlay::hide_recording_overlay(app);
+    context::focus_window(session.window);
+    std::thread::sleep(Duration::from_millis(REFOCUS_MS));
 }
 
 /// Puts `corrected` in place of the paste and learns from it.

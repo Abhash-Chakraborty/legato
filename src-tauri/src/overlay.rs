@@ -493,8 +493,10 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
     // Whether the overlay shows at all is governed by overlay_style; position
     // only chooses Top vs Bottom placement. Checked here (off the main thread)
     // so the common overlay-disabled case never pays for a main-thread hop.
+    // Correct and the transform picker were opened on purpose and take the
+    // keyboard, so they show even then.
     let settings = settings::get_settings(app_handle);
-    if settings.overlay_style == OverlayStyle::None {
+    if settings.overlay_style == OverlayStyle::None && !matches!(state, "correct" | "pick") {
         return;
     }
 

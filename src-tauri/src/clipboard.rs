@@ -209,39 +209,54 @@ impl PasteOverrides {
     }
 }
 
-/// Pastes a dictation with the paste settings of the app it goes to.
 /// The last text Legato pasted, the window it went into and when, so a
-/// transform with nothing selected can select it again.
-static LAST_PASTE: Mutex<Option<(isize, String, Instant)>> = Mutex::new(None);
+/// transform with nothing selected can select it again and Correct can
+/// open it.
+struct LastPaste {
+    window: isize,
+    text: String,
+    at: Instant,
+    /// False when Enter followed the paste: the text was sent, so only
+    /// Correct may use it, and its fix goes on the clipboard.
+    reselectable: bool,
+}
 
-fn remember_paste(text: &str) {
-    let last = crate::context::foreground_handle().map(|h| (h, text.to_string(), Instant::now()));
+static LAST_PASTE: Mutex<Option<LastPaste>> = Mutex::new(None);
+
+fn remember_paste(text: &str, reselectable: bool) {
+    let last = crate::context::foreground_handle().map(|window| LastPaste {
+        window,
+        text: text.to_string(),
+        at: Instant::now(),
+        reselectable,
+    });
     *LAST_PASTE.lock().unwrap_or_else(|e| e.into_inner()) = last;
 }
 
 /// What Legato last pasted, when it went into the window in front within
-/// `within`.
+/// `within` and still sits there to select.
 pub fn last_paste_here(within: Duration) -> Option<String> {
     let front = crate::context::foreground_handle()?;
     LAST_PASTE
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()
-        .filter(|(handle, _, at)| *handle == front && at.elapsed() < within)
-        .map(|(_, text, _)| text.clone())
+        .filter(|p| p.reselectable && p.window == front && p.at.elapsed() < within)
+        .map(|p| p.text.clone())
 }
 
 /// What Legato last pasted and the window it went into, within `within`,
-/// wherever the focus is now.
+/// wherever the focus is now, even if Enter sent it.
 pub fn last_paste(within: Duration) -> Option<(isize, String)> {
     LAST_PASTE
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()
-        .filter(|(_, _, at)| at.elapsed() < within)
-        .map(|(handle, text, _)| (*handle, text.clone()))
+        .filter(|p| p.at.elapsed() < within)
+        .map(|p| (p.window, p.text.clone()))
 }
 
+/// Pastes a dictation with the paste settings of the app it goes to.
 pub fn paste_dictation(
     text: String,
     app_handle: AppHandle,
@@ -319,7 +334,8 @@ fn paste_with(
         paste_method, paste_delay_ms, paste_delay_after_ms
     );
     // Enter after the paste moves the cursor off the text.
-    let reselectable = paste_method != PasteMethod::None && !settings.auto_submit;
+    let pasted = paste_method != PasteMethod::None;
+    let reselectable = !settings.auto_submit;
 
     // Perform the paste operation
     match paste_method {
@@ -349,8 +365,8 @@ fn paste_with(
                 });
                 match reliable_result {
                     Ok(()) => {
-                        if reselectable {
-                            remember_paste(&text);
+                        if pasted {
+                            remember_paste(&text, reselectable);
                         }
                         return Ok(());
                     }
@@ -378,8 +394,8 @@ fn paste_with(
         }
     }
 
-    if reselectable {
-        remember_paste(&text);
+    if pasted {
+        remember_paste(&text, reselectable);
     }
 
     // After pasting, optionally copy to clipboard based on settings

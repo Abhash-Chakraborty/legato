@@ -87,6 +87,11 @@ static TURNS_DONE: Mutex<BTreeSet<u64>> = Mutex::new(BTreeSet::new());
 static TURN_NOW: once_cell::sync::Lazy<tokio::sync::watch::Sender<u64>> =
     once_cell::sync::Lazy::new(|| tokio::sync::watch::Sender::new(0));
 
+/// Whether a dictation that has stopped is still on its way to the paste.
+pub(crate) fn dictation_pending() -> bool {
+    *TURN_NOW.borrow() < NEXT_TURN.load(Ordering::SeqCst)
+}
+
 /// A dictation's place in the paste order; dropping it, once the text is
 /// out or the dictation ended without any, lets the next one go.
 struct PasteTurn(u64);
@@ -586,6 +591,9 @@ impl ShortcutAction for TranscribeAction {
             return;
         }
         DICTATION_SESSION.fetch_add(1, Ordering::SeqCst);
+        // Correct open on the bar has the keyboard; the app gets it back
+        // before it's read as the dictation's target.
+        crate::correct::give_back(app);
 
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();

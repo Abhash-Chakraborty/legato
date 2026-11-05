@@ -277,6 +277,29 @@ pub fn import(conn: &mut Connection, inputs: &[SnippetInput], now: i64) -> Resul
                 also.push(phrase);
             }
         }
+        // Import only adds: a snippet found by another of its phrases keeps
+        // its trigger, and a file without phrases (a CSV) keeps its phrases.
+        if let Some(existing) = &existing {
+            let mut merged = existing.also.clone();
+            for phrase in also {
+                if rules::normalize(&phrase) != rules::normalize(&existing.trigger)
+                    && !merged
+                        .iter()
+                        .any(|p| rules::normalize(p) == rules::normalize(&phrase))
+                {
+                    merged.push(phrase);
+                }
+            }
+            if rules::normalize(&input.trigger) != rules::normalize(&existing.trigger)
+                && !merged
+                    .iter()
+                    .any(|p| rules::normalize(p) == rules::normalize(&input.trigger))
+            {
+                merged.push(input.trigger.clone());
+            }
+            input.trigger = existing.trigger.clone();
+            also = merged;
+        }
         input.also = also;
         match existing {
             Some(existing)
@@ -477,6 +500,18 @@ mod tests {
         assert_eq!(summary.added, 1);
         let work = find_trigger(&conn, "work address", None).unwrap().unwrap();
         assert!(work.also.is_empty());
+
+        // Importing by another phrase, or from a CSV row with no phrases,
+        // changes the text but keeps the trigger and the phrases.
+        let summary = import(&mut conn, &[input("home address", "9 Elm Road", false)], 4).unwrap();
+        assert_eq!(summary.updated, 1);
+        let home = get(&conn, s.id).unwrap().unwrap();
+        assert_eq!(home.trigger, "my address");
+        assert_eq!(home.text, "9 Elm Road");
+        assert_eq!(home.also, vec!["home address".to_string()]);
+        let summary = import(&mut conn, &[input("my address", "9 Elm Road", false)], 5).unwrap();
+        assert_eq!(summary.skipped, 1);
+        assert_eq!(get(&conn, s.id).unwrap().unwrap().also.len(), 1);
 
         // Export and import carry them.
         let json = export_json(&list(&conn).unwrap()).unwrap();

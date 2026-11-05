@@ -450,7 +450,11 @@ pub fn score_answer(
     score.answered += 1;
     for word in fixed {
         score.words += 1;
-        if phrase_pattern(word).is_some_and(|p| p.is_match(answer)) {
+        // Spelled exactly as fixed, and more often than the speech model
+        // already had it: "iPhone" for "iphone" counts only with its case.
+        let right = phrase_regex(word, false)
+            .is_some_and(|p| p.find_iter(answer).count() > p.find_iter(heard).count());
+        if right {
             score.words_right += 1;
         } else if score.missed.len() < CHECK_MISSED
             && !score.missed.iter().any(|m| m.eq_ignore_ascii_case(word))
@@ -606,6 +610,11 @@ pub fn apply_replacements(
 /// Whole-word, any-case pattern for a phrase, with any run of spaces between
 /// its words.
 fn phrase_pattern(phrase: &str) -> Option<Regex> {
+    phrase_regex(phrase, true)
+}
+
+/// [`phrase_pattern`], with the case kept unless `any_case`.
+fn phrase_regex(phrase: &str, any_case: bool) -> Option<Regex> {
     let body = phrase
         .split_whitespace()
         .map(regex::escape)
@@ -615,7 +624,8 @@ fn phrase_pattern(phrase: &str) -> Option<Regex> {
     let last = phrase.chars().last()?;
     let lead = if first.is_alphanumeric() { r"\b" } else { "" };
     let trail = if last.is_alphanumeric() { r"\b" } else { "" };
-    Regex::new(&format!("(?i){lead}{body}{trail}")).ok()
+    let flags = if any_case { "(?i)" } else { "" };
+    Regex::new(&format!("{flags}{lead}{body}{trail}")).ok()
 }
 
 /// Whether a failed request is worth sending again at once: no answer, a
@@ -1006,11 +1016,26 @@ mod tests {
             &["Dokploy", "Sam"],
             &words,
         );
-        assert_eq!(score.answered, 2);
-        assert_eq!((score.words, score.words_right), (3, 1));
+        // A fix of case alone counts only with the case.
+        score_answer(
+            &mut score,
+            "legato is open",
+            "legato is open.",
+            &["Legato"],
+            &words,
+        );
+        assert_eq!(score.answered, 3);
+        assert_eq!((score.words, score.words_right), (4, 1));
         assert_eq!(score.too_much, 1);
         assert_eq!(score.invented, 0);
-        assert_eq!(score.missed, vec!["Dokploy".to_string(), "Sam".to_string()]);
+        assert_eq!(
+            score.missed,
+            vec![
+                "Dokploy".to_string(),
+                "Sam".to_string(),
+                "Legato".to_string()
+            ]
+        );
     }
 
     #[test]
