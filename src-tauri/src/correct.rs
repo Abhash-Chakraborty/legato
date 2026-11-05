@@ -40,6 +40,23 @@ fn open() -> std::sync::MutexGuard<'static, Option<Session>> {
 struct CorrectCard {
     text: String,
     app: Option<String>,
+    /// What the speech model heard, when the latest dictation is this paste
+    /// and it differs from it.
+    heard: Option<String>,
+}
+
+/// The speech model's own text for the latest dictation, if that is the
+/// one pasted and the Dictionary, cleanup or Style changed it.
+fn heard_for(app: &AppHandle, pasted: &str) -> Option<String> {
+    let history = app.try_state::<Arc<HistoryManager>>()?;
+    let entry = history.get_latest_completed_entry().ok()??;
+    let shown = entry
+        .post_processed_text
+        .as_deref()
+        .unwrap_or(&entry.transcription_text);
+    let heard = entry.heard_text.as_deref()?.trim();
+    (shown.trim() == pasted.trim() && !heard.is_empty() && heard != pasted.trim())
+        .then(|| heard.to_string())
 }
 
 /// Opens the last paste in the bar, from its Correct button or the Correct
@@ -55,6 +72,7 @@ pub fn begin(app: &AppHandle) {
     let card = CorrectCard {
         text: pasted.trim_end().to_string(),
         app: target.as_ref().map(|t| t.name.clone()),
+        heard: heard_for(app, &pasted),
     };
     *open() = Some(Session {
         window,

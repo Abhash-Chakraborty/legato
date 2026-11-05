@@ -156,10 +156,13 @@ pub const CLEANUP_MARKERS_NOTE: &str = " Each [[n]] marker stands for saved text
 marker exactly once, where it belongs.";
 
 /// Short examples for Cleanup at Medium: a correction, a question that is
-/// cleaned up rather than answered, and wording that is left alone.
+/// cleaned up rather than answered, names and terms capitalised, a list kept
+/// as a list, and wording that is left alone.
 pub const CLEANUP_EXAMPLES: &str = "Examples (not the text to clean):
 - \"so um the the call is at 12 no sorry at 4 tomorrow\" becomes \"So the call is at 4 tomorrow.\"
 - \"can you check if the build passed\" becomes \"Can you check if the build passed?\"
+- \"tell sam the q3 deck is on the shared drive\" becomes \"Tell Sam the Q3 deck is on the shared drive.\"
+- \"Groceries:\\n- milk\\n- eggs\\n- um bread\" becomes \"Groceries:\\n- Milk\\n- Eggs\\n- Bread\"
 - \"honestly I reckon we just ship it on friday\" becomes \"Honestly, I reckon we just ship it on Friday.\"";
 
 /// Where a dictation is going and who said it, for the AI's prompts.

@@ -6,6 +6,8 @@ import { commands } from "@/bindings";
 export interface CorrectPayload {
   text: string;
   app: string | null;
+  /** What the speech model heard, when it differs from the paste. */
+  heard: string | null;
 }
 
 /** Correct last dictation: the pasted text to fix. Enter puts the fix in
@@ -13,6 +15,7 @@ export interface CorrectPayload {
 export const CorrectCard: React.FC<{ card: CorrectPayload }> = ({ card }) => {
   const { t } = useTranslation();
   const [text, setText] = useState(card.text);
+  const [showHeard, setShowHeard] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
 
   // The bar takes the keyboard only now, so the field asks again once the
@@ -80,8 +83,30 @@ export const CorrectCard: React.FC<{ card: CorrectPayload }> = ({ card }) => {
           }
         }}
       />
+      {card.heard && showHeard && (
+        <p className="scorrect-heard">
+          <span className="sdiff-label">{t("overlay.correct.heardLabel")}</span>{" "}
+          {card.heard}
+        </p>
+      )}
       <div className="spanel-actions">
-        <span className="spanel-note">{t("overlay.correct.note")}</span>
+        {card.heard ? (
+          <button
+            type="button"
+            className="sbtn quiet scorrect-toggle"
+            aria-expanded={showHeard}
+            onClick={() => {
+              setShowHeard(!showHeard);
+              ref.current?.focus();
+            }}
+          >
+            {showHeard
+              ? t("overlay.correct.hideHeard")
+              : t("overlay.correct.showHeard")}
+          </button>
+        ) : (
+          <span className="spanel-note">{t("overlay.correct.note")}</span>
+        )}
         <button
           type="button"
           className="sbtn quiet"

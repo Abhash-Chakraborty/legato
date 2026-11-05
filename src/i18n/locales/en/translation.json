@@ -1739,7 +1739,10 @@
       "keys": "Enter to fix · Esc to leave",
       "note": "Fixed words are learned.",
       "cancel": "Leave it",
-      "apply": "Fix"
+      "apply": "Fix",
+      "showHeard": "What was heard",
+      "hideHeard": "Hide what was heard",
+      "heardLabel": "Heard"
     }
   },
   "titleBar": {

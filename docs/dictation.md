@@ -65,7 +65,7 @@ Once a step has taken two seconds or more, the bar adds its seconds, so a slow s
 
 ## Correct a dictation
 
-Correct on the bar after a paste, or Correct last dictation (Alt+Shift+C) within 10 minutes of it, opens the pasted text on the bar for you to edit. Enter puts your version in place of the paste in the app, fixes the dictation on Home, and teaches your [Dictionary](dictionary.md) the words you changed with the form Legato misheard, so the next dictation gets them right. As Learn from my edits does, they wait under Needs review, or with When it finds a word set to Add automatically they're added straight away, and the bar says so with Undo. Esc, or a click into another app, leaves the text as it was.
+Correct on the bar after a paste, or Correct last dictation (Alt+Shift+C) within 10 minutes of it, opens the pasted text on the bar for you to edit. Enter puts your version in place of the paste in the app, fixes the dictation on Home, and teaches your [Dictionary](dictionary.md) the words you changed with the form Legato misheard, so the next dictation gets them right. As Learn from my edits does, they wait under Needs review, or with When it finds a word set to Add automatically they're added straight away, and the bar says so with Undo. When the Dictionary, cleanup or Style changed what the speech model wrote, What was heard shows its own words beside yours. Esc, or a click into another app, leaves the text as it was.
 
 The paste is replaced only while it sits right before the cursor in the same window, as transforms need too. If you've typed after it, or the message was sent, the fix goes on the clipboard instead and is still learned.
 

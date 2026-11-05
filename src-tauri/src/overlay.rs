@@ -39,7 +39,7 @@ const OVERLAY_CALL_HEIGHT: f64 = 124.0;
 const OVERLAY_CALL_TALL_HEIGHT: f64 = 184.0;
 /// An agent's question from Inyon: a few lines and up to five options.
 const OVERLAY_CORRECT_WIDTH: f64 = 480.0;
-const OVERLAY_CORRECT_HEIGHT: f64 = 200.0;
+const OVERLAY_CORRECT_HEIGHT: f64 = 236.0;
 const OVERLAY_AGENT_WIDTH: f64 = 440.0;
 const OVERLAY_AGENT_HEIGHT: f64 = 320.0;
 

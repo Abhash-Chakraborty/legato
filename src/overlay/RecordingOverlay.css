@@ -1343,3 +1343,15 @@
   opacity: 0.45;
   cursor: default;
 }
+.scorrect-heard {
+  margin: 0;
+  max-height: 38px;
+  overflow-y: auto;
+  color: var(--s-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.scorrect .sbtn.quiet.scorrect-toggle {
+  margin-right: auto;
+  padding-left: 0;
+}
