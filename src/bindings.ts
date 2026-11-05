@@ -3280,7 +3280,12 @@ sections?: OutlineSection[];
  */
 title?: string | null }
 export type OutlineSection = { heading: string; points: string[] }
-export type OutlineTopic = { heading: string; text: string }
+export type OutlineTopic = { heading: string; text: string; 
+/**
+ * Where in the recording it starts, when the answer gave a time that
+ * fits. Summaries written before topics had times have none.
+ */
+at_ms?: number | null }
 export type OutlineDetail = { heading: string; text: string; 
 /**
  * Where in the recording it starts, when the answer gave a time that

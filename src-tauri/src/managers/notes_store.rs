@@ -1925,6 +1925,7 @@ mod tests {
         note.outline.topics = vec![crate::notes_rules::OutlineTopic {
             heading: "Workers".into(),
             text: "They predate the builds.".into(),
+            at_ms: None,
         }];
         note.outline.details = vec![crate::notes_rules::OutlineDetail {
             heading: "Builds".into(),

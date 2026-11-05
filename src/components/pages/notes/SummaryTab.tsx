@@ -410,6 +410,20 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
   const doneCount = actions.filter((a) => a.done).length;
   const people = peopleOf(note);
   const topics = note.outline?.topics ?? [];
+  /** A time that plays the recording from there, or shows its line. */
+  const timeChip = (ms: number) => (
+    <button
+      type="button"
+      onClick={() => (onPlay ? onPlay(ms) : onTime(ms))}
+      title={t(onPlay ? "notes.summary.playFrom" : "notes.ask.jump", {
+        time: clock(ms),
+      })}
+      className="ms-1.5 inline-flex items-center gap-1 rounded-[var(--r-xs)] bg-teal-50 px-1 align-[1px] text-[12.5px] font-medium tabular-nums text-teal-700 hover:bg-teal-100"
+    >
+      {onPlay && <Play className="h-2.5 w-2.5" aria-hidden="true" />}
+      {clock(ms)}
+    </button>
+  );
   const details = note.outline?.details ?? [];
   const sections = (note.outline?.sections ?? []).filter(
     (s) => s.points.length > 0,
@@ -488,7 +502,10 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
             <div className="mt-4 grid select-text gap-3">
               {topics.map((topic, i) => (
                 <div key={i}>
-                  <h4 className="text-sm font-medium">{topic.heading}</h4>
+                  <h4 className="text-sm font-medium">
+                    {topic.heading}
+                    {topic.at_ms != null && timeChip(topic.at_ms)}
+                  </h4>
                   <p className="mt-0.5 text-sm leading-relaxed text-text-2">
                     {topic.text}
                   </p>
@@ -587,24 +604,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
                     <span className="font-medium text-text">{d.heading}</span>
                     {d.heading ? ": " : ""}
                     {d.text}
-                    {d.at_ms != null && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onPlay ? onPlay(d.at_ms ?? 0) : onTime(d.at_ms ?? 0)
-                        }
-                        title={t(
-                          onPlay ? "notes.summary.playFrom" : "notes.ask.jump",
-                          { time: clock(d.at_ms) },
-                        )}
-                        className="ms-1.5 inline-flex items-center gap-1 rounded-[var(--r-xs)] bg-teal-50 px-1 align-[1px] text-[12.5px] font-medium tabular-nums text-teal-700 hover:bg-teal-100"
-                      >
-                        {onPlay && (
-                          <Play className="h-2.5 w-2.5" aria-hidden="true" />
-                        )}
-                        {clock(d.at_ms)}
-                      </button>
-                    )}
+                    {d.at_ms != null && timeChip(d.at_ms)}
                   </p>
                 ))}
               </div>

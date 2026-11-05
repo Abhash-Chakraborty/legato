@@ -1,4 +1,10 @@
-import type { Note, NoteLine, NoteSpeaker, Speaker } from "@/bindings";
+import type {
+  Note,
+  NoteLine,
+  NoteOutline,
+  NoteSpeaker,
+  Speaker,
+} from "@/bindings";
 
 /** Which notes the list shows. */
 export type Filter = "all" | "meeting" | "memo";
@@ -441,3 +447,83 @@ export const taskGroups = (
 
 /** An action item's owner is the person who recorded. */
 export const isYou = (owner: string) => owner.trim().toLowerCase() === "you";
+
+/** The speeds the recording plays at, in the order the speed button steps
+ *  through them. */
+export const SPEEDS = [1, 1.25, 1.5, 2];
+
+/** The speed `step` places faster (or slower, below zero) than `rate`, kept
+ *  within SPEEDS; with `wrap`, past the fastest comes 1× again. */
+export const nextSpeed = (rate: number, step: number, wrap = false): number => {
+  const at = SPEEDS.indexOf(rate);
+  const i = (at < 0 ? 0 : at) + step;
+  if (wrap)
+    return SPEEDS[((i % SPEEDS.length) + SPEEDS.length) % SPEEDS.length];
+  return SPEEDS[Math.min(SPEEDS.length - 1, Math.max(0, i))];
+};
+
+/** A moment the seek bar marks: where a topic or detail of the summary
+ *  starts. */
+export interface PlayerMark {
+  ms: number;
+  label: string;
+}
+
+/** The summary's timed topics and details, in time order, inside the
+ *  recording. Two within a second of each other show as one, the topic
+ *  first, since a detail usually starts where its topic does. */
+export const playerMarks = (
+  outline: NoteOutline | null | undefined,
+  total: number,
+): PlayerMark[] => {
+  const all = [
+    ...(outline?.topics ?? []).map((t) => ({ ms: t.at_ms, label: t.heading })),
+    ...(outline?.details ?? []).map((d) => ({ ms: d.at_ms, label: d.heading })),
+  ].filter(
+    (m): m is PlayerMark =>
+      m.ms != null && m.ms >= 0 && m.ms <= total && !!m.label.trim(),
+  );
+  const marks: PlayerMark[] = [];
+  for (const m of all.sort((a, b) => a.ms - b.ms))
+    if (!marks.some((k) => Math.abs(k.ms - m.ms) < 1000)) marks.push(m);
+  return marks;
+};
+
+/** A stretch of the recording one speaker holds, for the band under the
+ *  seek bar. */
+export interface SpeakerBand {
+  from: number;
+  to: number;
+  colour: string;
+}
+
+/** Who speaks where: each line's span in its speaker's colour, joined with
+ *  the next when the same speaker carries on within three seconds. Empty
+ *  when only one colour would show, since one band says nothing. */
+export const speakerBands = (lines: NoteLine[]): SpeakerBand[] => {
+  const bands: SpeakerBand[] = [];
+  for (const line of lines) {
+    const colour = voiceColour(line);
+    const to = Math.max(line.end_ms, line.at_ms);
+    const last = bands[bands.length - 1];
+    if (last && last.colour === colour && line.at_ms - last.to <= 3000)
+      last.to = Math.max(last.to, to);
+    else bands.push({ from: line.at_ms, to, colour });
+  }
+  return new Set(bands.map((b) => b.colour)).size > 1 ? bands : [];
+};
+
+/** Where the next line starts (`dir` 1) or the one playing, or the one
+ *  before when the playing line began under two seconds ago (`dir` -1), as
+ *  a music player's previous does. None past the last line. */
+export const lineStep = (
+  lines: NoteLine[],
+  ms: number,
+  dir: 1 | -1,
+): number | null => {
+  const i = lineAt(lines, ms);
+  if (dir === 1) return lines[i + 1]?.at_ms ?? null;
+  if (i < 0) return 0;
+  if (ms - lines[i].at_ms > 2000) return lines[i].at_ms;
+  return lines[i - 1]?.at_ms ?? 0;
+};

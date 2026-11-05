@@ -67,7 +67,7 @@ In Google Meet, Legato also reads the names Meet shows in the call window while 
 
 ## The summary
 
-With an AI provider set up in Settings › AI, and Notes summaries and Ask turned on there, each note gets a summary after it stops. It has the main points, Decisions, Next steps with who owns each one, and Details that play the recording from the moment they came up. A note shorter than about 40 words is too short to summarise.
+With an AI provider set up in Settings › AI, and Notes summaries and Ask turned on there, each note gets a summary after it stops. It has the main points, Decisions, Next steps with who owns each one, and Topics and Details that play the recording from the moment they came up. A note shorter than about 40 words is too short to summarise.
 
 The summary also names the note while it still has its default title, and tags it while it has no tags. A title or tags you set yourself are never changed.
 
@@ -83,7 +83,15 @@ Without an AI provider, notes still get a full transcript. [Transforms, Ask and 
 
 ## Play it back word by word
 
-Choose Play recording on a note. The line being played is marked, and so is the word being said in it. Click a word to play from there, or a line's time to play from the start of the line. Space plays and pauses. The transcript scrolls along with the recording unless you scroll it yourself.
+Every note with its audio has a player under its title. The line being played is marked, and so is the word being said in it. Click a word to play from there, or a line's time to play from the start of the line. The transcript scrolls along with the recording unless you scroll it yourself.
+
+To find a part of a long recording:
+
+- Point at the bar to see the time and the line said there. Click or drag to go there, playing or not.
+- Small ticks on the bar mark where each topic and detail of the summary starts; point at one for its heading. Topics in the summary have a time too, which plays from there.
+- When voices were told apart, a thin band under the bar shows who speaks where, in their colours.
+- The back and forward buttons move 10 seconds. The speed button steps through 1×, 1.25×, 1.5× and 2×, and Legato keeps your speed for the next note.
+- Keys: Space plays and pauses, ← and → move 10 seconds, Shift+← and Shift+→ go to the previous or next line, and < and > change the speed.
 
 Exact word times come from speech models that give them, such as Parakeet. With Whisper, Legato knows only when each line starts and ends, so the highlight moves through the line evenly.
 

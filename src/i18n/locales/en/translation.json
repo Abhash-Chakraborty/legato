@@ -3330,6 +3330,11 @@
       "createFailed": "Couldn't make the folder",
       "renameFailed": "Couldn't rename the folder",
       "deleteFailed": "Couldn't delete the folder"
+    },
+    "player": {
+      "back": "Back 10 seconds",
+      "forward": "Forward 10 seconds",
+      "speed": "Speed {{speed}}, click for the next"
     }
   },
   "calls": {

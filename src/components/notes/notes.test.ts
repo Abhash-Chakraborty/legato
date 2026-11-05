@@ -15,6 +15,10 @@ import {
   replaceWords,
   longClock,
   mergeCandidates,
+  lineStep,
+  nextSpeed,
+  playerMarks,
+  speakerBands,
   renamable,
   speakerLabel,
   voiceColour,
@@ -348,4 +352,62 @@ assert.deepEqual(notesAnswerParts("Nothing about that."), [
     [5, 3],
   );
 }
+
+// The player: speeds, marks from the summary, speaker bands, line steps.
+assert.equal(nextSpeed(1, 1), 1.25);
+assert.equal(nextSpeed(2, 1), 2);
+assert.equal(nextSpeed(1, -1), 1);
+assert.equal(nextSpeed(2, 1, true), 1);
+assert.equal(nextSpeed(1.1, 1), 1.25);
+assert.deepEqual(
+  playerMarks(
+    {
+      topics: [
+        { heading: "Builds", text: "", at_ms: 60_000 },
+        { heading: "Old", text: "" },
+      ],
+      details: [
+        { heading: "Workers", text: "", at_ms: 60_400 },
+        { heading: "Costs", text: "", at_ms: 5_000 },
+        { heading: "Late", text: "", at_ms: 900_000 },
+      ],
+    },
+    600_000,
+  ),
+  [
+    { ms: 5_000, label: "Costs" },
+    { ms: 60_000, label: "Builds" },
+  ],
+);
+assert.deepEqual(playerMarks(null, 1000), []);
+{
+  const said = (at_ms: number, end_ms: number, speaker: number): NoteLine => ({
+    ...line(at_ms, "them", "x"),
+    end_ms,
+    speaker,
+  });
+  const bands = speakerBands([
+    said(0, 4_000, 1),
+    said(5_000, 9_000, 1),
+    said(20_000, 25_000, 1),
+    said(25_000, 30_000, 2),
+  ]);
+  assert.deepEqual(
+    bands.map((b) => [b.from, b.to]),
+    [
+      [0, 9_000],
+      [20_000, 25_000],
+      [25_000, 30_000],
+    ],
+  );
+  assert.deepEqual(
+    speakerBands([said(0, 4_000, 1), said(5_000, 9_000, 1)]),
+    [],
+  );
+}
+assert.equal(lineStep(lines, 5_000, 1), 11_000);
+assert.equal(lineStep(lines, 60_000, 1), null);
+assert.equal(lineStep(lines, 12_000, -1), 4_000);
+assert.equal(lineStep(lines, 20_000, -1), 11_000);
+assert.equal(lineStep(lines, 1_000, -1), 0);
 console.log("notes: ok");
