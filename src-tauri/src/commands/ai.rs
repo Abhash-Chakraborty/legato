@@ -19,6 +19,13 @@ pub async fn test_ai_connection(app: AppHandle) -> AiTestResult {
     ai::test_connection(&app).await
 }
 
+/// Settings › Debug › Check the AI on your fixes.
+#[tauri::command]
+#[specta::specta]
+pub async fn check_ai_on_fixes(app: AppHandle) -> Result<crate::ai_rules::CheckScore, String> {
+    ai::check_on_fixes(&app).await
+}
+
 /// The last four characters of each saved key.
 #[tauri::command]
 #[specta::specta]

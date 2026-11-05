@@ -623,6 +623,15 @@
         "title": "Debug mode is on",
         "description": "Shows this section. Turn it off here or with Ctrl+Shift+D.",
         "turnOff": "Turn off"
+      },
+      "aiCheck": {
+        "title": "Check the AI on your fixes",
+        "description": "Runs Cleanup at Medium on up to 20 of your newest dictations with a word you fixed by hand, using what the speech model heard, and counts how many fixed words come out spelled your way. It uses your AI provider.",
+        "button": "Run the check",
+        "running": "Checking…",
+        "none": "No dictations with a word fixed by hand yet.",
+        "result": "{{answered}} answers: {{right}} of {{words}} fixed words spelled your way. {{tooMuch}} rewrote too much, {{invented}} brought in a word nobody said.",
+        "missed": "Missed: {{words}}"
       }
     },
     "about": {

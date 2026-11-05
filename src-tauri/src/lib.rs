@@ -1065,6 +1065,7 @@ pub fn run(cli_args: CliArgs) {
             commands::dictionary::change_learn_mode_setting,
             commands::ai::get_ai_status,
             commands::ai::test_ai_connection,
+            commands::ai::check_ai_on_fixes,
             commands::ai::get_ai_key_hints,
             commands::ai::change_ai_correction_setting,
             commands::ai::change_ai_notes_setting,

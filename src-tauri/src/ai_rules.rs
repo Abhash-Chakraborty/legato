@@ -411,6 +411,58 @@ pub fn parse_correction(answer: &str) -> Option<(Vec<Replacement>, Vec<Unsure>)>
         .map(|a| (a.replacements, a.unsure))
 }
 
+/// How Cleanup at Medium did on dictations you fixed by hand: Settings ›
+/// Debug › Check the AI on your fixes. The words you fixed should come out
+/// spelled your way, and the answer should still be your dictation.
+#[derive(Serialize, Clone, Debug, Default, PartialEq, Type)]
+pub struct CheckScore {
+    /// Dictations tried.
+    pub cases: u32,
+    /// Of those, ones the model answered.
+    pub answered: u32,
+    /// Words you had fixed, across the answers.
+    pub words: u32,
+    /// Of those, ones the answer spells your way.
+    pub words_right: u32,
+    /// Answers that lost or added half the words.
+    pub too_much: u32,
+    /// Answers that brought in a Dictionary word nothing sounded like.
+    pub invented: u32,
+    /// Fixed words the answers missed, at most [`CHECK_MISSED`].
+    pub missed: Vec<String>,
+}
+
+/// The most missed words a check lists.
+pub const CHECK_MISSED: usize = 12;
+
+/// Scores one answer: `heard` is what the speech model wrote, `fixed` the
+/// words you put in by hand afterwards.
+pub fn score_answer(
+    score: &mut CheckScore,
+    heard: &str,
+    answer: &str,
+    fixed: &[&str],
+    words: &[PromptWord],
+) {
+    score.answered += 1;
+    for word in fixed {
+        score.words += 1;
+        if phrase_pattern(word).is_some_and(|p| p.is_match(answer)) {
+            score.words_right += 1;
+        } else if score.missed.len() < CHECK_MISSED
+            && !score.missed.iter().any(|m| m.eq_ignore_ascii_case(word))
+        {
+            score.missed.push(word.to_string());
+        }
+    }
+    if !plausible_cleanup(heard, answer) {
+        score.too_much += 1;
+    }
+    if invents_words(heard, answer, words) {
+        score.invented += 1;
+    }
+}
+
 /// The most suggestions one dictation adds to Needs review.
 pub const MAX_UNSURE: usize = 3;
 
@@ -923,6 +975,39 @@ mod tests {
         let mut line = String::new();
         push_word(&mut line, &words[0]);
         assert!(line.contains("also written Abhash"));
+    }
+
+    #[test]
+    fn a_check_counts_fixed_words_and_rewrites() {
+        let heard = vec!["dock ploy".to_string()];
+        let words = [PromptWord {
+            text: "Dokploy",
+            heard: &heard,
+            ..Default::default()
+        }];
+        let mut score = CheckScore {
+            cases: 2,
+            ..Default::default()
+        };
+        score_answer(
+            &mut score,
+            "deploy it on dock ploy today",
+            "Deploy it on Dokploy today.",
+            &["Dokploy"],
+            &words,
+        );
+        score_answer(
+            &mut score,
+            "ask sam about the dock ploy logs please",
+            "Ask.",
+            &["Dokploy", "Sam"],
+            &words,
+        );
+        assert_eq!(score.answered, 2);
+        assert_eq!((score.words, score.words_right), (3, 1));
+        assert_eq!(score.too_much, 1);
+        assert_eq!(score.invented, 0);
+        assert_eq!(score.missed, vec!["Dokploy".to_string(), "Sam".to_string()]);
     }
 
     #[test]

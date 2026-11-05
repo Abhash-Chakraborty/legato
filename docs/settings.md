@@ -92,5 +92,6 @@ Press `Ctrl+Shift+D` in the Legato window to turn debug mode on or off. With it 
 - Logs: Log level, and Live logs, which shows the log as it's written.
 - Input: Paste delay, the wait before the paste keys (raise it if nothing gets pasted), and Always-on microphone.
 - Previews of the setup screens and of What's new.
+- Check the AI on your fixes: runs Cleanup at Medium on up to 20 of your newest dictations with a word you fixed by hand, starting from what the speech model heard, and counts how many of those words come out spelled your way. It also counts answers that rewrote too much or brought in a word nobody said. It sends those dictations to your AI provider, so it runs only when you press Run the check.
 
 Debug mode is for tracking down problems. See [Troubleshooting](troubleshooting.md) and [Command line](cli.md).

@@ -1485,6 +1485,17 @@ async testAiConnection() : Promise<AiTestResult> {
     return await TAURI_INVOKE("test_ai_connection");
 },
 /**
+ * Settings › Debug › Check the AI on your fixes.
+ */
+async checkAiOnFixes() : Promise<Result<CheckScore, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_ai_on_fixes") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The last four characters of each saved key.
  */
 async getAiKeyHints() : Promise<Partial<{ [key in string]: string }>> {
@@ -3865,6 +3876,12 @@ alone: boolean; uses: number; added_at: number; last_used_at: number | null;
  * The app the snippet was last pasted into.
  */
 last_app: string | null; last_app_path: string | null }
+/**
+ * How Cleanup at Medium did on dictations you fixed by hand: Settings ›
+ * Debug › Check the AI on your fixes. The words you fixed should come out
+ * spelled your way, and the answer should still be your dictation.
+ */
+export type CheckScore = { cases: number; answered: number; words: number; words_right: number; too_much: number; invented: number; missed: string[] }
 export type SnippetImport = { added: number; updated: number; skipped: number }
 export type SnippetInput = { trigger: string; also?: string[]; text: string; alone?: boolean }
 export type SnippetTest = { 

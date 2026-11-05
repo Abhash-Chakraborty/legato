@@ -141,6 +141,7 @@ import {
   type OnboardingPreviewStep,
 } from "./debug/OnboardingPreview";
 import { DebugModeRow } from "./debug/DebugModeRow";
+import { AiCheck } from "./debug/AiCheck";
 import { SourceCodeRow, VersionRow } from "./about/AboutRows";
 
 /** What a dependent row looks at to decide whether it can be changed. */
@@ -1756,6 +1757,14 @@ export const buildSections = (
               "settings.debug.whatsNewPreview.description",
             ],
             render: () => <WhatsNewPreview grouped />,
+          },
+          {
+            id: "ai-check",
+            searchKeys: [
+              "settings.debug.aiCheck.title",
+              "settings.debug.aiCheck.description",
+            ],
+            render: () => <AiCheck grouped />,
           },
         ],
       },

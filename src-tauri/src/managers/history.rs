@@ -294,6 +294,11 @@ impl HistoryManager {
         Ok(entry)
     }
 
+    /// Dictations with words fixed by hand; see `history_store::fixed_by_hand`.
+    pub fn fixed_by_hand(&self, limit: usize) -> Result<Vec<HistoryEntry>> {
+        store::fixed_by_hand(&self.get_connection()?, limit)
+    }
+
     /// Other dictations that `from` could be fixed in.
     pub fn rows_with(&self, from: &str, to: &str, except: i64) -> Result<Vec<i64>> {
         store::rows_with(&self.get_connection()?, from, to, except)

@@ -867,6 +867,75 @@ pub async fn correction_pass(
     }))
 }
 
+/// How many hand-fixed dictations a check tries.
+const CHECK_CASES: usize = 20;
+
+/// Settings › Debug › Check the AI on your fixes: runs Cleanup at Medium,
+/// as a dictation would, on what the speech model heard in your newest
+/// dictations with a word fixed by hand, and scores the answers. It uses
+/// your provider, so it runs only when you ask.
+pub async fn check_on_fixes(app: &AppHandle) -> Result<ai_rules::CheckScore, String> {
+    let settings = settings::get_settings(app);
+    let config = AiConfig::for_task(&settings, AiTask::Dictation)
+        .ok_or_else(|| "Set up an AI model for dictation first".to_string())?;
+    let history = app
+        .try_state::<Arc<crate::managers::history::HistoryManager>>()
+        .ok_or_else(|| "History isn't ready".to_string())?;
+    let cases = history
+        .fixed_by_hand(CHECK_CASES)
+        .map_err(|e| e.to_string())?;
+    let mut entries = app
+        .try_state::<Arc<DictionaryManager>>()
+        .and_then(|d| d.list().ok())
+        .unwrap_or_default();
+    entries.sort_by(|a, b| b.pinned.cmp(&a.pinned).then(b.hits.cmp(&a.hits)));
+    let words: Vec<PromptWord> = entries
+        .iter()
+        .map(|e| PromptWord {
+            text: &e.text,
+            heard: &e.heard,
+            also: &e.also,
+            ordinary: ordinary_forms(&e.heard),
+            kind: e.kind.map(|k| k.noun()),
+        })
+        .collect();
+    let mut score = ai_rules::CheckScore {
+        cases: cases.len() as u32,
+        ..Default::default()
+    };
+    for case in &cases {
+        let Some(heard) = case.heard_text.as_deref() else {
+            continue;
+        };
+        let fixed: Vec<&str> = case
+            .fixes
+            .iter()
+            .filter(|f| f.source == crate::managers::history_store::FixSource::Manual)
+            .map(|f| f.to.as_str())
+            .collect();
+        let place = ai_rules::Place {
+            app: case.app_name.as_deref(),
+            category: case.category.as_deref().unwrap_or("other"),
+            your_name: Some(settings.your_name.as_str()),
+        };
+        let system = ai_rules::cleanup_system_prompt(0, &place);
+        let request = ai_rules::cleanup_request(&words, heard);
+        let budget = ai_rules::dictation_budget(config.timeout, heard.split_whitespace().count());
+        match ask(&config, &system, request, None, budget).await {
+            Ok(answer) => {
+                let answer = crate::transform_rules::clean_answer(&answer, heard);
+                ai_rules::score_answer(&mut score, heard, &answer, &fixed, &words);
+            }
+            Err(kind) => warn!("AI check: {} answered {:?}", config.provider.id, kind),
+        }
+    }
+    debug!(
+        "AI check: {} of {} fixed words right in {} answers",
+        score.words_right, score.words, score.answered
+    );
+    Ok(score)
+}
+
 #[derive(Serialize, Clone, Debug, Type)]
 pub struct AiTestResult {
     pub status: AiStatus,

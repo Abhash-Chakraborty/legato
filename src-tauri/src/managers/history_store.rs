@@ -826,6 +826,18 @@ fn add_cleanup_stats(conn: &Connection, new: &NewEntry) -> Result<()> {
     Ok(())
 }
 
+/// The newest dictations with a word fixed by hand and the speech model's
+/// own text kept, for checking the AI against them.
+pub fn fixed_by_hand(conn: &Connection, limit: usize) -> Result<Vec<HistoryEntry>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS} FROM transcription_history
+         WHERE heard_text IS NOT NULL AND heard_text != '' AND fixes LIKE '%\"manual\"%'
+         ORDER BY timestamp DESC LIMIT ?1"
+    ))?;
+    let rows = stmt.query_map([limit as i64], map_entry)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
 pub fn get(conn: &Connection, id: i64) -> Result<Option<HistoryEntry>> {
     Ok(conn
         .query_row(
