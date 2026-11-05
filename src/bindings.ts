@@ -1294,6 +1294,31 @@ async restoreDictionaryEntries(entries: DictionaryEntry[]) : Promise<Result<null
 }
 },
 /**
+ * Joins `others` into the word `keep`: their spellings become its other
+ * written forms ("Abhash" for "Abhash Chakraborty"), with their heard
+ * forms and fixes.
+ */
+async mergeDictionaryEntries(keep: number, others: number[]) : Promise<Result<MergedWords, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("merge_dictionary_entries", { keep, others }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Two words that aren't the same: Needs review stops offering to merge
+ * them.
+ */
+async keepDictionaryEntriesApart(a: string, b: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("keep_dictionary_entries_apart", { a, b }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Runs the same correction the pipeline uses on a typed sentence. `draft` is
  * a word being edited (replacing the entry `draft_id`, or added), so the
  * editor can test before saving.
@@ -1639,6 +1664,21 @@ async newTransform() : Promise<Transform> {
 async barUndo() : Promise<void> {
     return await TAURI_INVOKE("bar_undo");
 },
+/**
+ * The bar's Correct: opens the last paste for editing.
+ */
+async barCorrect() : Promise<void> {
+    await TAURI_INVOKE("bar_correct");
+},
+/**
+ * Puts the edited text in place of the last paste and learns from it.
+ */
+async barCorrectApply(text: string) : Promise<void> {
+    await TAURI_INVOKE("bar_correct_apply", { text });
+},
+async barCorrectCancel(refocus: boolean) : Promise<void> {
+    await TAURI_INVOKE("bar_correct_cancel", { refocus });
+},
 async barKeep() : Promise<void> {
     return await TAURI_INVOKE("bar_keep");
 },
@@ -1716,6 +1756,17 @@ async exportSnippets(path: string, ids: number[] | null) : Promise<Result<number
 async testSnippets(text: string, draft: SnippetInput | null, draftId: number | null) : Promise<Result<SnippetTest, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("test_snippets", { text, draft, draftId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * What each trigger becomes after the Dictionary's pass, in order.
+ */
+async snippetTriggersHeard(triggers: string[]) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("snippet_triggers_heard", { triggers }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -3075,7 +3126,12 @@ export type DictionaryEntry = { id: number; text: string;
 /**
  * Ways the model mishears the word.
  */
-heard: string[]; source: DictionarySource; pinned: boolean; case_sensitive: boolean; added_at: number; last_fix_at: number | null; 
+heard: string[]; 
+/**
+ * Other ways the word is written that are right as they are: a first
+ * name, a short form. Never rewritten into the word.
+ */
+also?: string[]; source: DictionarySource; pinned: boolean; case_sensitive: boolean; added_at: number; last_fix_at: number | null; 
 /**
  * The app the word was last fixed in.
  */
@@ -3125,7 +3181,7 @@ export type WordKind = "person" | "project" | "organisation" |
  * A technical term or product name.
  */
 "term"
-export type EntryInput = { text: string; heard?: string[]; pinned?: boolean; case_sensitive?: boolean; kind?: WordKind | null }
+export type EntryInput = { text: string; heard?: string[]; also?: string[]; pinned?: boolean; case_sensitive?: boolean; kind?: WordKind | null }
 /**
  * How many words an import added, extended and skipped.
  */
@@ -3155,7 +3211,20 @@ never: string[];
  * Terms the model wrote more than one way lately, also under Needs
  * review.
  */
-spellings: Spelling[] }
+spellings: Spelling[]; 
+/**
+ * Words that look like one, offered for merging under Needs review.
+ */
+merges: MergeSuggestion[] }
+/**
+ * Words that look like one, to offer merging under Needs review.
+ */
+export type MergeSuggestion = { keep: DictionaryEntry; other: DictionaryEntry }
+/**
+ * Words joined into one, and every word as it was, for Undo through
+ * `restore_dictionary_entries`.
+ */
+export type MergedWords = { entry: DictionaryEntry; before: DictionaryEntry[] }
 /**
  * A term the model wrote more than one way, such as "Coolify" and
  * "cool if I": adding it to the Dictionary fixes every version.
@@ -3782,7 +3851,12 @@ export type CleanupRules = { repeats?: boolean; numbers?: boolean; punctuation?:
  * A long dictation is split into paragraphs where the thought changes.
  */
 paragraphs?: boolean }
-export type Snippet = { id: number; trigger: string; text: string; 
+export type Snippet = { id: number; trigger: string; 
+/**
+ * Other phrases that trigger it, said the way you might say it
+ * another day ("my address", "home address").
+ */
+also?: string[]; text: string; 
 /**
  * Only when the trigger is the whole dictation.
  */
@@ -3792,7 +3866,7 @@ alone: boolean; uses: number; added_at: number; last_used_at: number | null;
  */
 last_app: string | null; last_app_path: string | null }
 export type SnippetImport = { added: number; updated: number; skipped: number }
-export type SnippetInput = { trigger: string; text: string; alone?: boolean }
+export type SnippetInput = { trigger: string; also?: string[]; text: string; alone?: boolean }
 export type SnippetTest = { 
 /**
  * The dictation with each match swapped for its text.

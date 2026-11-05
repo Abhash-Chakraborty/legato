@@ -1,12 +1,39 @@
 //! Commands behind the Snippets page.
 
+use crate::managers::dictionary::DictionaryManager;
+use crate::managers::dictionary_store;
 use crate::managers::snippet_store::{self as store, Snippet, SnippetImport, SnippetInput};
 use crate::managers::snippets::SnippetManager;
 use crate::snippet_rules::{self as rules, SnippetTest, MAX_TEXT_CHARS, MAX_TRIGGER_CHARS};
 use serde::Serialize;
 use specta::Type;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, State};
+
+/// The Dictionary's pass over a dictation, which runs before snippets are
+/// matched: a trigger it changes is never heard as typed.
+fn dictionary_pass(
+    app: &AppHandle,
+    dictionary: &DictionaryManager,
+) -> Result<impl Fn(&str) -> String, String> {
+    let entries = dictionary.list().map_err(|e| e.to_string())?;
+    let (_, corrector) = dictionary_store::compile(&entries);
+    let corrector = corrector.with_word_check(crate::spelling::checker());
+    let threshold = crate::settings::get_settings(app).word_correction_threshold;
+    Ok(move |text: &str| corrector.apply(text, false, threshold).0)
+}
+
+/// What each trigger becomes after the Dictionary's pass, in order.
+#[tauri::command]
+#[specta::specta]
+pub fn snippet_triggers_heard(
+    app: AppHandle,
+    dictionary: State<'_, Arc<DictionaryManager>>,
+    triggers: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let pass = dictionary_pass(&app, &dictionary)?;
+    Ok(triggers.iter().map(|t| pass(t)).collect())
+}
 
 /// Everything the Snippets page shows.
 #[derive(Clone, Debug, Serialize, Type)]
@@ -105,7 +132,9 @@ pub fn export_snippets(
 #[tauri::command]
 #[specta::specta]
 pub fn test_snippets(
+    app: AppHandle,
     snippets: State<'_, Arc<SnippetManager>>,
+    dictionary: State<'_, Arc<DictionaryManager>>,
     text: String,
     draft: Option<SnippetInput>,
     draft_id: Option<i64>,
@@ -117,6 +146,7 @@ pub fn test_snippets(
         list.push(Snippet {
             id,
             trigger: rules::clean_trigger(&draft.trigger),
+            also: draft.also.iter().map(|a| rules::clean_trigger(a)).collect(),
             text: draft.text,
             alone: draft.alone,
             uses: 0,
@@ -126,6 +156,7 @@ pub fn test_snippets(
             last_app_path: None,
         });
     }
+    let text = dictionary_pass(&app, &dictionary)?(&text);
     let marked = rules::mark(&text, &store::rules_of(&list));
     let vars = rules::Variables {
         now: chrono::Local::now(),

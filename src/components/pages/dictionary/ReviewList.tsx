@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   commands,
   type LearnMode,
+  type MergeSuggestion,
   type PendingWord,
   type Spelling,
 } from "@/bindings";
@@ -12,10 +13,13 @@ import { Button } from "../../ui/Button";
 import { AppIcon } from "../home/AppIcon";
 import { relativeTime } from "./list";
 import { SpellingList } from "./SpellingList";
+import { MergeList } from "./MergeList";
 
 interface ReviewListProps {
   pending: PendingWord[];
   spellings: Spelling[];
+  /** Words that look like one, offered for merging. */
+  merges: MergeSuggestion[];
   now: number;
   enabled: boolean;
   mode: LearnMode;
@@ -29,6 +33,7 @@ interface ReviewListProps {
 export const ReviewList: React.FC<ReviewListProps> = ({
   pending,
   spellings,
+  merges,
   now,
   enabled,
   mode,
@@ -92,7 +97,7 @@ export const ReviewList: React.FC<ReviewListProps> = ({
     });
   };
 
-  if (pending.length === 0 && spellings.length === 0) {
+  if (pending.length === 0 && spellings.length === 0 && merges.length === 0) {
     return (
       <div className="grid place-items-center gap-1.5 px-6 py-16 text-center">
         <h2 className="text-[15px] font-medium">
@@ -142,6 +147,18 @@ export const ReviewList: React.FC<ReviewListProps> = ({
     }
   };
 
+  const same = merges.length > 0 && (
+    <div className={pending.length > 0 || spellings.length > 0 ? "mt-8" : ""}>
+      <h2 className="text-[15px] font-medium">
+        {t("dictionary.merges.title")}
+      </h2>
+      <p className="mb-3 mt-0.5 text-[13px] text-text-3">
+        {t("dictionary.merges.help")}
+      </p>
+      <MergeList merges={merges} />
+    </div>
+  );
+
   const spelled = spellings.length > 0 && (
     <div className={pending.length > 0 ? "mt-8" : ""}>
       <h2 className="text-[15px] font-medium">
@@ -154,7 +171,13 @@ export const ReviewList: React.FC<ReviewListProps> = ({
     </div>
   );
 
-  if (pending.length === 0) return <div>{spelled}</div>;
+  if (pending.length === 0)
+    return (
+      <div>
+        {spelled}
+        {same}
+      </div>
+    );
 
   return (
     <div>
@@ -258,6 +281,7 @@ export const ReviewList: React.FC<ReviewListProps> = ({
         </div>
       )}
       {spelled}
+      {same}
     </div>
   );
 };

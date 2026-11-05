@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Trash2, X } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   commands,
@@ -10,6 +10,7 @@ import {
   type WordKind,
 } from "@/bindings";
 import { Button } from "../../ui/Button";
+import { ChipField } from "../../ui/ChipField";
 import { Segmented } from "../../ui/Segmented";
 import { Sheet } from "../../ui/Sheet";
 import { TestSentence } from "./TestSentence";
@@ -26,7 +27,12 @@ interface WordEditorProps {
   /** The word to edit, or null to add one. */
   entry: DictionaryEntry | null;
   /** What a new word starts with, such as one from Needs review. */
-  initial?: { text: string; heard: string[]; kind?: WordKind | null };
+  initial?: {
+    text: string;
+    heard: string[];
+    also?: string[];
+    kind?: WordKind | null;
+  };
   entries: DictionaryEntry[];
   pinLimit: number;
   maxChars: number;
@@ -51,14 +57,16 @@ export const WordEditor: React.FC<WordEditorProps> = ({
 }) => {
   const { t } = useTranslation();
   const textId = useId();
-  const heardId = useId();
   const textRef = useRef<HTMLInputElement>(null);
-  const heardRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(entry?.text ?? initial?.text ?? "");
   const [heard, setHeard] = useState<string[]>(
     entry?.heard ?? initial?.heard ?? [],
   );
   const [heardInput, setHeardInput] = useState("");
+  const [also, setAlso] = useState<string[]>(
+    entry?.also ?? initial?.also ?? [],
+  );
+  const [alsoInput, setAlsoInput] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(
     entry?.case_sensitive ?? false,
   );
@@ -83,17 +91,35 @@ export const WordEditor: React.FC<WordEditorProps> = ({
   ).length;
   const pinFull = pinnedOthers >= pinLimit && !entry?.pinned;
 
-  const addChip = () => {
-    const value = heardInput.trim().replace(/,$/, "").trim();
-    if (!value) return;
-    if (!heard.some((h) => h.toLowerCase() === value.toLowerCase()))
-      setHeard([...heard, value]);
-    setHeardInput("");
-  };
+  const allHeard = heardInput.trim() ? [...heard, heardInput.trim()] : heard;
+  const allAlso = alsoInput.trim() ? [...also, alsoInput.trim()] : also;
+  const same = (a: string, b: string) =>
+    a.trim().toLowerCase() === b.trim().toLowerCase();
+  const otherWord = (form: string) =>
+    entries.find((e) => e.id !== entry?.id && same(e.text, form));
+  // Forms the save would skip, said here rather than dropped quietly.
+  const heardWarnings = allHeard.flatMap((h) =>
+    otherWord(h)
+      ? [t("dictionary.editor.warn.heardIsWord", { form: h })]
+      : allAlso.some((a) => same(a, h))
+        ? [t("dictionary.editor.warn.heardIsAlso", { form: h })]
+        : [],
+  );
+  const alsoWarnings = allAlso.flatMap((a) => {
+    const other = otherWord(a);
+    if (other) return [t("dictionary.editor.warn.alsoIsWord", { form: a })];
+    const owner = entries.find(
+      (e) => e.id !== entry?.id && (e.also ?? []).some((f) => same(f, a)),
+    );
+    return owner
+      ? [t("dictionary.editor.warn.alsoMoves", { form: a, word: owner.text })]
+      : [];
+  });
 
   const draft: EntryInput = {
     text: trimmed,
-    heard: heardInput.trim() ? [...heard, heardInput.trim()] : heard,
+    heard: allHeard,
+    also: allAlso,
     pinned,
     case_sensitive: caseSensitive,
     kind: kind === "word" ? null : kind,
@@ -237,70 +263,31 @@ export const WordEditor: React.FC<WordEditorProps> = ({
           </p>
         </div>
 
-        <div>
-          <label
-            htmlFor={heardId}
-            className="mb-1.5 block text-[13px] font-medium"
-          >
-            {t("dictionary.editor.heard")}
-          </label>
-          <div
-            className="flex min-h-[38px] cursor-text flex-wrap items-center gap-1.5 rounded-[var(--r-md)] border border-line-strong bg-surface px-2 py-[5px] transition-[border-color,box-shadow] duration-[var(--dur-1)] focus-within:border-teal-600 focus-within:shadow-[0_0_0_3px_var(--teal-50)]"
-            onClick={() => heardRef.current?.focus()}
-          >
-            {heard.map((h, i) => (
-              <span
-                key={h}
-                className="inline-flex h-6 items-center gap-1 rounded-[var(--r-xs)] bg-surface-3 ps-2 pe-1 text-[13px]"
-              >
-                {h}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setHeard(heard.filter((_, j) => j !== i));
-                    heardRef.current?.focus();
-                  }}
-                  aria-label={t("dictionary.editor.removeHeard", { heard: h })}
-                  title={t("dictionary.editor.removeHeard", { heard: h })}
-                  className="grid h-[18px] w-[18px] place-items-center rounded text-text-3 hover:bg-surface-4 hover:text-text"
-                >
-                  <X className="h-3 w-3" aria-hidden="true" />
-                </button>
-              </span>
-            ))}
-            <input
-              id={heardId}
-              ref={heardRef}
-              value={heardInput}
-              onChange={(e) => setHeardInput(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.key === "Enter" && !e.ctrlKey) || e.key === ",") {
-                  e.preventDefault();
-                  addChip();
-                } else if (
-                  e.key === "Backspace" &&
-                  !heardInput &&
-                  heard.length > 0
-                ) {
-                  setHeard(heard.slice(0, -1));
-                }
-              }}
-              onBlur={addChip}
-              placeholder={
-                heard.length
-                  ? t("dictionary.editor.heardMore")
-                  : t("dictionary.editor.heardPlaceholder")
-              }
-              className="h-[26px] min-w-[140px] flex-1 border-0 bg-transparent text-sm text-text outline-none placeholder:text-text-4"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-          <p className="mt-1.5 text-[13px] text-text-3">
-            {t("dictionary.editor.heardHelp")}
-          </p>
-        </div>
+        <ChipField
+          label={t("dictionary.editor.heard")}
+          help={t("dictionary.editor.heardHelp")}
+          chips={heard}
+          setChips={setHeard}
+          input={heardInput}
+          setInput={setHeardInput}
+          placeholder={t("dictionary.editor.heardPlaceholder")}
+          morePlaceholder={t("dictionary.editor.heardMore")}
+          removeLabel={(h) => t("dictionary.editor.removeHeard", { heard: h })}
+          warnings={heardWarnings}
+        />
+
+        <ChipField
+          label={t("dictionary.editor.also")}
+          help={t("dictionary.editor.alsoHelp")}
+          chips={also}
+          setChips={setAlso}
+          input={alsoInput}
+          setInput={setAlsoInput}
+          placeholder={t("dictionary.editor.alsoPlaceholder")}
+          morePlaceholder={t("dictionary.editor.heardMore")}
+          removeLabel={(a) => t("dictionary.editor.removeAlso", { form: a })}
+          warnings={alsoWarnings}
+        />
 
         <div className="flex flex-col gap-3">
           <label className="flex cursor-pointer items-start gap-2.5 text-sm">

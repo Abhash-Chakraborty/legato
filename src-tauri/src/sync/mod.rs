@@ -980,7 +980,8 @@ fn ai_share(settings: &AppSettings) -> protocol::AiShare {
                     provider_id: config.provider.id.clone(),
                     model: config.model.clone(),
                     min_words: settings.ai_min_words,
-                    dictionary: settings.ai_correction_enabled,
+                    // Cleanup at Medium always sends the Dictionary now.
+                    dictionary: true,
                 });
             }
         }

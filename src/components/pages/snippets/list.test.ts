@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import type { Snippet } from "@/bindings";
-import { matchesQuery, normalizeTrigger, pieces, sortSnippets } from "./list";
+import {
+  matchesQuery,
+  normalizeTrigger,
+  pieces,
+  snippetWithTrigger,
+  sortSnippets,
+} from "./list";
 
 const snippet = (more: Partial<Snippet>): Snippet => ({
   id: 1,
@@ -48,5 +54,17 @@ assert.deepEqual(
 // Triggers compare the way the backend normalizes them.
 assert.equal(normalizeTrigger("  My  LinkedIn! "), "my linkedin");
 assert.equal(normalizeTrigger("today's date."), "today's date");
+
+// Other phrases are searched and count as taken.
+const home = snippet({
+  id: 2,
+  trigger: "my address",
+  also: ["home address"],
+  text: "12 Park Lane",
+});
+assert.equal(matchesQuery(home, "home"), true);
+assert.equal(snippetWithTrigger([s, home], "Home address.")?.id, 2);
+assert.equal(snippetWithTrigger([s, home], "home address", 2), undefined);
+assert.equal(snippetWithTrigger([s, home], "work address"), undefined);
 
 console.log("snippets list: ok");

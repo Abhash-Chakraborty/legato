@@ -15,15 +15,30 @@ Test a sentence at the top of the Dictionary page shows what would be corrected.
 
 Choose Add word on the Dictionary page.
 
-| Field          | What it does                                                                            |
-| -------------- | --------------------------------------------------------------------------------------- |
-| Word or name   | Spelled exactly the way it should be pasted, up to 60 characters                        |
-| Also heard as  | Optional. How Legato mishears it, such as "doc ploy"; press Enter after each one        |
-| What it is     | Word, Person, Project, Organisation or Term                                             |
-| Case sensitive | Pasted with exactly this capitalisation, even when the model capitalises it differently |
-| Pinned         | Always in the vocabulary hint; up to 20 words can be pinned                             |
+| Field           | What it does                                                                                       |
+| --------------- | -------------------------------------------------------------------------------------------------- |
+| Word or name    | Spelled exactly the way it should be pasted, up to 60 characters                                   |
+| Also heard as   | Optional. How Legato mishears it, such as "doc ploy"; press Enter after each one                   |
+| Also written as | Optional. Other ways it's written that are right as they are, such as a first name or a short form |
+| What it is      | Word, Person, Project, Organisation or Term                                                        |
+| Case sensitive  | Pasted with exactly this capitalisation, even when the model capitalises it differently            |
+| Pinned          | Always in the vocabulary hint; up to 20 words can be pinned                                        |
 
 Names, projects and terms are kept exactly as written. The AI never turns them into a similar ordinary word, and notes summaries spell them this way. A word you add is used from your next dictation.
+
+The editor says when a form won't be kept as you typed it: a heard-as form that is a word of its own in your Dictionary, or a form that another word already has (it moves to this one).
+
+## One word, more than one form
+
+A person can be "Priya Shah" in one sentence and "Priya" in the next. Put both under one word: Priya Shah, also written as Priya. Legato then:
+
+- leaves "Priya" as it is, and never turns it into the full name;
+- fixes a misheard version of either form to that form ("Prya" to "Priya", "Priya Sha" to "Priya Shah");
+- tells the AI they mean the same person, so a cleanup that writes the full name where you said the first one is kept.
+
+If both are already separate words, Merge on a word's row joins them. Pick the other word and which spelling stays the word; the other becomes a way it's also written, and their heard-as forms and fixes join. Undo on the toast puts both back.
+
+Needs review also offers words that look like one, under The same word?: a first name and a full name, an initial and a surname, or two spellings that differ by a letter such as "Dokploy" and "DocPloy". Merge joins them; Keep apart stops the suggestion.
 
 ## Fix a word on Home
 
@@ -40,7 +55,7 @@ Select a word in any app and press Win+Alt+W. Legato copies the selection, puts 
 
 ## Learn from my edits
 
-When you correct a word right after Legato pastes it, Legato can learn the correction. Ten seconds after a paste, it reads the field once, on this PC, and compares it with what it pasted. The field's text stays in memory and is dropped after the comparison. Slack, Teams and VS Code often don't share their text, so it learns less there.
+Correct on the bar after a paste learns the words you change, even with Learn from my edits off, and follows When it finds a word below; see [Correct a dictation](dictation.md#correct-a-dictation). When you correct a word in the app itself right after Legato pastes it, Legato can learn that too. Ten seconds after a paste, it reads the field once, on this PC, and compares it with what it pasted. The field's text stays in memory and is dropped after the comparison. Slack, Teams and VS Code often don't share their text, so it learns less there.
 
 Learn from my edits is on by default. Find it under Learning and matching on the Dictionary page, with When it finds a word:
 
@@ -63,11 +78,15 @@ Matching, under Learning and matching, sets how close a heard word must be to on
 | Normal  | Close misses of your words are corrected. The default, and the recommended one.  |
 | Loose   | Catches more misses, and may now and then correct a word that was right.         |
 
+A few rules keep matching from changing words that were right. A run of ordinary words is never read as one of yours, so "a bash script" stays as it is even with a name such as "Abaash" in your Dictionary. A heard-as form inside its own word written out in full is left alone, and a misspelled surname after a first name you have as a word of its own is still fixed.
+
 Vocabulary hint, in the same card, shows the list the speech model receives before each dictation, in order.
 
 ## AI correction pass
 
-If you set up an AI provider, Settings › AI › Correction pass with your Dictionary gives your model each dictation with your words and their heard-as forms, and it fixes misses the rules didn't catch. It's off by default. Skip short dictations leaves out dictations under 8 words unless you change it. If the model hasn't answered after 6 seconds (Give up on a dictation after), the text is pasted without AI changes. See [Transforms, Ask and your AI provider](transforms.md).
+If you set up an AI provider, Settings › AI › Correction pass with your Dictionary gives your model each dictation with your words and their heard-as forms, and it fixes misses the rules didn't catch. It's off by default. Cleanup at Medium takes your Dictionary along on its own, so with Medium on you don't need the correction pass too.
+
+The correction pass also points out up to three words per dictation that sound like a misheard name or term your Dictionary doesn't have yet, such as "dock ploy" for Dokploy. They never change the text: they wait under Needs review, where you add them or turn them down. Skip short dictations leaves out dictations under 8 words unless you change it. If the model hasn't answered after 6 seconds (Give up on a dictation after), the text is pasted without AI changes. See [Transforms, Ask and your AI provider](transforms.md).
 
 ## Browse, import and export
 
@@ -90,9 +109,12 @@ Say a trigger phrase and Legato pastes the saved text. Use snippets for text you
 Choose New snippet on the Snippets page.
 
 1. **Trigger**: a short phrase you wouldn't say by accident, such as "sign off". Up to 60 characters.
-2. **Text**: what gets pasted, up to 4,000 characters. Line breaks are kept.
-3. **Expand**: Anywhere in a sentence expands it wherever you say it, even mid-sentence. Only when said alone expands it only when the trigger is the whole dictation.
-4. **Test**: type a sentence as you'd say it to see whether it expands.
+2. **Also triggered by**: other ways you say it, such as "home address" next to "my address". Each one pastes the same text. Press Enter or type a comma after each.
+3. **Text**: what gets pasted, up to 4,000 characters. Line breaks are kept.
+4. **Expand**: Anywhere in a sentence expands it wherever you say it, even mid-sentence. Only when said alone expands it only when the trigger is the whole dictation.
+5. **Test**: type a sentence as you'd say it to see whether it expands. The test runs the Dictionary first, as a dictation does.
+
+No two snippets share a phrase, whether it's one's trigger or one of its other phrases.
 
 The text is pasted exactly as written. Cleanup and Style don't change it, though they still tidy the rest of a sentence around it.
 
@@ -112,11 +134,11 @@ Insert variable adds one of these to the text. They're filled in when the snippe
 
 Snippets are matched after Dictionary fixes and before cleanup. A trigger matches when the spoken words are close to it, so punctuation, capitals and a small mishearing don't stop it. Longer triggers are tried first.
 
-Since the Dictionary runs first, a trigger that contains one of its heard-as forms may not match as you expect. The editor warns about that: "The Dictionary changes … to … first; use that spelling in the trigger."
+Since the Dictionary runs first, a trigger that contains one of its heard-as forms, or a word close enough to a Dictionary word to be corrected, never reaches the snippet as typed. The editor says when the Dictionary changes a trigger or one of its other phrases, and Use that spelling puts the Dictionary's version in the trigger.
 
 ### Manage snippets
 
-Sort by Most used, Recently used, Newest or A to Z. Select several to export or delete them together. Import snippets reads JSON or CSV, and Export snippets saves JSON. Each snippet shows how often it expanded and where it was last used.
+Sort by Most used, Recently used, Newest or A to Z. Search looks at every phrase and the text. Select several to export or delete them together. Import snippets reads JSON or CSV, and Export snippets saves JSON with each snippet's other phrases (`also`). Each snippet shows how often it expanded and where it was last used.
 
 Snippets sync with [Legato for Android](android.md) too.
 

@@ -445,6 +445,24 @@ pub static MIGRATIONS: &[M] = &[
     // Notes: who was seen in the call (JSON), apart from who was invited;
     // NULL in notes from before, where attendees holds both.
     M::up("ALTER TABLE note ADD COLUMN seen TEXT;"),
+    // Dictionary: other ways a word is written that are right as they are
+    // ("Abhash" for "Abhash Chakraborty"), each belonging to one word; and
+    // pairs of words you said aren't the same, so they aren't offered for
+    // merging again (lowercase, in order). Snippets: other phrases that
+    // trigger one (JSON), besides its trigger.
+    M::up(
+        "CREATE TABLE dictionary_also (
+            entry_id INTEGER NOT NULL,
+            form TEXT NOT NULL
+         );
+         CREATE UNIQUE INDEX dictionary_also_form ON dictionary_also (form COLLATE NOCASE);
+         CREATE TABLE dictionary_apart (
+            a TEXT NOT NULL,
+            b TEXT NOT NULL,
+            PRIMARY KEY (a, b)
+         );
+         ALTER TABLE snippet ADD COLUMN also TEXT;",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.
@@ -1064,6 +1082,24 @@ pub fn fix_row(
     shown_after: &str,
     fix: &AppliedFix,
 ) -> Result<(TextSnapshot, HistoryEntry)> {
+    correct_row(
+        conn,
+        id,
+        shown_before,
+        shown_after,
+        std::slice::from_ref(fix),
+    )
+}
+
+/// [`fix_row`] with any number of fixes, as a correction from the bar
+/// brings: each is noted, and each is applied to the other version.
+pub fn correct_row(
+    conn: &mut Connection,
+    id: i64,
+    shown_before: &str,
+    shown_after: &str,
+    applied: &[AppliedFix],
+) -> Result<(TextSnapshot, HistoryEntry)> {
     let tx = conn.transaction()?;
     let before = get(&tx, id)?.ok_or_else(|| anyhow!("History entry {} not found", id))?;
     if final_text(
@@ -1073,10 +1109,13 @@ pub fn fix_row(
     {
         return Err(anyhow!("This transcript changed; try again"));
     }
-    let pattern = word_pattern(&fix.from);
-    let other = |text: &str| match &pattern {
-        Some(p) => replace_words(text, p, &fix.to).0,
-        None => text.to_string(),
+    let other = |text: &str| {
+        applied.iter().fold(text.to_string(), |text, fix| {
+            match word_pattern(&fix.from) {
+                Some(p) => replace_words(&text, &p, &fix.to).0,
+                None => text,
+            }
+        })
     };
     let (text, processed) = match &before.post_processed_text {
         Some(_) => (
@@ -1086,7 +1125,7 @@ pub fn fix_row(
         None => (shown_after.to_string(), None),
     };
     let mut fixes = before.fixes.clone();
-    fixes.push(fix.clone());
+    fixes.extend(applied.iter().cloned());
     let after = set_text(&tx, &before, &text, processed.as_deref(), &fixes)?;
     tx.commit()?;
     Ok((TextSnapshot::of(&before), after))

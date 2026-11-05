@@ -3049,7 +3049,13 @@ pub async fn follow_up(app: &AppHandle, note_id: i64) -> Result<(), String> {
             .collect(),
         ..Default::default()
     };
-    let request = notes_rules::follow_up_request(&note.title, &summary, &note.my_notes);
+    let your_name = crate::settings::get_settings(app).your_name;
+    let request = notes_rules::follow_up_request(
+        &note.title,
+        &summary,
+        &note.my_notes,
+        Some(your_name.as_str()),
+    );
     let email = crate::ai::follow_up(app, &config, request)
         .await
         .map_err(|p| problem_code(p.kind))?;

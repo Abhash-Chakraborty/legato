@@ -13,6 +13,10 @@ use specta::Type;
 pub struct Snippet {
     pub id: i64,
     pub trigger: String,
+    /// Other phrases that trigger it, said the way you might say it
+    /// another day ("my address", "home address").
+    #[serde(default)]
+    pub also: Vec<String>,
     pub text: String,
     /// Only when the trigger is the whole dictation.
     pub alone: bool,
@@ -28,6 +32,8 @@ pub struct Snippet {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct SnippetInput {
     pub trigger: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub also: Vec<String>,
     pub text: String,
     #[serde(default)]
     pub alone: bool,
@@ -41,12 +47,16 @@ pub struct SnippetImport {
 }
 
 const COLUMNS: &str =
-    "id, trigger, text, alone, uses, added_at, last_used_at, last_app, last_app_path";
+    "id, trigger, text, alone, uses, added_at, last_used_at, last_app, last_app_path, also";
 
 fn map(row: &Row<'_>) -> rusqlite::Result<Snippet> {
     Ok(Snippet {
         id: row.get("id")?,
         trigger: row.get("trigger")?,
+        also: row
+            .get::<_, Option<String>>("also")?
+            .and_then(|a| serde_json::from_str(&a).ok())
+            .unwrap_or_default(),
         text: row.get("text")?,
         alone: row.get("alone")?,
         uses: row.get("uses")?,
@@ -74,8 +84,21 @@ pub fn validate(input: &SnippetInput) -> Result<SnippetInput> {
     if input.text.chars().count() > MAX_TEXT_CHARS {
         return Err(anyhow!("Keep the text under {MAX_TEXT_CHARS} characters."));
     }
+    let mut also: Vec<String> = Vec::new();
+    for phrase in input.also.iter().map(|a| rules::clean_trigger(a)) {
+        let key = rules::normalize(&phrase);
+        if key.is_empty()
+            || phrase.chars().count() > MAX_TRIGGER_CHARS
+            || key == rules::normalize(&trigger)
+            || also.iter().any(|a| rules::normalize(a) == key)
+        {
+            continue;
+        }
+        also.push(phrase);
+    }
     Ok(SnippetInput {
         trigger,
+        also,
         text: input.text.trim_end().to_string(),
         alone: input.alone,
     })
@@ -100,7 +123,13 @@ pub fn list(conn: &Connection) -> Result<Vec<Snippet>> {
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
-/// A snippet whose trigger reads the same, other than `except`.
+/// Every phrase that triggers a snippet, its trigger first.
+pub fn triggers(s: &Snippet) -> impl Iterator<Item = &String> {
+    std::iter::once(&s.trigger).chain(&s.also)
+}
+
+/// A snippet one of whose phrases reads the same as `trigger`, other than
+/// `except`.
 pub fn find_trigger(
     conn: &Connection,
     trigger: &str,
@@ -109,17 +138,41 @@ pub fn find_trigger(
     let wanted = rules::normalize(trigger);
     Ok(list(conn)?
         .into_iter()
-        .find(|s| Some(s.id) != except && rules::normalize(&s.trigger) == wanted))
+        .find(|s| Some(s.id) != except && triggers(s).any(|t| rules::normalize(t) == wanted)))
+}
+
+/// Whether any phrase of `input` is another snippet's, other than `except`.
+fn clashes(conn: &Connection, input: &SnippetInput, except: Option<i64>) -> Result<bool> {
+    for phrase in std::iter::once(&input.trigger).chain(&input.also) {
+        if find_trigger(conn, phrase, except)?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn also_json(also: &[String]) -> Result<Option<String>> {
+    Ok(if also.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(also)?)
+    })
 }
 
 pub fn add(conn: &mut Connection, input: &SnippetInput, now: i64) -> Result<Snippet> {
     let input = validate(input)?;
-    if find_trigger(conn, &input.trigger, None)?.is_some() {
+    if clashes(conn, &input, None)? {
         return Err(anyhow!("Another snippet has that trigger."));
     }
     conn.execute(
-        "INSERT INTO snippet (trigger, text, alone, added_at) VALUES (?1, ?2, ?3, ?4)",
-        params![input.trigger, input.text, input.alone, now],
+        "INSERT INTO snippet (trigger, text, alone, added_at, also) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            input.trigger,
+            input.text,
+            input.alone,
+            now,
+            also_json(&input.also)?
+        ],
     )?;
     let id = conn.last_insert_rowid();
     get(conn, id)?.ok_or_else(|| anyhow!("The snippet wasn't saved"))
@@ -127,12 +180,18 @@ pub fn add(conn: &mut Connection, input: &SnippetInput, now: i64) -> Result<Snip
 
 pub fn update(conn: &mut Connection, id: i64, input: &SnippetInput) -> Result<Snippet> {
     let input = validate(input)?;
-    if find_trigger(conn, &input.trigger, Some(id))?.is_some() {
+    if clashes(conn, &input, Some(id))? {
         return Err(anyhow!("Another snippet has that trigger."));
     }
     let changed = conn.execute(
-        "UPDATE snippet SET trigger = ?1, text = ?2, alone = ?3 WHERE id = ?4",
-        params![input.trigger, input.text, input.alone, id],
+        "UPDATE snippet SET trigger = ?1, text = ?2, alone = ?3, also = ?5 WHERE id = ?4",
+        params![
+            input.trigger,
+            input.text,
+            input.alone,
+            id,
+            also_json(&input.also)?
+        ],
     )?;
     if changed == 0 {
         return Err(anyhow!("That snippet no longer exists."));
@@ -159,7 +218,7 @@ pub fn restore(conn: &mut Connection, snippets: &[Snippet]) -> Result<()> {
     let tx = conn.transaction()?;
     for s in snippets {
         tx.execute(
-            &format!("INSERT OR REPLACE INTO snippet ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"),
+            &format!("INSERT OR REPLACE INTO snippet ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"),
             params![
                 s.id,
                 s.trigger,
@@ -169,7 +228,8 @@ pub fn restore(conn: &mut Connection, snippets: &[Snippet]) -> Result<()> {
                 s.added_at,
                 s.last_used_at,
                 s.last_app,
-                s.last_app_path
+                s.last_app_path,
+                also_json(&s.also)?
             ],
         )?;
     }
@@ -204,12 +264,26 @@ pub fn record_use(
 pub fn import(conn: &mut Connection, inputs: &[SnippetInput], now: i64) -> Result<SnippetImport> {
     let mut summary = SnippetImport::default();
     for input in inputs {
-        let Ok(input) = validate(input) else {
+        let Ok(mut input) = validate(input) else {
             summary.skipped += 1;
             continue;
         };
-        match find_trigger(conn, &input.trigger, None)? {
-            Some(existing) if existing.text == input.text && existing.alone == input.alone => {
+        let existing = find_trigger(conn, &input.trigger, None)?;
+        // A phrase another snippet already answers to stays with that one.
+        let own = existing.as_ref().map(|s| s.id);
+        let mut also = Vec::new();
+        for phrase in std::mem::take(&mut input.also) {
+            if find_trigger(conn, &phrase, own)?.is_none() {
+                also.push(phrase);
+            }
+        }
+        input.also = also;
+        match existing {
+            Some(existing)
+                if existing.text == input.text
+                    && existing.alone == input.alone
+                    && existing.also == input.also =>
+            {
                 summary.skipped += 1;
             }
             Some(existing) => {
@@ -238,6 +312,8 @@ struct FileSnippet {
     text: String,
     #[serde(default)]
     alone: Option<bool>,
+    #[serde(default)]
+    also: Vec<String>,
     #[serde(default, rename = "match")]
     matching: Option<String>,
 }
@@ -261,6 +337,7 @@ pub fn parse_import(content: &str) -> Result<Vec<SnippetInput>> {
             .filter_map(|item| serde_json::from_value::<FileSnippet>(item).ok())
             .map(|f| SnippetInput {
                 trigger: f.trigger,
+                also: f.also,
                 text: f.text,
                 alone: f.alone.unwrap_or(f.matching.as_deref() == Some("alone")),
             })
@@ -276,6 +353,7 @@ pub fn parse_import(content: &str) -> Result<Vec<SnippetInput>> {
         }
         out.push(SnippetInput {
             trigger: line[0].clone(),
+            also: Vec::new(),
             text: line[1].clone(),
             alone: line.get(2).is_some_and(|v| {
                 matches!(
@@ -324,6 +402,7 @@ pub fn export_json(snippets: &[Snippet]) -> Result<String> {
         .iter()
         .map(|s| SnippetInput {
             trigger: s.trigger.clone(),
+            also: s.also.clone(),
             text: s.text.clone(),
             alone: s.alone,
         })
@@ -335,10 +414,12 @@ pub fn export_json(snippets: &[Snippet]) -> Result<String> {
 pub fn rules_of(snippets: &[Snippet]) -> Vec<rules::SnippetRule> {
     snippets
         .iter()
-        .map(|s| rules::SnippetRule {
-            id: s.id,
-            trigger: s.trigger.clone(),
-            alone: s.alone,
+        .flat_map(|s| {
+            triggers(s).map(move |trigger| rules::SnippetRule {
+                id: s.id,
+                trigger: trigger.clone(),
+                alone: s.alone,
+            })
         })
         .collect()
 }
@@ -358,9 +439,56 @@ mod tests {
     fn input(trigger: &str, text: &str, alone: bool) -> SnippetInput {
         SnippetInput {
             trigger: trigger.into(),
+            also: Vec::new(),
             text: text.into(),
             alone,
         }
+    }
+
+    #[test]
+    fn other_phrases_trigger_the_same_snippet() {
+        let mut conn = db();
+        let mut home = input("my address", "12 Park Lane", false);
+        home.also = vec![
+            " home address ".into(),
+            "my address".into(),
+            "Home Address.".into(),
+        ];
+        let s = add(&mut conn, &home, 1).unwrap();
+        assert_eq!(s.also, vec!["home address".to_string()]);
+        assert_eq!(
+            find_trigger(&conn, "Home Address", None)
+                .unwrap()
+                .map(|f| f.id),
+            Some(s.id)
+        );
+        let rules = rules_of(&list(&conn).unwrap());
+        assert_eq!(rules.len(), 2);
+        assert!(rules.iter().all(|r| r.id == s.id));
+
+        // No other snippet may take one of its phrases, as trigger or other.
+        assert!(add(&mut conn, &input("home address", "x", false), 2).is_err());
+        let mut work = input("work address", "1 Main St", false);
+        work.also = vec!["home address".into()];
+        assert!(add(&mut conn, &work, 2).is_err());
+
+        // An import keeps the phrase with the snippet that has it.
+        let summary = import(&mut conn, &[work], 3).unwrap();
+        assert_eq!(summary.added, 1);
+        let work = find_trigger(&conn, "work address", None).unwrap().unwrap();
+        assert!(work.also.is_empty());
+
+        // Export and import carry them.
+        let json = export_json(&list(&conn).unwrap()).unwrap();
+        let back = parse_import(&json).unwrap();
+        let mine = back.iter().find(|b| b.trigger == "my address").unwrap();
+        assert_eq!(mine.also, vec!["home address".to_string()]);
+        assert!(!json.contains("\"also\": []"));
+
+        // Restore puts them back after a delete.
+        let before = delete(&mut conn, &[s.id]).unwrap();
+        restore(&mut conn, &before).unwrap();
+        assert_eq!(get(&conn, s.id).unwrap().unwrap().also, before[0].also);
     }
 
     #[test]

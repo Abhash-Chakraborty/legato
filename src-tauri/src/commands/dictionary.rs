@@ -29,6 +29,8 @@ pub struct DictionaryView {
     /// Terms the model wrote more than one way lately, also under Needs
     /// review.
     pub spellings: Vec<Spelling>,
+    /// Words that look like one, offered for merging under Needs review.
+    pub merges: Vec<store::MergeSuggestion>,
 }
 
 #[tauri::command]
@@ -39,14 +41,51 @@ pub fn get_dictionary(
     let entries = dictionary.list().map_err(|e| e.to_string())?;
     Ok(DictionaryView {
         hint: store::hint(&entries),
-        entries,
         hint_limit: HINT_LIMIT as u32,
         pin_limit: PIN_LIMIT as u32,
         max_word_chars: MAX_WORD_CHARS as u32,
         pending: dictionary.pending().map_err(|e| e.to_string())?,
         never: dictionary.never().map_err(|e| e.to_string())?,
         spellings: dictionary.spellings().map_err(|e| e.to_string())?,
+        merges: dictionary
+            .merge_suggestions(&entries)
+            .map_err(|e| e.to_string())?,
+        entries,
     })
+}
+
+/// Words joined into one, and every word as it was, for Undo through
+/// `restore_dictionary_entries`.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct MergedWords {
+    pub entry: DictionaryEntry,
+    pub before: Vec<DictionaryEntry>,
+}
+
+/// Joins `others` into the word `keep`: their spellings become its other
+/// written forms ("Abhash" for "Abhash Chakraborty"), with their heard
+/// forms and fixes.
+#[tauri::command]
+#[specta::specta]
+pub fn merge_dictionary_entries(
+    dictionary: State<'_, Arc<DictionaryManager>>,
+    keep: i64,
+    others: Vec<i64>,
+) -> Result<MergedWords, String> {
+    let (entry, before) = dictionary.merge(keep, &others).map_err(|e| e.to_string())?;
+    Ok(MergedWords { entry, before })
+}
+
+/// Two words that aren't the same: Needs review stops offering to merge
+/// them.
+#[tauri::command]
+#[specta::specta]
+pub fn keep_dictionary_entries_apart(
+    dictionary: State<'_, Arc<DictionaryManager>>,
+    a: String,
+    b: String,
+) -> Result<(), String> {
+    dictionary.keep_apart(&a, &b).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -124,6 +163,7 @@ pub fn test_dictionary(
             id: draft_id.unwrap_or(-1),
             text: store::clean_word(&draft.text),
             heard: draft.heard.iter().map(|h| store::clean_heard(h)).collect(),
+            also: draft.also.iter().map(|a| store::clean_word(a)).collect(),
             source: DictionarySource::Manual,
             pinned: draft.pinned,
             case_sensitive: draft.case_sensitive,
@@ -508,6 +548,10 @@ pub fn set_your_name(
         let input = EntryInput {
             text: name.clone(),
             heard: forms,
+            also: existing
+                .as_ref()
+                .map(|e| e.also.clone())
+                .unwrap_or_default(),
             pinned: existing.as_ref().is_some_and(|e| e.pinned),
             case_sensitive: existing.as_ref().is_some_and(|e| e.case_sensitive),
             kind: Some(WordKind::Person),

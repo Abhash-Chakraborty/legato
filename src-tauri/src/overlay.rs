@@ -38,6 +38,8 @@ const OVERLAY_CALL_HEIGHT: f64 = 124.0;
 /// A meeting's card with what was said last time.
 const OVERLAY_CALL_TALL_HEIGHT: f64 = 184.0;
 /// An agent's question from Inyon: a few lines and up to five options.
+const OVERLAY_CORRECT_WIDTH: f64 = 480.0;
+const OVERLAY_CORRECT_HEIGHT: f64 = 200.0;
 const OVERLAY_AGENT_WIDTH: f64 = 440.0;
 const OVERLAY_AGENT_HEIGHT: f64 = 320.0;
 
@@ -65,6 +67,8 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
         // An agent waiting on Inyon: its question and options; or what
         // Inyon's companion agent replied.
         "agent" | "companion" => (OVERLAY_AGENT_WIDTH, OVERLAY_AGENT_HEIGHT),
+        // Correct last dictation: the pasted text to edit.
+        "correct" => (OVERLAY_CORRECT_WIDTH, OVERLAY_CORRECT_HEIGHT),
         _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
 }
@@ -515,6 +519,10 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
         overlay_dimensions(state)
     };
     *SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = Some(state.to_string());
+    // Anything else on the bar, such as a dictation starting, ends Correct.
+    if state != "correct" {
+        set_bar_focus(app_handle, false);
+    }
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         // Invalidate any delayed hide still in flight from a previous session
         // (see `hide_recording_overlay`).
@@ -669,6 +677,32 @@ pub fn show_bar<T: serde::Serialize>(
         }
     });
 }
+
+/// Lets the bar take the keyboard while Correct is open, or gives it back.
+/// It never takes focus otherwise, so the app keeps it for pastes and Undo.
+pub fn set_bar_focus(app_handle: &AppHandle, on: bool) {
+    if !on && !BAR_FOCUSABLE.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    BAR_FOCUSABLE.store(on, Ordering::SeqCst);
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        let Some(window) = handle.get_webview_window("recording_overlay") else {
+            return;
+        };
+        let _ = window.set_focusable(on);
+        if on {
+            let _ = window.set_focus();
+            // Windows may refuse a plain focus change after a shortcut.
+            if let Ok(hwnd) = window.hwnd() {
+                crate::context::focus_window(hwnd.0 as isize);
+            }
+        }
+    });
+}
+
+/// Set while Correct has made the bar focusable.
+static BAR_FOCUSABLE: AtomicBool = AtomicBool::new(false);
 
 /// Whether the pointer is over a panel the bar shows for a while, such as a
 /// transform's changes; it isn't hidden while it is.
@@ -889,6 +923,7 @@ pub fn show_companion_reply<T: serde::Serialize>(app_handle: &AppHandle, reply: 
 /// back to its pill. A dictation
 /// ends with `end_dictation`, which also frees the bubble.
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
+    set_bar_focus(app_handle, false);
     if let Some(card) = call_card() {
         show_bar(app_handle, "call", "bar-call", &card, None);
         return;

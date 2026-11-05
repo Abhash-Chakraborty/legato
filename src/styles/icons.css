@@ -1,0 +1,338 @@
+/* Icon hover motion for every window.
+
+   Each icon in a button, link, tab or menu item makes one short move when it
+   or the list row it sits in is hovered or focused: arrows step the way they
+   point, refresh arrows go round, ticks and pins pop, a bin's lid lifts, pens
+   write, tools tilt, microphones wobble. One pass per hover, never a loop,
+   transform only, and nothing with reduced motion.
+   Lucide names every icon with a lucide-<name> class, so components need
+   nothing. Icons with their own motion (.im in the sidebar, spinners) are
+   left alone. */
+
+@media (prefers-reduced-motion: no-preference) {
+  :is(
+      button,
+      a,
+      [role="button"],
+      [role="menuitem"],
+      [role="menuitemradio"],
+      [role="tab"],
+      [role="switch"],
+      [data-row]
+    ):not(:disabled, [aria-disabled="true"]):is(:hover, :focus-visible) {
+    /* Arrows and chevrons travel a step the way they point. */
+    :is(
+      .lucide-arrow-right,
+      .lucide-chevron-right,
+      .lucide-send-horizontal,
+      .lucide-play
+    ):not(.im, .animate-spin) {
+      animation: icon-nudge-r 300ms var(--ease-out);
+    }
+    :is(
+      .lucide-chevron-left,
+      .lucide-corner-down-left,
+      .lucide-arrow-down-left,
+      .lucide-panel-left-close,
+      .lucide-undo-2
+    ):not(.im, .animate-spin) {
+      animation: icon-nudge-l 300ms var(--ease-out);
+    }
+    :is(.lucide-arrow-up, .lucide-chevron-up, .lucide-upload):not(
+      .im,
+      .animate-spin
+    ) {
+      animation: icon-nudge-u 300ms var(--ease-out);
+    }
+    :is(
+      .lucide-arrow-down,
+      .lucide-chevron-down,
+      .lucide-download,
+      .lucide-file-down,
+      .lucide-folder-input
+    ):not(.im, .animate-spin) {
+      animation: icon-nudge-d 300ms var(--ease-out);
+    }
+    :is(.lucide-arrow-up-right, .lucide-external-link, .lucide-send):not(
+      .im,
+      .animate-spin
+    ) {
+      animation: icon-nudge-ur 320ms var(--ease-out);
+    }
+    :is(.lucide-arrow-down-right):not(.im, .animate-spin) {
+      animation: icon-nudge-dr 320ms var(--ease-out);
+    }
+    /* Things that turn go round once: refresh and reset arrows, the gears. */
+    :is(.lucide-refresh-cw, .lucide-rotate-cw):not(.im, .animate-spin) {
+      animation: icon-spin 520ms var(--ease-out);
+    }
+    :is(.lucide-rotate-ccw, .lucide-history):not(.im, .animate-spin) {
+      animation: icon-spin-back 520ms var(--ease-out);
+    }
+    :is(.lucide-settings, .lucide-settings-2):not(.im, .animate-spin) {
+      animation: icon-turn 480ms var(--ease-out);
+    }
+    :is(.lucide-x, .lucide-plus):not(.im, .animate-spin) {
+      animation: icon-quarter 260ms var(--ease-out);
+    }
+    /* Marks and pins pop, as a tick lands. */
+    :is(
+      .lucide-check,
+      .lucide-check-check,
+      .lucide-pin,
+      .lucide-pin-off,
+      .lucide-star,
+      .lucide-tag,
+      .lucide-merge,
+      .lucide-book-plus,
+      .lucide-folder-plus,
+      .lucide-calendar-plus,
+      .lucide-minus,
+      .lucide-square,
+      .lucide-pause
+    ):not(.im, .animate-spin) {
+      animation: icon-pop 300ms var(--ease-out);
+    }
+    /* A bin's lid lifts off at its right end; pens write a stroke. */
+    .lucide-trash-2:not(.im) > :nth-child(n + 4) {
+      transform-box: view-box;
+      transform-origin: 21px 6px;
+      animation: icon-lid 360ms var(--ease-out);
+    }
+    :is(
+      .lucide-pencil,
+      .lucide-pencil-line,
+      .lucide-square-pen,
+      .lucide-notebook-pen
+    ):not(.im) {
+      animation: icon-write 420ms var(--ease-out);
+    }
+    /* Tools tilt as if picked up. */
+    :is(
+      .lucide-eraser,
+      .lucide-scissors,
+      .lucide-search,
+      .lucide-key-round,
+      .lucide-pointer,
+      .lucide-flask-conical,
+      .lucide-spell-check,
+      .lucide-type,
+      .lucide-bold,
+      .lucide-italic,
+      .lucide-heading-2,
+      .lucide-replace,
+      .lucide-braces,
+      .lucide-code
+    ):not(.im, .animate-spin) {
+      animation: icon-tilt 360ms var(--ease-out);
+    }
+    /* Sound and calls wobble, like a ring. */
+    :is(
+      .lucide-mic,
+      .lucide-mic-off,
+      .lucide-phone-incoming,
+      .lucide-smartphone,
+      .lucide-bluetooth,
+      .lucide-bluetooth-off,
+      .lucide-bot,
+      .lucide-bug
+    ):not(.im, .animate-spin) {
+      animation: icon-wobble 420ms var(--ease-out);
+    }
+    /* Eyes blink; warnings and help draw the eye once. */
+    :is(.lucide-eye, .lucide-eye-off):not(.im, .animate-spin) {
+      animation: icon-blink 280ms var(--ease-out);
+    }
+    :is(.lucide-triangle-alert, .lucide-shield-alert):not(.im, .animate-spin) {
+      animation: icon-shake 360ms var(--ease-out);
+    }
+    :is(
+      .lucide-info,
+      .lucide-circle-question-mark,
+      .lucide-message-circle-question-mark,
+      .lucide-circle-slash,
+      .lucide-shield,
+      .lucide-shield-check
+    ):not(.im, .animate-spin) {
+      animation: icon-pop 300ms var(--ease-out);
+    }
+    /* Windows and panels grow or shrink as they will. */
+    :is(
+      .lucide-maximize-2,
+      .lucide-picture-in-picture-2,
+      .lucide-panel-left-open,
+      .lucide-app-window,
+      .lucide-panel-bottom,
+      .lucide-panel-left
+    ):not(.im, .animate-spin) {
+      animation: icon-grow 280ms var(--ease-out);
+    }
+    :is(.lucide-minimize-2):not(.im, .animate-spin) {
+      animation: icon-shrink 280ms var(--ease-out);
+    }
+    /* Copying offsets the page; the globe and languages turn. */
+    :is(.lucide-copy, .lucide-clipboard-paste):not(.im, .animate-spin) {
+      animation: icon-copy 320ms var(--ease-out);
+    }
+    :is(.lucide-globe, .lucide-languages):not(.im, .animate-spin) {
+      animation: icon-globe 520ms var(--ease-out);
+    }
+    /* Everything else lifts a little. */
+    :is(
+      .lucide-blocks,
+      .lucide-book-a,
+      .lucide-calendar-days,
+      .lucide-captions,
+      .lucide-chart-column,
+      .lucide-cloud,
+      .lucide-cpu,
+      .lucide-crosshair,
+      .lucide-file-text,
+      .lucide-folder,
+      .lucide-hard-drive,
+      .lucide-house,
+      .lucide-keyboard,
+      .lucide-list,
+      .lucide-list-checks,
+      .lucide-list-ordered,
+      .lucide-mail,
+      .lucide-message-circle,
+      .lucide-monitor,
+      .lucide-network,
+      .lucide-plug,
+      .lucide-users,
+      .lucide-video,
+      .lucide-wifi,
+      .lucide-arrow-left-right,
+      .lucide-arrow-up-down
+    ):not(.im, .animate-spin) {
+      animation: icon-lift 320ms var(--ease-out);
+    }
+  }
+}
+@keyframes icon-nudge-l {
+  40% {
+    transform: translateX(-2px);
+  }
+}
+@keyframes icon-nudge-u {
+  40% {
+    transform: translateY(-2px);
+  }
+}
+@keyframes icon-nudge-d {
+  40% {
+    transform: translateY(2px);
+  }
+}
+@keyframes icon-nudge-ur {
+  40% {
+    transform: translate(1.5px, -1.5px);
+  }
+}
+@keyframes icon-nudge-dr {
+  40% {
+    transform: translate(1.5px, 1.5px);
+  }
+}
+@keyframes icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes icon-spin-back {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+@keyframes icon-turn {
+  to {
+    transform: rotate(60deg);
+  }
+}
+@keyframes icon-quarter {
+  to {
+    transform: rotate(90deg);
+  }
+}
+@keyframes icon-pop {
+  45% {
+    transform: scale(0.8);
+  }
+  75% {
+    transform: scale(1.08);
+  }
+}
+@keyframes icon-lid {
+  40% {
+    transform: translateY(-1.5px) rotate(12deg);
+  }
+}
+@keyframes icon-write {
+  30% {
+    transform: translate(-1.5px, 1.5px);
+  }
+  65% {
+    transform: translate(1px, -0.5px);
+  }
+}
+@keyframes icon-tilt {
+  40% {
+    transform: rotate(-10deg);
+  }
+}
+@keyframes icon-wobble {
+  25% {
+    transform: rotate(-10deg);
+  }
+  55% {
+    transform: rotate(8deg);
+  }
+  80% {
+    transform: rotate(-3deg);
+  }
+}
+@keyframes icon-blink {
+  50% {
+    transform: scaleY(0.15);
+  }
+}
+@keyframes icon-shake {
+  25% {
+    transform: translateX(-1.5px);
+  }
+  50% {
+    transform: translateX(1.5px);
+  }
+  75% {
+    transform: translateX(-1px);
+  }
+}
+@keyframes icon-grow {
+  45% {
+    transform: scale(1.15);
+  }
+}
+@keyframes icon-shrink {
+  45% {
+    transform: scale(0.82);
+  }
+}
+@keyframes icon-copy {
+  45% {
+    transform: translate(1.5px, 1.5px);
+  }
+}
+@keyframes icon-globe {
+  50% {
+    transform: rotateY(180deg);
+  }
+  to {
+    transform: rotateY(360deg);
+  }
+}
+@keyframes icon-lift {
+  40% {
+    transform: translateY(-2px);
+  }
+}

@@ -231,6 +231,17 @@ pub fn last_paste_here(within: Duration) -> Option<String> {
         .map(|(_, text, _)| text.clone())
 }
 
+/// What Legato last pasted and the window it went into, within `within`,
+/// wherever the focus is now.
+pub fn last_paste(within: Duration) -> Option<(isize, String)> {
+    LAST_PASTE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .filter(|(_, _, at)| at.elapsed() < within)
+        .map(|(handle, text, _)| (*handle, text.clone()))
+}
+
 pub fn paste_dictation(
     text: String,
     app_handle: AppHandle,

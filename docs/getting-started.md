@@ -82,6 +82,7 @@ These work in any app, even with Legato's window closed. Change them in Settings
 | Show the last changes       | Win+Alt+O        | Shows what the last transform changed, with Undo (needs Transforms) |
 | Paste last dictation        | Alt+Shift+Z      | Pastes your last dictation again                                    |
 | Copy last dictation         | Alt+Shift+X      | Puts your last dictation on the clipboard                           |
+| Correct last dictation      | Alt+Shift+C      | Opens your last dictation on the bar to fix; the fix is learned     |
 | Open Scratchpad             | Win+Alt+S        | Press to open the Scratchpad; hold to dictate into a new note       |
 | Start or stop notes         | Win+Alt+M        | Starts recording a meeting, or stops it (needs Notes)               |
 | Talk to the companion       | Win+Alt+I        | Hold and speak to Inyon's companion agent (needs an Inyon pairing)  |

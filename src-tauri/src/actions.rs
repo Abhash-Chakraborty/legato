@@ -488,7 +488,12 @@ pub(crate) async fn process_transcription_output(
         }
         if medium {
             stage(Stage::Polishing);
-            match ai::medium_pass(app, &settings, &styled, marked.hits.len()).await {
+            let place = crate::ai_rules::Place {
+                app: target.map(|a| a.name.as_str()),
+                category,
+                your_name: Some(settings.your_name.as_str()),
+            };
+            match ai::medium_pass(app, &settings, &styled, marked.hits.len(), &place).await {
                 Ok(Some(cleaned)) => styled = cleaned,
                 Ok(None) => {}
                 Err(problem) => ai_problem = Some(problem),
@@ -1551,6 +1556,7 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         ),
         ("view_changes", crate::transforms::view_last_changes),
         ("paste_last", crate::transforms::paste_last),
+        ("correct_last", crate::correct::shortcut),
         ("copy_last", crate::transforms::copy_last),
         ("toggle_notes", crate::notes::toggle),
     ] {

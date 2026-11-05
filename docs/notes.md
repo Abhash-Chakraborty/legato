@@ -73,7 +73,7 @@ Above the summary, a note lists its people in up to three groups:
 - **Invited**: on the calendar invite but never seen in the call. Anyone who declined the invite is left out.
 - **Mentioned**: people who were talked about but didn't speak.
 
-You aren't listed: Legato recognises Settings › General › Your name, your first name, and forms of it from email addresses, such as a.chakraborty for Abhash Chakraborty. One person under two spellings, such as Priya and Priya Shah, is listed once. An invite with only an address shows a name made from it, so priya.shah reads Priya Shah. Notes recorded before this version show what they knew as Attended, and other names from their summary as Mentioned; Regenerate writes the summary again with the groups apart.
+You aren't listed: Legato recognises Settings › General › Your name, your first name, and forms of it from email addresses, such as s.rao for Sam Rao. One person under two spellings, such as Priya and Priya Shah, is listed once. An invite with only an address shows a name made from it, so priya.shah reads Priya Shah. Notes recorded before this version show what they knew as Attended, and other names from their summary as Mentioned; Regenerate writes the summary again with the groups apart.
 
 ## The summary
 

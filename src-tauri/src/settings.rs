@@ -1610,6 +1610,12 @@ pub fn get_default_settings() -> AppSettings {
             "alt+shift+x",
         ),
         (
+            "correct_last",
+            "Correct last dictation",
+            "Opens your last dictation on the bar to fix; the fix replaces it and is learned.",
+            "alt+shift+c",
+        ),
+        (
             "transform_selection",
             "Transform the selection",
             "Picks a transform for the text selected in any app.",

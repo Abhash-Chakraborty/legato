@@ -1,4 +1,5 @@
 @import "../styles/theme.css";
+@import "../styles/icons.css";
 
 :root {
   --s-font: "Segoe UI", Roboto, sans-serif;
@@ -1309,4 +1310,36 @@
 }
 .scompanion-more {
   align-self: flex-start;
+}
+
+/* Correct last dictation: the pasted text in an editable field. */
+.scorrect-text {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 64px;
+  max-height: 120px;
+  resize: none;
+  border: 1px solid var(--s-border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  outline: none;
+}
+.scorrect-text:focus {
+  border-color: var(--s-accent);
+  box-shadow: 0 0 0 3px var(--s-accent-soft);
+}
+.scorrect .spanel-note {
+  flex: 1;
+}
+.scorrect .sbtn.quiet {
+  margin-left: 0;
+}
+.sbtn.primary:disabled {
+  opacity: 0.45;
+  cursor: default;
 }

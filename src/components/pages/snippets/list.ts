@@ -3,13 +3,35 @@ import type { Snippet } from "@/bindings";
 export type Sort = "used" | "recent" | "newest" | "az";
 export const SORTS: Sort[] = ["used", "recent", "newest", "az"];
 
-/** Matches the trigger or the saved text. */
+/** Every phrase that triggers a snippet, its trigger first. */
+export const triggersOf = (snippet: Snippet) => [
+  snippet.trigger,
+  ...(snippet.also ?? []),
+];
+
+/** Matches any trigger phrase or the saved text. */
 export const matchesQuery = (snippet: Snippet, query: string) => {
   const q = query.trim().toLowerCase();
   return (
     !q ||
-    snippet.trigger.toLowerCase().includes(q) ||
+    triggersOf(snippet).some((p) => p.toLowerCase().includes(q)) ||
     snippet.text.toLowerCase().includes(q)
+  );
+};
+
+/** The snippet other than `except` that one of whose phrases reads as
+ *  `phrase`. */
+export const snippetWithTrigger = (
+  snippets: Snippet[],
+  phrase: string,
+  except?: number,
+) => {
+  const said = normalizeTrigger(phrase);
+  if (!said) return undefined;
+  return snippets.find(
+    (s) =>
+      s.id !== except &&
+      triggersOf(s).some((p) => normalizeTrigger(p) === said),
   );
 };
 

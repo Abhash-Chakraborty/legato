@@ -373,6 +373,26 @@ pub fn bar_undo(app: AppHandle) {
     transforms::undo(&app);
 }
 
+/// The bar's Correct: opens the last paste for editing.
+#[tauri::command]
+#[specta::specta]
+pub fn bar_correct(app: AppHandle) {
+    crate::correct::begin(&app);
+}
+
+/// Puts the edited text in place of the last paste and learns from it.
+#[tauri::command]
+#[specta::specta]
+pub fn bar_correct_apply(app: AppHandle, text: String) {
+    crate::correct::apply(&app, text);
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn bar_correct_cancel(app: AppHandle, refocus: bool) {
+    crate::correct::cancel(&app, refocus);
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn bar_keep(app: AppHandle) {

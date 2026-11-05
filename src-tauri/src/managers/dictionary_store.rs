@@ -109,6 +109,10 @@ pub struct DictionaryEntry {
     pub text: String,
     /// Ways the model mishears the word.
     pub heard: Vec<String>,
+    /// Other ways the word is written that are right as they are: a first
+    /// name, a short form. Never rewritten into the word.
+    #[serde(default)]
+    pub also: Vec<String>,
     pub source: DictionarySource,
     pub pinned: bool,
     pub case_sensitive: bool,
@@ -131,6 +135,8 @@ pub struct EntryInput {
     #[serde(default)]
     pub heard: Vec<String>,
     #[serde(default)]
+    pub also: Vec<String>,
+    #[serde(default)]
     pub pinned: bool,
     #[serde(default)]
     pub case_sensitive: bool,
@@ -150,6 +156,7 @@ fn map_entry(row: &Row<'_>) -> rusqlite::Result<DictionaryEntry> {
         id: row.get("id")?,
         text: row.get("text")?,
         heard: Vec::new(),
+        also: Vec::new(),
         source: DictionarySource::parse(&source),
         pinned: row.get("pinned")?,
         case_sensitive: row.get("case_sensitive")?,
@@ -185,6 +192,15 @@ fn heard_of(conn: &Connection, id: i64) -> Result<Vec<String>> {
     Ok(heard)
 }
 
+fn also_of(conn: &Connection, id: i64) -> Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare("SELECT form FROM dictionary_also WHERE entry_id = ?1 ORDER BY rowid")?;
+    let also = stmt
+        .query_map(params![id], |row| row.get(0))?
+        .collect::<rusqlite::Result<Vec<String>>>()?;
+    Ok(also)
+}
+
 pub fn get(conn: &Connection, id: i64) -> Result<Option<DictionaryEntry>> {
     let entry = conn
         .query_row(
@@ -196,6 +212,7 @@ pub fn get(conn: &Connection, id: i64) -> Result<Option<DictionaryEntry>> {
     match entry {
         Some(mut entry) => {
             entry.heard = heard_of(conn, entry.id)?;
+            entry.also = also_of(conn, entry.id)?;
             Ok(Some(entry))
         }
         None => Ok(None),
@@ -231,8 +248,15 @@ pub fn list(conn: &Connection) -> Result<Vec<DictionaryEntry>> {
         let (id, form) = row?;
         heard.entry(id).or_default().push(form);
     }
+    let mut also: HashMap<i64, Vec<String>> = HashMap::new();
+    let mut stmt = conn.prepare("SELECT entry_id, form FROM dictionary_also ORDER BY rowid")?;
+    for row in stmt.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get(1)?)))? {
+        let (id, form) = row?;
+        also.entry(id).or_default().push(form);
+    }
     for entry in &mut entries {
         entry.heard = heard.remove(&entry.id).unwrap_or_default();
+        entry.also = also.remove(&entry.id).unwrap_or_default();
     }
     Ok(entries)
 }
@@ -291,7 +315,13 @@ fn add_heard(conn: &Connection, id: i64, text: &str, heard: &[String]) -> Result
             params![form, id],
             |row| row.get(0),
         )?;
-        if is_a_word {
+        // A form that's right as written isn't a mishearing.
+        let written: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM dictionary_also WHERE form = ?1 COLLATE NOCASE",
+            params![form],
+            |row| row.get(0),
+        )?;
+        if is_a_word || written {
             continue;
         }
         conn.execute(
@@ -305,6 +335,48 @@ fn add_heard(conn: &Connection, id: i64, text: &str, heard: &[String]) -> Result
         added.push(form);
     }
     Ok(added)
+}
+
+/// Sets a word's other written forms. A form another word had moves to
+/// this one and stops being anyone's heard form; forms that are the word
+/// itself, or another word's spelling, are skipped. Returns the forms kept.
+fn set_also(conn: &Connection, id: i64, text: &str, also: &[String]) -> Result<Vec<String>> {
+    conn.execute(
+        "DELETE FROM dictionary_also WHERE entry_id = ?1",
+        params![id],
+    )?;
+    let mut kept: Vec<String> = Vec::new();
+    for form in also.iter().map(|f| clean_word(f)) {
+        if form.is_empty()
+            || form.chars().count() > MAX_WORD_CHARS
+            || form.to_lowercase() == text.to_lowercase()
+            || kept.iter().any(|k| k.to_lowercase() == form.to_lowercase())
+        {
+            continue;
+        }
+        let is_a_word: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM dictionary_entry WHERE text = ?1 COLLATE NOCASE AND id != ?2",
+            params![form, id],
+            |row| row.get(0),
+        )?;
+        if is_a_word {
+            continue;
+        }
+        conn.execute(
+            "DELETE FROM dictionary_also WHERE form = ?1 COLLATE NOCASE",
+            params![form],
+        )?;
+        conn.execute(
+            "DELETE FROM dictionary_heard WHERE heard = ?1 COLLATE NOCASE",
+            params![form],
+        )?;
+        conn.execute(
+            "INSERT INTO dictionary_also (entry_id, form) VALUES (?1, ?2)",
+            params![id, form],
+        )?;
+        kept.push(form);
+    }
+    Ok(kept)
 }
 
 pub fn add(
@@ -328,11 +400,16 @@ pub fn add(
         ],
     )?;
     let id = tx.last_insert_rowid();
-    // A new word that was someone else's heard form stops being one.
+    // A new word that was someone else's heard or other form stops being one.
     tx.execute(
         "DELETE FROM dictionary_heard WHERE heard = ?1 COLLATE NOCASE",
         params![text],
     )?;
+    tx.execute(
+        "DELETE FROM dictionary_also WHERE form = ?1 COLLATE NOCASE",
+        params![text],
+    )?;
+    set_also(&tx, id, &text, &input.also)?;
     add_heard(&tx, id, &text, &input.heard)?;
     let entry = get(&tx, id)?.ok_or_else(|| anyhow!("Saved word is missing"))?;
     tx.commit()?;
@@ -358,6 +435,11 @@ pub fn update(conn: &mut Connection, id: i64, input: &EntryInput) -> Result<Dict
         "DELETE FROM dictionary_heard WHERE entry_id = ?1 OR heard = ?2 COLLATE NOCASE",
         params![id, text],
     )?;
+    tx.execute(
+        "DELETE FROM dictionary_also WHERE form = ?1 COLLATE NOCASE AND entry_id != ?2",
+        params![text, id],
+    )?;
+    set_also(&tx, id, &text, &input.also)?;
     add_heard(&tx, id, &text, &input.heard)?;
     let entry = get(&tx, id)?.ok_or_else(|| anyhow!("Saved word is missing"))?;
     tx.commit()?;
@@ -394,6 +476,10 @@ pub fn delete(conn: &mut Connection, ids: &[i64]) -> Result<Vec<DictionaryEntry>
         if let Some(entry) = get(&tx, id)? {
             tx.execute(
                 "DELETE FROM dictionary_heard WHERE entry_id = ?1",
+                params![id],
+            )?;
+            tx.execute(
+                "DELETE FROM dictionary_also WHERE entry_id = ?1",
                 params![id],
             )?;
             tx.execute("DELETE FROM dictionary_entry WHERE id = ?1", params![id])?;
@@ -435,15 +521,123 @@ pub fn restore(conn: &mut Connection, entries: &[DictionaryEntry]) -> Result<()>
             "DELETE FROM dictionary_heard WHERE entry_id = ?1",
             params![e.id],
         )?;
+        set_also(&tx, e.id, &e.text, &e.also)?;
         add_heard(&tx, e.id, &e.text, &e.heard)?;
     }
-    // Heard forms whose word is gone.
+    // Heard and other forms whose word is gone.
     tx.execute(
         "DELETE FROM dictionary_heard WHERE entry_id NOT IN (SELECT id FROM dictionary_entry)",
         [],
     )?;
+    tx.execute(
+        "DELETE FROM dictionary_also WHERE entry_id NOT IN (SELECT id FROM dictionary_entry)",
+        [],
+    )?;
     tx.commit()?;
     Ok(())
+}
+
+/// Joins `others` into the word `keep`: their spellings and other forms
+/// become its other forms, their heard forms its own, their fixes add up,
+/// and a pin or a kind carries over. Returns the joined word, then every
+/// word as it was before, for Undo (`restore`).
+pub fn merge(
+    conn: &mut Connection,
+    keep: i64,
+    others: &[i64],
+) -> Result<(DictionaryEntry, Vec<DictionaryEntry>)> {
+    let tx = conn.transaction()?;
+    let kept =
+        get(&tx, keep)?.ok_or_else(|| anyhow!("That word is no longer in your Dictionary"))?;
+    let mut before = vec![kept.clone()];
+    let mut also = kept.also.clone();
+    let mut heard = kept.heard.clone();
+    let (mut hits, mut pinned, mut kind, mut last_fix_at) =
+        (kept.hits, kept.pinned, kept.kind, kept.last_fix_at);
+    for &id in others.iter().filter(|&&id| id != keep) {
+        let Some(other) = get(&tx, id)? else {
+            continue;
+        };
+        tx.execute(
+            "DELETE FROM dictionary_heard WHERE entry_id = ?1",
+            params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM dictionary_also WHERE entry_id = ?1",
+            params![id],
+        )?;
+        tx.execute("DELETE FROM dictionary_entry WHERE id = ?1", params![id])?;
+        also.push(other.text.clone());
+        also.extend(other.also.iter().cloned());
+        heard.extend(other.heard.iter().cloned());
+        hits += other.hits;
+        pinned |= other.pinned;
+        kind = kind.or(other.kind);
+        last_fix_at = last_fix_at.max(other.last_fix_at);
+        before.push(other);
+    }
+    tx.execute(
+        "UPDATE dictionary_entry SET hits = ?2, pinned = ?3, kind = ?4, last_fix_at = ?5
+         WHERE id = ?1",
+        params![keep, hits, pinned, kind.map(WordKind::as_str), last_fix_at],
+    )?;
+    set_also(&tx, keep, &kept.text, &also)?;
+    add_heard(&tx, keep, &kept.text, &heard)?;
+    let entry = get(&tx, keep)?.ok_or_else(|| anyhow!("Saved word is missing"))?;
+    tx.commit()?;
+    Ok((entry, before))
+}
+
+/// Pairs of words said not to be the same, lowercase and in order.
+pub fn apart(conn: &Connection) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare("SELECT a, b FROM dictionary_apart")?;
+    let pairs = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(pairs)
+}
+
+/// Remembers that two words aren't the same, so they aren't offered for
+/// merging again.
+pub fn keep_apart(conn: &Connection, a: &str, b: &str) -> Result<()> {
+    let (x, y) = (a.to_lowercase(), b.to_lowercase());
+    let (x, y) = if x <= y { (x, y) } else { (y, x) };
+    conn.execute(
+        "INSERT OR IGNORE INTO dictionary_apart (a, b) VALUES (?1, ?2)",
+        params![x, y],
+    )?;
+    Ok(())
+}
+
+/// Words that look like one, to offer merging under Needs review.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct MergeSuggestion {
+    pub keep: DictionaryEntry,
+    pub other: DictionaryEntry,
+}
+
+pub fn merge_suggestions(
+    conn: &Connection,
+    entries: &[DictionaryEntry],
+) -> Result<Vec<MergeSuggestion>> {
+    let words: Vec<crate::learn_rules::WordForMerge<'_>> = entries
+        .iter()
+        .map(|e| crate::learn_rules::WordForMerge {
+            id: e.id,
+            text: &e.text,
+            hits: e.hits,
+        })
+        .collect();
+    let by_id = |id: i64| entries.iter().find(|e| e.id == id).cloned();
+    Ok(crate::learn_rules::merge_suggestions(&words, &apart(conn)?)
+        .into_iter()
+        .filter_map(|(keep, other)| {
+            Some(MergeSuggestion {
+                keep: by_id(keep)?,
+                other: by_id(other)?,
+            })
+        })
+        .collect())
 }
 
 /// Counts a fix for each word in `words`, in the app it happened in.
@@ -773,8 +967,10 @@ pub fn import(
             Some(existing) => {
                 let tx = conn.transaction()?;
                 let added = add_heard(&tx, existing.id, &existing.text, &row.heard)?;
+                let also: Vec<String> = existing.also.iter().chain(&row.also).cloned().collect();
+                let written = set_also(&tx, existing.id, &existing.text, &also)?;
                 tx.commit()?;
-                if added.is_empty() {
+                if added.is_empty() && written.len() <= existing.also.len() {
                     summary.skipped += 1;
                 } else {
                     summary.updated += 1;
@@ -986,6 +1182,7 @@ pub fn compile_with(
         .map(|e| DictionaryWord {
             text: e.text.clone(),
             heard: e.heard.clone(),
+            also: e.also.clone(),
             case_sensitive: e.case_sensitive,
             in_hint: hint.contains(&e.text),
             context: context.get(&e.id).cloned().unwrap_or_default(),
@@ -1064,6 +1261,53 @@ mod tests {
             .to_latest(&mut conn)
             .unwrap();
         conn
+    }
+
+    #[test]
+    fn merged_words_keep_one_with_the_others_written_as_they_were() {
+        let mut conn = db();
+        let first = add(
+            &mut conn,
+            &input("Abhash", &["a bash"]),
+            DictionarySource::Manual,
+            1,
+        )
+        .unwrap();
+        let full = add(
+            &mut conn,
+            &input("Abhash Chakraborty", &["abhash chuck"]),
+            DictionarySource::Manual,
+            2,
+        )
+        .unwrap();
+        let (merged, before) = merge(&mut conn, full.id, &[first.id]).unwrap();
+        assert_eq!(merged.also, vec!["Abhash"]);
+        assert_eq!(merged.heard, vec!["abhash chuck", "a bash"]);
+        assert_eq!(list(&conn).unwrap().len(), 1);
+        // An other form can't also be a heard form, nor another word.
+        let edited = update(
+            &mut conn,
+            full.id,
+            &EntryInput {
+                text: "Abhash Chakraborty".into(),
+                heard: vec!["Abhash".into(), "abhash chuck".into()],
+                also: vec!["Abhash".into(), "A. Chakraborty".into()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(edited.also, vec!["Abhash", "A. Chakraborty"]);
+        assert_eq!(edited.heard, vec!["abhash chuck"]);
+        // Undo puts both words back as they were.
+        restore(&mut conn, &before).unwrap();
+        let back = list(&conn).unwrap();
+        assert_eq!(back.len(), 2);
+        assert!(back.iter().all(|e| e.also.is_empty()));
+        assert_eq!(get(&conn, first.id).unwrap().unwrap().heard, vec!["a bash"]);
+        // Words said to be apart aren't suggested again.
+        assert_eq!(merge_suggestions(&conn, &back).unwrap().len(), 1);
+        keep_apart(&conn, "Abhash Chakraborty", "abhash").unwrap();
+        assert!(merge_suggestions(&conn, &back).unwrap().is_empty());
     }
 
     fn input(text: &str, heard: &[&str]) -> EntryInput {

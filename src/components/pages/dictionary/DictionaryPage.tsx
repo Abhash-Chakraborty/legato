@@ -49,6 +49,7 @@ import {
 import { TestSentence } from "./TestSentence";
 import { toastSaved, WordEditor } from "./WordEditor";
 import { WordRow } from "./WordRow";
+import { MergeWords } from "./MergeWords";
 
 const INTRO_KEY = "legato.dictionary.introHidden";
 
@@ -81,6 +82,7 @@ export const DictionaryPage: React.FC = () => {
   const [sort, setSort] = useState<Sort>("pinned");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
+  const [merging, setMerging] = useState<DictionaryEntry | null>(null);
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [menu, setMenu] = useState<"more" | "sort" | null>(null);
   const [introHidden, setIntroHidden] = useState(readIntroHidden);
@@ -112,7 +114,10 @@ export const DictionaryPage: React.FC = () => {
     all: entries.length,
     learned: entries.filter((e) => inTab(e, "learned")).length,
     mine: entries.filter((e) => inTab(e, "mine")).length,
-    review: (view?.pending.length ?? 0) + (view?.spellings.length ?? 0),
+    review:
+      (view?.pending.length ?? 0) +
+      (view?.spellings.length ?? 0) +
+      (view?.merges?.length ?? 0),
   };
   const reviewing = tab === "review";
   const totalHits = entries.reduce((sum, e) => sum + e.hits, 0);
@@ -500,6 +505,7 @@ export const DictionaryPage: React.FC = () => {
         <ReviewList
           pending={view.pending}
           spellings={view.spellings}
+          merges={view.merges ?? []}
           now={now}
           enabled={settings?.learn_from_edits ?? true}
           mode={settings?.learn_mode ?? "ask"}
@@ -555,6 +561,7 @@ export const DictionaryPage: React.FC = () => {
                 onFocusRow={() => setFocusedId(entry.id)}
                 onEdit={() => setEditing({ entry })}
                 onPin={() => togglePin(entry)}
+                onMerge={() => setMerging(entry)}
                 onDelete={() => remove(entry)}
               />
             ))}
@@ -569,6 +576,14 @@ export const DictionaryPage: React.FC = () => {
             })}
           </p>
         </>
+      )}
+
+      {merging && (
+        <MergeWords
+          entry={merging}
+          entries={entries}
+          onClose={() => setMerging(null)}
+        />
       )}
 
       {editing && view && (

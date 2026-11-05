@@ -114,6 +114,23 @@ pub enum BarNotice {
         more: usize,
         app: Option<String>,
     },
+    /// A correction from the bar replaced the paste; `word` and `more` are
+    /// what the Dictionary learned from it, if anything, or with `review`
+    /// what waits under Needs review.
+    Corrected {
+        word: Option<String>,
+        more: usize,
+        review: bool,
+    },
+    /// The paste couldn't be selected again, so the correction went to the
+    /// clipboard.
+    CorrectionCopied {
+        word: Option<String>,
+        more: usize,
+        review: bool,
+    },
+    /// Correct last dictation found nothing pasted in the last 10 minutes.
+    NothingToCorrect,
     /// A Notes recording is transcribed.
     NoteReady {
         id: i64,
@@ -276,7 +293,7 @@ fn capture(app: &AppHandle) -> Option<Captured> {
 }
 
 /// How long after a paste a transform can still select it again.
-const RESELECT_WITHIN: Duration = Duration::from_secs(600);
+pub(crate) const RESELECT_WITHIN: Duration = Duration::from_secs(600);
 /// Longer pastes aren't selected back key by key.
 const MAX_RESELECT_CHARS: usize = 1500;
 
@@ -284,7 +301,7 @@ const MAX_RESELECT_CHARS: usize = 1500;
 /// still sits right before the cursor, checked by copying the selection.
 /// Otherwise the cursor goes back where it was. Terminals are left alone:
 /// Shift+Left and Ctrl+C mean other things there.
-fn reselect_last_paste(app: &AppHandle, info: Option<&AppInfo>) -> Option<String> {
+pub(crate) fn reselect_last_paste(app: &AppHandle, info: Option<&AppInfo>) -> Option<String> {
     let pasted = crate::clipboard::last_paste_here(RESELECT_WITHIN)?;
     if info.is_some_and(|i| rules::is_terminal(&i.exe_path)) {
         return None;
@@ -339,7 +356,7 @@ fn set_run_result(app: &AppHandle, id: i64, result: RunResult) {
 
 /// Pastes on the main thread, which owns the clipboard window the reliable
 /// paste uses, and waits for it.
-fn paste_on_main(app: &AppHandle, text: String) -> Result<(), String> {
+pub(crate) fn paste_on_main(app: &AppHandle, text: String) -> Result<(), String> {
     let (tx, rx) = std::sync::mpsc::channel();
     let handle = app.clone();
     app.run_on_main_thread(move || {
@@ -418,11 +435,8 @@ pub async fn apply(
             transform.provider_id.as_deref(),
         ));
     };
-    let words = if rules::wants_dictionary(&transform.prompt) {
-        dictionary_words(app)
-    } else {
-        Vec::new()
-    };
+    // Every transform gets the Dictionary's spellings, asked for or not.
+    let words = dictionary_words(app);
     let clipboard = if rules::wants_clipboard(&transform.prompt) {
         app.clipboard().read_text().ok()
     } else {
@@ -434,6 +448,7 @@ pub async fn apply(
             app: app_name,
             dictionary: &words,
             clipboard: clipboard.as_deref(),
+            your_name: Some(settings.your_name.as_str()),
         },
     );
     debug!(
@@ -778,6 +793,13 @@ fn run_ask(app: &AppHandle, instruction: String) {
     });
     let rewriting = !captured.text.trim().is_empty();
     let user = rules::ask_request(&instruction, rewriting.then_some(captured.text.as_str()));
+    let words = dictionary_words(app);
+    let system = rules::ask_system_prompt(&PromptContext {
+        app: captured.app.as_ref().map(|a| a.name.as_str()),
+        dictionary: &words,
+        clipboard: None,
+        your_name: Some(settings.your_name.as_str()),
+    });
     let input = captured.text.clone();
     let job = Job {
         transform_id: "ask".to_string(),
@@ -794,15 +816,16 @@ fn run_ask(app: &AppHandle, instruction: String) {
             ..captured
         },
         async move {
-            let answer = ai::run(
-                &handle,
-                &config,
-                rules::ASK_SYSTEM_PROMPT,
-                user,
-                SELECTION_TIMEOUT,
-            )
-            .await?;
+            let answer = ai::run(&handle, &config, &system, user, SELECTION_TIMEOUT).await?;
             let answer = rules::clean_answer(&answer, &input);
+            // The instruction is the person's too, so a tell they said is theirs.
+            if rules::leaks_reasoning(&answer, &format!("{instruction}\n{input}")) {
+                warn!(
+                    "Ask: {} wrote its reasoning into the answer, left the text as it was",
+                    config.model
+                );
+                return Ok(None);
+            }
             Ok((!answer.is_empty()).then_some(answer))
         },
     );

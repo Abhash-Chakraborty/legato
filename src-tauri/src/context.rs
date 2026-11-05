@@ -203,6 +203,22 @@ pub fn foreground_window() -> Option<ForegroundWindow> {
     }
 }
 
+/// The app a window belongs to, by its handle.
+pub fn window_info(handle: isize) -> Option<AppInfo> {
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::HWND;
+        // SAFETY: reads the title and process of a window that may be gone,
+        // which the calls report as an error.
+        unsafe { win::window_of(HWND(handle as *mut _)) }.map(|w| resolve(&w))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = handle;
+        None
+    }
+}
+
 /// The app a process belongs to, for naming the app whose sound a meeting
 /// records.
 pub fn app_for_process(pid: u32) -> Option<AppInfo> {
@@ -675,7 +691,7 @@ mod win {
     }
 
     /// A window's title and its app's executable.
-    unsafe fn window_of(hwnd: HWND) -> Option<ForegroundWindow> {
+    pub(super) unsafe fn window_of(hwnd: HWND) -> Option<ForegroundWindow> {
         let title = window_title(hwnd);
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, Some(&mut pid));

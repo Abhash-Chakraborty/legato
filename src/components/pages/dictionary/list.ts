@@ -26,7 +26,8 @@ export const matchesQuery = (entry: DictionaryEntry, query: string) => {
   return (
     !q ||
     entry.text.toLowerCase().includes(q) ||
-    entry.heard.some((h) => h.toLowerCase().includes(q))
+    entry.heard.some((h) => h.toLowerCase().includes(q)) ||
+    (entry.also ?? []).some((a) => a.toLowerCase().includes(q))
   );
 };
 

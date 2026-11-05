@@ -177,6 +177,10 @@
             "name": "Copy last dictation",
             "description": "Puts what you last dictated on the clipboard."
           },
+          "correct_last": {
+            "name": "Correct last dictation",
+            "description": "Opens what you last dictated on the bar to fix. The fix replaces it in the app and is learned."
+          },
           "open_scratchpad": {
             "name": "Open Scratchpad",
             "description": "Press to open the Scratchpad; hold to dictate into a new note."
@@ -900,9 +904,9 @@
         "needsModel": "Connect a model above to use these.",
         "correction": {
           "title": "Correction pass with your Dictionary",
-          "help_one": "Gives the model your {{count}} Dictionary word, so a name or term you taught comes out right the next time you say it.",
-          "help_other": "Gives the model your {{count}} Dictionary words, so a name or term you taught comes out right the next time you say it.",
-          "helpEmpty": "Gives the model the words in your Dictionary, so a name or term you taught comes out right the next time you say it."
+          "help_one": "Gives the model your {{count}} Dictionary word, so a name or term you taught comes out right the next time you say it. Cleanup at Medium sends them on its own.",
+          "help_other": "Gives the model your {{count}} Dictionary words, so a name or term you taught comes out right the next time you say it. Cleanup at Medium sends them on its own.",
+          "helpEmpty": "Gives the model the words in your Dictionary, so a name or term you taught comes out right the next time you say it. Cleanup at Medium sends them on its own."
         },
         "transforms": {
           "title": "Transforms",
@@ -1611,7 +1615,22 @@
       "companion_thinking": "Companion is thinking…",
       "companion_missing": "No companion is running. Start it in Inyon › Settings.",
       "companion_offline": "Inyon isn't reachable, so the companion can't hear you.",
-      "companion_unpaired": "Pair Legato with Inyon in Settings › Connections to talk to the companion."
+      "companion_unpaired": "Pair Legato with Inyon in Settings › Connections to talk to the companion.",
+      "corrected": "Fixed",
+      "correctedLearned": "Fixed, and learned “{{word}}”",
+      "correctedLearnedMore_one": "Fixed, and learned “{{word}}” and {{count}} more",
+      "correctedLearnedMore_other": "Fixed, and learned “{{word}}” and {{count}} more",
+      "correction_copied": "The text moved, so the fix is on the clipboard",
+      "correction_copiedLearned": "The fix is on the clipboard; learned “{{word}}”",
+      "correction_copiedLearnedMore_one": "The fix is on the clipboard; learned “{{word}}” and {{count}} more",
+      "correction_copiedLearnedMore_other": "The fix is on the clipboard; learned “{{word}}” and {{count}} more",
+      "nothing_to_correct": "Nothing pasted in the last 10 minutes to correct",
+      "correctedReview": "Fixed; “{{word}}” waits in Needs review",
+      "correctedReviewMore_one": "Fixed; “{{word}}” and {{count}} more wait in Needs review",
+      "correctedReviewMore_other": "Fixed; “{{word}}” and {{count}} more wait in Needs review",
+      "correction_copiedReview": "The fix is on the clipboard; “{{word}}” waits in Needs review",
+      "correction_copiedReviewMore_one": "The fix is on the clipboard; “{{word}}” and {{count}} more wait in Needs review",
+      "correction_copiedReviewMore_other": "The fix is on the clipboard; “{{word}}” and {{count}} more wait in Needs review"
     },
     "working": "{{name}}…",
     "undo": "Undo",
@@ -1703,7 +1722,16 @@
       "replyHelp": "Speak your reply; press again to send",
       "dismiss": "Dismiss"
     },
-    "keepRecording": "Keep recording"
+    "keepRecording": "Keep recording",
+    "correct": {
+      "open": "Correct",
+      "title": "Correct your dictation",
+      "titleIn": "Correct what went into {{app}}",
+      "keys": "Enter to fix · Esc to leave",
+      "note": "Fixed words are learned.",
+      "cancel": "Leave it",
+      "apply": "Fix"
+    }
   },
   "titleBar": {
     "minimize": "Minimize",
@@ -1980,7 +2008,9 @@
       "pin": "Pin {{word}}: always in the vocabulary hint",
       "unpin": "Unpin {{word}}",
       "edit": "Edit {{word}}",
-      "delete": "Delete {{word}}"
+      "delete": "Delete {{word}}",
+      "also": "also {{forms}}",
+      "merge": "Merge {{word}} with another word"
     },
     "learning": {
       "title": "Learning and matching",
@@ -2083,7 +2113,17 @@
       "cancel": "Cancel",
       "save": "Save",
       "kind": "What it is",
-      "kindHelp": "Names, projects and terms are kept exactly as written: the AI never turns them into a similar ordinary word, and notes summaries spell them this way."
+      "kindHelp": "Names, projects and terms are kept exactly as written: the AI never turns them into a similar ordinary word, and notes summaries spell them this way.",
+      "also": "Also written as",
+      "alsoHelp": "Other ways this is written that are right as they are, such as a first name or a short form. Legato never changes them into the word above.",
+      "alsoPlaceholder": "a first name or short form, e.g. Priya",
+      "removeAlso": "Remove {{form}}",
+      "warn": {
+        "heardIsWord": "“{{form}}” is a word of its own in your Dictionary, so it won't be heard as this one.",
+        "heardIsAlso": "“{{form}}” is also written as this word, so it won't be changed.",
+        "alsoIsWord": "“{{form}}” is a word of its own. Merge the two words to keep it here.",
+        "alsoMoves": "“{{form}}” moves here from {{word}}."
+      }
     },
     "review": {
       "title": "Learned from your edits",
@@ -2129,6 +2169,26 @@
       "project": "Project",
       "organisation": "Organisation",
       "term": "Term"
+    },
+    "merge": {
+      "title": "Merge {{word}} with another word",
+      "description": "One stays the word; the other is kept as a way it's also written, right as it is. Their heard forms and fixes join.",
+      "search": "Find a word",
+      "with": "Merge with",
+      "none": "No other word matches.",
+      "main": "The word",
+      "result": "“{{other}}” stays as a way {{word}} is also written.",
+      "confirm": "Merge",
+      "done": "Merged “{{other}}” into {{word}}",
+      "failed": "Couldn't merge the words"
+    },
+    "merges": {
+      "title": "The same word?",
+      "help": "These look like one name or one spelling. Merging keeps the second as a way the first is also written, so neither gets changed into the other.",
+      "and": "and",
+      "result": "Merge keeps “{{other}}” as a way {{word}} is also written",
+      "merge": "Merge",
+      "apart": "Keep apart"
     }
   },
   "transforms": {
@@ -2398,6 +2458,7 @@
     "row": {
       "lineBreak": "line break",
       "select": "Select “{{trigger}}”",
+      "also": "also “{{phrases}}”",
       "alone": "only when said alone",
       "used_one": "used {{count}}×",
       "used_other": "used {{count}}×",
@@ -2419,7 +2480,18 @@
       "triggerPlaceholder": "sign off",
       "triggerHelp": "Say “{{trigger}}” in any app.",
       "triggerEmpty": "A short phrase you wouldn't say by accident.",
-      "dictionaryClash": "The Dictionary changes “{{heard}}” to “{{word}}” first; use that spelling in the trigger.",
+      "dictionaryClash": "The Dictionary turns this into “{{heard}}” before snippets are matched.",
+      "useSpelling": "Use that spelling",
+      "also": "Also triggered by",
+      "alsoHelp": "Other ways you say it. Each pastes the same text.",
+      "alsoPlaceholder": "e.g. home address",
+      "alsoMore": "Add another",
+      "removeAlso": "Remove “{{phrase}}”",
+      "warn": {
+        "taken": "“{{phrase}}” already triggers “{{trigger}}”.",
+        "sameAsTrigger": "“{{phrase}}” is the trigger already.",
+        "heardAs": "The Dictionary turns “{{phrase}}” into “{{heard}}”, so it would never match as typed."
+      },
       "text": "Text",
       "textPlaceholder": "Best regards,\nSam",
       "textHelp": "Pasted exactly as written; cleanup and Style don't change it.",

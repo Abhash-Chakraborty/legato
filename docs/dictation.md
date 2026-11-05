@@ -22,12 +22,13 @@ Dictate then transform (Ctrl+Shift+Space) records the same way, then runs a tran
 
 ## Other dictation shortcuts
 
-| Shortcut                    | Keys        | What it does                                                                   |
-| --------------------------- | ----------- | ------------------------------------------------------------------------------ |
-| Paste last dictation        | Alt+Shift+Z | Pastes what you last dictated again, wherever the cursor is                    |
-| Copy last dictation         | Alt+Shift+X | Puts what you last dictated on the clipboard                                   |
-| Add selection to Dictionary | Win+Alt+W   | Adds the selected word to your [Dictionary](dictionary.md)                     |
-| Open Scratchpad             | Win+Alt+S   | Press to open the [Scratchpad](scratchpad.md); hold to dictate into a new note |
+| Shortcut                    | Keys        | What it does                                                                                 |
+| --------------------------- | ----------- | -------------------------------------------------------------------------------------------- |
+| Paste last dictation        | Alt+Shift+Z | Pastes what you last dictated again, wherever the cursor is                                  |
+| Copy last dictation         | Alt+Shift+X | Puts what you last dictated on the clipboard                                                 |
+| Correct last dictation      | Alt+Shift+C | Opens what you last dictated on the bar to fix ([Correct a dictation](#correct-a-dictation)) |
+| Add selection to Dictionary | Win+Alt+W   | Adds the selected word to your [Dictionary](dictionary.md)                                   |
+| Open Scratchpad             | Win+Alt+S   | Press to open the [Scratchpad](scratchpad.md); hold to dictate into a new note               |
 
 Settings › Shortcuts › Keyboard backend picks how Legato hears keys. The built-in hook handles holds and single keys like Esc. Switch to Windows hotkeys if a game or security tool blocks it.
 
@@ -48,19 +49,25 @@ While the bubble is on, it shows your dictation in place of the bar. Hovered dur
 
 ### What the bar says
 
-| You see                         | What it means                                                        |
-| ------------------------------- | -------------------------------------------------------------------- |
-| Loading model...                | The speech model is still loading; your words follow once it's ready |
-| A waveform                      | Legato is listening                                                  |
-| Transcribing...                 | The speech model is writing up what you said                         |
-| Fixing words...                 | Your AI model is checking for misheard Dictionary words              |
-| Cleaning up...                  | Your AI model is smoothing the text (Cleanup at Medium)              |
-| Running your transform...       | A transform is rewriting the text                                    |
-| Finishing the last dictation... | An earlier dictation is still being finished, and it pastes first    |
-| Pasting...                      | The text is going into the app                                       |
-| Pasted 12 words into Outlook    | Done, with Undo. Turn this off with Confirm after pasting            |
+| You see                         | What it means                                                         |
+| ------------------------------- | --------------------------------------------------------------------- |
+| Loading model...                | The speech model is still loading; your words follow once it's ready  |
+| A waveform                      | Legato is listening                                                   |
+| Transcribing...                 | The speech model is writing up what you said                          |
+| Fixing words...                 | Your AI model is checking for misheard Dictionary words               |
+| Cleaning up...                  | Your AI model is smoothing the text (Cleanup at Medium)               |
+| Running your transform...       | A transform is rewriting the text                                     |
+| Finishing the last dictation... | An earlier dictation is still being finished, and it pastes first     |
+| Pasting...                      | The text is going into the app                                        |
+| Pasted 12 words into Outlook    | Done, with Correct and Undo. Turn this off with Confirm after pasting |
 
 Once a step has taken two seconds or more, the bar adds its seconds, so a slow step doesn't look stuck.
+
+## Correct a dictation
+
+Correct on the bar after a paste, or Correct last dictation (Alt+Shift+C) within 10 minutes of it, opens the pasted text on the bar for you to edit. Enter puts your version in place of the paste in the app, fixes the dictation on Home, and teaches your [Dictionary](dictionary.md) the words you changed with the form Legato misheard, so the next dictation gets them right. As Learn from my edits does, they wait under Needs review, or with When it finds a word set to Add automatically they're added straight away, and the bar says so with Undo. Esc, or a click into another app, leaves the text as it was.
+
+The paste is replaced only while it sits right before the cursor in the same window, as transforms need too. If you've typed after it, or the message was sent, the fix goes on the clipboard instead and is still learned.
 
 ## Live transcript
 

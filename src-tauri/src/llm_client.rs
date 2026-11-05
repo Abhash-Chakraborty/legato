@@ -173,6 +173,8 @@ const ANTHROPIC_MAX_TOKENS: u32 = 4096;
 struct AnthropicMessagesRequest {
     model: String,
     max_tokens: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system: Option<String>,
     messages: Vec<ChatMessage>,
 }
 
@@ -436,6 +438,7 @@ fn report_reqwest_error(context: &str, error: &reqwest::Error) -> String {
     details
 }
 
+#[cfg(test)]
 /// Send a chat completion request to an OpenAI-compatible API
 /// Returns Ok(Some(content)) on success, Ok(None) if response has no content,
 /// or Err on actual errors (HTTP, parsing, etc.)
@@ -447,7 +450,7 @@ pub async fn send_chat_completion(
     disable_reasoning: bool,
 ) -> Result<Option<String>, String> {
     if provider.api_format == PostProcessApiFormat::Anthropic {
-        return send_anthropic_message(provider, api_key, model, prompt).await;
+        return send_anthropic_message(provider, api_key, model, None, prompt).await;
     }
 
     send_chat_completion_with_schema(
@@ -620,10 +623,12 @@ pub async fn send_chat_completion_with_schema(
 /// provider and a custom provider set to it). None of them use structured
 /// output, and thinking is off unless requested, so no reasoning fields are
 /// needed.
-async fn send_anthropic_message(
+/// One Anthropic Messages request, with the system prompt in its own field.
+pub async fn send_anthropic_message(
     provider: &PostProcessProvider,
     api_key: String,
     model: &str,
+    system: Option<String>,
     prompt: String,
 ) -> Result<Option<String>, String> {
     let url = format!("{}/messages", provider.base_url.trim_end_matches('/'));
@@ -636,6 +641,7 @@ async fn send_anthropic_message(
     let request_body = AnthropicMessagesRequest {
         model: model.to_string(),
         max_tokens: ANTHROPIC_MAX_TOKENS,
+        system,
         messages: vec![ChatMessage {
             role: "user".to_string(),
             content: prompt,
@@ -1007,6 +1013,7 @@ mod tests {
         let request = AnthropicMessagesRequest {
             model: "claude-haiku".to_string(),
             max_tokens: ANTHROPIC_MAX_TOKENS,
+            system: Some("Be brief.".to_string()),
             messages: vec![ChatMessage {
                 role: "user".to_string(),
                 content: "hi".to_string(),
@@ -1014,6 +1021,7 @@ mod tests {
         };
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["max_tokens"], ANTHROPIC_MAX_TOKENS);
+        assert_eq!(json["system"], "Be brief.");
         assert_eq!(json["messages"][0]["role"], "user");
         assert!(json.get("stream").is_none());
         assert!(json.get("reasoning_effort").is_none());

@@ -1,4 +1,5 @@
 @import "../styles/theme.css";
+@import "../styles/icons.css";
 
 /* The bubble is dark whatever the theme, like the Minimal bar: it sits on
    top of any app and has to read on light and dark ones alike. */

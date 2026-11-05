@@ -258,7 +258,7 @@ impl Tools for Legato {
                 let words: Vec<Value> = dictionary_store::list(&conn)
                     .map_err(|e| e.to_string())?
                     .iter()
-                    .map(|w| json!({ "word": w.text, "heard_as": w.heard }))
+                    .map(|w| json!({ "word": w.text, "also_written": w.also, "heard_as": w.heard }))
                     .collect();
                 Ok(pretty(json!({ "words": words })))
             }

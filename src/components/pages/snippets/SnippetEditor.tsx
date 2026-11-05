@@ -12,10 +12,11 @@ import {
 } from "@/bindings";
 import { ActionMenu } from "../../ui/ActionMenu";
 import { Button } from "../../ui/Button";
+import { ChipField } from "../../ui/ChipField";
 import { Segmented } from "../../ui/Segmented";
 import { Sheet } from "../../ui/Sheet";
 import { relativeTime } from "../dictionary/list";
-import { normalizeTrigger } from "./list";
+import { normalizeTrigger, snippetWithTrigger } from "./list";
 
 interface SnippetEditorProps {
   /** The snippet to edit, or null to add one. */
@@ -31,18 +32,35 @@ interface SnippetEditorProps {
   onEditOther: (snippet: Snippet) => void;
 }
 
-/** A Dictionary word whose misheard form is in the trigger: the Dictionary
- *  fixes it first, so the trigger would never be heard as typed. */
-const dictionaryClash = (trigger: string, words: DictionaryEntry[]) => {
-  const said = ` ${normalizeTrigger(trigger)} `;
-  if (!said.trim()) return null;
-  for (const word of words) {
-    const heard = word.heard.find((h) =>
-      said.includes(` ${normalizeTrigger(h)} `),
-    );
-    if (heard) return { heard, word: word.text };
-  }
-  return null;
+/** What the Dictionary turns each phrase into before snippets are matched,
+ *  for phrases it changes. Asked again when the phrases or words change. */
+const useHeardAs = (phrases: string[], words: DictionaryEntry[]) => {
+  const [heard, setHeard] = useState<Record<string, string>>({});
+  const key = JSON.stringify(phrases);
+  useEffect(() => {
+    const wanted = phrases.filter((p) => normalizeTrigger(p));
+    if (!wanted.length) {
+      setHeard({});
+      return;
+    }
+    let live = true;
+    const timer = setTimeout(async () => {
+      const r = await commands.snippetTriggersHeard(wanted).catch(() => null);
+      if (!live || r?.status !== "ok") return;
+      const next: Record<string, string> = {};
+      wanted.forEach((p, i) => {
+        const as = r.data[i];
+        if (as && normalizeTrigger(as) !== normalizeTrigger(p)) next[p] = as;
+      });
+      setHeard(next);
+    }, 200);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // key stands in for phrases, which is a new array on every render.
+  }, [key, words]);
+  return heard;
 };
 
 /** Add or edit one snippet: what you say, what gets pasted, whether it must
@@ -66,6 +84,8 @@ export const SnippetEditor: React.FC<SnippetEditorProps> = ({
   const triggerRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const [trigger, setTrigger] = useState(snippet?.trigger ?? "");
+  const [also, setAlso] = useState<string[]>(snippet?.also ?? []);
+  const [alsoInput, setAlsoInput] = useState("");
   const [text, setText] = useState(snippet?.text ?? "");
   const [alone, setAlone] = useState(snippet?.alone ?? false);
   // The test follows the trigger until it is typed into.
@@ -78,16 +98,40 @@ export const SnippetEditor: React.FC<SnippetEditorProps> = ({
   } | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => setError(null), [trigger, text]);
+  useEffect(() => setError(null), [trigger, text, also]);
 
   const said = normalizeTrigger(trigger);
-  const duplicate = said
-    ? snippets.find(
-        (s) => s.id !== snippet?.id && normalizeTrigger(s.trigger) === said,
-      )
-    : undefined;
-  const clash = dictionaryClash(trigger, words);
-  const draft: SnippetInput = { trigger: trigger.trim(), text, alone };
+  const duplicate = snippetWithTrigger(snippets, trigger, snippet?.id);
+  // What's still typed in the field counts, as it's added on save.
+  const phrases = [...also, ...(alsoInput.trim() ? [alsoInput.trim()] : [])];
+  const heardAs = useHeardAs([trigger.trim(), ...phrases], words);
+  const clash = heardAs[trigger.trim()];
+  const alsoTaken = phrases
+    .map((p) => ({
+      phrase: p,
+      other: snippetWithTrigger(snippets, p, snippet?.id),
+    }))
+    .filter((x) => x.other);
+  const alsoWarnings = phrases.flatMap((p) => {
+    const other = snippetWithTrigger(snippets, p, snippet?.id);
+    if (other)
+      return [
+        t("snippets.editor.warn.taken", { phrase: p, trigger: other.trigger }),
+      ];
+    if (said && normalizeTrigger(p) === said)
+      return [t("snippets.editor.warn.sameAsTrigger", { phrase: p })];
+    if (heardAs[p])
+      return [
+        t("snippets.editor.warn.heardAs", { phrase: p, heard: heardAs[p] }),
+      ];
+    return [];
+  });
+  const draft: SnippetInput = {
+    trigger: trigger.trim(),
+    also: phrases,
+    text,
+    alone,
+  };
   const draftKey = JSON.stringify(draft);
   const testValue = testText ?? trigger;
   const draftId = snippet?.id ?? -1;
@@ -138,12 +182,15 @@ export const SnippetEditor: React.FC<SnippetEditorProps> = ({
       triggerRef.current?.focus();
       return;
     }
+    if (alsoTaken.length) return;
     if (!text.trim()) {
       setError({ field: "text", message: t("snippets.editor.errors.noText") });
       textRef.current?.focus();
       return;
     }
     setSaving(true);
+    setAlso(phrases);
+    setAlsoInput("");
     const result = snippet
       ? await commands.updateSnippet(snippet.id, draft)
       : await commands.addSnippet(draft);
@@ -186,7 +233,16 @@ export const SnippetEditor: React.FC<SnippetEditorProps> = ({
   ) : error?.field === "trigger" ? (
     error.message
   ) : clash ? (
-    t("snippets.editor.dictionaryClash", clash)
+    <>
+      {t("snippets.editor.dictionaryClash", { heard: clash })}{" "}
+      <button
+        type="button"
+        onClick={() => setTrigger(clash)}
+        className="font-medium text-teal-700 underline-offset-2 hover:underline"
+      >
+        {t("snippets.editor.useSpelling")}
+      </button>
+    </>
   ) : said ? (
     t("snippets.editor.triggerHelp", { trigger: trigger.trim() })
   ) : (
@@ -267,6 +323,19 @@ export const SnippetEditor: React.FC<SnippetEditorProps> = ({
             {triggerMessage}
           </p>
         </div>
+
+        <ChipField
+          label={t("snippets.editor.also")}
+          help={t("snippets.editor.alsoHelp")}
+          chips={also}
+          setChips={setAlso}
+          input={alsoInput}
+          setInput={setAlsoInput}
+          placeholder={t("snippets.editor.alsoPlaceholder")}
+          morePlaceholder={t("snippets.editor.alsoMore")}
+          removeLabel={(phrase) => t("snippets.editor.removeAlso", { phrase })}
+          warnings={alsoWarnings}
+        />
 
         <div>
           <div className="mb-1.5 flex items-center justify-between gap-3">

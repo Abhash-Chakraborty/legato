@@ -135,7 +135,8 @@ pub struct SharedCleanup {
     /// Shorter dictations aren't sent.
     pub min_words: u32,
     /// The Dictionary goes along, so misheard words are fixed in the same
-    /// request (Settings › AI › Fix misheard Dictionary words).
+    /// request. Always true from 0.11.1; older PCs sent it only with
+    /// Settings › AI › Fix misheard Dictionary words on.
     pub dictionary: bool,
 }
 

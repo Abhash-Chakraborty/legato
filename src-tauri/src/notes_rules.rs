@@ -1224,81 +1224,7 @@ pub fn combine_request(
     )
 }
 
-/// A name's words, lowercased, split at anything but letters and digits:
-/// "A.Chakraborty" and "a.chakraborty@x" both give ["a", "chakraborty"].
-fn name_words(name: &str) -> Vec<String> {
-    let name = name.split('@').next().unwrap_or(name);
-    name.split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .map(str::to_lowercase)
-        .collect()
-}
-
-/// Two spellings of one word, allowing a slip or two in a long one
-/// ("Chkraborty" for "Chakraborty"), none in a short one.
-fn close_words(a: &str, b: &str) -> bool {
-    if a == b {
-        return true;
-    }
-    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
-    let shorter = a.len().min(b.len());
-    let allowed = match shorter {
-        0..=3 => 0,
-        4..=5 => 1,
-        _ => 2,
-    };
-    if allowed == 0 || a.len().abs_diff(b.len()) > allowed {
-        return false;
-    }
-    // Levenshtein over two rows.
-    let mut prev: Vec<usize> = (0..=b.len()).collect();
-    for (i, ca) in a.iter().enumerate() {
-        let mut row = vec![i + 1; b.len() + 1];
-        for (j, cb) in b.iter().enumerate() {
-            row[j + 1] = (prev[j] + usize::from(ca != cb))
-                .min(prev[j + 1] + 1)
-                .min(row[j] + 1);
-        }
-        prev = row;
-    }
-    prev[b.len()] <= allowed
-}
-
-/// Whether two names from invites, a Meet window or a summary are one
-/// person: "Priya" and "Priya Shah", "A. Chakraborty", "a.chakraborty" and
-/// "Abhash Chakraborty", "abhashchakraborty" and "Abhash Chakraborty", with
-/// a slip in a long surname. "Priya Shah" and "Priya Patel" aren't.
-pub fn same_person(a: &str, b: &str) -> bool {
-    let (a, b) = (name_words(a), name_words(b));
-    if a.is_empty() || b.is_empty() {
-        return false;
-    }
-    if a.concat() == b.concat() {
-        return true;
-    }
-    let (short, long) = if a.len() <= b.len() {
-        (&a, &b)
-    } else {
-        (&b, &a)
-    };
-    let (first, last) = (&long[0], &long[long.len() - 1]);
-    if short.len() == 1 {
-        let one = &short[0];
-        if long.len() == 1 {
-            return close_words(one, first);
-        }
-        // A first name, or an address such as "achakraborty".
-        let initial_last = format!("{}{last}", first.chars().next().unwrap_or(' '));
-        return one == first
-            || close_words(one, &long.concat())
-            || (one.chars().count() > 4 && close_words(one, &initial_last));
-    }
-    let (s_first, s_last) = (&short[0], &short[short.len() - 1]);
-    let initial = |w: &str, of: &str| w.chars().count() == 1 && of.starts_with(w);
-    let firsts = s_first == first || initial(s_first, first) || initial(first, s_first);
-    let lasts = close_words(s_last, last) || (initial(s_last, last) && s_first == first);
-    firsts && lasts
-}
+pub use crate::learn_rules::same_person;
 
 /// Whether a name is the person who recorded, by their name in Settings
 /// (see `same_person`). False when that isn't set.
@@ -1981,10 +1907,15 @@ pub fn parse_fixes(answer: &str, texts: &[&str]) -> Vec<LineFix> {
     fixes
 }
 
-pub const FOLLOW_UP_SYSTEM: &str = "You write a short follow-up email after a meeting, for the person who recorded it to send to the others. Use only the notes given. Plain text, no subject line, no markdown: a one-line greeting, two or three sentences on what was discussed, then what was agreed and who does what, one per line starting with a dash, and a one-line sign-off without a name. Write in the notes' language.";
+pub const FOLLOW_UP_SYSTEM: &str = "You write a short follow-up email after a meeting, for the person who recorded it to send to the others. Use only the notes given. Plain text, no subject line, no markdown: a one-line greeting, two or three sentences on what was discussed, then what was agreed and who does what, one per line starting with a dash, and a one-line sign-off with the sender's name when it is given, else without a name. Write in the notes' language.";
 
 /// The request for a follow-up email from a note's summary.
-pub fn follow_up_request(title: &str, summary: &NotesSummary, my_notes: &str) -> String {
+pub fn follow_up_request(
+    title: &str,
+    summary: &NotesSummary,
+    my_notes: &str,
+    your_name: Option<&str>,
+) -> String {
     let mut request = format!("Meeting: {title}\n\nSummary: {}\n", summary.summary);
     for d in &summary.decisions {
         request.push_str(&format!("Decision: {d}\n"));
@@ -1995,6 +1926,9 @@ pub fn follow_up_request(title: &str, summary: &NotesSummary, my_notes: &str) ->
     let mine = my_notes.trim();
     if !mine.is_empty() {
         request.push_str(&format!("\nTheir own notes:\n{mine}\n"));
+    }
+    if let Some(name) = your_name.map(str::trim).filter(|n| !n.is_empty()) {
+        request.push_str(&format!("\nSender: {name}\n"));
     }
     request
 }
@@ -3588,5 +3522,17 @@ mod tests {
             timed_words("a b", &[(0, 1), (1, 2)]).map(|w| w.len()),
             Some(2)
         );
+    }
+
+    #[test]
+    fn a_follow_up_is_signed_with_your_name_when_known() {
+        let summary = NotesSummary {
+            summary: "Talked about the launch.".into(),
+            ..Default::default()
+        };
+        let signed = follow_up_request("Launch", &summary, "", Some(" Sam Rao "));
+        assert!(signed.ends_with("\nSender: Sam Rao\n"));
+        assert!(!follow_up_request("Launch", &summary, "", Some("")).contains("Sender"));
+        assert!(!follow_up_request("Launch", &summary, "", None).contains("Sender"));
     }
 }

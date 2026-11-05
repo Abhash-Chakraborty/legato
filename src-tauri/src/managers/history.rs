@@ -278,6 +278,22 @@ impl HistoryManager {
         Ok((snapshot, entry))
     }
 
+    /// Corrects one dictation by hand; see `history_store::correct_row`.
+    pub fn correct_row(
+        &self,
+        id: i64,
+        shown_before: &str,
+        shown_after: &str,
+        fixes: &[AppliedFix],
+    ) -> Result<HistoryEntry> {
+        let mut conn = self.get_connection()?;
+        let (_, entry) = store::correct_row(&mut conn, id, shown_before, shown_after, fixes)?;
+        self.emit(HistoryUpdatePayload::Updated {
+            entry: entry.clone(),
+        });
+        Ok(entry)
+    }
+
     /// Other dictations that `from` could be fixed in.
     pub fn rows_with(&self, from: &str, to: &str, except: i64) -> Result<Vec<i64>> {
         store::rows_with(&self.get_connection()?, from, to, except)

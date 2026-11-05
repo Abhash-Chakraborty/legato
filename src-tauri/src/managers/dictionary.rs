@@ -163,6 +163,36 @@ impl DictionaryManager {
         Ok(())
     }
 
+    /// Joins words into one; see `store::merge`.
+    pub fn merge(
+        &self,
+        keep: i64,
+        others: &[i64],
+    ) -> Result<(DictionaryEntry, Vec<DictionaryEntry>)> {
+        let merged = store::merge(&mut self.conn()?, keep, others)?;
+        info!(
+            "Merged {} word(s) into one",
+            merged.1.len().saturating_sub(1)
+        );
+        self.changed();
+        Ok(merged)
+    }
+
+    /// Two words that aren't the same: not offered for merging again.
+    pub fn keep_apart(&self, a: &str, b: &str) -> Result<()> {
+        store::keep_apart(&self.conn()?, a, b)?;
+        self.changed();
+        Ok(())
+    }
+
+    /// Words that look like one, for Needs review.
+    pub fn merge_suggestions(
+        &self,
+        entries: &[DictionaryEntry],
+    ) -> Result<Vec<store::MergeSuggestion>> {
+        store::merge_suggestions(&self.conn()?, entries)
+    }
+
     pub fn import(&self, rows: &[EntryInput]) -> Result<ImportSummary> {
         let summary = store::import(
             &mut self.conn()?,

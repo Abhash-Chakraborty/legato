@@ -3,6 +3,7 @@ import { AudioLines, Mic, NotebookPen, X } from "lucide-react";
 import { agentName } from "@/lib/utils/agents";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { CorrectCard, type CorrectPayload } from "./CorrectCard";
 import "./RecordingOverlay.css";
 import "./island.css";
 import { commands, events } from "@/bindings";
@@ -32,6 +33,7 @@ type OverlayState =
   | "processing"
   | "notice"
   | "changes"
+  | "correct"
   | "pick"
   | "notes"
   | "call"
@@ -67,11 +69,18 @@ type OverlayNotice =
   | { kind: "pasted_last" | "copied_last"; words: number }
   | { kind: "undone"; clipboard: boolean }
   | {
+      kind: "corrected" | "correction_copied";
+      word: string | null;
+      more: number;
+      review: boolean;
+    }
+  | {
       kind:
         | "nothing_to_transform"
         | "no_last_dictation"
         | "no_changes"
-        | "ask_empty";
+        | "ask_empty"
+        | "nothing_to_correct";
     }
   | {
       kind: "saved_to_scratchpad";
@@ -235,6 +244,7 @@ const GOOD_NOTICES = new Set([
   "copied_last",
   "undone",
   "learned",
+  "corrected",
   "note_ready",
 ]);
 const WARN_NOTICES = new Set([
@@ -242,6 +252,7 @@ const WARN_NOTICES = new Set([
   "ai_skipped",
   "transform_failed",
   "saved_to_scratchpad",
+  "correction_copied",
   "notes_failed",
   "companion_missing",
   "companion_offline",
@@ -428,6 +439,7 @@ const RecordingOverlay: React.FC = () => {
   const [state, setState] = useState<OverlayState>("recording");
   const [notice, setNotice] = useState<OverlayNotice | null>(null);
   const [changes, setChanges] = useState<BarChanges | null>(null);
+  const [correcting, setCorrecting] = useState<CorrectPayload | null>(null);
   const [picks, setPicks] = useState<PickItem[]>([]);
   // The row the arrow keys are on; Enter runs it.
   const [pickIndex, setPickIndex] = useState(0);
@@ -606,6 +618,11 @@ const RecordingOverlay: React.FC = () => {
         setChanges(event.payload),
       );
 
+      const unlistenCorrect = await listen<CorrectPayload>(
+        "bar-correct",
+        (event) => setCorrecting(event.payload),
+      );
+
       const unlistenCall = await listen<CallCard>("bar-call", (event) =>
         setCallCard({ card: event.payload, at: Date.now() }),
       );
@@ -745,6 +762,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenShow();
         unlistenNotice();
         unlistenChanges();
+        unlistenCorrect();
         unlistenPick();
         unlistenPickFocus();
         unlistenNotesTick();
@@ -886,7 +904,7 @@ const RecordingOverlay: React.FC = () => {
       aria-label={t("overlay.cancel")}
       onClick={() => commands.cancelOperation()}
     >
-      <svg viewBox="0 0 16 16" aria-hidden="true">
+      <svg viewBox="0 0 16 16" aria-hidden="true" className="lucide-x">
         <path
           d="M4 4 L12 12 M12 4 L4 12"
           stroke="currentColor"
@@ -1144,6 +1162,14 @@ const RecordingOverlay: React.FC = () => {
             ? "overlay.notice.undoneClipboard"
             : "overlay.notice.undone",
         );
+      case "corrected":
+      case "correction_copied":
+        return n.word
+          ? t(
+              `overlay.notice.${n.kind}${n.review ? "Review" : "Learned"}${n.more ? "More" : ""}`,
+              { word: n.word, count: n.more },
+            )
+          : t(`overlay.notice.${n.kind}`);
       case "spotted":
       case "learned":
         return t(
@@ -1197,8 +1223,14 @@ const RecordingOverlay: React.FC = () => {
       (notice.kind === "pasted" ||
         notice.kind === "transformed" ||
         notice.kind === "pasted_last" ||
-        notice.kind === "learned") &&
+        notice.kind === "learned" ||
+        ((notice.kind === "corrected" || notice.kind === "correction_copied") &&
+          !!notice.word &&
+          !notice.review)) &&
       ("undo" in notice ? notice.undo : true);
+    // A paste can be corrected right here; the fix is learned.
+    const canCorrect =
+      !!notice && (notice.kind === "pasted" || notice.kind === "pasted_last");
     // A question stays up while the pointer is on it.
     const asks = kind === "note_short" || kind === "note_limit";
     return frame(
@@ -1216,6 +1248,15 @@ const RecordingOverlay: React.FC = () => {
           <span className="snotice-dot" />
         )}
         <span className="snotice-text">{notice ? noticeText(notice) : ""}</span>
+        {canCorrect && (
+          <button
+            type="button"
+            className="sbtn ghost"
+            onClick={() => commands.barCorrect()}
+          >
+            {t("overlay.correct.open")}
+          </button>
+        )}
         {canUndo && (
           <button
             type="button"
@@ -1290,7 +1331,11 @@ const RecordingOverlay: React.FC = () => {
             {t("overlay.keepRecording")}
           </button>
         )}
-        {notice?.kind === "spotted" && (
+        {(notice?.kind === "spotted" ||
+          ((notice?.kind === "corrected" ||
+            notice?.kind === "correction_copied") &&
+            !!notice.word &&
+            notice.review)) && (
           <button
             type="button"
             className="sbtn ghost"
@@ -1696,11 +1741,15 @@ const RecordingOverlay: React.FC = () => {
           onClick={() => commands.pauseNotes(!paused)}
         >
           {paused ? (
-            <svg viewBox="0 0 16 16" aria-hidden="true">
+            <svg viewBox="0 0 16 16" aria-hidden="true" className="lucide-play">
               <path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="currentColor" />
             </svg>
           ) : (
-            <svg viewBox="0 0 16 16" aria-hidden="true">
+            <svg
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              className="lucide-pause"
+            >
               <path
                 d="M5.5 4 V12 M10.5 4 V12"
                 stroke="currentColor"
@@ -1717,7 +1766,7 @@ const RecordingOverlay: React.FC = () => {
           title={t("overlay.notes.stop")}
           onClick={() => commands.stopNotes()}
         >
-          <svg viewBox="0 0 16 16" aria-hidden="true">
+          <svg viewBox="0 0 16 16" aria-hidden="true" className="lucide-square">
             <rect
               x="4"
               y="4"
@@ -1802,6 +1851,11 @@ const RecordingOverlay: React.FC = () => {
     );
   }
 
+  // ---- Correct: the last paste to fix, with the keyboard for once.
+  if (state === "correct" && correcting) {
+    return frame(<CorrectCard card={correcting} />, "correct");
+  }
+
   // ---- Pick: which transform to run on the selection.
   if (state === "pick") {
     return frame(
@@ -1818,7 +1872,7 @@ const RecordingOverlay: React.FC = () => {
             aria-label={t("overlay.pick.close")}
             onClick={() => commands.barDismiss()}
           >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
+            <svg viewBox="0 0 16 16" aria-hidden="true" className="lucide-x">
               <path
                 d="M4 4 L12 12 M12 4 L4 12"
                 stroke="currentColor"
@@ -1885,7 +1939,7 @@ const RecordingOverlay: React.FC = () => {
           title={t("overlay.cancel")}
           onClick={() => commands.cancelOperation()}
         >
-          <svg viewBox="0 0 16 16" aria-hidden="true">
+          <svg viewBox="0 0 16 16" aria-hidden="true" className="lucide-x">
             <path
               d="M5 5 L11 11 M11 5 L5 11"
               stroke="currentColor"
@@ -1918,7 +1972,11 @@ const RecordingOverlay: React.FC = () => {
             title={t("overlay.finish")}
             onClick={() => commands.finishDictation()}
           >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
+            <svg
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              className="lucide-check"
+            >
               <path
                 d="M4 8.5 L7 11.2 L12 5"
                 fill="none"

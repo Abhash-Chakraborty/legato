@@ -288,11 +288,11 @@ fn correct_close_words(
         let core = words[i]
             .get(prefix.len()..words[i].len() - suffix.len())
             .unwrap_or(words[i]);
-        if protected.contains(core) {
-            result.push(words[i].to_string());
-            i += 1;
-            continue;
-        }
+        // A word spelled as one of the user's own may still start a longer
+        // one: "Abhash Chakravorty" becomes "Abhash Chakraborty" though
+        // "Abhash" is a word of its own.
+        let spelled_right = protected.contains(core);
+        let shortest = if spelled_right { 2 } else { 1 };
 
         let mut best_match: Option<(usize, usize, f64)> = None;
 
@@ -300,7 +300,7 @@ fn correct_close_words(
         // longest-first match can consume a following ordinary word when both
         // candidates happen to share a Soundex code (for example,
         // "Charge B, che" matching "ChargeBee").
-        for n in (1..=3).rev() {
+        for n in (shortest..=3).rev() {
             if i + n > words.len() {
                 continue;
             }
@@ -322,11 +322,43 @@ fn correct_close_words(
             if n == 1 && is_word.is_some_and(|f| f(core)) {
                 continue;
             }
+            // Nor are a few real words in a row: "a bash" stays, though
+            // "Abhash" sounds close.
+            if n > 1
+                && is_word.is_some_and(|f| {
+                    ngram_words.iter().all(|w| {
+                        let (prefix, suffix) = extract_punctuation(w);
+                        f(w.get(prefix.len()..w.len() - suffix.len()).unwrap_or(w))
+                    })
+                })
+            {
+                continue;
+            }
             let ngram = build_ngram(ngram_words);
 
             if let Some((index, score)) =
                 find_best_match(&ngram, &custom_word_match_keys, threshold)
             {
+                if spelled_right
+                    && !custom_words[index]
+                        .to_lowercase()
+                        .starts_with(&format!("{} ", core.to_lowercase()))
+                {
+                    continue;
+                }
+                // A window holding the word already written out would only
+                // swallow its neighbours: "Ask Abhash Chakraborty" stays.
+                let written = ngram_words.join(" ").to_lowercase();
+                let word = custom_words[index].to_lowercase();
+                if written != word
+                    && written
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .windows(word.split_whitespace().count())
+                        .any(|w| w.join(" ") == word)
+                {
+                    continue;
+                }
                 let is_better = best_match
                     .as_ref()
                     .is_none_or(|(_, _, best_score)| score < *best_score);
@@ -374,6 +406,10 @@ pub struct DictionaryWord {
     pub text: String,
     /// Ways the model mishears the word, replaced whole-word in any case.
     pub heard: Vec<String>,
+    /// Other ways the word is written that are right as they are ("Abhash"
+    /// for "Abhash Chakraborty"): never rewritten, and close misses of them
+    /// become them, not the word.
+    pub also: Vec<String>,
     /// Pasted with exactly this capitalisation.
     pub case_sensitive: bool,
     /// Sent to the model in its vocabulary hint.
@@ -422,6 +458,20 @@ fn heard_key(form: &str) -> String {
 fn matchable_form(form: &str) -> bool {
     form.chars().next().is_some_and(char::is_alphanumeric)
         && form.chars().last().is_some_and(char::is_alphanumeric)
+}
+
+/// Whether `span` of `lower` (the dictation, ASCII-lowercased) lies inside
+/// the word or one of its other forms written out in full.
+fn within_written(lower: &str, span: std::ops::Range<usize>, word: &DictionaryWord) -> bool {
+    std::iter::once(&word.text)
+        .chain(&word.also)
+        .map(|form| form.to_ascii_lowercase())
+        .filter(|form| form.len() > span.len())
+        .any(|form| {
+            lower
+                .match_indices(form.as_str())
+                .any(|(at, _)| at <= span.start && span.end <= at + form.len())
+        })
 }
 
 /// An all-lowercase word replacing a capitalised one (at the start of a
@@ -473,7 +523,11 @@ impl CompiledDictionary {
                 .join("|");
             Regex::new(&format!(r"(?i)\b(?:{alternation})\b")).ok()
         };
-        let spelled = words.iter().map(|w| w.text.clone()).collect();
+        let spelled = words
+            .iter()
+            .flat_map(|w| std::iter::once(&w.text).chain(&w.also))
+            .cloned()
+            .collect();
         Self {
             words,
             heard,
@@ -519,6 +573,8 @@ impl CompiledDictionary {
             .filter(|w| !w.is_empty())
             .map(str::to_lowercase)
             .collect();
+        // ASCII lowering keeps byte offsets, so spans line up with `text`.
+        let lower = text.to_ascii_lowercase();
         let text = match &self.heard {
             Some(pattern) => pattern
                 .replace_all(text, |caps: &regex::Captures| {
@@ -528,6 +584,14 @@ impl CompiledDictionary {
                     };
                     let word = &self.words[*word];
                     if !self.about(word, found, &said) {
+                        return found.to_string();
+                    }
+                    // A heard form inside the word already written out
+                    // stays: "Abhash" heard for "Abhash Chakraborty" mustn't
+                    // turn "Abhash Chakraborty" into "… Chakraborty
+                    // Chakraborty".
+                    let span = caps.get(0).map_or(0..0, |m| m.range());
+                    if within_written(&lower, span, word) {
                         return found.to_string();
                     }
                     let out = if word.case_sensitive {
@@ -556,8 +620,15 @@ impl CompiledDictionary {
         if candidates.is_empty() {
             return (text, corrections);
         }
-        let list: Vec<String> = candidates.iter().map(|w| w.text.clone()).collect();
-        let exact: Vec<bool> = candidates.iter().map(|w| w.case_sensitive).collect();
+        // A word's other forms are matched too, each standing for itself.
+        let (list, exact): (Vec<String>, Vec<bool>) = candidates
+            .iter()
+            .flat_map(|w| {
+                std::iter::once(&w.text)
+                    .chain(&w.also)
+                    .map(move |form| (form.clone(), w.case_sensitive))
+            })
+            .unzip();
         let (text, changes) = correct_close_words(
             &text,
             &list,
@@ -1353,6 +1424,63 @@ mod tests {
         assert!(words.contains(&"hub".to_string()), "{words:?}");
         assert!(!words.contains(&"today".to_string()), "{words:?}");
         assert!(!words.contains(&"inyon".to_string()), "{words:?}");
+    }
+
+    #[test]
+    fn a_full_name_and_its_first_name_both_work() {
+        let dict =
+            CompiledDictionary::new(vec![word("Abhash", &[]), word("Abhash Chakraborty", &[])]);
+        assert_eq!(
+            dict.apply("Abhash Chakravorty said hi.", false, 0.18).0,
+            "Abhash Chakraborty said hi."
+        );
+        assert_eq!(
+            dict.apply("Abhash said hi.", false, 0.18).0,
+            "Abhash said hi."
+        );
+    }
+
+    #[test]
+    fn a_heard_form_inside_its_own_word_does_not_double_it() {
+        let dict = CompiledDictionary::new(vec![word("Abhash Chakraborty", &["abhash"])]);
+        assert_eq!(
+            dict.apply("Abhash Chakraborty is here.", false, 0.18).0,
+            "Abhash Chakraborty is here."
+        );
+        assert_eq!(
+            dict.apply("Ask abhash today.", false, 0.18).0,
+            "Ask Abhash Chakraborty today."
+        );
+    }
+
+    #[test]
+    fn other_forms_stay_as_written_and_draw_their_close_misses() {
+        let mut name = word("Abhash Chakraborty", &[]);
+        name.also = vec!["Abhash".into()];
+        let dict = CompiledDictionary::new(vec![name]);
+        assert_eq!(
+            dict.apply("Abhash said hi.", false, 0.18).0,
+            "Abhash said hi."
+        );
+        assert_eq!(
+            dict.apply("Abhaash said hi.", false, 0.18).0,
+            "Abhash said hi."
+        );
+        assert_eq!(
+            dict.apply("Abhash Chakroborty said hi.", false, 0.18).0,
+            "Abhash Chakraborty said hi."
+        );
+    }
+
+    #[test]
+    fn real_words_in_a_row_are_not_a_close_miss() {
+        let is_word: IsWord =
+            Arc::new(|w: &str| ["run", "a", "bash", "script"].contains(&w.to_lowercase().as_str()));
+        let dict = CompiledDictionary::new(vec![word("Abhash", &[])]).with_word_check(is_word);
+        assert_eq!(
+            dict.apply("Run a bash script.", false, 0.18).0,
+            "Run a bash script."
+        );
     }
 
     #[test]

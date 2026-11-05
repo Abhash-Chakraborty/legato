@@ -1,6 +1,13 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Pencil, Pin, PinOff, Trash2, type LucideIcon } from "lucide-react";
+import {
+  Merge,
+  Pencil,
+  Pin,
+  PinOff,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import type { DictionaryEntry } from "@/bindings";
 import { AppIcon } from "../home/AppIcon";
 import { isLearned, relativeTime, shortDate } from "./list";
@@ -40,6 +47,7 @@ interface WordRowProps {
   onFocusRow: () => void;
   onEdit: () => void;
   onPin: () => void;
+  onMerge: () => void;
   onDelete: () => void;
 }
 
@@ -50,6 +58,7 @@ export const WordRow: React.FC<WordRowProps> = ({
   onFocusRow,
   onEdit,
   onPin,
+  onMerge,
   onDelete,
 }) => {
   const { t, i18n } = useTranslation();
@@ -77,6 +86,11 @@ export const WordRow: React.FC<WordRowProps> = ({
           <span data-word-text className="truncate text-[15px] font-medium">
             {entry.text}
           </span>
+          {(entry.also ?? []).length > 0 && (
+            <span className="min-w-0 truncate text-[13px] text-text-3">
+              {t("dictionary.row.also", { forms: entry.also?.join(", ") })}
+            </span>
+          )}
           {entry.kind && (
             <span className="text-xs text-text-3">
               {t(`dictionary.kind.${entry.kind}`)}
@@ -171,6 +185,11 @@ export const WordRow: React.FC<WordRowProps> = ({
           label={t("dictionary.row.edit", { word: entry.text })}
           icon={Pencil}
           onClick={onEdit}
+        />
+        <RowButton
+          label={t("dictionary.row.merge", { word: entry.text })}
+          icon={Merge}
+          onClick={onMerge}
         />
         <RowButton
           label={t("dictionary.row.delete", { word: entry.text })}

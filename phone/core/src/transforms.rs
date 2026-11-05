@@ -86,17 +86,14 @@ pub fn system_prompt(
         .into_iter()
         .find(|t| t.id == transform_id)
         .context("That transform isn't switched on")?;
-    let words = if transform_rules::wants_dictionary(&transform.prompt) {
-        dictionary_words(conn)?
-    } else {
-        Vec::new()
-    };
+    let words = dictionary_words(conn)?;
     Ok(transform_rules::system_prompt(
         &transform.prompt,
         &PromptContext {
             app,
             dictionary: &words,
             clipboard: clipboard.filter(|_| transform_rules::wants_clipboard(&transform.prompt)),
+            your_name: None,
         },
     ))
 }

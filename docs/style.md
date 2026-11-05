@@ -76,7 +76,7 @@ Cleanup runs on every dictation in every app, before the tone. Pick a level on t
 | Light  | Removes fillers, repeats and false starts; writes numbers as digits. No AI. The default |
 | Medium | Light, then your AI smooths the grammar without changing what you said                  |
 
-Medium needs an AI provider (see [Transforms, Ask and your AI provider](transforms.md)). The page shows which model it uses, and its example shows only the Light rules, since the AI step runs on real dictations.
+Medium needs an AI provider (see [Transforms, Ask and your AI provider](transforms.md)). Your model is told which app the text goes to and what kind it is, your name, and how your Dictionary spells its words. It keeps code and commands as said in a code editor, cleans up a prompt for an AI chat without answering it, and keeps the language you spoke. The page shows which model it uses, and its example shows only the Light rules, since the AI step runs on real dictations.
 
 Light is made of rules you can switch one by one. All are on by default:
 

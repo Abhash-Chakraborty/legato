@@ -366,12 +366,12 @@ async fn attempt(
     schema: Option<serde_json::Value>,
 ) -> Result<String, AiStatusKind> {
     let result = if config.provider.api_format == PostProcessApiFormat::Anthropic {
-        llm_client::send_chat_completion(
+        llm_client::send_anthropic_message(
             &config.provider,
             config.api_key.clone(),
             &config.model,
-            format!("{system}\n\n{user}"),
-            false,
+            Some(system.to_string()),
+            user,
         )
         .await
     } else {
@@ -681,15 +681,17 @@ pub struct Corrected {
     pub changes: Vec<(String, String)>,
 }
 
-/// Cleanup at Medium: one request that fixes grammar and false starts and,
-/// when the correction pass is on, Dictionary spellings too. `text` carries
-/// snippet placeholders, which the answer must keep. Ok(None) means it
-/// didn't run or the answer was thrown away; the rule-based text is pasted.
+/// Cleanup at Medium: one request that fixes grammar and false starts and
+/// spells Dictionary words the person's way, told which app the text goes
+/// to. `text` carries snippet placeholders, which the answer must keep.
+/// Ok(None) means it didn't run or the answer was thrown away; the
+/// rule-based text is pasted.
 pub async fn medium_pass(
     app: &AppHandle,
     settings: &AppSettings,
     text: &str,
     placeholders: usize,
+    place: &ai_rules::Place<'_>,
 ) -> Result<Option<String>, AiProblem> {
     if text.trim().is_empty() {
         return Ok(None);
@@ -701,21 +703,19 @@ pub async fn medium_pass(
     let Some(config) = AiConfig::for_task(settings, AiTask::Dictation) else {
         return Ok(None);
     };
-    let entries = if settings.ai_correction_enabled {
-        let mut entries = app
-            .try_state::<Arc<DictionaryManager>>()
-            .and_then(|d| d.list().ok())
-            .unwrap_or_default();
-        entries.sort_by(|a, b| b.pinned.cmp(&a.pinned).then(b.hits.cmp(&a.hits)));
-        entries
-    } else {
-        Vec::new()
-    };
+    // The Dictionary always goes along: spelling names right is half of
+    // what the cleanup is for, and it costs no extra round trip.
+    let mut entries = app
+        .try_state::<Arc<DictionaryManager>>()
+        .and_then(|d| d.list().ok())
+        .unwrap_or_default();
+    entries.sort_by(|a, b| b.pinned.cmp(&a.pinned).then(b.hits.cmp(&a.hits)));
     let words: Vec<PromptWord> = entries
         .iter()
         .map(|e| PromptWord {
             text: &e.text,
             heard: &e.heard,
+            also: &e.also,
             ordinary: ordinary_forms(&e.heard),
             kind: e.kind.map(|k| k.noun()),
         })
@@ -723,7 +723,7 @@ pub async fn medium_pass(
     let input = crate::snippet_rules::to_ai(text);
     let request = ai_rules::cleanup_request(&words, &input);
     let started = Instant::now();
-    let system = ai_rules::cleanup_system_prompt(placeholders);
+    let system = ai_rules::cleanup_system_prompt(placeholders, place);
     let budget = ai_rules::dictation_budget(config.timeout, text.split_whitespace().count());
     let answer = match ask(&config, &system, request, None, budget).await {
         Ok(answer) => answer,
@@ -809,6 +809,7 @@ pub async fn correction_pass(
         .map(|e| PromptWord {
             text: &e.text,
             heard: &e.heard,
+            also: &e.also,
             ordinary: ordinary_forms(&e.heard),
             kind: e.kind.map(|k| k.noun()),
         })
@@ -820,7 +821,7 @@ pub async fn correction_pass(
     let started = Instant::now();
     let answer = ask(
         &config,
-        ai_rules::CORRECTION_SYSTEM_PROMPT,
+        &ai_rules::correction_system_prompt(),
         request,
         Some(ai_rules::correction_schema()),
         ai_rules::dictation_budget(config.timeout, text.split_whitespace().count()),
@@ -841,10 +842,18 @@ pub async fn correction_pass(
     };
     report(app, &config, AiStatusKind::Ok);
 
-    let Some(replacements) = ai_rules::parse_replacements(&answer) else {
+    let Some((replacements, unsure)) = ai_rules::parse_correction(&answer) else {
         warn!("Correction pass: the model's answer wasn't the expected JSON");
         return Ok(None);
     };
+    // Names the model only suspects wait under Needs review.
+    let suggestions = ai_rules::misheard_suggestions(text, &unsure, &words);
+    if !suggestions.is_empty() {
+        match dictionary.add_pending(&suggestions, None) {
+            Ok(added) => debug!("Correction pass: {} word(s) for review", added.len()),
+            Err(e) => warn!("Correction pass: couldn't save words for review: {e}"),
+        }
+    }
     let (corrected, changes) = ai_rules::apply_replacements(text, &words, &replacements);
     debug!(
         "Correction pass: {} of {} suggestions applied in {:?}",

@@ -148,6 +148,15 @@ pub fn count(conn: &Connection, kind: &str) -> Result<i64> {
 
 fn export_dictionary(conn: &Connection) -> Result<Vec<Item>> {
     let mut heard: HashMap<i64, Vec<String>> = HashMap::new();
+    let mut also: HashMap<i64, Vec<String>> = HashMap::new();
+    {
+        let mut stmt = conn.prepare("SELECT entry_id, form FROM dictionary_also")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        for row in rows {
+            let (id, form) = row?;
+            also.entry(id).or_default().push(form);
+        }
+    }
     {
         let mut stmt = conn.prepare("SELECT entry_id, heard FROM dictionary_heard")?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
@@ -177,7 +186,13 @@ fn export_dictionary(conn: &Connection) -> Result<Vec<Item>> {
         // An unset kind goes as null, which hashes like no kind at all, so
         // words without one read as they did before kinds, and clearing one
         // reaches the other side.
-        let body = json!({"text": text, "case_sensitive": case_sensitive, "pinned": pinned, "heard": forms, "kind": kind});
+        let mut body = json!({"text": text, "case_sensitive": case_sensitive, "pinned": pinned, "heard": forms, "kind": kind});
+        // Other written forms go only when there are some, so a word
+        // without them hashes as it did before they existed.
+        if let Some(mut written) = also.remove(&id).filter(|a| !a.is_empty()) {
+            written.sort_by_key(|f| f.to_lowercase());
+            body["also"] = json!(written);
+        }
         items.push(Item {
             key: text.to_lowercase(),
             body,
@@ -203,6 +218,7 @@ fn apply_dictionary(
     let Some(body) = body else {
         if let Some(id) = existing {
             conn.execute("DELETE FROM dictionary_heard WHERE entry_id = ?1", [id])?;
+            conn.execute("DELETE FROM dictionary_also WHERE entry_id = ?1", [id])?;
             conn.execute("DELETE FROM dictionary_entry WHERE id = ?1", [id])?;
         }
         return Ok(Applied::default());
@@ -255,6 +271,17 @@ fn apply_dictionary(
             conn.last_insert_rowid()
         }
     };
+    // No "also" means the word has no other written forms.
+    conn.execute("DELETE FROM dictionary_also WHERE entry_id = ?1", [id])?;
+    for form in body["also"].as_array().into_iter().flatten() {
+        if let Some(form) = form.as_str() {
+            // A form belongs to one word; one taken here stays put.
+            conn.execute(
+                "INSERT OR IGNORE INTO dictionary_also (entry_id, form) VALUES (?1, ?2)",
+                params![id, form],
+            )?;
+        }
+    }
     for form in body["heard"].as_array().into_iter().flatten() {
         if let Some(form) = form.as_str() {
             // A heard form belongs to one word; one taken here stays put.
@@ -271,25 +298,44 @@ fn apply_dictionary(
 
 fn export_snippets(conn: &Connection) -> Result<Vec<Item>> {
     let mut stmt =
-        conn.prepare("SELECT trigger, text, alone, added_at FROM snippet ORDER BY id")?;
+        conn.prepare("SELECT trigger, text, alone, added_at, also FROM snippet ORDER BY id")?;
     let rows = stmt.query_map([], |r| {
         Ok((
             r.get::<_, String>(0)?,
             r.get::<_, String>(1)?,
             r.get::<_, bool>(2)?,
             r.get::<_, i64>(3)?,
+            r.get::<_, Option<String>>(4)?,
         ))
     })?;
     let mut items = Vec::new();
     for row in rows {
-        let (trigger, text, alone, added_at) = row?;
+        let (trigger, text, alone, added_at, also) = row?;
+        let mut body = json!({"trigger": trigger, "text": text, "alone": alone});
+        // Other phrases go only when there are some, so a snippet without
+        // them hashes as it did before they existed.
+        let also: Vec<String> = also
+            .and_then(|a| serde_json::from_str(&a).ok())
+            .unwrap_or_default();
+        if !also.is_empty() {
+            body["also"] = json!(also);
+        }
         items.push(Item {
             key: trigger.to_lowercase(),
-            body: json!({"trigger": trigger, "text": text, "alone": alone}),
+            body,
             at: seconds_to_ms(added_at),
         });
     }
     Ok(items)
+}
+
+/// A snippet's other phrases as the column keeps them; none when the body
+/// has no "also".
+fn snippet_also(body: &Value) -> Option<String> {
+    body.get("also")
+        .and_then(|a| a.as_array())
+        .filter(|a| !a.is_empty())
+        .map(|a| Value::Array(a.clone()).to_string())
 }
 
 fn apply_snippet(conn: &Connection, key: &str, body: Option<&Value>, now: i64) -> Result<Applied> {
@@ -307,23 +353,26 @@ fn apply_snippet(conn: &Connection, key: &str, body: Option<&Value>, now: i64) -
         (None, None) => {}
         (Some(body), Some(id)) => {
             conn.execute(
-                "UPDATE snippet SET trigger = ?2, text = ?3, alone = ?4 WHERE id = ?1",
+                "UPDATE snippet SET trigger = ?2, text = ?3, alone = ?4, also = ?5 WHERE id = ?1",
                 params![
                     id,
                     text(body, "trigger"),
                     text(body, "text"),
-                    flag(body, "alone")
+                    flag(body, "alone"),
+                    snippet_also(body)
                 ],
             )?;
         }
         (Some(body), None) => {
             conn.execute(
-                "INSERT INTO snippet (trigger, text, alone, added_at) VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO snippet (trigger, text, alone, added_at, also)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![
                     text(body, "trigger"),
                     text(body, "text"),
                     flag(body, "alone"),
-                    now
+                    now,
+                    snippet_also(body)
                 ],
             )?;
         }

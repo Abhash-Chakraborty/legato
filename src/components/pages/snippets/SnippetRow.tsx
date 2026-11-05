@@ -74,6 +74,11 @@ export const SnippetRow: React.FC<SnippetRowProps> = ({
         <div data-snippet-trigger className="truncate text-[15px] font-medium">
           {snippet.trigger}
         </div>
+        {(snippet.also?.length ?? 0) > 0 && (
+          <div className="mt-0.5 truncate text-[13px] text-text-3">
+            {t("snippets.row.also", { phrases: snippet.also?.join(", ") })}
+          </div>
+        )}
         {snippet.alone && (
           <div className="mt-0.5 truncate text-[13px] text-text-3">
             {t("snippets.row.alone")}

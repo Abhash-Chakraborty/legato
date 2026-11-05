@@ -27,7 +27,7 @@ A new install starts with dictation only, and the last step of setup asks which 
 
 ## Shortcuts
 
-Keys that work in any app, even with the window closed: Dictate and Shortcut behaviour, Dictate then transform, Cancel and Add selection to Dictionary; Transform the selection, Ask and Show the last changes; Open Scratchpad; Start or stop notes; Talk to the companion for Inyon; Paste last dictation and Copy last dictation; and the Keyboard backend. See [Dictation](dictation.md).
+Keys that work in any app, even with the window closed: Dictate and Shortcut behaviour, Dictate then transform, Cancel and Add selection to Dictionary; Transform the selection, Ask and Show the last changes; Open Scratchpad; Start or stop notes; Talk to the companion for Inyon; Paste last dictation, Copy last dictation and Correct last dictation; and the Keyboard backend. See [Dictation](dictation.md).
 
 ## Audio
 

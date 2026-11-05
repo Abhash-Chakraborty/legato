@@ -581,6 +581,14 @@ export const buildSections = (
             ],
             render: () => <ShortcutInput shortcutId="copy_last" grouped />,
           },
+          {
+            id: "correct-last",
+            searchKeys: [
+              "settings.general.shortcut.bindings.correct_last.name",
+              "settings.general.shortcut.bindings.correct_last.description",
+            ],
+            render: () => <ShortcutInput shortcutId="correct_last" grouped />,
+          },
         ],
       },
       {

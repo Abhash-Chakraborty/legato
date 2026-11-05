@@ -157,6 +157,7 @@ fn prompt_words(entries: &[DictionaryEntry]) -> Vec<PromptWord<'_>> {
         .map(|e| PromptWord {
             text: &e.text,
             heard: &e.heard,
+            also: &e.also,
             ordinary: Vec::new(),
             kind: e.kind.map(|k| k.noun()),
         })
@@ -191,7 +192,13 @@ pub fn cleanup_ask(
     Ok(Some(CleanupAsk {
         provider: provider.clone(),
         model: cleanup.model.clone(),
-        system: ai_rules::cleanup_system_prompt(draft.marked.hits.len()),
+        system: ai_rules::cleanup_system_prompt(
+            draft.marked.hits.len(),
+            &ai_rules::Place {
+                category,
+                ..Default::default()
+            },
+        ),
         message: ai_rules::cleanup_request(&words, &snippet_rules::to_ai(text)),
     }))
 }
@@ -282,6 +289,7 @@ mod tests {
             trigger: "my calendar link".into(),
             text: "cal.com/abhash on {{date}}".into(),
             alone: false,
+            ..Default::default()
         };
         snippet_store::add(&mut conn, &snippet, 1).unwrap();
         conn
@@ -332,7 +340,16 @@ mod tests {
             (ask.provider.id.as_str(), ask.model.as_str()),
             ("openai", "gpt-5-mini")
         );
-        assert_eq!(ask.system, ai_rules::cleanup_system_prompt(1));
+        assert_eq!(
+            ask.system,
+            ai_rules::cleanup_system_prompt(
+                1,
+                &ai_rules::Place {
+                    category: "other",
+                    ..Default::default()
+                }
+            )
+        );
         assert!(
             ask.message.contains("Netbird (misheard as: net bird)"),
             "{}",

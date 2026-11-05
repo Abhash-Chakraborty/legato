@@ -325,7 +325,7 @@ fn looks_like_code(word: &str) -> bool {
 }
 
 /// A little of the field around a word, cut between words.
-fn context(field: &str, start: usize, end: usize) -> String {
+pub fn context(field: &str, start: usize, end: usize) -> String {
     let head: Vec<char> = field[..start].chars().collect();
     let from = head.len().saturating_sub(CONTEXT_SIDE);
     let mut before: String = head[from..].iter().collect();
@@ -612,6 +612,134 @@ pub fn spelled_differently(said: &[Said<'_>]) -> Vec<Spelling> {
     out
 }
 
+/// A name's words, lowercased, split at anything but letters and digits:
+/// "A.Chakraborty" and "a.chakraborty@x" both give ["a", "chakraborty"].
+fn name_words(name: &str) -> Vec<String> {
+    let name = name.split('@').next().unwrap_or(name);
+    name.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// Two spellings of one word, allowing a slip or two in a long one
+/// ("Chkraborty" for "Chakraborty"), none in a short one.
+fn close_words(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let shorter = a.len().min(b.len());
+    let allowed = match shorter {
+        0..=3 => 0,
+        4..=5 => 1,
+        _ => 2,
+    };
+    if allowed == 0 || a.len().abs_diff(b.len()) > allowed {
+        return false;
+    }
+    // Levenshtein over two rows.
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut row = vec![i + 1; b.len() + 1];
+        for (j, cb) in b.iter().enumerate() {
+            row[j + 1] = (prev[j] + usize::from(ca != cb))
+                .min(prev[j + 1] + 1)
+                .min(row[j] + 1);
+        }
+        prev = row;
+    }
+    prev[b.len()] <= allowed
+}
+
+/// Whether two names from invites, a Meet window or a summary are one
+/// person: "Priya" and "Priya Shah", "A. Chakraborty", "a.chakraborty" and
+/// "Abhash Chakraborty", "abhashchakraborty" and "Abhash Chakraborty", with
+/// a slip in a long surname. "Priya Shah" and "Priya Patel" aren't.
+pub fn same_person(a: &str, b: &str) -> bool {
+    let (a, b) = (name_words(a), name_words(b));
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    if a.concat() == b.concat() {
+        return true;
+    }
+    let (short, long) = if a.len() <= b.len() {
+        (&a, &b)
+    } else {
+        (&b, &a)
+    };
+    let (first, last) = (&long[0], &long[long.len() - 1]);
+    if short.len() == 1 {
+        let one = &short[0];
+        if long.len() == 1 {
+            return close_words(one, first);
+        }
+        // A first name, or an address such as "achakraborty".
+        let initial_last = format!("{}{last}", first.chars().next().unwrap_or(' '));
+        return one == first
+            || close_words(one, &long.concat())
+            || (one.chars().count() > 4 && close_words(one, &initial_last));
+    }
+    let (s_first, s_last) = (&short[0], &short[short.len() - 1]);
+    let initial = |w: &str, of: &str| w.chars().count() == 1 && of.starts_with(w);
+    let firsts = s_first == first || initial(s_first, first) || initial(first, s_first);
+    let lasts = close_words(s_last, last) || (initial(s_last, last) && s_first == first);
+    firsts && lasts
+}
+
+/// A Dictionary word as merge suggestions see it.
+pub struct WordForMerge<'a> {
+    pub id: i64,
+    pub text: &'a str,
+    pub hits: i64,
+}
+
+/// At most this many merges are suggested at once.
+const MERGE_SUGGESTIONS: usize = 8;
+
+/// Pairs of Dictionary words that look like one word, as (keep, other): a
+/// name and the same person's full name or initial ("Abhash", "A.
+/// Chakraborty" and "Abhash Chakraborty"), or two spellings that fold to
+/// one ("Dokploy", "DocPloy"). The word kept has the most words,
+/// then the most fixes. Pairs in `apart` (lowercase, in order) were said
+/// not to be the same.
+pub fn merge_suggestions(
+    words: &[WordForMerge<'_>],
+    apart: &[(String, String)],
+) -> Vec<(i64, i64)> {
+    let named = |w: &str| w.chars().next().is_some_and(char::is_uppercase);
+    let mut out = Vec::new();
+    for (i, a) in words.iter().enumerate() {
+        for b in &words[i + 1..] {
+            let (x, y) = (a.text.to_lowercase(), b.text.to_lowercase());
+            let pair = if x <= y { (x, y) } else { (y, x) };
+            if apart.contains(&pair) {
+                continue;
+            }
+            let person = named(a.text) && named(b.text) && same_person(a.text, b.text);
+            let key = spelling_key(a.text);
+            let spelled = key.chars().count() >= 5 && key == spelling_key(b.text);
+            if !(person || spelled) {
+                continue;
+            }
+            let size = |w: &WordForMerge<'_>| {
+                (
+                    w.text.split_whitespace().count(),
+                    w.hits,
+                    w.text.chars().filter(|c| c.is_alphabetic()).count(),
+                )
+            };
+            let (keep, other) = if size(b) > size(a) { (b, a) } else { (a, b) };
+            out.push((keep.id, other.id));
+            if out.len() == MERGE_SUGGESTIONS {
+                return out;
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -735,6 +863,22 @@ mod tests {
             "Coolify again",
         ]));
         assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn merges_are_suggested_for_one_person_or_one_spelling() {
+        let w = |id: i64, text: &'static str, hits: i64| WordForMerge { id, text, hits };
+        let words = [
+            w(1, "Abhash", 9),
+            w(2, "Abhash Chakraborty", 1),
+            w(3, "Dokploy", 2),
+            w(4, "DocPloy", 5),
+            w(5, "Netbird", 1),
+            w(6, "bash", 0),
+        ];
+        assert_eq!(merge_suggestions(&words, &[]), vec![(2, 1), (4, 3)]);
+        let apart = vec![("abhash".to_string(), "abhash chakraborty".to_string())];
+        assert_eq!(merge_suggestions(&words, &apart), vec![(4, 3)]);
     }
 
     #[test]

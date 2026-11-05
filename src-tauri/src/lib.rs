@@ -19,6 +19,7 @@ pub mod cli;
 mod clipboard;
 mod commands;
 mod context;
+mod correct;
 mod desktop;
 mod document;
 mod edit_reader;
@@ -1043,6 +1044,8 @@ pub fn run(cli_args: CliArgs) {
             commands::dictionary::set_dictionary_entry_pinned,
             commands::dictionary::delete_dictionary_entries,
             commands::dictionary::restore_dictionary_entries,
+            commands::dictionary::merge_dictionary_entries,
+            commands::dictionary::keep_dictionary_entries_apart,
             commands::dictionary::test_dictionary,
             commands::dictionary::import_dictionary,
             commands::dictionary::export_dictionary,
@@ -1087,6 +1090,9 @@ pub fn run(cli_args: CliArgs) {
             commands::transforms::try_transform,
             commands::transforms::new_transform,
             commands::transforms::bar_undo,
+            commands::transforms::bar_correct,
+            commands::transforms::bar_correct_apply,
+            commands::transforms::bar_correct_cancel,
             commands::transforms::bar_keep,
             commands::transforms::bar_hold,
             commands::transforms::bar_pick,
@@ -1100,6 +1106,7 @@ pub fn run(cli_args: CliArgs) {
             commands::snippets::import_snippets,
             commands::snippets::export_snippets,
             commands::snippets::test_snippets,
+            commands::snippets::snippet_triggers_heard,
             commands::style::get_style_apps,
             commands::style::move_app,
             commands::style::add_site,
