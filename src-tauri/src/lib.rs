@@ -157,6 +157,10 @@ fn handle_second_instance(app: &AppHandle, args: &[String]) {
         open_scratchpad_from_cli(app, false);
     } else if args.iter().any(|a| a == desktop::NEW_NOTE_ARG) {
         open_scratchpad_from_cli(app, true);
+    } else if args.iter().any(|a| a == autostart::START_HIDDEN_ARG) {
+        // Started with Windows again, by a second autostart entry or the
+        // handover to the elevated Legato: it stays in the tray.
+        log::info!("A second Legato started hidden; staying in the tray");
     } else {
         // A second process was launched without remote-control flags:
         // raise the window.
@@ -1364,12 +1368,6 @@ pub fn run(cli_args: CliArgs) {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        // Started with Windows, Legato waits in the tray.
-        .plugin(
-            tauri_plugin_autostart::Builder::new()
-                .args(["--start-hidden"])
-                .build(),
-        )
         .plugin(window_state_plugin())
         .manage(cli_args.clone())
         .setup(move |app| {

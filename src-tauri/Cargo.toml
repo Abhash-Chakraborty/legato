@@ -36,7 +36,6 @@ tauri-plugin-store = "2.5.0"
 tauri-plugin-os = "2.4.0"
 tauri-plugin-clipboard-manager = "2.5.0"
 tauri-plugin-process = "2.4.0"
-tauri-plugin-autostart = "2.7.0"
 tauri-plugin-global-shortcut = "2.4.1"
 tauri-plugin-single-instance = "2.5.5"
 tauri-plugin-updater = "2.14.1"
@@ -109,6 +108,8 @@ hf-hub = { git = "https://github.com/cjpais/hf-hub", branch = "cancellable-downl
 ] }
 
 [target.'cfg(windows)'.dependencies]
+# Launch at login, in the current user's Run key only.
+auto-launch = "0.6.0"
 # Used to reach ICoreWebView2Settings3 through the webview's controller
 # (disabling browser accelerator keys in the main window). Must match the
 # version wry links against so the COM types are identical.
