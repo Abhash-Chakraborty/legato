@@ -25,7 +25,7 @@ import { useAiStore, watchAi } from "../../../stores/aiStore";
 import { useNavStore } from "../../../stores/navStore";
 import { Button } from "../../ui/Button";
 import { ActionMenu } from "../../ui/ActionMenu";
-import { answerParts } from "../../notes/notes";
+import { answerParts, peopleGroups } from "../../notes/notes";
 
 /** "Switch the workers: the code predates…" as a bold title and the rest. */
 const splitTitle = (text: string): [string | null, string] => {
@@ -47,31 +47,6 @@ export const Titled: React.FC<{ text: string }> = ({ text }) => {
   ) : (
     <span>{rest}</span>
   );
-};
-
-/** You, Them or Speaker 3: a line's label, which older summaries listed
- *  among the people (`notes_rules::is_line_label`). */
-const isLineLabel = (name: string) =>
-  /^(you|them|the other person|the others|other person|speaker \d+)$/i.test(
-    name.trim(),
-  );
-
-/** Everyone the note names: who was invited, then who the summary found. */
-const peopleOf = (note: Note): string[] => {
-  const out: string[] = [];
-  for (const name of [
-    ...(note.attendees ?? []),
-    ...(note.outline?.people ?? []),
-  ]) {
-    const key = name.trim().toLowerCase();
-    // "Priya" from the talk is the "Priya Shah" who was invited.
-    const known = out.some((n) => {
-      const other = n.toLowerCase();
-      return other === key || other.split(" ")[0] === key;
-    });
-    if (key && !known && !isLineLabel(key)) out.push(name.trim());
-  }
-  return out;
 };
 
 /** The kinds of meeting a summary can be shaped for, as in
@@ -408,7 +383,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
     done: done[a.id] ?? a.done,
   }));
   const doneCount = actions.filter((a) => a.done).length;
-  const people = peopleOf(note);
+  const people = peopleGroups(note, settings?.your_name);
   const topics = note.outline?.topics ?? [];
   /** A time that plays the recording from there, or shows its line. */
   const timeChip = (ms: number) => (
@@ -486,14 +461,30 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
               onPick={rewriteAs}
             />
           )}
-          {people.length > 0 && (
-            <p className="mb-3 flex items-start gap-2 text-[13px] text-text-2">
+          {(people.attended.length > 0 ||
+            people.invited.length > 0 ||
+            people.mentioned.length > 0) && (
+            <div className="mb-3 flex items-start gap-2 text-[13px] text-text-2">
               <Users
                 className="mt-0.5 h-3.5 w-3.5 flex-none text-text-3"
                 aria-label={t("notes.summary.people")}
               />
-              <span>{people.join(", ")}</span>
-            </p>
+              <dl className="grid min-w-0 grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+                {(["attended", "invited", "mentioned"] as const).map(
+                  (group) =>
+                    people[group].length > 0 && (
+                      <React.Fragment key={group}>
+                        <dt className="text-text-3">
+                          {t(`notes.summary.peopleGroup.${group}`)}
+                        </dt>
+                        <dd className="select-text">
+                          {people[group].join(", ")}
+                        </dd>
+                      </React.Fragment>
+                    ),
+                )}
+              </dl>
+            </div>
           )}
           <p className="select-text text-[15px] leading-relaxed">
             {note.summary}

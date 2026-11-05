@@ -442,6 +442,9 @@ pub static MIGRATIONS: &[M] = &[
     M::up("ALTER TABLE note_line ADD COLUMN word_ms TEXT;"),
     // Why an AI step was skipped (the provider didn't answer), for Home.
     M::up("ALTER TABLE transcription_history ADD COLUMN ai_skipped TEXT;"),
+    // Notes: who was seen in the call (JSON), apart from who was invited;
+    // NULL in notes from before, where attendees holds both.
+    M::up("ALTER TABLE note ADD COLUMN seen TEXT;"),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.

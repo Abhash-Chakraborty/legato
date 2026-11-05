@@ -3241,9 +3241,15 @@ retryable?: number; lines: number; actions: NoteAction[];
  */
 outline?: NoteOutline; 
 /**
- * Who was invited, when the note began with a calendar meeting.
+ * Who was invited, when the note began with a calendar meeting, and
+ * anyone seen in the call.
  */
- attendees?: string[]; 
+attendees?: string[]; 
+/**
+ * Who was seen in the call (a Meet window's people). None in notes
+ * from before Legato kept them apart from who was invited.
+ */
+seen?: string[] | null; 
 /**
  * The folder the note is in, by name.
  */
@@ -3261,7 +3267,17 @@ export type NoteAction = { id: number; owner: string; text: string; done: boolea
  * A summary's longer parts: who took part, a short paragraph per topic,
  * and details tied to the moment in the recording they come from.
  */
-export type NoteOutline = { people?: string[]; topics?: OutlineTopic[]; details?: OutlineDetail[]; 
+export type NoteOutline = { 
+/**
+ * Who spoke, by name; in summaries written before `mentioned`, also
+ * anyone addressed by name.
+ */
+people?: string[]; 
+/**
+ * Who was talked about or addressed but never spoke. None in summaries
+ * written before the two were asked for apart.
+ */
+mentioned?: string[] | null; topics?: OutlineTopic[]; details?: OutlineDetail[]; 
 /**
  * The kind of meeting, one of `MEETING_KINDS`, such as "sales".
  */

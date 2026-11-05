@@ -135,9 +135,14 @@ pub struct Note {
     /// The summary's topics, timed details and the people it names.
     #[serde(default)]
     pub outline: NoteOutline,
-    /// Who was invited, when the note began with a calendar meeting.
+    /// Who was invited, when the note began with a calendar meeting, and
+    /// anyone seen in the call.
     #[serde(default)]
     pub attendees: Vec<String>,
+    /// Who was seen in the call (a Meet window's people). None in notes
+    /// from before Legato kept them apart from who was invited.
+    #[serde(default)]
+    pub seen: Option<Vec<String>>,
     /// The folder the note is in, by name.
     #[serde(default)]
     pub folder: Option<String>,
@@ -246,7 +251,7 @@ pub struct NewNote<'a> {
 
 const COLUMNS: &str = "id, title, kind, status, app, app_path, microphone, system_audio,
     started_at, duration_ms, audio_file, my_notes, summary, decisions, summary_model,
-    summary_at, summary_error, failed_lines, edited_at, outline, attendees, folder,
+    summary_at, summary_error, failed_lines, edited_at, outline, attendees, seen, folder,
     (SELECT COUNT(*) FROM note_line l WHERE l.note_id = note.id) AS lines,
     (SELECT COUNT(*) FROM note_failed_line f WHERE f.note_id = note.id) AS retryable";
 
@@ -256,6 +261,7 @@ fn map(row: &Row<'_>) -> rusqlite::Result<Note> {
     let decisions: String = row.get("decisions")?;
     let outline: Option<String> = row.get("outline")?;
     let attendees: Option<String> = row.get("attendees")?;
+    let seen: Option<String> = row.get("seen")?;
     Ok(Note {
         id: row.get("id")?,
         title: row.get("title")?,
@@ -287,6 +293,7 @@ fn map(row: &Row<'_>) -> rusqlite::Result<Note> {
         attendees: attendees
             .and_then(|a| serde_json::from_str(&a).ok())
             .unwrap_or_default(),
+        seen: seen.and_then(|a| serde_json::from_str(&a).ok()),
         folder: row.get("folder")?,
         summary_due: false,
     })
@@ -370,8 +377,9 @@ pub fn get(conn: &Connection, id: i64) -> Result<Option<Note>> {
 
 pub fn create(conn: &Connection, new: &NewNote<'_>) -> Result<Note> {
     conn.execute(
-        "INSERT INTO note (title, kind, status, app, app_path, microphone, system_audio, started_at)
-         VALUES (?1, ?2, 'recording', ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO note (title, kind, status, app, app_path, microphone, system_audio, started_at,
+            seen)
+         VALUES (?1, ?2, 'recording', ?3, ?4, ?5, ?6, ?7, '[]')",
         params![
             new.title,
             new.kind.as_str(),
@@ -958,7 +966,17 @@ pub fn set_folder(conn: &mut Connection, ids: &[i64], folder: Option<&str>) -> R
     Ok(())
 }
 
-/// The people invited to the meeting the note began with.
+/// The people seen in the call.
+pub fn set_seen(conn: &Connection, id: i64, people: &[String]) -> Result<()> {
+    conn.execute(
+        "UPDATE note SET seen = ?2 WHERE id = ?1",
+        params![id, serde_json::to_string(people)?],
+    )?;
+    Ok(())
+}
+
+/// The people invited to the meeting the note began with, and anyone seen
+/// in the call.
 pub fn set_attendees(conn: &Connection, id: i64, people: &[String]) -> Result<()> {
     conn.execute(
         "UPDATE note SET attendees = ?2 WHERE id = ?1",
@@ -1083,9 +1101,9 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
     tx.execute(
         "INSERT INTO note (id, title, kind, status, app, app_path, microphone, system_audio,
             started_at, duration_ms, audio_file, my_notes, summary, decisions, summary_model,
-            summary_at, summary_error, failed_lines, edited_at, outline, attendees, folder)
+            summary_at, summary_error, failed_lines, edited_at, outline, attendees, folder, seen)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
-            ?19, ?20, ?21, ?22)",
+            ?19, ?20, ?21, ?22, ?23)",
         params![
             n.id,
             n.title,
@@ -1108,7 +1126,8 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
             n.edited_at,
             serde_json::to_string(&n.outline)?,
             serde_json::to_string(&n.attendees)?,
-            n.folder
+            n.folder,
+            n.seen.as_ref().map(serde_json::to_string).transpose()?
         ],
     )?;
     if let Some(folder) = &n.folder {
@@ -1329,6 +1348,12 @@ pub fn merge(
     let attendees = crate::notes_rules::merge_people(
         [&a.attendees, &b.attendees].map(Vec::as_slice).into_iter(),
     );
+    let seen = match (&a.seen, &b.seen) {
+        (None, None) => None,
+        (a, b) => Some(crate::notes_rules::merge_people(
+            [a, b].into_iter().map(|s| s.as_deref().unwrap_or_default()),
+        )),
+    };
     let kind = if b.kind == NoteKind::Meeting {
         b.kind
     } else {
@@ -1336,7 +1361,7 @@ pub fn merge(
     };
     tx.execute(
         "UPDATE note SET duration_ms = ?2, audio_file = ?3, my_notes = ?4, attendees = ?5,
-            failed_lines = failed_lines + ?6, kind = ?7
+            failed_lines = failed_lines + ?6, kind = ?7, seen = ?8
          WHERE id = ?1",
         params![
             earlier,
@@ -1345,7 +1370,8 @@ pub fn merge(
             my_notes,
             serde_json::to_string(&attendees)?,
             b.failed_lines,
-            kind.as_str()
+            kind.as_str(),
+            seen.as_ref().map(serde_json::to_string).transpose()?
         ],
     )?;
     for table in ["note_tag", "note_speaker"] {
@@ -1466,30 +1492,41 @@ pub fn split_title(text: &str) -> (Option<&str>, &str) {
     }
 }
 
-/// Everyone the note names: who was invited, then who the summary found.
-pub fn people(note: &Note) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for name in note.attendees.iter().chain(&note.outline.people) {
-        let name = name.trim();
-        // "Priya" from the talk is the "Priya Shah" who was invited.
-        let known = out.iter().any(|n| {
-            n.eq_ignore_ascii_case(name)
-                || n.split(' ')
-                    .next()
-                    .is_some_and(|first| first.eq_ignore_ascii_case(name))
-        });
-        if !name.is_empty() && !known {
-            out.push(name.to_string());
-        }
-    }
-    out
+/// The people the note names, apart (see `notes_rules::people_groups`),
+/// leaving out `me`, the person who recorded.
+pub fn people(note: &Note, me: &str) -> crate::notes_rules::PeopleGroups {
+    let voices: Vec<String> = note.speakers.iter().map(|s| s.name.clone()).collect();
+    crate::notes_rules::people_groups(
+        &note.attendees,
+        note.seen.as_deref(),
+        &voices,
+        &note.outline,
+        me,
+    )
 }
 
-pub fn markdown(note: &Note, lines: &[NoteLine], you: &str, them: &str) -> String {
+/// The groups as one line: "Attended: Priya Shah, Sahil · Mentioned: Simon".
+fn people_line(people: &crate::notes_rules::PeopleGroups) -> String {
+    [
+        ("Attended", &people.attended),
+        ("Invited", &people.invited),
+        ("Mentioned", &people.mentioned),
+    ]
+    .iter()
+    .filter(|(_, names)| !names.is_empty())
+    .map(|(label, names)| format!("{label}: {}", names.join(", ")))
+    .collect::<Vec<_>>()
+    .join(" · ")
+}
+
+/// The note as Markdown; `names` are the transcript's labels for you and
+/// the other side, then your name.
+pub fn markdown(note: &Note, lines: &[NoteLine], names: (&str, &str, &str)) -> String {
+    let (you, them, me) = names;
     let mut out = format!("# {}\n\n", note.title);
-    let people = people(note);
+    let people = people(note, me);
     if !people.is_empty() {
-        out.push_str(&format!("People: {}\n\n", people.join(", ")));
+        out.push_str(&format!("{}\n\n", people_line(&people)));
     }
     if !note.tags.is_empty() {
         out.push_str(&format!("Tags: {}\n\n", note.tags.join(", ")));
@@ -1555,25 +1592,38 @@ pub fn markdown(note: &Note, lines: &[NoteLine], you: &str, them: &str) -> Strin
 /// The note as HTML for pasting into Google Docs or Word, which keep its
 /// headings, lists and bold titles. The transcript stays out: it belongs
 /// in the export, not in notes someone reads.
-pub fn html(note: &Note, when: &str) -> String {
-    document::html(&blocks(note, when, None))
+/// The note as HTML for Copy for Google Docs, without its transcript; `me`
+/// is your name, left out of its people.
+pub fn html(note: &Note, when: &str, me: &str) -> String {
+    document::html(&blocks(note, when, me, None))
 }
 
 /// The note as a Word file, transcript included, for Export and for the
 /// copy kept in a folder (Google Drive's, say).
-pub fn docx(note: &Note, when: &str, lines: &[NoteLine], you: &str, them: &str) -> Result<Vec<u8>> {
-    document::docx(&blocks(note, when, Some((lines, you, them))))
+pub fn docx(
+    note: &Note,
+    when: &str,
+    lines: &[NoteLine],
+    names: (&str, &str, &str),
+) -> Result<Vec<u8>> {
+    let (you, them, me) = names;
+    document::docx(&blocks(note, when, me, Some((lines, you, them))))
 }
 
 /// The note's parts in reading order: the summary and its topics, then
 /// decisions, next steps, details, your own notes and, when given, the
 /// transcript.
-fn blocks(note: &Note, when: &str, transcript: Option<(&[NoteLine], &str, &str)>) -> Vec<Block> {
+fn blocks(
+    note: &Note,
+    when: &str,
+    me: &str,
+    transcript: Option<(&[NoteLine], &str, &str)>,
+) -> Vec<Block> {
     let mut out = vec![Block::Title(note.title.clone())];
-    let people = people(note);
+    let people = people(note, me);
     let mut meta = vec![when.to_string()];
     if !people.is_empty() {
-        meta.push(people.join(", "));
+        meta.push(people_line(&people));
     }
     out.push(Block::Para(vec![Run::italic(meta.join(" · "))]));
     if !note.summary.is_empty() {
@@ -1905,13 +1955,26 @@ mod tests {
             "Extension, right?",
         )
         .unwrap();
+        assert_eq!(note.seen, Some(vec![]));
+        let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        set_attendees(
+            &conn,
+            note.id,
+            &names(&["Priya Shah", "Jo Park", "a.chakraborty"]),
+        )
+        .unwrap();
+        set_seen(
+            &conn,
+            note.id,
+            &names(&["Priya Shah", "Abhash Chakraborty"]),
+        )
+        .unwrap();
         let md = markdown(
             &get(&conn, note.id).unwrap().unwrap(),
             &[line],
-            "You",
-            "Them",
+            ("You", "Them", "Abhash Chakraborty"),
         );
-        assert!(md.starts_with("# Infra sync\n"));
+        assert!(md.starts_with("# Infra sync\n\nAttended: Priya Shah · Invited: Jo Park\n"));
         assert!(md.contains("23:30 Them: Extension, right?"));
         assert_eq!(clock(3_725_000), "1:02:05");
     }
@@ -1941,14 +2004,14 @@ mod tests {
         }];
         note.my_notes = "First\nline\n\nSecond".into();
         assert_eq!(
-            html(&note, "Oct 17"),
+            html(&note, "Oct 17", ""),
             "<h1>Infra sync</h1><p><i>Oct 17</i></p><h2>Summary</h2><p>Workers move to Cloudflare.</p>\
              <p><b>Workers</b><br>They predate the builds.</p><h2>Decisions</h2>\
              <ul><li><b>Switch</b>: on Friday.</li><li>Plain one</li></ul><h2>Next steps</h2>\
              <ul><li>☑ [You] <b>Write it up</b>: with images.</li></ul><h2>Details</h2>\
              <p><b>Builds</b>: Twice as fast (1:05)</p><h2>My notes</h2><p>First<br>line</p><p>Second</p>"
         );
-        let bytes = docx(&note, "Oct 17", &[line], "You", "Them").unwrap();
+        let bytes = docx(&note, "Oct 17", &[line], ("You", "Them", "")).unwrap();
         let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
         let mut doc = String::new();
         std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").unwrap(), &mut doc)

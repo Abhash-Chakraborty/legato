@@ -65,6 +65,16 @@ With Remember voices on, naming a speaker keeps an 8-second clip of their voice.
 
 In Google Meet, Legato also reads the names Meet shows in the call window while the note records. Only names are read. They join the note's people, so the summary can name them and naming a voice offers them.
 
+### Who was there
+
+Above the summary, a note lists its people in up to three groups:
+
+- **Attended**: seen in the Meet call, a voice you named or Legato recognised, or someone the summary heard speak.
+- **Invited**: on the calendar invite but never seen in the call. Anyone who declined the invite is left out.
+- **Mentioned**: people who were talked about but didn't speak.
+
+You aren't listed: Legato recognises Settings › General › Your name, your first name, and forms of it from email addresses, such as a.chakraborty for Abhash Chakraborty. One person under two spellings, such as Priya and Priya Shah, is listed once. An invite with only an address shows a name made from it, so priya.shah reads Priya Shah. Notes recorded before this version show what they knew as Attended, and other names from their summary as Mentioned; Regenerate writes the summary again with the groups apart.
+
 ## The summary
 
 With an AI provider set up in Settings › AI, and Notes summaries and Ask turned on there, each note gets a summary after it stops. It has the main points, Decisions, Next steps with who owns each one, and Topics and Details that play the recording from the moment they came up. A note shorter than about 40 words is too short to summarise.

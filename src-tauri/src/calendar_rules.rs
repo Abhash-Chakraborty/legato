@@ -144,8 +144,40 @@ fn split(line: &str) -> Option<(String, Params, &str)> {
     Some((name, params, value))
 }
 
-/// A person on an invite as (name, address): their name, else their
-/// address up to the @. Rooms and other resources aren't people.
+/// A name made from an address with none given: "a.chakraborty" reads
+/// "A. Chakraborty", "priya_shah" reads "Priya Shah". One word stays as it
+/// is, since "jsmith" can't be split.
+fn name_from_address(local: &str) -> String {
+    let words: Vec<&str> = local
+        .split(['.', '_', '-'])
+        .filter(|w| !w.is_empty())
+        .collect();
+    if words.len() < 2 || words.iter().any(|w| w.chars().any(|c| c.is_ascii_digit())) {
+        return local.to_string();
+    }
+    words
+        .iter()
+        .map(|w| {
+            let mut chars = w.chars();
+            let first: String = chars
+                .next()
+                .into_iter()
+                .flat_map(char::to_uppercase)
+                .collect();
+            let rest = chars.as_str();
+            if rest.is_empty() {
+                format!("{first}.")
+            } else {
+                format!("{first}{rest}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A person on an invite as (name, address): their name, else one made
+/// from their address. Rooms and other resources aren't people, and nor is
+/// anyone who declined.
 fn person(params: &Params, value: &str) -> Option<(String, String)> {
     let param = |key: &str| {
         params
@@ -154,6 +186,9 @@ fn person(params: &Params, value: &str) -> Option<(String, String)> {
             .map(|(_, v)| v.as_str())
     };
     if param("CUTYPE").is_some_and(|t| !t.eq_ignore_ascii_case("INDIVIDUAL")) {
+        return None;
+    }
+    if param("PARTSTAT").is_some_and(|p| p.eq_ignore_ascii_case("DECLINED")) {
         return None;
     }
     let name = param("CN").map(|n| unescape(n).trim().to_string());
@@ -166,7 +201,7 @@ fn person(params: &Params, value: &str) -> Option<(String, String)> {
     // Google writes the address itself as the name when there isn't one.
     let name = name
         .filter(|n| !n.is_empty() && !n.contains('@'))
-        .or_else(|| (!from_address.is_empty()).then_some(from_address.clone()))?;
+        .or_else(|| (!from_address.is_empty()).then(|| name_from_address(&from_address)))?;
     Some((name, address.to_lowercase()))
 }
 
@@ -365,7 +400,15 @@ pub fn parse(ics: &str) -> Vec<Event> {
                         .position(|p| p.1.eq_ignore_ascii_case(&person.1));
                     match known {
                         // A real name beats an address standing in for one.
-                        Some(i) if e.people[i].1.split('@').next() == Some(&e.people[i].0) => {
+                        Some(i)
+                            if e.people[i]
+                                .1
+                                .split('@')
+                                .next()
+                                .map(name_from_address)
+                                .as_ref()
+                                == Some(&e.people[i].0) =>
+                        {
                             e.people[i].0 = person.0
                         }
                         Some(_) => {}
@@ -975,10 +1018,16 @@ ATTENDEE;CN=Sahil Khan;PARTSTAT=ACCEPTED:mailto:sahil@example.com\r\n\
 ATTENDEE;CUTYPE=RESOURCE;CN=Room 4:mailto:room4@example.com\r\n\
 ATTENDEE;CN=abhash@example.com:mailto:abhash@example.com\r\n\
 ORGANIZER;CN=\"Abhash Chakraborty\":mailto:abhash@example.com\r\n\
+ATTENDEE;CN=priya.shah@example.com:mailto:priya.shah@example.com\r\n\
+ATTENDEE:mailto:k.nowak@example.com\r\n\
+ATTENDEE;CN=Mara Lind;PARTSTAT=DECLINED:mailto:mara@example.com\r\n\
 END:VEVENT\r\nEND:VCALENDAR\r\n";
         let events = parse(ics);
         let names: Vec<&str> = events[0].people.iter().map(|p| p.0.as_str()).collect();
-        assert_eq!(names, vec!["Sahil Khan", "Abhash Chakraborty"]);
+        assert_eq!(
+            names,
+            vec!["Sahil Khan", "Abhash Chakraborty", "Priya Shah", "K. Nowak"]
+        );
     }
 
     #[test]

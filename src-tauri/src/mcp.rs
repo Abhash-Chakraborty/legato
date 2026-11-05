@@ -38,6 +38,15 @@ fn enabled(dir: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Your name from the settings file, so a note's people leave you out.
+fn your_name(dir: &std::path::Path) -> String {
+    std::fs::read_to_string(dir.join(crate::settings::SETTINGS_STORE_PATH))
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| Some(v.get("settings")?.get("your_name")?.as_str()?.to_string()))
+        .unwrap_or_default()
+}
+
 /// "2026-10-20 14:52", local time, from seconds (or milliseconds).
 fn when(ts: i64) -> String {
     use chrono::TimeZone;
@@ -108,7 +117,7 @@ impl Tools for Legato {
             },
             ToolSpec {
                 name: "get_note",
-                description: "One note in full: its summary, decisions, action items with owners, the person's own notes, and the transcript with who spoke when (You is the person; others by name once they named the voice, else Speaker 1, 2, …, or Them).",
+                description: "One note in full: who attended, was invited but never seen, or was only mentioned (the person excluded), its summary, decisions, action items with owners, the person's own notes, and the transcript with who spoke when (You is the person; others by name once they named the voice, else Speaker 1, 2, …, or Them).",
                 input_schema: schema(
                     json!({ "id": { "type": "integer", "description": "The note's id from list_notes." } }),
                     &["id"],
@@ -236,6 +245,7 @@ impl Tools for Legato {
                     "minutes": (note.duration_ms as f64 / 60000.0).round(),
                     "app": note.app,
                     "tags": note.tags,
+                    "people": notes_store::people(&note, &your_name(&self.dir)),
                     "summary": note.summary,
                     "decisions": note.decisions,
                     "action_items": note.actions.iter().map(|a| json!({ "owner": a.owner, "text": a.text, "done": a.done })).collect::<Vec<_>>(),

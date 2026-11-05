@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { commands, type NoteLine } from "@/bindings";
 import { useNotesStore } from "../../stores/notesStore";
+import { useSettings } from "../../hooks/useSettings";
 import {
+  isYourName,
   renamable,
   speakerLabel,
   THEM_SIDE,
@@ -33,10 +35,13 @@ export const SpeakerTag: React.FC<{
   const speakers = useNotesStore(
     (s) => s.notes?.find((n) => n.id === line.note_id)?.speakers,
   );
-  // Who was invited or seen in the call window, offered while typing a name.
-  const people = useNotesStore(
+  // Who was invited or seen in the call window, offered while typing a
+  // name; you aren't offered for another voice.
+  const attendees = useNotesStore(
     (s) => s.notes?.find((n) => n.id === line.note_id)?.attendees,
   );
+  const yourName = useSettings().settings?.your_name;
+  const people = attendees?.filter((n) => !isYourName(n, yourName));
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   // Esc ends the edit; the blur that follows mustn't save it.

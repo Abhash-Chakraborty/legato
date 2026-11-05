@@ -74,15 +74,15 @@ The setup file installs Legato in `%LOCALAPPDATA%\Legato`; the `.msi` installs i
 
 ### What an AI app can do
 
-| Tool                  | What it does                                                                                |
-| --------------------- | ------------------------------------------------------------------------------------------- |
-| `search_dictations`   | Searches your dictations, newest first, with the app each went into and when                |
-| `list_notes`          | Lists your meeting and voice notes, with title, date, length and tags                       |
-| `get_note`            | Reads one note in full: summary, decisions, action items, your own notes and the transcript |
-| `list_dictionary`     | Reads your Dictionary, with the ways the speech model misheard each word                    |
-| `upcoming_meetings`   | Lists meetings from the calendars you added                                                 |
-| `list_scratchpad`     | Reads your Scratchpad notes, pinned first                                                   |
-| `add_scratchpad_note` | Saves text as a new Scratchpad note                                                         |
+| Tool                  | What it does                                                                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `search_dictations`   | Searches your dictations, newest first, with the app each went into and when                                                            |
+| `list_notes`          | Lists your meeting and voice notes, with title, date, length and tags                                                                   |
+| `get_note`            | Reads one note in full: who attended, was invited or was mentioned, summary, decisions, action items, your own notes and the transcript |
+| `list_dictionary`     | Reads your Dictionary, with the ways the speech model misheard each word                                                                |
+| `upcoming_meetings`   | Lists meetings from the calendars you added                                                                                             |
+| `list_scratchpad`     | Reads your Scratchpad notes, pinned first                                                                                               |
+| `add_scratchpad_note` | Saves text as a new Scratchpad note                                                                                                     |
 
 Adding a Scratchpad note is the only change an AI app can make. Legato checks the switch on every request, so turning off Let AI apps read Legato stops answers at once, without restarting the AI app.
 

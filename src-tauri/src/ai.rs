@@ -556,6 +556,32 @@ pub async fn summarise_note(
         std::iter::once(combined.outline.people.as_slice())
             .chain(summaries.iter().map(|s| s.outline.people.as_slice())),
     );
+    // Talked about in one part, but someone who spoke in another isn't
+    // only mentioned.
+    let mentioned = notes_rules::merge_people(
+        combined
+            .outline
+            .mentioned
+            .iter()
+            .chain(
+                summaries
+                    .iter()
+                    .filter_map(|s| s.outline.mentioned.as_ref()),
+            )
+            .map(Vec::as_slice),
+    );
+    combined.outline.mentioned = Some(
+        mentioned
+            .into_iter()
+            .filter(|m| {
+                !combined
+                    .outline
+                    .people
+                    .iter()
+                    .any(|p| notes_rules::same_person(p, m))
+            })
+            .collect(),
+    );
     Ok(combined)
 }
 

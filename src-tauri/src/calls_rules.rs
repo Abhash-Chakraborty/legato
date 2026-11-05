@@ -331,12 +331,11 @@ const MEET_LABELS: &[(&str, &str)] = &[
     ("Remove ", " from the meeting"),
 ];
 
-/// What Meet adds after a name: a shared screen, yourself, the host.
+/// What Meet adds after a name: a shared screen, the host.
 const MEET_SUFFIXES: &[&str] = &[
     " (Presentation)",
     "'s presentation",
     "\u{2019}s presentation",
-    " (You)",
     " (Meeting host)",
     " (Host)",
 ];
@@ -364,8 +363,9 @@ fn looks_like_person(name: &str) -> bool {
 
 /// Who is in a Meet call, each once, in the order first seen: the names
 /// in the People panel's "Participants" list, then any a tile's controls
-/// carry among the names the window shows to screen readers. A tile that
-/// says only "You" is left out.
+/// carry among the names the window shows to screen readers. Your own
+/// tile ("You", or your name followed by "(You)") is left out: the note
+/// knows you recorded it.
 pub fn meet_people(listed: &[String], labels: &[String]) -> Vec<String> {
     let from_labels = labels.iter().filter_map(|label| {
         let label = label.trim();
@@ -377,6 +377,9 @@ pub fn meet_people(listed: &[String], labels: &[String]) -> Vec<String> {
     });
     let mut out: Vec<String> = Vec::new();
     for mut name in listed.iter().map(|n| n.trim()).chain(from_labels) {
+        if name.ends_with(" (You)") {
+            continue;
+        }
         for suffix in MEET_SUFFIXES {
             name = name.strip_suffix(suffix).unwrap_or(name);
         }
@@ -428,6 +431,7 @@ mod tests {
             meet_people(&[], &names),
             ["Priya Shah", "Karol Nowak", "Samir"]
         );
+        assert!(meet_people(&["Abhash Chakraborty (You)".to_string()], &[]).is_empty());
         assert!(meet_people(&[], &["Pin  to your main screen".to_string()]).is_empty());
     }
 

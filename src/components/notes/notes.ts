@@ -527,3 +527,118 @@ export const lineStep = (
   if (ms - lines[i].at_ms > 2000) return lines[i].at_ms;
   return lines[i - 1]?.at_ms ?? 0;
 };
+
+/** A name's words, lowercased, split at anything but letters and digits:
+ *  "A.Chakraborty" and "a.chakraborty@x" both give ["a", "chakraborty"]. */
+const nameWords = (name: string): string[] =>
+  name
+    .split("@")[0]
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+
+/** Two spellings of one word, allowing a slip or two in a long one. */
+const closeWords = (a: string, b: string): boolean => {
+  if (a === b) return true;
+  const [x, y] = [[...a], [...b]];
+  const shorter = Math.min(x.length, y.length);
+  const allowed = shorter <= 3 ? 0 : shorter <= 5 ? 1 : 2;
+  if (!allowed || Math.abs(x.length - y.length) > allowed) return false;
+  let prev = Array.from({ length: y.length + 1 }, (_, j) => j);
+  x.forEach((cx, i) => {
+    const row = [i + 1];
+    y.forEach((cy, j) =>
+      row.push(
+        Math.min(prev[j] + (cx === cy ? 0 : 1), prev[j + 1] + 1, row[j] + 1),
+      ),
+    );
+    prev = row;
+  });
+  return prev[y.length] <= allowed;
+};
+
+/** Whether two names are one person, as `notes_rules::same_person`:
+ *  "Priya" and "Priya Shah", "a.chakraborty" and "Abhash Chakraborty". */
+export const samePerson = (a: string, b: string): boolean => {
+  const [wa, wb] = [nameWords(a), nameWords(b)];
+  if (!wa.length || !wb.length) return false;
+  if (wa.join("") === wb.join("")) return true;
+  const [short, long] = wa.length <= wb.length ? [wa, wb] : [wb, wa];
+  const [first, last] = [long[0], long[long.length - 1]];
+  if (short.length === 1) {
+    const one = short[0];
+    if (long.length === 1) return closeWords(one, first);
+    return (
+      one === first ||
+      closeWords(one, long.join("")) ||
+      ([...one].length > 4 && closeWords(one, `${first[0]}${last}`))
+    );
+  }
+  const [sFirst, sLast] = [short[0], short[short.length - 1]];
+  const initial = (w: string, of: string) =>
+    [...w].length === 1 && of.startsWith(w);
+  const firsts =
+    sFirst === first || initial(sFirst, first) || initial(first, sFirst);
+  const lasts =
+    closeWords(sLast, last) || (initial(sLast, last) && sFirst === first);
+  return firsts && lasts;
+};
+
+/** Whether a name is the person who recorded (Settings › General › Your
+ *  name). False when that isn't set. */
+export const isYourName = (
+  name: string,
+  yourName: string | undefined,
+): boolean => !!yourName?.trim() && samePerson(name, yourName);
+
+/** A transcript's label rather than a name (`notes_rules::is_line_label`). */
+const isLineLabel = (name: string) =>
+  /^(you|them|the other person|the others|other person|speaker \d+)$/i.test(
+    name.trim(),
+  );
+
+export interface PeopleGroups {
+  attended: string[];
+  invited: string[];
+  mentioned: string[];
+}
+
+/** The people a note names, apart, as `notes_rules::people_groups`: who
+ *  attended (seen in the call, a named voice, or someone who spoke), who
+ *  was invited but never seen, and who was only talked about. You are in
+ *  none of them, and one person under two spellings shows once. */
+export const peopleGroups = (
+  note: Note,
+  yourName: string | undefined,
+): PeopleGroups => {
+  const groups: PeopleGroups = { attended: [], invited: [], mentioned: [] };
+  const lists = [groups.attended, groups.invited, groups.mentioned];
+  const letters = (s: string) => s.replace(/[^\p{L}]/gu, "").length;
+  const add = (group: number, raw: string) => {
+    const name = raw.trim();
+    if (!name || isLineLabel(name) || isYourName(name, yourName)) return;
+    for (const list of lists) {
+      const i = list.findIndex((n) => samePerson(n, name));
+      if (i >= 0) {
+        if (letters(name) > letters(list[i]) && !name.includes("."))
+          list[i] = name;
+        return;
+      }
+    }
+    lists[group].push(name);
+  };
+  const attendees = note.attendees ?? [];
+  const outline = note.outline;
+  const seen = note.seen;
+  (seen ?? attendees).forEach((n) => add(0, n));
+  (note.speakers ?? []).forEach((s) => add(0, s.name));
+  if (outline?.mentioned) {
+    (outline.people ?? []).forEach((n) => add(0, n));
+    if (seen) attendees.forEach((n) => add(1, n));
+    outline.mentioned.forEach((n) => add(2, n));
+  } else {
+    if (seen) attendees.forEach((n) => add(1, n));
+    (outline?.people ?? []).forEach((n) => add(2, n));
+  }
+  return groups;
+};

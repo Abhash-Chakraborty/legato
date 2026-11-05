@@ -3072,6 +3072,11 @@
         "catch_up": "Catch-up",
         "memo": "Memo",
         "other": "Other"
+      },
+      "peopleGroup": {
+        "attended": "Attended",
+        "invited": "Invited",
+        "mentioned": "Mentioned"
       }
     },
     "ask": {

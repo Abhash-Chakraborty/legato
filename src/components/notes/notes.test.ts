@@ -15,6 +15,9 @@ import {
   replaceWords,
   longClock,
   mergeCandidates,
+  isYourName,
+  peopleGroups,
+  samePerson,
   lineStep,
   nextSpeed,
   playerMarks,
@@ -410,4 +413,55 @@ assert.equal(lineStep(lines, 60_000, 1), null);
 assert.equal(lineStep(lines, 12_000, -1), 4_000);
 assert.equal(lineStep(lines, 20_000, -1), 11_000);
 assert.equal(lineStep(lines, 1_000, -1), 0);
+
+// People: one person under two spellings, and the three groups.
+{
+  const me = "Abhash Chakraborty";
+  for (const name of [
+    "Abhash",
+    "abhash chakraborty",
+    "A. Chakraborty",
+    "a.chakraborty",
+    "A.chkraborty",
+    "achakraborty",
+    "abhash.chakraborty@example.com",
+    "Abhash C",
+  ])
+    assert.ok(isYourName(name, me), name);
+  for (const name of ["Abhash Kumar", "Avash", "Priya Shah", "B. Chakraborty"])
+    assert.ok(!samePerson(name, me), name);
+  assert.ok(!isYourName("Abhash", ""));
+  const groups = peopleGroups(
+    note({
+      attendees: ["a.chakraborty", "Priya Shah", "Sahil Rao", "Mara Lind"],
+      seen: ["Abhash Chakraborty", "Priya Shah", "P. Shah"],
+      speakers: [{ speaker: 2, name: "Mara" }],
+      outline: {
+        people: ["Sahil", "Abhash"],
+        mentioned: ["Simon", "Robert", "Ivan"],
+      },
+    }),
+    me,
+  );
+  assert.deepEqual(groups.attended, ["Priya Shah", "Mara Lind", "Sahil Rao"]);
+  assert.deepEqual(groups.invited, []);
+  assert.deepEqual(groups.mentioned, ["Simon", "Robert", "Ivan"]);
+  const old = peopleGroups(
+    note({
+      attendees: ["Priya Shah"],
+      seen: null,
+      outline: { people: ["Priya", "Simon"] },
+    }),
+    "Abhash",
+  );
+  assert.deepEqual(old, {
+    attended: ["Priya Shah"],
+    invited: [],
+    mentioned: ["Simon"],
+  });
+  assert.deepEqual(
+    peopleGroups(note({ attendees: ["Jo Park"], seen: [] }), "").invited,
+    ["Jo Park"],
+  );
+}
 console.log("notes: ok");

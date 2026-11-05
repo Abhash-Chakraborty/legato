@@ -757,7 +757,7 @@ impl NotesManager {
     /// that only take text.
     pub fn formatted(&self, id: i64) -> Result<(String, String)> {
         let note = self.get(id)?.ok_or_else(|| anyhow!("That note is gone"))?;
-        let html = store::html(&note, &when(&note));
+        let html = store::html(&note, &when(&note), &get_settings(&self.app).your_name);
         Ok((html, self.markdown(id)?))
     }
 
@@ -766,13 +766,15 @@ impl NotesManager {
     pub fn docx(&self, id: i64) -> Result<Vec<u8>> {
         let note = self.get(id)?.ok_or_else(|| anyhow!("That note is gone"))?;
         let lines = self.lines(id)?;
-        store::docx(&note, &when(&note), &lines, "You", "Them")
+        let me = get_settings(&self.app).your_name;
+        store::docx(&note, &when(&note), &lines, ("You", "Them", &me))
     }
 
     pub fn markdown(&self, id: i64) -> Result<String> {
         let note = self.get(id)?.ok_or_else(|| anyhow!("That note is gone"))?;
         let lines = self.lines(id)?;
-        Ok(store::markdown(&note, &lines, "You", "Them"))
+        let me = get_settings(&self.app).your_name;
+        Ok(store::markdown(&note, &lines, ("You", "Them", &me)))
     }
 
     /// Removes a note to Recently deleted, where it keeps its audio for
@@ -1395,8 +1397,15 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
             started_at,
         },
     )?;
-    // Who was invited, for the summary to name.
-    if let Some(people) = on_calendar.map(|m| m.people).filter(|p| !p.is_empty()) {
+    // Who was invited, for the summary to name; you aren't among them.
+    let me = get_settings(app).your_name;
+    let invited = on_calendar.map(|m| {
+        m.people
+            .into_iter()
+            .filter(|p| !notes_rules::is_you(p, &me))
+            .collect::<Vec<_>>()
+    });
+    if let Some(people) = invited.filter(|p| !p.is_empty()) {
         if let Err(e) = store::set_attendees(&m.conn()?, note.id, &people) {
             warn!("Couldn't keep who was invited: {e}");
         }
@@ -1766,8 +1775,9 @@ fn spawn_speaker_passes(app: &AppHandle, note_id: i64, meeting: bool, shared: Ar
 /// How often a meeting's note reads who is in the Meet call.
 const PEOPLE_EVERY: Duration = Duration::from_secs(20);
 
-/// While a meeting records, adds the people a Meet window shows to the
-/// note's attendees: the summary names them, and naming a voice offers them.
+/// While a meeting records, keeps the people a Meet window shows as seen in
+/// the call, and adds them to the note's attendees: the summary names them,
+/// and naming a voice offers them. You aren't kept.
 fn spawn_call_people(app: &AppHandle, note_id: i64, shared: Arc<Shared>) {
     let app = app.clone();
     let _ = std::thread::Builder::new()
@@ -1782,7 +1792,11 @@ fn spawn_call_people(app: &AppHandle, note_id: i64, shared: Arc<Shared>) {
                     continue;
                 }
                 last = Some(Instant::now());
-                let found = crate::call_people::in_meet();
+                let me = get_settings(&app).your_name;
+                let found: Vec<String> = crate::call_people::in_meet()
+                    .into_iter()
+                    .filter(|p| !notes_rules::is_you(p, &me))
+                    .collect();
                 if found
                     .iter()
                     .all(|p| seen.iter().any(|s| s.eq_ignore_ascii_case(p)))
@@ -1796,6 +1810,16 @@ fn spawn_call_people(app: &AppHandle, note_id: i64, shared: Arc<Shared>) {
                 let Ok(Some(note)) = store::get(&conn, note_id) else {
                     continue;
                 };
+                let in_call = notes_rules::merge_people(
+                    [note.seen.clone().unwrap_or_default(), seen.clone()]
+                        .iter()
+                        .map(Vec::as_slice),
+                );
+                if note.seen.as_ref() != Some(&in_call) {
+                    if let Err(e) = store::set_seen(&conn, note_id, &in_call) {
+                        warn!("Couldn't keep who was seen in the call: {e}");
+                    }
+                }
                 let people = notes_rules::merge_people(
                     [note.attendees.clone(), seen.clone()]
                         .iter()
@@ -2965,7 +2989,11 @@ pub async fn suggest_fixes(app: &AppHandle, note_id: i64) -> Result<Vec<Suggeste
     let mut words = dictionary_for_ai(app, FIX_WORDS);
     // Names said in the meeting are most often the people in it, you too.
     let you = get_settings(app).your_name;
-    for name in note.attendees.iter().chain(Some(&you)) {
+    let others = note
+        .attendees
+        .iter()
+        .filter(|n| !notes_rules::is_you(n, &you));
+    for name in others.chain(Some(&you)) {
         let name = name.trim();
         if !name.is_empty() && !words.iter().any(|w| w.starts_with(name)) {
             words.push(notes_rules::describe_word(

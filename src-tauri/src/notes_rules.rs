@@ -893,12 +893,7 @@ pub fn voice_cap(people: &[String], your_name: &str) -> Option<usize> {
     if people.is_empty() {
         return None;
     }
-    let first = |n: &str| n.split_whitespace().next().unwrap_or("").to_lowercase();
-    let you = first(your_name);
-    let others = people
-        .iter()
-        .filter(|p| you.chars().count() < 2 || first(p) != you)
-        .count();
+    let others = people.iter().filter(|p| !is_you(p, your_name)).count();
     Some(others.max(1))
 }
 
@@ -1121,7 +1116,8 @@ pub fn summary_request(
          title: a short name for the conversation, three to six words, in sentence case, naming its main topic; no date, no quotes.\n\
          tags: one to three short topic tags, lowercase, one or two words each.\n\
          summary: one sentence of at most 25 words on what the conversation was about and where it landed.\n\
-         people: the names of everyone who spoke or was addressed by name; leave out anyone the transcript doesn't name, and the labels You, Them and Speaker 2.\n\
+         people: the names of everyone who spoke in the conversation; leave out anyone the transcript doesn't name, and the labels You, Them and Speaker 2.\n\
+         mentioned: the names of people who were talked about or addressed but never spoke; empty when there are none.\n\
          topics: two to five topics in the order they came up, each with a heading of two to six words, one to three sentences on what was said and concluded, and at: the time in square brackets of the line where it starts, copied from the transcript, such as 2:10.\n\
          decisions: what was agreed, each as a short title, a colon, then one sentence on what it means; empty when nothing was.\n\
          actions: tasks someone took on, each with its owner (\"You\" for the person who recorded, a name when the transcript gives one, else \"Them\") and text as a short title, a colon, then exactly what to do.\n\
@@ -1155,11 +1151,11 @@ pub fn summary_request(
     }
     if let Some(name) = you.map(str::trim).filter(|n| !n.is_empty()) {
         request.push_str(&format!(
-            "The person who recorded is {name}; their lines say You. When someone speaks to or about {name}, they mean the person who recorded: tasks for {name} have the owner \"You\", and {name} isn't listed in people.\n"
+            "The person who recorded is {name}; their lines say You. When someone speaks to or about {name}, they mean the person who recorded: tasks for {name} have the owner \"You\", and {name} isn't listed in people or mentioned.\n"
         ));
     }
     if !people.is_empty() {
-        request.push_str("People invited to the meeting: ");
+        request.push_str("People invited to the meeting or seen in the call: ");
         request.push_str(&people.join(", "));
         request.push('\n');
     }
@@ -1178,7 +1174,7 @@ pub fn summary_request(
     if json_hint {
         request.push_str(
             "\nAnswer exactly like this, with no other text:\n\
-             {\"title\": \"…\", \"tags\": [\"…\"], \"summary\": \"…\", \"people\": [\"…\"], \"topics\": [{\"heading\": \"…\", \"text\": \"…\", \"at\": \"2:10\"}], \"decisions\": [\"Title: …\"], \"actions\": [{\"owner\": \"You\", \"text\": \"Title: …\"}], \"details\": [{\"heading\": \"…\", \"text\": \"…\", \"at\": \"5:48\"}], \"kind\": \"team\", \"sections\": [{\"heading\": \"Still open\", \"points\": [\"…\"]}]}\n",
+             {\"title\": \"…\", \"tags\": [\"…\"], \"summary\": \"…\", \"people\": [\"…\"], \"mentioned\": [\"…\"], \"topics\": [{\"heading\": \"…\", \"text\": \"…\", \"at\": \"2:10\"}], \"decisions\": [\"Title: …\"], \"actions\": [{\"owner\": \"You\", \"text\": \"Title: …\"}], \"details\": [{\"heading\": \"…\", \"text\": \"…\", \"at\": \"5:48\"}], \"kind\": \"team\", \"sections\": [{\"heading\": \"Still open\", \"points\": [\"…\"]}]}\n",
         );
     }
     request.push_str("\nTranscript:\n");
@@ -1226,6 +1222,171 @@ pub fn combine_request(
         "Summarise this transcript.",
         "These are summaries of consecutive parts of one long conversation. Combine them into one summary, removing repeats; details may stay empty, since each part keeps its own.",
     )
+}
+
+/// A name's words, lowercased, split at anything but letters and digits:
+/// "A.Chakraborty" and "a.chakraborty@x" both give ["a", "chakraborty"].
+fn name_words(name: &str) -> Vec<String> {
+    let name = name.split('@').next().unwrap_or(name);
+    name.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// Two spellings of one word, allowing a slip or two in a long one
+/// ("Chkraborty" for "Chakraborty"), none in a short one.
+fn close_words(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let shorter = a.len().min(b.len());
+    let allowed = match shorter {
+        0..=3 => 0,
+        4..=5 => 1,
+        _ => 2,
+    };
+    if allowed == 0 || a.len().abs_diff(b.len()) > allowed {
+        return false;
+    }
+    // Levenshtein over two rows.
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut row = vec![i + 1; b.len() + 1];
+        for (j, cb) in b.iter().enumerate() {
+            row[j + 1] = (prev[j] + usize::from(ca != cb))
+                .min(prev[j + 1] + 1)
+                .min(row[j] + 1);
+        }
+        prev = row;
+    }
+    prev[b.len()] <= allowed
+}
+
+/// Whether two names from invites, a Meet window or a summary are one
+/// person: "Priya" and "Priya Shah", "A. Chakraborty", "a.chakraborty" and
+/// "Abhash Chakraborty", "abhashchakraborty" and "Abhash Chakraborty", with
+/// a slip in a long surname. "Priya Shah" and "Priya Patel" aren't.
+pub fn same_person(a: &str, b: &str) -> bool {
+    let (a, b) = (name_words(a), name_words(b));
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    if a.concat() == b.concat() {
+        return true;
+    }
+    let (short, long) = if a.len() <= b.len() {
+        (&a, &b)
+    } else {
+        (&b, &a)
+    };
+    let (first, last) = (&long[0], &long[long.len() - 1]);
+    if short.len() == 1 {
+        let one = &short[0];
+        if long.len() == 1 {
+            return close_words(one, first);
+        }
+        // A first name, or an address such as "achakraborty".
+        let initial_last = format!("{}{last}", first.chars().next().unwrap_or(' '));
+        return one == first
+            || close_words(one, &long.concat())
+            || (one.chars().count() > 4 && close_words(one, &initial_last));
+    }
+    let (s_first, s_last) = (&short[0], &short[short.len() - 1]);
+    let initial = |w: &str, of: &str| w.chars().count() == 1 && of.starts_with(w);
+    let firsts = s_first == first || initial(s_first, first) || initial(first, s_first);
+    let lasts = close_words(s_last, last) || (initial(s_last, last) && s_first == first);
+    firsts && lasts
+}
+
+/// Whether a name is the person who recorded, by their name in Settings
+/// (see `same_person`). False when that isn't set.
+pub fn is_you(name: &str, your_name: &str) -> bool {
+    !your_name.trim().is_empty() && same_person(name, your_name)
+}
+
+/// The people a note names, apart: who attended, who was invited but never
+/// seen, and who was only talked about. You are in none of them.
+#[derive(
+    Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type,
+)]
+pub struct PeopleGroups {
+    pub attended: Vec<String>,
+    pub invited: Vec<String>,
+    pub mentioned: Vec<String>,
+}
+
+impl PeopleGroups {
+    pub fn is_empty(&self) -> bool {
+        self.attended.is_empty() && self.invited.is_empty() && self.mentioned.is_empty()
+    }
+}
+
+/// Sorts a note's names into `PeopleGroups`.
+///
+/// Attended: seen in the call, a voice given a name, or (in summaries that
+/// ask apart) someone who spoke. Invited: on the calendar invite, never
+/// seen. Mentioned: the rest the summary names. A note from before Legato
+/// kept who it saw (`seen` None) counts everyone it knew of as attended,
+/// and everyone else its summary named as mentioned.
+///
+/// One person under two spellings is listed once, under the fuller one.
+pub fn people_groups(
+    attendees: &[String],
+    seen: Option<&[String]>,
+    voices: &[String],
+    outline: &NoteOutline,
+    your_name: &str,
+) -> PeopleGroups {
+    let mut groups = PeopleGroups::default();
+    let add = |group: usize, name: &String, groups: &mut PeopleGroups| {
+        let name = name.trim();
+        if name.is_empty() || is_line_label(name) || is_you(name, your_name) {
+            return;
+        }
+        let lists = [
+            &mut groups.attended,
+            &mut groups.invited,
+            &mut groups.mentioned,
+        ];
+        for list in lists {
+            if let Some(known) = list.iter_mut().find(|n| same_person(n, name)) {
+                let letters = |s: &str| s.chars().filter(|c| c.is_alphabetic()).count();
+                if letters(name) > letters(known) && !name.contains('.') {
+                    *known = name.to_string();
+                }
+                return;
+            }
+        }
+        let list = match group {
+            0 => &mut groups.attended,
+            1 => &mut groups.invited,
+            _ => &mut groups.mentioned,
+        };
+        list.push(name.to_string());
+    };
+    match seen {
+        Some(seen) => seen.iter().for_each(|n| add(0, n, &mut groups)),
+        None => attendees.iter().for_each(|n| add(0, n, &mut groups)),
+    }
+    voices.iter().for_each(|n| add(0, n, &mut groups));
+    match &outline.mentioned {
+        Some(mentioned) => {
+            outline.people.iter().for_each(|n| add(0, n, &mut groups));
+            if seen.is_some() {
+                attendees.iter().for_each(|n| add(1, n, &mut groups));
+            }
+            mentioned.iter().for_each(|n| add(2, n, &mut groups));
+        }
+        None => {
+            if seen.is_some() {
+                attendees.iter().for_each(|n| add(1, n, &mut groups));
+            }
+            outline.people.iter().for_each(|n| add(2, n, &mut groups));
+        }
+    }
+    groups
 }
 
 /// Each name once, in the order first seen.
@@ -1277,6 +1438,7 @@ pub fn summary_schema() -> serde_json::Value {
             "tags": { "type": "array", "items": { "type": "string" } },
             "summary": { "type": "string" },
             "people": { "type": "array", "items": { "type": "string" } },
+            "mentioned": { "type": "array", "items": { "type": "string" } },
             "topics": {
                 "type": "array",
                 "items": {
@@ -1333,7 +1495,7 @@ pub fn summary_schema() -> serde_json::Value {
                 }
             }
         },
-        "required": ["title", "tags", "summary", "people", "topics", "decisions", "actions", "details", "kind", "sections"],
+        "required": ["title", "tags", "summary", "people", "mentioned", "topics", "decisions", "actions", "details", "kind", "sections"],
         "additionalProperties": false
     })
 }
@@ -1356,8 +1518,14 @@ pub struct NotesSummary {
     Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type,
 )]
 pub struct NoteOutline {
+    /// Who spoke, by name; in summaries written before `mentioned`, also
+    /// anyone addressed by name.
     #[serde(default)]
     pub people: Vec<String>,
+    /// Who was talked about or addressed but never spoke. None in summaries
+    /// written before the two were asked for apart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mentioned: Option<Vec<String>>,
     #[serde(default)]
     pub topics: Vec<OutlineTopic>,
     #[serde(default)]
@@ -1515,6 +1683,12 @@ pub fn parse_summary(answer: &str) -> Option<NotesSummary> {
             .into_iter()
             .filter(|name| !is_line_label(name))
             .collect(),
+        mentioned: Some(
+            merge_people(std::iter::once(strings("mentioned").as_slice()))
+                .into_iter()
+                .filter(|name| !is_line_label(name))
+                .collect(),
+        ),
         topics: pairs("topics")
             .into_iter()
             .map(|(heading, text, at)| OutlineTopic {
@@ -2478,6 +2652,75 @@ mod tests {
     }
 
     #[test]
+    fn one_person_under_two_spellings_is_one_person() {
+        let me = "Abhash Chakraborty";
+        for name in [
+            "Abhash",
+            "abhash chakraborty",
+            "A. Chakraborty",
+            "a.chakraborty",
+            "A.chkraborty",
+            "achakraborty",
+            "abhash.chakraborty@example.com",
+            "Abhash C",
+        ] {
+            assert!(same_person(name, me), "{name}");
+            assert!(is_you(name, me), "{name}");
+        }
+        for name in [
+            "Abhash Kumar",
+            "Avash",
+            "Priya Shah",
+            "B. Chakraborty",
+            "Ash",
+        ] {
+            assert!(!same_person(name, me), "{name}");
+        }
+        assert!(same_person("Priya", "Priya Shah"));
+        assert!(!same_person("Priya Shah", "Priya Patel"));
+        assert!(!is_you("Abhash", ""));
+    }
+
+    #[test]
+    fn people_split_into_attended_invited_and_mentioned() {
+        let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let outline = NoteOutline {
+            people: names(&["Sahil", "Abhash"]),
+            mentioned: Some(names(&["Simon", "Robert", "Ivan"])),
+            ..Default::default()
+        };
+        let groups = people_groups(
+            &names(&["a.chakraborty", "Priya Shah", "Sahil Rao", "Mara Lind"]),
+            Some(&names(&["Abhash Chakraborty", "Priya Shah", "P. Shah"])),
+            &names(&["Mara"]),
+            &outline,
+            "Abhash Chakraborty",
+        );
+        // The invite's full names replace the shorter ones seen or heard.
+        assert_eq!(
+            groups.attended,
+            names(&["Priya Shah", "Mara Lind", "Sahil Rao"])
+        );
+        assert!(groups.invited.is_empty());
+        assert_eq!(groups.mentioned, names(&["Simon", "Robert", "Ivan"]));
+
+        // A note from before: what it knew attended, the summary's other
+        // names were mentioned.
+        let old = NoteOutline {
+            people: names(&["Priya", "Simon"]),
+            ..Default::default()
+        };
+        let groups = people_groups(&names(&["Priya Shah"]), None, &[], &old, "Abhash");
+        assert_eq!(groups.attended, names(&["Priya Shah"]));
+        assert_eq!(groups.mentioned, names(&["Simon"]));
+        assert!(groups.invited.is_empty());
+
+        // Invited but never seen.
+        let groups = people_groups(&names(&["Jo Park"]), Some(&[]), &[], &old, "");
+        assert_eq!(groups.invited, names(&["Jo Park"]));
+    }
+
+    #[test]
     fn summaries_bring_topics_people_and_timed_details() {
         let answer = r#"{"summary": "Repos and a test plan.", "people": ["You", "Sahil", "sahil", "Them", "Abhash", "Speaker 3"],
             "topics": [{"heading": "GIS app", "text": "A map of 3.3 million buildings.", "at": "2:10"}, {"heading": "", "text": ""}],
@@ -2597,7 +2840,7 @@ mod tests {
             None,
             None
         )
-        .contains("People invited to the meeting: Sahil Khan\n"));
+        .contains("People invited to the meeting or seen in the call: Sahil Khan\n"));
         let mine = summary_request("You: hi", false, &[], &[], &[], Some(" Abhash "), None);
         assert!(mine.contains("The person who recorded is Abhash; their lines say You."));
         assert!(mine.contains("tasks for Abhash have the owner \"You\""));
