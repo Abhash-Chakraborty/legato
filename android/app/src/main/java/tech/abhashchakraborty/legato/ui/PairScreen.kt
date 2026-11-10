@@ -273,11 +273,11 @@ private fun ScanFrame() {
     }
 }
 
-/** The back camera, reading QR codes until one is a Legato pairing link. */
-@Composable
 /** How long before the scanner hands over a code it just handed over. */
 private const val RESCAN_MS = 4_000L
 
+/** The back camera, reading QR codes, each handed over as it's seen. */
+@Composable
 private fun QrScanner(onCode: (String) -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
