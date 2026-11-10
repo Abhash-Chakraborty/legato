@@ -486,7 +486,11 @@ function App() {
                 // its note scroll on their own, not the page.
                 page === "notes" || page === "scratchpad"
                   ? "flex flex-col pb-6 min-[1000px]:overflow-hidden"
-                  : "pb-10"
+                  : // Insights is sized to fit a full window; the usual
+                    // foot of a long page would make it scroll a little.
+                    page === "insights"
+                    ? "pb-5"
+                    : "pb-10"
               }`}
             >
               <ErrorBoundary key={page} context={page}>

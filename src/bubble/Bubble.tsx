@@ -349,11 +349,17 @@ const Bubble: React.FC = () => {
     : !meeting
       ? t("bubble.notes")
       : meeting.start <= now
-        ? t("bubble.notesFor", { title: meeting.title })
-        : t("bubble.notesSoon", {
-            title: meeting.title,
-            minutes: Math.max(1, Math.round((meeting.start - now) / 60)),
-          });
+        ? meeting.busy_only
+          ? t("bubble.notesMeeting")
+          : t("bubble.notesFor", { title: meeting.title })
+        : meeting.busy_only
+          ? t("bubble.notesMeetingSoon", {
+              minutes: Math.max(1, Math.round((meeting.start - now) / 60)),
+            })
+          : t("bubble.notesSoon", {
+              title: meeting.title,
+              minutes: Math.max(1, Math.round((meeting.start - now) / 60)),
+            });
   const upright = layout.edge === "left" || layout.edge === "right";
   const slots: {
     id: Action;

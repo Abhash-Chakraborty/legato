@@ -175,6 +175,16 @@ pub fn change_scratchpad_keep_on_top_setting(app: AppHandle, enabled: bool) -> R
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_scratchpad_hide_from_capture_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    scratchpad::set_hide_from_capture(&app, enabled);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_scratchpad_open_setting(app: AppHandle, open: ScratchpadOpen) -> Result<(), String> {
     let mut settings = get_settings(&app);
     settings.scratchpad_open = open;

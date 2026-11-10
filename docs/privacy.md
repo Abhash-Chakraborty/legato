@@ -78,6 +78,8 @@ API keys, calendar addresses, the Inyon hub's token and this PC's phone sync ide
 
 Settings › Legato bar › Hide from screenshots and screen sharing is on to start with. The bar, the island, the bubble and the Notes side panel stay on your screen but don't show in screenshots, recordings or a screen you share in a call. Turn it off if you want them in a recording.
 
+The Scratchpad window has its own switch, Hide from screen sharing, at the top of the window and on the Scratchpad page. It's off to start with.
+
 ## Delete things
 
 | To delete                 | Do this                                                                                                            |

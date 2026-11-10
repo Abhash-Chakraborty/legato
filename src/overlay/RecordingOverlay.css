@@ -881,6 +881,17 @@
   color: var(--s-muted);
   font-variant-numeric: tabular-nums;
 }
+/* A meeting's link as text; a click joins. */
+.scall-link {
+  display: block;
+  max-width: 100%;
+  margin-top: 2px;
+  overflow: hidden;
+  font-weight: 500;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* A meeting's last time: when, next steps still open, and its summary. */
 .scall-last {
   border-top: 1px solid var(--s-hair);

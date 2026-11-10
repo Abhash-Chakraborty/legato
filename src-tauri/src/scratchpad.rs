@@ -67,6 +67,8 @@ pub struct ScratchpadState {
     pub tabs: Vec<ScratchNote>,
     pub active: Option<i64>,
     pub keep_on_top: bool,
+    /// The window stays out of screenshots and shared screens.
+    pub hide_from_capture: bool,
     /// The app Send to pastes into.
     pub target_app: Option<String>,
     pub target_app_path: Option<String>,
@@ -330,6 +332,7 @@ pub fn state(app: &AppHandle) -> Result<ScratchpadState> {
         tabs,
         active,
         keep_on_top: settings.scratchpad_keep_on_top,
+        hide_from_capture: settings.scratchpad_hide_from_capture,
         target_app,
         target_app_path,
     })
@@ -392,6 +395,7 @@ fn build_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     match builder.build() {
         Ok(window) => {
             crate::fit_window_to_screen(&window, WINDOW_MIN);
+            crate::desktop::apply_capture_privacy(app, &window);
             Some(window)
         }
         Err(e) => {
@@ -512,6 +516,16 @@ pub fn set_keep_on_top(app: &AppHandle, on: bool) {
         let _ = window.set_always_on_top(on);
     }
     // The page's toggle follows the window's button.
+    let _ = ScratchpadChanged.emit(app);
+}
+
+/// Keeps the window out of screenshots and shared screens, or lets it back
+/// in. You still see it; a call you share your screen in doesn't.
+pub fn set_hide_from_capture(app: &AppHandle, on: bool) {
+    let mut settings = get_settings(app);
+    settings.scratchpad_hide_from_capture = on;
+    write_settings(app, settings);
+    crate::desktop::capture_privacy_changed(app);
     let _ = ScratchpadChanged.emit(app);
 }
 

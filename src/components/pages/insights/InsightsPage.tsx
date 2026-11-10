@@ -174,7 +174,6 @@ export const InsightsPage: React.FC = () => {
             id="insights-panel"
             role="tabpanel"
             aria-labelledby={`insights-tab-${tab}`}
-            className="pb-6"
           >
             {tab === "usage" ? (
               <UsageTab

@@ -99,6 +99,50 @@ pub struct Meeting {
     /// Who was invited, organiser first.
     #[serde(default)]
     pub people: Vec<String>,
+    /// The calendar gave no name for it, only that the time is taken
+    /// ("Busy"): a calendar shared without its details.
+    #[serde(default)]
+    pub busy_only: bool,
+}
+
+impl Meeting {
+    /// The meeting's own name, when the calendar gave one. "Busy" names
+    /// nothing, so it never titles a note or matches an earlier one.
+    pub fn name(&self) -> Option<&str> {
+        (!self.busy_only).then_some(self.title.as_str())
+    }
+}
+
+/// What calendars write in place of a name when they share only that the
+/// time is taken, in English and German (Outlook's and Google's words).
+const PLACEHOLDER_TITLES: &[&str] = &[
+    "busy",
+    "tentative",
+    "free",
+    "out of office",
+    "away",
+    "working elsewhere",
+    "private",
+    "private appointment",
+    "private event",
+    "no title",
+    "(no title)",
+    "beschäftigt",
+    "gebucht",
+    "mit vorbehalt",
+    "frei",
+    "abwesend",
+    "außer haus",
+    "an anderem ort tätig",
+    "privat",
+    "privater termin",
+    "(kein titel)",
+];
+
+/// Whether a title is a calendar's stand-in for a hidden or missing name.
+pub fn placeholder_title(title: &str) -> bool {
+    let title = title.trim().to_lowercase();
+    title.is_empty() || PLACEHOLDER_TITLES.contains(&title.as_str())
 }
 
 /// Joins folded lines: a line starting with a space or tab continues the
@@ -380,6 +424,12 @@ pub fn parse(ics: &str) -> Vec<Event> {
             "DESCRIPTION" => e.description = unescape(value),
             "URL" => e.url = value.trim().to_string(),
             "X-GOOGLE-CONFERENCE" => e.conference = value.trim().to_string(),
+            // Outlook's own fields for a Teams meeting's link.
+            "X-MICROSOFT-SKYPETEAMSMEETINGURL" | "X-MICROSOFT-ONLINEMEETINGEXTERNALLINK"
+                if e.conference.is_empty() =>
+            {
+                e.conference = value.trim().to_string()
+            }
             "DTSTART" => e.start = stamp(value, &params),
             "DTEND" => e.end = stamp(value, &params),
             "DURATION" => e.duration = duration(value.trim()),
@@ -615,9 +665,25 @@ const LINK_HOSTS: &[(&str, &str)] = &[
     ("meet.google.com", "/"),
     ("zoom.us", "/j/"),
     ("zoom.us", "/my/"),
+    ("zoom.us", "/s/"),
+    ("zoom.us", "/w/"),
+    ("zoom.com", "/j/"),
     ("teams.microsoft.com", "/l/meetup-join/"),
+    ("teams.microsoft.com", "/meet/"),
     ("teams.live.com", "/meet/"),
     ("webex.com", "/"),
+    ("meet.goto.com", "/"),
+    ("gotomeeting.com", "/join/"),
+    ("whereby.com", "/"),
+    ("meet.jit.si", "/"),
+    ("bluejeans.com", "/"),
+    ("chime.aws", "/"),
+    ("app.slack.com", "/huddle/"),
+    ("meet.zoho.com", "/"),
+    ("8x8.vc", "/"),
+    ("join.skype.com", "/"),
+    ("facetime.apple.com", "/join"),
+    ("call.whatsapp.com", "/"),
 ];
 
 /// Whether an address is a meeting service's: its host, not text anywhere
@@ -635,6 +701,23 @@ fn is_meeting_link(url: &str) -> bool {
         && LINK_HOSTS.iter().any(|(h, path)| {
             (host == *h || host.ends_with(&format!(".{h}"))) && url.path().starts_with(path)
         })
+}
+
+/// A link as a card shows it: the host and the start of the path, such as
+/// "meet.google.com/abc-defg-hij", without the query that carries passwords.
+pub fn link_label(link: &str) -> String {
+    const MAX: usize = 44;
+    let Ok(url) = url::Url::parse(link) else {
+        return String::new();
+    };
+    let host = url.host_str().unwrap_or_default();
+    let host = host.strip_prefix("www.").unwrap_or(host);
+    let label = format!("{host}{}", url.path().trim_end_matches('/'));
+    if label.chars().count() <= MAX {
+        return label;
+    }
+    let cut: String = label.chars().take(MAX - 1).collect();
+    format!("{cut}…")
 }
 
 /// The first meeting link in these texts.
@@ -679,6 +762,7 @@ pub fn meetings(
             (None, None) if matches!(start, Stamp::Day(_)) => 86_400,
             _ => 0,
         };
+        let busy_only = placeholder_title(&e.summary);
         let title = if e.summary.is_empty() {
             "Busy".to_string()
         } else {
@@ -700,6 +784,7 @@ pub fn meetings(
                     location: location.clone(),
                     calendar: calendar.to_string(),
                     people: e.people.iter().map(|p| p.0.clone()).collect(),
+                    busy_only,
                 });
             }
         };
@@ -1011,6 +1096,31 @@ END:VCALENDAR\r
     }
 
     #[test]
+    fn a_calendar_without_details_names_nothing() {
+        let ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:a\r\nSUMMARY:Busy\r\n\
+DTSTART:20261021T100000Z\r\nDTEND:20261021T103000Z\r\nEND:VEVENT\r\n\
+BEGIN:VEVENT\r\nUID:b\r\nDTSTART:20261021T110000Z\r\nDTEND:20261021T113000Z\r\nEND:VEVENT\r\n\
+BEGIN:VEVENT\r\nUID:c\r\nSUMMARY:Busy week review\r\n\
+X-MICROSOFT-SKYPETEAMSMEETINGURL:https://teams.microsoft.com/l/meetup-join/19%3ameeting_x/0\r\n\
+DTSTART:20261021T120000Z\r\nDTEND:20261021T123000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        let m = meetings(
+            &parse(ics),
+            "Work",
+            ts("2026-10-21T00:00:00Z"),
+            ts("2026-10-22T00:00:00Z"),
+            &berlin,
+        );
+        assert_eq!(m.len(), 3);
+        assert!(m[0].busy_only && m[0].name().is_none());
+        assert!(m[1].busy_only && m[1].title == "Busy");
+        assert_eq!(m[2].name(), Some("Busy week review"));
+        // Outlook's own field carries a Teams meeting's link.
+        assert!(m[2].link.as_deref().unwrap().contains("/l/meetup-join/"));
+        assert!(placeholder_title(" tentative "));
+        assert!(!placeholder_title("Free lunch planning"));
+    }
+
+    #[test]
     fn invites_name_the_people_rooms_left_out() {
         let ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:a\r\nSUMMARY:Sahil project details\r\n\
 DTSTART:20261021T100000Z\r\nDTEND:20261021T103000Z\r\n\
@@ -1042,6 +1152,7 @@ END:VEVENT\r\nEND:VCALENDAR\r\n";
             location: None,
             calendar: "c".into(),
             people: vec![],
+            busy_only: false,
         };
         let list = vec![
             m("Day off", 0, 86_400, true),
@@ -1060,6 +1171,22 @@ END:VEVENT\r\nEND:VCALENDAR\r\n";
         assert_eq!(duration("P99999999999999W"), None);
         assert_eq!(duration("PT1H30M"), Some(Duration::minutes(90)));
         assert!(rule("FREQ=WEEKLY;BYDAY=€").is_none());
+        assert_eq!(
+            meeting_link(&["Join https://teams.microsoft.com/meet/123456789?p=abc now"]).as_deref(),
+            Some("https://teams.microsoft.com/meet/123456789?p=abc")
+        );
+        assert_eq!(
+            link_label("https://us02web.zoom.us/j/8812345678?pwd=secret"),
+            "us02web.zoom.us/j/8812345678"
+        );
+        assert_eq!(
+            link_label("https://meet.google.com/abc-defg-hij"),
+            "meet.google.com/abc-defg-hij"
+        );
+        assert!(link_label(
+            "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abcdefghijklmnopqrstuvwxyz/0"
+        )
+        .ends_with('…'));
         assert_eq!(meeting_link(&["https://evil.example/?x=zoom.us/j/1"]), None);
         assert_eq!(meeting_link(&["https://zoom.us.evil.example/j/1"]), None);
         assert_eq!(
@@ -1098,6 +1225,7 @@ END:VEVENT\r\nEND:VCALENDAR\r\n";
             location: None,
             calendar: "Work".into(),
             people: vec![],
+            busy_only: false,
         }
     }
 

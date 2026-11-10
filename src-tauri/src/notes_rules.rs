@@ -1696,6 +1696,68 @@ fn clean_title(title: &str) -> String {
     }
 }
 
+pub const TITLE_SYSTEM: &str = "You name a recorded conversation. Give it a short title of three to six words, in sentence case, that names its main topic so it can be told apart from other meetings: the project, decision or problem discussed, not \"Meeting\" or \"Discussion\". No date, no quotes, no closing period. Write in the conversation's language. Reply with the title only.";
+
+/// How much of a transcript a title request reads when the note has no
+/// summary: the opening usually says what the conversation is about.
+const TITLE_TRANSCRIPT_CHARS: usize = 6000;
+
+/// The request for a note's title: its summary, topics and decisions when
+/// it has them, else the start of the transcript.
+pub fn title_request(
+    summary: &str,
+    topics: &[String],
+    decisions: &[String],
+    people: &[String],
+    lines: &[PromptLine],
+) -> String {
+    let mut request = String::new();
+    let summary = summary.trim();
+    if !summary.is_empty() {
+        request.push_str(&format!("Summary: {summary}\n"));
+        for topic in topics.iter().filter(|t| !t.trim().is_empty()) {
+            request.push_str(&format!("Topic: {}\n", topic.trim()));
+        }
+        for d in decisions {
+            request.push_str(&format!("Decision: {d}\n"));
+        }
+    } else {
+        request.push_str("Transcript:\n");
+        let mut used = 0;
+        for l in lines {
+            let line = format!("{}: {}\n", l.who, l.text.trim());
+            used += line.len();
+            if used > TITLE_TRANSCRIPT_CHARS {
+                break;
+            }
+            request.push_str(&line);
+        }
+    }
+    if !people.is_empty() {
+        request.push_str(&format!("People: {}\n", people.join(", ")));
+    }
+    request
+}
+
+/// The title in an answer to [`title_request`], or None when the answer
+/// isn't one: empty, a paragraph, or a stand-in such as "Meeting".
+pub fn parse_title(answer: &str) -> Option<String> {
+    let line = answer.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let line = line
+        .strip_prefix("Title:")
+        .or_else(|| line.strip_prefix("title:"))
+        .unwrap_or(line)
+        .trim()
+        .trim_matches(|c: char| matches!(c, '*' | '#' | '`'))
+        .trim();
+    let title = clean_title(line);
+    let plain = matches!(
+        title.to_lowercase().as_str(),
+        "meeting" | "discussion" | "conversation" | "call" | "untitled" | "notes"
+    );
+    Some(title).filter(|t| !t.is_empty() && !plain && !crate::calendar_rules::placeholder_title(t))
+}
+
 /// The longest tag kept.
 const TAG_MAX_CHARS: usize = 24;
 
@@ -1722,9 +1784,13 @@ fn clean_tags(tags: &[String]) -> Vec<String> {
 /// Whether a note still has the name Legato gave it when it began, such as
 /// "Meeting · Oct 22, 2:29 PM" or "Zoom call · Oct 22, 2:29 PM" from a
 /// call's card, or "Voice memo · 20:00" from a phone on a 24-hour clock, so
-/// a suggested title may replace it. A title you typed, or a meeting's name
-/// from your calendar, stays.
+/// a suggested title may replace it. So may "Busy", which a calendar that
+/// hides its details gives every meeting. A title you typed, or a meeting's
+/// name from your calendar, stays.
 pub fn is_default_title(title: &str) -> bool {
+    if crate::calendar_rules::placeholder_title(title) {
+        return true;
+    }
     let Some((kind, when)) = title.split_once(" · ") else {
         return false;
     };
@@ -2726,6 +2792,51 @@ mod tests {
         assert!(is_default_title("Voice memo · 9:05"));
         assert!(!is_default_title("Voice memo · ideas for 2027"));
         assert!(!is_default_title("Meeting · room 4:30pm"));
+        // What a calendar that hides its details calls every meeting.
+        assert!(is_default_title("Busy"));
+        assert!(is_default_title("Privater Termin"));
+        assert!(!is_default_title("Busy season planning"));
+    }
+
+    #[test]
+    fn a_title_is_asked_from_the_summary_or_the_opening() {
+        let lines = [
+            PromptLine {
+                at_ms: 0,
+                who: "You",
+                text: "Let's go through the Q3 invoices.",
+            },
+            PromptLine {
+                at_ms: 4000,
+                who: "Them",
+                text: "Two are still open.",
+            },
+        ];
+        let from_lines = title_request("", &[], &[], &[], &lines);
+        assert!(from_lines.starts_with("Transcript:\nYou: Let's go through"));
+        let from_summary = title_request(
+            "Two invoices are open.",
+            &["Open invoices".into()],
+            &["Chase: Sam sends reminders".into()],
+            &["Sam Rao".into()],
+            &lines,
+        );
+        assert!(from_summary.contains("Summary: Two invoices are open."));
+        assert!(from_summary.contains("Topic: Open invoices"));
+        assert!(from_summary.contains("People: Sam Rao"));
+        assert!(!from_summary.contains("Transcript"));
+
+        assert_eq!(
+            parse_title("Title: \"open Q3 invoices.\"\n\nThis names the topic."),
+            Some("Open Q3 invoices".to_string())
+        );
+        assert_eq!(
+            parse_title("**Q3 invoice review**"),
+            Some("Q3 invoice review".to_string())
+        );
+        assert_eq!(parse_title("Meeting"), None);
+        assert_eq!(parse_title("Busy"), None);
+        assert_eq!(parse_title("  \n"), None);
     }
 
     #[test]

@@ -1063,6 +1063,9 @@ pub struct AppSettings {
     /// The Scratchpad window floats above other apps.
     #[serde(default = "default_true")]
     pub scratchpad_keep_on_top: bool,
+    /// The Scratchpad window stays out of screenshots and shared screens.
+    #[serde(default)]
+    pub scratchpad_hide_from_capture: bool,
     /// A paste that fails is saved in the Scratchpad, which opens.
     #[serde(default = "default_true")]
     pub scratchpad_failed_pastes: bool,
@@ -1768,6 +1771,7 @@ pub fn get_default_settings() -> AppSettings {
         inyon: InyonSettings::default(),
         mcp_enabled: false,
         scratchpad_keep_on_top: true,
+        scratchpad_hide_from_capture: false,
         scratchpad_failed_pastes: true,
         scratchpad_last_note: None,
         background_audio: BackgroundAudio::default(),

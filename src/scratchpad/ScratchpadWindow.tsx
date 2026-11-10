@@ -33,6 +33,8 @@ import {
   PinOff,
   Plus,
   Replace,
+  ScreenShare,
+  ScreenShareOff,
   Search,
   Send,
   Square,
@@ -106,6 +108,7 @@ export const ScratchpadWindow: React.FC = () => {
   const put = useScratchStore((s) => s.put);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [keepOnTop, setKeepOnTop] = useState(true);
+  const [hidden, setHidden] = useState(false);
   const [target, setTarget] = useState<{
     name: string;
     path: string | null;
@@ -189,6 +192,7 @@ export const ScratchpadWindow: React.FC = () => {
     if (result?.status !== "ok") return;
     const state = result.data;
     setKeepOnTop(state.keep_on_top);
+    setHidden(state.hide_from_capture);
     setTarget(
       state.target_app
         ? { name: state.target_app, path: state.target_app_path }
@@ -387,6 +391,17 @@ export const ScratchpadWindow: React.FC = () => {
     const next = !keepOnTop;
     setKeepOnTop(next);
     commands.changeScratchpadKeepOnTopSetting(next).catch(() => {});
+  };
+
+  const toggleHidden = () => {
+    const next = !hidden;
+    setHidden(next);
+    commands.changeScratchpadHideFromCaptureSetting(next).catch(() => {});
+    toast(
+      next
+        ? t("scratchpad.hideFromCapture.on")
+        : t("scratchpad.hideFromCapture.off"),
+    );
   };
 
   const togglePin = async (note: ScratchNote) => {
@@ -834,6 +849,24 @@ export const ScratchpadWindow: React.FC = () => {
           <Plus className="h-4 w-4" aria-hidden="true" />
         </button>
         <span className="h-full flex-1" data-tauri-drag-region />
+        <button
+          type="button"
+          onClick={toggleHidden}
+          aria-label={t("scratchpad.hideFromCapture.short")}
+          aria-pressed={hidden}
+          title={
+            hidden
+              ? t("scratchpad.hideFromCapture.titleOn")
+              : t("scratchpad.hideFromCapture.title")
+          }
+          className={`${tbButton} ${hidden ? "text-teal-700 hover:text-teal-700" : ""}`}
+        >
+          {hidden ? (
+            <ScreenShareOff className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <ScreenShare className="h-4 w-4" aria-hidden="true" />
+          )}
+        </button>
         <button
           type="button"
           onClick={toggleKeepOnTop}

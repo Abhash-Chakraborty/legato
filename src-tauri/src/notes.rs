@@ -1381,8 +1381,13 @@ pub fn start(app: &AppHandle, options: StartNotes) -> Result<Note> {
         .map(str::trim)
         .filter(|t| !t.is_empty())
         .map(str::to_string)
-        // A meeting on the calendar names the note.
-        .or_else(|| on_calendar.as_ref().map(|m| m.title.clone()))
+        // A meeting on the calendar names the note, unless the calendar
+        // says only that the time is taken.
+        .or_else(|| {
+            on_calendar
+                .as_ref()
+                .and_then(|m| m.name().map(str::to_string))
+        })
         .unwrap_or_else(|| default_title(options.kind));
     let started_at = chrono::Utc::now().timestamp();
     let note = store::create(
@@ -2827,6 +2832,62 @@ pub async fn resummarise_as(app: &AppHandle, note_id: i64, kind: &str) -> Result
         .map_err(|e| e.to_string())?;
     m.changed();
     resummarise(app, note_id).await
+}
+
+/// Names the note with your AI, whatever its title is now, from its
+/// summary or, without one, the start of its transcript. Returns the new
+/// title. Errors are codes, as for Ask, or "same" when the AI has no
+/// better name.
+pub async fn name_with_ai(app: &AppHandle, note_id: i64) -> Result<String, String> {
+    let config = notes_ai(app)?;
+    let m = manager(app);
+    let note = m
+        .get(note_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "gone".to_string())?;
+    let lines = m.lines(note_id).map_err(|e| e.to_string())?;
+    if lines.is_empty() && note.summary.trim().is_empty() {
+        return Err("empty".to_string());
+    }
+    let labels = speaker_labels(&note, &lines);
+    let topics: Vec<String> = note
+        .outline
+        .topics
+        .iter()
+        .map(|t| t.heading.clone())
+        .collect();
+    let request = notes_rules::title_request(
+        &note.summary,
+        &topics,
+        &note.decisions,
+        &note.attendees,
+        &prompt_lines(&lines, &labels),
+    );
+    let answer = crate::ai::run(
+        app,
+        &config,
+        notes_rules::TITLE_SYSTEM,
+        request,
+        config.notes_timeout,
+    )
+    .await
+    .map_err(|p| problem_code(p.kind))?;
+    let title = notes_rules::parse_title(&answer).ok_or_else(|| "same".to_string())?;
+    if title == note.title.trim() {
+        return Err("same".to_string());
+    }
+    // Kept as the AI's title, so a later summary may still improve on it.
+    let mut outline = note.outline;
+    outline.title = Some(title.clone());
+    m.conn()
+        .and_then(|c| {
+            store::rename(&c, note_id, &title)?;
+            store::set_outline(&c, note_id, &outline)
+        })
+        .map_err(|e| e.to_string())?;
+    m.changed();
+    info!("Named a note with the AI");
+    Ok(title)
 }
 
 /// Answers a question from the note's transcript. Errors are codes the page

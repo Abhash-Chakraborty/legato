@@ -12,6 +12,7 @@ import {
   Merge,
   MoreVertical,
   Pencil,
+  PencilLine,
   Plus,
   Tag,
   Trash2,
@@ -23,12 +24,13 @@ import { AppIcon } from "../home/AppIcon";
 import { copyToClipboard } from "../home/clipboard";
 import { durationLabel, summaryText, transcriptText } from "../../notes/notes";
 import { MyNotesTab } from "./MyNotesTab";
-import { SummaryTab } from "./SummaryTab";
+import { problemText, SummaryTab } from "./SummaryTab";
 import { TranscriptTab } from "./TranscriptTab";
 import { NotePlayer, useNoteAudio } from "./NoteAudio";
 import { useSpeakerNames } from "../../notes/SpeakerTag";
 import { ScheduleDialog } from "../../notes/ScheduleDialog";
 import { useNotesStore } from "../../../stores/notesStore";
+import { useAiStore } from "../../../stores/aiStore";
 import { MoveToFolder } from "./Folders";
 
 type Tab = "summary" | "transcript" | "mine";
@@ -226,6 +228,8 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
   const folders = useNotesStore((s) => s.folders);
   const [scheduling, setScheduling] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [naming, setNaming] = useState(false);
+  const aiStatus = useAiStore((s) => s.status);
   const [tagging, setTagging] = useState(false);
   const [jump, setJump] = useState<Jump | null>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -256,6 +260,31 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
     const result = await commands.copyNoteFormatted(note.id);
     if (result.status === "ok") toast(t("notes.toast.docsCopied"));
     else toast.error(result.error);
+  };
+
+  // Asks the AI for a title whatever the note is called now, with Undo.
+  const nameWithAi = async () => {
+    if (naming) return;
+    setNaming(true);
+    const before = note.title;
+    const result = await commands
+      .nameNoteWithAi(note.id)
+      .catch((e) => ({ status: "error" as const, error: String(e) }));
+    setNaming(false);
+    if (result.status === "ok") {
+      toast(t("notes.toast.named", { title: result.data }), {
+        action: {
+          label: t("notes.toast.undo"),
+          onClick: () => commands.renameNote(note.id, before),
+        },
+      });
+    } else if (result.error === "same") {
+      toast(t("notes.toast.nameSame"));
+    } else {
+      toast.error(t("notes.toast.nameFailed"), {
+        description: problemText(result.error, aiStatus, t).text,
+      });
+    }
   };
 
   const copyTranscript = async () => {
@@ -334,6 +363,15 @@ export const NoteDetail: React.FC<NoteDetailProps> = ({
                     label: t("notes.detail.rename"),
                     icon: Pencil,
                     onSelect: () => setRenaming(true),
+                  },
+                  {
+                    id: "name-ai",
+                    label: naming
+                      ? t("notes.detail.naming")
+                      : t("notes.detail.nameWithAi"),
+                    icon: PencilLine,
+                    disabled: naming || recording,
+                    onSelect: nameWithAi,
                   },
                   {
                     id: "tag",

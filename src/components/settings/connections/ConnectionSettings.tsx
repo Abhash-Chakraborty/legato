@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { CalendarDays, Check, Copy, RefreshCw, Video, X } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   commands,
   events,
@@ -172,6 +173,11 @@ export const CalendarsCard: React.FC = () => {
                       })
                     : t("settings.connections.calendars.waiting")}
               </div>
+              {f.busy_only && !f.error && (
+                <p className="mt-1 text-[12.5px] leading-snug text-warn">
+                  {t("settings.connections.calendars.busyOnly")}
+                </p>
+              )}
             </div>
             <button
               type="button"
@@ -282,17 +288,26 @@ export const ComingUpRow: React.FC = () => {
                       time: time(m.start, i18n.language),
                     })}
               </span>
-              <span className="min-w-0 flex-1 truncate text-[14px]">
-                {m.title}
+              <span
+                className={`min-w-0 flex-1 truncate text-[14px] ${m.busy_only ? "text-text-3" : ""}`}
+              >
+                {m.busy_only
+                  ? t("settings.connections.comingUp.busy")
+                  : m.title}
               </span>
               <span className="hidden shrink-0 text-[12.5px] text-text-3 sm:inline">
                 {m.calendar}
               </span>
               {m.link && (
-                <Video
-                  className="h-3.5 w-3.5 shrink-0 text-text-3"
-                  aria-label={t("settings.connections.comingUp.hasLink")}
-                />
+                <button
+                  type="button"
+                  title={m.link}
+                  onClick={() => m.link && openUrl(m.link)}
+                  className="flex h-7 shrink-0 items-center gap-1.5 rounded-[var(--r-xs)] px-2 text-[12.5px] font-medium text-text-2 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0"
+                >
+                  <Video className="h-3.5 w-3.5" aria-hidden="true" />
+                  {t("settings.connections.comingUp.join")}
+                </button>
               )}
             </li>
           ))}

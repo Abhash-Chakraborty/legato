@@ -875,8 +875,8 @@ class Legato(private val context: Context) : CoreListener {
 val PhoneState.connectedText: String
     get() = when (via) {
         "bluetooth" -> "Connected over Bluetooth"
-        "netbird" -> "Connected through Netbird"
-        else -> "Connected on Wi-Fi"
+        "netbird" -> "Connected through your VPN"
+        else -> "Connected on your network"
     }
 
 sealed class ModelStatus {

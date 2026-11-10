@@ -34,9 +34,10 @@ const OVERLAY_PICK_HEIGHT: f64 = 360.0;
 
 const OVERLAY_NOTES_WIDTH: f64 = 300.0;
 const OVERLAY_CALL_WIDTH: f64 = 380.0;
-const OVERLAY_CALL_HEIGHT: f64 = 124.0;
+/// Room for a meeting's link, or a line saying the calendar gave none.
+const OVERLAY_CALL_HEIGHT: f64 = 144.0;
 /// A meeting's card with what was said last time.
-const OVERLAY_CALL_TALL_HEIGHT: f64 = 184.0;
+const OVERLAY_CALL_TALL_HEIGHT: f64 = 204.0;
 /// An agent's question from Inyon: a few lines and up to five options.
 const OVERLAY_CORRECT_WIDTH: f64 = 480.0;
 const OVERLAY_CORRECT_HEIGHT: f64 = 236.0;

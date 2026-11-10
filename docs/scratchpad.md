@@ -55,7 +55,7 @@ In the window:
 
 Up to five notes stay open as tabs. The rail on the left shows your notes, search, Transforms and Formatting. Notes are written in Markdown; the formatting bar adds headings, bulleted and numbered lists, checklists and code. Switch between Write and Preview, and tick checklist items off in Preview.
 
-Keep on top, a button at the top of the window and a switch on the Scratchpad page, floats it above other apps until you close it. Every note saves as you type.
+Keep on top, a button at the top of the window and a switch on the Scratchpad page, floats it above other apps until you close it. Hide from screen sharing, next to it, keeps the window on your screen but out of screenshots, recordings and a screen you share in a call, so you can read your notes while you present. It's off to start with. Every note saves as you type.
 
 ### Send to
 

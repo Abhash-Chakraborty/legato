@@ -144,6 +144,10 @@ type CallCard =
       /** Unix seconds. */
       starts_at: number;
       link: boolean;
+      /** The link as text, such as "meet.google.com/abc-defg-hij". */
+      link_text: string | null;
+      /** The calendar shares only that the time is taken. */
+      busy_only: boolean;
       /** The earlier note of this meeting (notes::LastTime). */
       last: {
         note_id: number;
@@ -1502,15 +1506,32 @@ const RecordingOverlay: React.FC = () => {
         : minutes === 0
           ? t("overlay.meeting.now")
           : t("overlay.meeting.started", { count: -minutes });
+    const title = card.title || t("overlay.meeting.untitled");
     return frame(
-      <div className="scard callcard" role="dialog" aria-label={card.title}>
+      <div className="scard callcard" role="dialog" aria-label={title}>
         <div className="scall-hd">
           <CalendarGlyph />
           <div className="scall-text">
-            <div className="scall-title">{card.title}</div>
+            <div className="scall-title">{title}</div>
             <div className="scall-desc" aria-live="polite">
               {desc}
             </div>
+            {card.link_text ? (
+              <button
+                type="button"
+                className="slink scall-link"
+                title={t("overlay.meeting.join")}
+                onClick={() => commands.callCardAction("join")}
+              >
+                {card.link_text}
+              </button>
+            ) : (
+              card.busy_only && (
+                <div className="scall-desc">
+                  {t("overlay.meeting.busyOnly")}
+                </div>
+              )
+            )}
           </div>
         </div>
         {card.last && (

@@ -1105,8 +1105,8 @@
     "devices": {
       "whatSyncs": "Each device keeps a full copy and updates this PC directly.",
       "via": {
-        "lan": "Home Wi-Fi",
-        "netbird": "Netbird",
+        "lan": "Local network",
+        "netbird": "VPN",
         "bluetooth": "Bluetooth"
       },
       "undo": "Undo",
@@ -1116,7 +1116,7 @@
         "cancel": "Cancel",
         "finish": "Done",
         "done": "{{name}} paired",
-        "firstSync": "The first sync is running. Your Dictionary, snippets, notes and history will be on both devices in a minute.",
+        "firstSync": "The first sync is running. Your Dictionary, snippets, notes and history are being copied to both devices.",
         "qr": "QR code for pairing a phone with {{pc}}",
         "expired": "This code ran out",
         "making": "Making a code…",
@@ -1130,9 +1130,9 @@
         "again": "New code",
         "copyLink": "Copy link",
         "copied": "Copied the pairing link",
-        "noNetwork": "No network or Bluetooth found. Connect this PC to Wi-Fi or turn on Bluetooth first.",
-        "bluetoothOff": "Turn on Bluetooth on this PC to sync when your phone isn't on the same Wi-Fi.",
-        "private": "The phone uses Wi-Fi when it's on the same network and Bluetooth when it's nearby. Everything is encrypted end to end, and nothing goes through a server.",
+        "noNetwork": "No network or Bluetooth found. Connect this PC to a network or turn on Bluetooth first.",
+        "bluetoothOff": "Turn on Bluetooth on this PC to sync when your phone isn't on the same network.",
+        "private": "The phone syncs over the network when it's on the same one as this PC, and over Bluetooth when it's nearby. Everything is encrypted end to end, and nothing goes through a server.",
         "waiting": "Waiting for your phone…"
       },
       "pairCard": {
@@ -1150,8 +1150,8 @@
       "phone": {
         "about": "Legato for Android {{version}} · paired {{date}}",
         "online": {
-          "lan": "Connected on home Wi-Fi",
-          "netbird": "Connected through Netbird",
+          "lan": "Connected on your network",
+          "netbird": "Connected through your VPN",
           "bluetooth": "Connected over Bluetooth"
         },
         "synced": "synced {{when}}",
@@ -1159,7 +1159,7 @@
         "syncNow": "Sync now",
         "rename": "Rename…",
         "unpair": "Unpair…",
-        "unreachable": "Can't reach {{name}} on Wi-Fi or Bluetooth. Changes wait here until it's back.",
+        "unreachable": "Can't reach {{name}} on the network or over Bluetooth. Changes wait here until it's back.",
         "lastSynced": "last synced {{when}}"
       },
       "unpair": {
@@ -1180,7 +1180,7 @@
       },
       "status": {
         "title": "Sync status",
-        "upToDate": "Up to date.",
+        "upToDate": "Every paired device is connected.",
         "waiting": "Changes on this PC wait here until {{name}} connects.",
         "merged_one": "{{count}} edit made on both devices was merged, keeping the newer one.",
         "merged_other": "{{count}} edits made on both devices were merged, keeping the newer one.",
@@ -1314,6 +1314,7 @@
         "status_one": "Synced {{when}} · {{count}} meeting this week",
         "status_other": "Synced {{when}} · {{count}} meetings this week",
         "waiting": "Waiting for the first fetch",
+        "busyOnly": "This address shares only when you're busy, so Legato can't see meeting names or links. In Outlook, publish the calendar with Can view all details; in Google Calendar, use the Secret address in iCal format. Then add that address here and remove this one.",
         "remove": "Remove {{name}}",
         "removed": "Removed {{name}}",
         "added_one": "Added {{name}} · {{count}} meeting this week",
@@ -1336,7 +1337,8 @@
           "today": "Today",
           "tomorrow": "Tomorrow"
         },
-        "hasLink": "Has a meeting link"
+        "join": "Join",
+        "busy": "Busy (no details shared)"
       },
       "notesFolder": {
         "title": "Keep notes in a folder",
@@ -1527,6 +1529,8 @@
     "notes": "Take notes",
     "notesFor": "Take notes for {{title}}",
     "notesSoon": "Take notes · {{title}} in {{minutes}} min",
+    "notesMeeting": "Take notes for this meeting",
+    "notesMeetingSoon": "Take notes · meeting in {{minutes}} min",
     "scratchpad": "Scratchpad",
     "stopNotes": "Stop notes",
     "menu": {
@@ -1698,6 +1702,8 @@
       "joinNotes": "Join with notes",
       "join": "Join",
       "takeNotes": "Take notes",
+      "untitled": "Meeting on your calendar",
+      "busyOnly": "Your calendar shares no name or link for it",
       "lastTime": "Last time, {{date}}",
       "openSteps_one": "{{count}} open next step",
       "openSteps_other": "{{count}} open next steps",
@@ -2686,10 +2692,10 @@
       }
     },
     "samples": {
-      "personal": "hey Karol, can we move the Datev review to Thursday? i'll bring the open questions",
+      "personal": "hey Maya, can we move the budget review to Thursday? i'll bring the open questions",
       "work": "quick update, the release build passed. i'll push the installer after lunch",
       "email": "hi Priya thanks for sending the contract. i'll review it by Friday. best regards Sam",
-      "documents": "the Dokploy migration is blocked on the Netbird routes. the scraper moves to a browser extension.",
+      "documents": "the server migration is blocked on the firewall rules. the scraper moves to a browser extension.",
       "ai": "review this diff for correctness first, then readability. list concrete problems with file and line",
       "code": "fix the paste fallback when the clipboard is busy",
       "other": "remind me to renew the domain before the end of the month"
@@ -2904,6 +2910,14 @@
       "title": "Keep on top of other windows",
       "help": "The window floats above other apps until you close it, so you can read or dictate into it while you work."
     },
+    "hideFromCapture": {
+      "short": "Hide from screen sharing",
+      "title": "Hide from screenshots and screen sharing",
+      "titleOn": "Hidden from screenshots and screen sharing. Click to show it again",
+      "help": "You still see the window, but it doesn't show in screenshots, recordings or a screen you share in a call.",
+      "on": "The Scratchpad is hidden from screenshots and screen sharing",
+      "off": "The Scratchpad shows in screenshots and screen sharing again"
+    },
     "keys": {
       "ctrl": "Ctrl",
       "space": "Space"
@@ -3092,6 +3106,8 @@
     "detail": {
       "titleLabel": "Title",
       "rename": "Rename",
+      "nameWithAi": "Name with AI",
+      "naming": "Naming…",
       "more": "More actions",
       "addTag": "Add tag",
       "removeTag": "Remove tag {{tag}}",
@@ -3222,6 +3238,9 @@
       "deleteFailed": "Couldn't delete the note",
       "restoreFailed": "Couldn't bring the note back",
       "renameFailed": "Couldn't rename the note",
+      "named": "Named “{{title}}”",
+      "nameSame": "The AI has no better name for this note",
+      "nameFailed": "Couldn't name the note",
       "tagFailed": "Couldn't add the tag",
       "summaryCopied": "Summary copied",
       "transcriptCopied": "Transcript copied",

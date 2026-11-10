@@ -288,7 +288,7 @@ mod win {
 /// Legato's floating windows, which Settings › Bar can keep out of
 /// screenshots, recordings and shared screens: the bar or island (with the
 /// live transcript it shows), the bubble and the Notes side panel. The main
-/// window and the Scratchpad are yours to share.
+/// window is yours to share; the Scratchpad has its own switch.
 const PRIVATE_WINDOWS: [&str; 3] = [
     "recording_overlay",
     crate::bubble::WINDOW,
@@ -300,7 +300,12 @@ const PRIVATE_WINDOWS: [&str; 3] = [
 /// again, so it's set once when the window is made and again when the
 /// setting changes.
 pub fn apply_capture_privacy(app: &AppHandle, window: &tauri::WebviewWindow) {
-    let hide = crate::settings::get_settings(app).hide_from_capture;
+    let settings = crate::settings::get_settings(app);
+    let hide = if window.label() == crate::scratchpad::WINDOW {
+        settings.scratchpad_hide_from_capture
+    } else {
+        settings.hide_from_capture
+    };
     let window = window.clone();
     let _ = app.run_on_main_thread(move || set_capture_hidden(&window, hide));
 }
@@ -345,7 +350,10 @@ pub fn webview_resting(window: &tauri::WebviewWindow, resting: bool) {
 /// The setting changed: the floating windows made so far follow it now.
 pub fn capture_privacy_changed(app: &AppHandle) {
     use tauri::Manager;
-    for label in PRIVATE_WINDOWS {
+    for label in PRIVATE_WINDOWS
+        .into_iter()
+        .chain([crate::scratchpad::WINDOW])
+    {
         if let Some(window) = app.get_webview_window(label) {
             apply_capture_privacy(app, &window);
         }

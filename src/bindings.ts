@@ -2354,6 +2354,18 @@ async summariseNote(id: number) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Names the note with your AI; returns the new title. Errors are codes
+ * the page words.
+ */
+async nameNoteWithAi(id: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("name_note_with_ai", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Writes the summary again for the kind of meeting you picked, and keeps
  * that kind for later summaries.
  */
@@ -2765,6 +2777,14 @@ async sendScratchNote(text: string) : Promise<Result<string, string>> {
 async changeScratchpadKeepOnTopSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_scratchpad_keep_on_top_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeScratchpadHideFromCaptureSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_scratchpad_hide_from_capture_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -3821,7 +3841,12 @@ synced_at: number | null; error: string | null;
 /**
  * Meetings in the next seven days.
  */
-upcoming: number }
+upcoming: number; 
+/**
+ * Every meeting it has is only "Busy": the calendar is shared without
+ * its details, so there are no names or links to read.
+ */
+busy_only: boolean }
 export type RemovedCalendar = { name: string; url: string }
 export type CalendarChanged = null
 export type Meeting = { uid: string; title: string; 
@@ -3840,7 +3865,12 @@ calendar: string;
 /**
  * Who was invited, organiser first.
  */
-people?: string[] }
+people?: string[]; 
+/**
+ * The calendar gave no name for it, only that the time is taken
+ * ("Busy"): a calendar shared without its details.
+ */
+busy_only?: boolean }
 export type McpClient = { id: string; name: string; 
 /**
  * Legato is already in its configuration.
@@ -3944,6 +3974,10 @@ export type SendTarget = { handle: number; name: string; title: string; path: st
  */
 current: boolean }
 export type ScratchpadState = { tabs: ScratchNote[]; active: number | null; keep_on_top: boolean; 
+/**
+ * The window stays out of screenshots and shared screens.
+ */
+hide_from_capture: boolean; 
 /**
  * The app Send to pastes into.
  */
@@ -4239,6 +4273,10 @@ mcp_enabled?: boolean; /**
  * The Scratchpad window floats above other apps.
  */
 scratchpad_keep_on_top?: boolean; 
+/**
+ * The Scratchpad window stays out of screenshots and shared screens.
+ */
+scratchpad_hide_from_capture?: boolean; 
 /**
  * A paste that fails is saved in the Scratchpad, which opens.
  */

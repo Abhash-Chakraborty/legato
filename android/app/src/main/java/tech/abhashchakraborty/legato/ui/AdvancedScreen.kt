@@ -110,8 +110,8 @@ fun AdvancedScreen(onBack: () -> Unit) {
                     Detail("Reached over", when {
                         !state.online -> "Nothing right now"
                         state.via == "bluetooth" -> "Bluetooth"
-                        state.via == "netbird" -> "Netbird"
-                        else -> "Wi-Fi"
+                        state.via == "netbird" -> "A VPN address"
+                        else -> "The local network"
                     })
                     Hairline()
                     Detail("Writes up what you say", when {

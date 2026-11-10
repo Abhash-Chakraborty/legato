@@ -79,7 +79,9 @@ You aren't listed: Legato recognises Settings › General › Your name, your fi
 
 With an AI provider set up in Settings › AI, and Notes summaries and Ask turned on there, each note gets a summary after it stops. It has the main points, Decisions, Next steps with who owns each one, and Topics and Details that play the recording from the moment they came up. A note shorter than about 40 words is too short to summarise.
 
-The summary also names the note while it still has its default title, and tags it while it has no tags. A title or tags you set yourself are never changed.
+The summary also names the note while it still has its default title, and tags it while it has no tags. A title or tags you set yourself are never changed. A note called Busy, from a calendar that shares no details, counts as untitled and gets a name too.
+
+To have the AI name any note, whatever it's called now, choose More actions › Name with AI. It reads the summary, or the start of the transcript when there's none, and Undo puts the old title back.
 
 The summary is shaped for a kind of meeting, such as Team meeting, One-on-one, Sales call or Lecture. Pick another under Kind of meeting and it's written again that way, and later summaries of that note keep it. Regenerate writes it again with the AI as it's set up now.
 

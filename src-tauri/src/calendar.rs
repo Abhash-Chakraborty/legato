@@ -38,6 +38,9 @@ pub struct CalendarStatus {
     pub error: Option<String>,
     /// Meetings in the next seven days.
     pub upcoming: u32,
+    /// Every meeting it has is only "Busy": the calendar is shared without
+    /// its details, so there are no names or links to read.
+    pub busy_only: bool,
 }
 
 /// A removed calendar, for Undo.
@@ -299,6 +302,9 @@ pub fn statuses(app: &AppHandle) -> Vec<CalendarStatus> {
                         .iter()
                         .filter(|m| m.end > now() && m.start < week)
                         .count() as u32
+                }),
+                busy_only: state.is_some_and(|s| {
+                    !s.meetings.is_empty() && s.meetings.iter().all(|m| m.busy_only)
                 }),
                 synced_at: state.and_then(|s| s.synced_at),
                 error: state.and_then(|s| s.error.clone()),

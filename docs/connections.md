@@ -10,10 +10,16 @@ With a calendar added, Legato knows your meetings:
 
 - A meeting note takes the name of the meeting on your calendar, and the meeting's attendees join the note.
 - The desktop bubble shows your next meeting.
-- With Offer to join meetings on, the bar offers Join and Join with notes a minute before a meeting starts.
+- With Offer to join meetings on, the bar offers Join and Join with notes a minute before a meeting starts, and shows the meeting's link. It finds links for Google Meet, Zoom, Teams, Webex, GoTo, Whereby, Jitsi, Slack huddles and a few more.
 - AI apps you allow can ask for your upcoming meetings (see [AI apps](#ai-apps)).
 
-Coming up, under the calendar list, shows the next meetings Legato knows about.
+Coming up, under the calendar list, shows the next meetings Legato knows about, with Join on the ones that have a link.
+
+### A calendar that only says Busy
+
+Some addresses share only when you're busy: every meeting is called Busy and has no link. Outlook does this when a calendar is published with Can view when I'm busy, and so does a Google calendar shared as free/busy. Legato says so under the calendar's name. Notes for those meetings get the usual "Meeting · date" title, which the summary then replaces, and the card can only offer Take notes.
+
+To get names and links, publish the calendar with Can view all details in Outlook, or copy Secret address in iCal format in Google Calendar. Add that address and remove the old one. Some work accounts don't allow full details; then the calendar can only tell Legato when a meeting starts.
 
 ### Add a calendar
 

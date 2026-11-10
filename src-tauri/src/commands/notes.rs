@@ -300,6 +300,14 @@ pub async fn summarise_note_as(app: AppHandle, id: i64, kind: String) -> Result<
     notes::resummarise_as(&app, id, &kind).await
 }
 
+/// Names the note with your AI; returns the new title. Errors are codes
+/// the page words.
+#[tauri::command]
+#[specta::specta]
+pub async fn name_note_with_ai(app: AppHandle, id: i64) -> Result<String, String> {
+    notes::name_with_ai(&app, id).await
+}
+
 /// Writes the note's summary again. Errors are codes the page words.
 #[tauri::command]
 #[specta::specta]

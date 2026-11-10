@@ -309,6 +309,29 @@ export const ScratchpadPage: React.FC = () => {
                 }}
               />
             </label>
+            <label
+              className="flex h-11 items-center justify-between gap-3 pe-3 ps-3.5 text-[13px] text-text-2"
+              title={t("scratchpad.hideFromCapture.help")}
+            >
+              {t("scratchpad.hideFromCapture.short")}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings?.scratchpad_hide_from_capture ?? false}
+                aria-label={t("scratchpad.hideFromCapture.title")}
+                aria-busy={
+                  isUpdating("scratchpad_hide_from_capture") || undefined
+                }
+                className="toggle"
+                onClick={() => {
+                  if (!isUpdating("scratchpad_hide_from_capture"))
+                    updateSetting(
+                      "scratchpad_hide_from_capture",
+                      !(settings?.scratchpad_hide_from_capture ?? false),
+                    );
+                }}
+              />
+            </label>
           </div>
           <div className="mb-2 flex flex-none items-end justify-between gap-3 border-b border-line">
             <div

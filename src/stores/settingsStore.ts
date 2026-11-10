@@ -263,6 +263,8 @@ const settingUpdaters: {
     commands.changeFeatureSetting("insights", value as boolean),
   scratchpad_keep_on_top: (value) =>
     commands.changeScratchpadKeepOnTopSetting(value as boolean),
+  scratchpad_hide_from_capture: (value) =>
+    commands.changeScratchpadHideFromCaptureSetting(value as boolean),
   scratchpad_failed_pastes: (value) =>
     commands.changeScratchpadFailedPastesSetting(value as boolean),
   chinese_script: (value) =>

@@ -112,6 +112,11 @@ enum CallCard {
         /// Unix seconds.
         starts_at: i64,
         link: bool,
+        /// The link as text, such as "meet.google.com/abc-defg-hij".
+        link_text: Option<String>,
+        /// The calendar shares only that the time is taken: no name, and
+        /// no link to offer.
+        busy_only: bool,
         /// The earlier note of this meeting, when there is one.
         last: Option<notes::LastTime>,
     },
@@ -290,7 +295,7 @@ fn remind_due(app: &AppHandle) {
         st.meeting = Some(m.clone());
         m
     };
-    let last = notes::last_time(app, &meeting.title, &meeting.people);
+    let last = notes::last_time(app, meeting.name().unwrap_or_default(), &meeting.people);
     info!(
         "Offering to join a meeting from the calendar{}",
         if last.is_some() {
@@ -303,9 +308,11 @@ fn remind_due(app: &AppHandle) {
     show_card(
         app,
         Some(CallCard::Meeting {
-            title: meeting.title.clone(),
+            title: meeting.name().unwrap_or_default().to_string(),
             starts_at: meeting.start,
             link: meeting.link.is_some(),
+            link_text: meeting.link.as_deref().map(calendar_rules::link_label),
+            busy_only: meeting.busy_only,
             last,
         }),
     );
@@ -334,7 +341,7 @@ fn meeting_action(app: &AppHandle, meeting: &Meeting, action: CallAction) {
         app,
         StartNotes {
             kind: NoteKind::Meeting,
-            title: Some(meeting.title.clone()),
+            title: meeting.name().map(str::to_string),
             microphone: None,
             app_pid: None,
         },
@@ -427,7 +434,7 @@ fn start_notes(app: &AppHandle, call: CallApp, continues: Option<i64>) {
             kind: NoteKind::Meeting,
             title: Some(
                 crate::calendar::meeting_now(app)
-                    .map(|m| m.title)
+                    .and_then(|m| m.name().map(str::to_string))
                     .unwrap_or_else(|| format!("{} call · {}", call.name(), when())),
             ),
             microphone: None,
