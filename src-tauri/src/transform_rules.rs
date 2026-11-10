@@ -297,13 +297,14 @@ fn kind_note(category: &str) -> Option<&'static str> {
              short paragraphs and their sign-off. Never invent a recipient, a subject or facts."
         }
         "personal" => {
-            "It is a chat message to someone they know: keep it short and in their voice, \
-             capitals as they wrote them, with no greeting or sign-off they didn't say. \
-             Filler words such as \"um\" still go."
+            "It is a chat message to someone they know: short and natural, the way they \
+             talk, with no greeting or sign-off they didn't say. It is still cleaned up: \
+             sentences get their punctuation, and filler words such as \"um\" go."
         }
         "work" => {
             "It is a work chat message: brief and direct, with no email-style greeting or \
-             sign-off. Filler words such as \"um\" still go."
+             sign-off. It is still cleaned up: sentences get their punctuation and a \
+             capital, and filler words such as \"um\" go."
         }
         "documents" => {
             "It is a document: full sentences in paragraphs, and a list where they enumerate."
@@ -711,7 +712,7 @@ mod tests {
         );
         assert!(polish.contains(
             "</instruction>\n\nThe text goes into WhatsApp, a chat app. It is a chat message to \
-             someone they know"
+             someone they know: short and natural"
         ));
         assert!(polish.contains("shows *bold*, _italic_"));
         assert!(polish.contains("The instruction comes first"));
