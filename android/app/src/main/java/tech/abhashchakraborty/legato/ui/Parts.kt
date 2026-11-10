@@ -153,7 +153,7 @@ fun pcStatus(state: PhoneState, device: String, long: Boolean = false): PcStatus
         state.online -> PcStatus(
             s.ok,
             if (long) state.connectedText + (synced?.let { " · synced $it" } ?: "")
-            else "${state.pcName} · synced ${synced ?: "just now"}",
+            else "${state.pcName} · " + (synced?.let { "synced $it" } ?: "connected"),
         )
         else -> PcStatus(
             s.warn,

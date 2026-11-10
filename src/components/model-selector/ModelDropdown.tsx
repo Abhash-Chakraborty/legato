@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Check, Cpu } from "lucide-react";
+import { Check, Cpu } from "@/icons";
 import type { ModelInfo } from "@/bindings";
 import {
   getTranslatedModelName,

@@ -8,7 +8,7 @@ import React, {
 import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
-import { Search, SpellCheck, X } from "lucide-react";
+import { Search, SpellCheck, X } from "@/icons";
 import { toast } from "sonner";
 import { commands, type HistoryEntry, type HistoryFilter } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
@@ -29,6 +29,7 @@ import {
 } from "./format";
 import { HistoryRow, type RowActions } from "./HistoryRow";
 import { HomeRail } from "./HomeRail";
+import { GetToKnow } from "./GetToKnow";
 import {
   isPendingDelete,
   scheduleDelete,
@@ -381,6 +382,8 @@ export const HomePage: React.FC = () => {
               })
             : t(phoneToday ? "home.nothingTodayHere" : "home.nothingToday")}
         </p>
+
+        {!query && <GetToKnow />}
 
         {!fixHintHidden && !learnedAny && visible.length > 0 && (
           <div className="mb-4 flex items-start gap-3 rounded-[var(--r-md)] bg-surface-2 px-3.5 py-3 text-[13px] text-text-2">

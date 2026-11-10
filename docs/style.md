@@ -10,15 +10,15 @@ When a dictation starts, Legato reads the window in front: the program, and in a
 
 Legato knows these apps out of the box:
 
-| Kind of app       | Desktop apps                                                                                                                   | Websites, by tab title                 |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
-| Personal messages | WhatsApp, Telegram, Discord, Signal                                                                                            | WhatsApp, Telegram, Discord, Instagram |
-| Work messages     | Slack, Microsoft Teams                                                                                                         | Slack, Microsoft Teams, LinkedIn       |
-| Email             | Outlook (classic and new), Thunderbird, Windows Mail                                                                           | Gmail, Outlook                         |
-| Documents         | Word, OneNote, Notion, Obsidian                                                                                                | Notion, Google Docs                    |
-| AI prompts        | Claude, ChatGPT, and Claude Code in a terminal                                                                                 | Claude, ChatGPT, Gemini, Perplexity    |
-| Code & terminals  | VS Code, Cursor, Windsurf, Zed, Visual Studio, IntelliJ IDEA, Windows Terminal, WezTerm, Alacritty, PowerShell, Command Prompt | GitHub                                 |
-| Other             | Everything else                                                                                                                |                                        |
+| Kind of app       | Desktop apps                                                                                                                   | Websites, by tab title                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Personal messages | WhatsApp, Telegram, Discord, Signal                                                                                            | WhatsApp, Telegram, Discord, Instagram, Messenger                                      |
+| Work messages     | Slack, Microsoft Teams, Mattermost, Element, Zulip, Rocket.Chat                                                                | Slack, Microsoft Teams, LinkedIn, Mattermost, Google Chat, Zulip, Element, Rocket.Chat |
+| Email             | Outlook (classic and new), Thunderbird, Windows Mail                                                                           | Gmail, Outlook, Proton Mail                                                            |
+| Documents         | Word, OneNote, Notion, Obsidian, Typora, Logseq                                                                                | Notion, Google Docs                                                                    |
+| AI prompts        | Claude, ChatGPT, and Claude Code in a terminal                                                                                 | Claude, ChatGPT, Gemini, Perplexity                                                    |
+| Code & terminals  | VS Code, Cursor, Windsurf, Zed, Visual Studio, IntelliJ IDEA, Windows Terminal, WezTerm, Alacritty, PowerShell, Command Prompt | GitHub, GitLab                                                                         |
+| Other             | Everything else                                                                                                                |                                                                                        |
 
 Websites are recognised in Chrome, Edge, Firefox, Brave, Opera, Vivaldi, Arc and Zen. Claude Code counts as an AI prompt when a terminal's title says Claude Code.
 
@@ -33,6 +33,22 @@ Each kind of app lists its apps, with Edit apps to change them. Changes save as 
 - **Pick a window**: click it, then switch to the app within 3 seconds, and Legato adds whatever comes to the front.
 - **Move … to Other** takes an app out of this kind.
 - **Restore defaults** puts back the built-in apps for this kind.
+
+## Formatting that fits the app
+
+Apps show bold, lists and headings in different ways, so text your AI writes is made to fit the app it goes to. This applies to [transforms and Ask](transforms.md), and to Cleanup at Medium; text you dictate without AI has no such symbols to begin with.
+
+| Where the text goes                                                        | What Legato writes                                                 |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| WhatsApp, Slack, Signal                                                    | `*bold*`, `_italic_`, `~strike~`; a heading becomes a bold line    |
+| Telegram                                                                   | `**bold**`, `__italic__`, `~~strike~~`                             |
+| Mattermost, Discord, GitHub, GitLab, Notion, Obsidian, AI chats, .md files | Markdown as it is                                                  |
+| Email, Word, Google Docs, Teams and other ordinary text fields             | Plain text: no symbols, tables as lines, links as text and address |
+| Code editors and terminals                                                 | Nothing is changed                                                 |
+
+The AI is told what the app shows, and its answer is converted by rule afterwards, so a stray `**` can't end up in a WhatsApp message. Text you selected that already has such symbols is left alone.
+
+A Markdown file is recognised by `.md` in the window's title. For an app Legato can't tell, such as a chat your company hosts itself, open Edit apps and pick its formatting from the list beside the app. Auto shows what Legato worked out.
 
 ## Kinds of app and their defaults
 

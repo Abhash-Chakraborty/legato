@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2 } from "@/icons";
 import type { RetiredModel } from "@/bindings";
 import LegatoLogo from "../icons/LegatoLogo";
 import { Button } from "../ui/Button";

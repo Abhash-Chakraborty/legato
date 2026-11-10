@@ -215,7 +215,8 @@ fun HomeScreen(onSettings: () -> Unit, onPair: () -> Unit) {
                     legato.run { deleteHistory(e.id) }
                     scope.launch {
                         val r = snackbar.showSnackbar("Dictation deleted", actionLabel = "Undo", duration = SnackbarDuration.Short)
-                        if (r == SnackbarResult.ActionPerformed) legato.run { dictate(e.text, e.app) }
+                        // Back where it was, with the time it had.
+                        if (r == SnackbarResult.ActionPerformed) legato.run { restoreHistory(e.text, e.app, e.at, e.cancelled) }
                     }
                 },
             ),
@@ -302,13 +303,18 @@ fun share(context: android.content.Context, text: String) {
 fun timeOf(epochSeconds: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(epochSeconds * 1000))
 
 fun dayLabel(epochSeconds: Long): String {
-    val now = Calendar.getInstance()
     val then = Calendar.getInstance().apply { timeInMillis = epochSeconds * 1000 }
-    val sameYear = now.get(Calendar.YEAR) == then.get(Calendar.YEAR)
-    val dayDiff = now.get(Calendar.DAY_OF_YEAR) - then.get(Calendar.DAY_OF_YEAR)
-    return when {
-        sameYear && dayDiff == 0 -> "Today"
-        sameYear && dayDiff == 1 -> "Yesterday"
+    // Midnights compared, so January 1 still has a yesterday.
+    val midnight = { c: Calendar ->
+        (c.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+    }
+    val today = midnight(Calendar.getInstance())
+    val yesterday = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
+    return when (midnight(then).timeInMillis) {
+        today.timeInMillis -> "Today"
+        yesterday.timeInMillis -> "Yesterday"
         else -> DateFormat.getDateInstance(DateFormat.MEDIUM).format(then.time)
     }
 }

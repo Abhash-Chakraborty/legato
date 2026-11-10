@@ -74,7 +74,10 @@ fn propose(job: &Job, field: &str) {
     if !settings.learn_from_edits {
         return;
     }
-    let edits = learn_rules::find_edits(&job.pasted, field, settings.word_correction_threshold);
+    let mut edits = learn_rules::find_edits(&job.pasted, field, settings.word_correction_threshold);
+    // Everyday editing, such as "its" made "it's", teaches nothing.
+    let is_word = crate::spelling::checker();
+    edits.retain(|e| !learn_rules::everyday_edit(e, &*is_word));
     if edits.is_empty() {
         return;
     }

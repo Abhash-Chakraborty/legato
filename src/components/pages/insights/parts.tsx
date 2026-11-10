@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@/icons";
 
 /** A card on the Insights page. */
 export const Card: React.FC<{

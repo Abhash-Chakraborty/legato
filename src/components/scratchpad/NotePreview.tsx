@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Check } from "lucide-react";
+import { Check } from "@/icons";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toggleTask } from "./notes";

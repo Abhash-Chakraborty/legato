@@ -45,6 +45,14 @@ pub enum Block {
     Heading(String),
     Para(Vec<Run>),
     Bullet(Vec<Run>),
+    /// A JPEG picture as wide as the text, with a line under it. Only a
+    /// Word file holds the picture; pasted HTML gets the line alone.
+    Image {
+        jpeg: Vec<u8>,
+        width: u32,
+        height: u32,
+        caption: String,
+    },
 }
 
 fn esc(text: &str) -> String {
@@ -86,6 +94,9 @@ pub fn html(blocks: &[Block]) -> String {
             Block::Heading(text) => out.push_str(&format!("<h2>{}</h2>", esc(text))),
             Block::Para(r) => out.push_str(&format!("<p>{}</p>", runs(r))),
             Block::Bullet(r) => out.push_str(&format!("<li>{}</li>", runs(r))),
+            Block::Image { caption, .. } => {
+                out.push_str(&format!("<p><i>{}</i></p>", esc(caption)))
+            }
         }
     }
     if in_list {
@@ -134,14 +145,45 @@ fn docx_runs(runs: &[Run]) -> String {
     out
 }
 
+/// The width of the text on the page, in English Metric Units: 6.5 inches.
+const TEXT_WIDTH_EMU: u64 = 5_943_600;
+
+/// The relationship id of the `n`th picture (from 1); 1 and 2 are the
+/// styles and the numbering.
+fn picture_rel(n: usize) -> String {
+    format!("rId{}", n + 2)
+}
+
+/// The `n`th picture (from 1) as a drawing as wide as the text.
+fn docx_picture(n: usize, width: u32, height: u32, caption: &str) -> String {
+    let cx = TEXT_WIDTH_EMU;
+    let cy = TEXT_WIDTH_EMU * height.max(1) as u64 / width.max(1) as u64;
+    format!(
+        r#"<w:p><w:pPr><w:keepNext/><w:spacing w:before="120" w:after="60"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{n}" name="Picture {n}" descr="{descr}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="{n}" name="image{n}.jpeg"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="{rel}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"#,
+        descr = xml_text(caption),
+        rel = picture_rel(n),
+    )
+}
+
 fn docx_body(blocks: &[Block]) -> String {
     let mut out = String::new();
+    let mut pictures = 0;
     for block in blocks {
         let (style, runs) = match block {
             Block::Title(text) => ("Title", docx_runs(&[Run::plain(text.as_str())])),
             Block::Heading(text) => ("Heading1", docx_runs(&[Run::plain(text.as_str())])),
             Block::Para(r) => ("", docx_runs(r)),
             Block::Bullet(r) => ("ListBullet", docx_runs(r)),
+            Block::Image {
+                width,
+                height,
+                caption,
+                ..
+            } => {
+                pictures += 1;
+                out.push_str(&docx_picture(pictures, *width, *height, caption));
+                ("", docx_runs(&[Run::italic(caption.as_str())]))
+            }
         };
         out.push_str("<w:p>");
         if !style.is_empty() {
@@ -160,13 +202,27 @@ fn docx_body(blocks: &[Block]) -> String {
 const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
 const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#;
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#;
 
 const RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#;
 
-const DOCUMENT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>"#;
+/// The document's relationships: its styles, its numbering and each of
+/// its `pictures`.
+fn document_rels(pictures: usize) -> String {
+    let mut out = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>"#,
+    );
+    for n in 1..=pictures {
+        out.push_str(&format!(
+            r#"<Relationship Id="{}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image{n}.jpeg"/>"#,
+            picture_rel(n)
+        ));
+    }
+    out.push_str("</Relationships>");
+    out
+}
 
 /// Arial 11 like a new Google Doc, with the Title, Heading 1 and List
 /// Bullet styles Docs maps to its own.
@@ -203,14 +259,24 @@ pub fn docx(blocks: &[Block]) -> Result<Vec<u8>> {
         .unwrap_or_default();
     let document = format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="{W}"><w:body>{}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#,
+<w:document xmlns:w="{W}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><w:body>{}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#,
         docx_body(blocks)
     );
+    let pictures: Vec<&[u8]> = blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::Image { jpeg, .. } => Some(jpeg.as_slice()),
+            _ => None,
+        })
+        .collect();
     let parts = [
         ("[Content_Types].xml", CONTENT_TYPES.to_string()),
         ("_rels/.rels", RELS.to_string()),
         ("docProps/core.xml", core(title)),
-        ("word/_rels/document.xml.rels", DOCUMENT_RELS.to_string()),
+        (
+            "word/_rels/document.xml.rels",
+            document_rels(pictures.len()),
+        ),
         ("word/document.xml", document),
         ("word/styles.xml", styles()),
         ("word/numbering.xml", numbering()),
@@ -221,6 +287,10 @@ pub fn docx(blocks: &[Block]) -> Result<Vec<u8>> {
     for (name, body) in parts {
         zip.start_file(name, options)?;
         zip.write_all(body.as_bytes())?;
+    }
+    for (n, jpeg) in pictures.iter().enumerate() {
+        zip.start_file(format!("word/media/image{}.jpeg", n + 1), options)?;
+        zip.write_all(jpeg)?;
     }
     Ok(zip.finish()?.into_inner())
 }
@@ -290,6 +360,48 @@ mod tests {
             .read_to_string(&mut core)
             .unwrap();
         assert!(core.contains("<dc:title>Infra &lt;sync&gt;</dc:title>"));
+    }
+
+    #[test]
+    fn a_word_file_carries_its_pictures() {
+        let blocks = [
+            Block::Title("Review".into()),
+            Block::Image {
+                jpeg: vec![0xFF, 0xD8, 0xFF, 0xD9],
+                width: 1920,
+                height: 1080,
+                caption: "Screenshot at 12:04 <dashboard>".into(),
+            },
+        ];
+        let bytes = docx(&blocks).unwrap();
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut picture = Vec::new();
+        zip.by_name("word/media/image1.jpeg")
+            .unwrap()
+            .read_to_end(&mut picture)
+            .unwrap();
+        assert_eq!(picture, [0xFF, 0xD8, 0xFF, 0xD9]);
+        let read = |zip: &mut zip::ZipArchive<std::io::Cursor<Vec<u8>>>, name: &str| {
+            let mut text = String::new();
+            zip.by_name(name)
+                .unwrap()
+                .read_to_string(&mut text)
+                .unwrap();
+            text
+        };
+        let rels = read(&mut zip, "word/_rels/document.xml.rels");
+        assert!(rels.contains(r#"Id="rId3""#) && rels.contains(r#"Target="media/image1.jpeg""#));
+        let doc = read(&mut zip, "word/document.xml");
+        // As wide as the text, its shape kept: 6.5 in by 6.5 × 1080 / 1920.
+        assert!(doc.contains(r#"<wp:extent cx="5943600" cy="3343275"/>"#));
+        assert!(doc.contains(r#"<a:blip r:embed="rId3"/>"#));
+        assert!(doc.contains("Screenshot at 12:04 &lt;dashboard&gt;</w:t>"));
+        assert!(read(&mut zip, "[Content_Types].xml").contains(r#"Extension="jpeg""#));
+        // Pasted HTML has the line, not the picture.
+        assert_eq!(
+            html(&blocks),
+            "<h1>Review</h1><p><i>Screenshot at 12:04 &lt;dashboard&gt;</i></p>"
+        );
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { AppWindow } from "lucide-react";
+import { AppWindow } from "@/icons";
 import { commands } from "@/bindings";
 
 // One lookup per executable; the backend caches too, this saves the IPC.

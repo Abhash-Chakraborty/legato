@@ -80,7 +80,8 @@ type OverlayNotice =
         | "no_last_dictation"
         | "no_changes"
         | "ask_empty"
-        | "nothing_to_correct";
+        | "nothing_to_correct"
+        | "nothing_recording";
     }
   | {
       kind: "saved_to_scratchpad";
@@ -448,6 +449,27 @@ const RecordingOverlay: React.FC = () => {
   // The row the arrow keys are on; Enter runs it.
   const [pickIndex, setPickIndex] = useState(0);
   const [notesTick, setNotesTick] = useState<NotesTick | null>(null);
+  // The Notes pill's camera: a tick for a moment once the screen is grabbed.
+  const [shot, setShot] = useState<"idle" | "taken" | "failed">("idle");
+  const flashShot = (to: "taken" | "failed") => {
+    setShot(to);
+    window.setTimeout(() => setShot("idle"), 1400);
+  };
+  const takeShot = async () => {
+    const result = await commands
+      .takeNoteScreenshot()
+      .catch(() => ({ status: "error" as const, error: "failed" }));
+    if (result.status === "error") flashShot("failed");
+  };
+  // Taken here, in the panel or with the shortcut: the tick shows it.
+  useEffect(() => {
+    const unlisten = getCurrentWebviewWindow().listen("note-shot-taken", () =>
+      flashShot("taken"),
+    );
+    return () => {
+      unlisten.then((off) => off());
+    };
+  }, []);
   const [callCard, setCallCard] = useState<{
     card: CallCard;
     at: number;
@@ -1752,6 +1774,58 @@ const RecordingOverlay: React.FC = () => {
             <NotesMeter level={paused ? 0 : notesTick.them} />
           )}
         </span>
+        <button
+          type="button"
+          className={`sx ${shot === "taken" ? "sx-done" : ""}`}
+          aria-label={t("overlay.notes.screenshot")}
+          title={
+            shot === "taken"
+              ? t("overlay.notes.screenshotTaken")
+              : shot === "failed"
+                ? t("overlay.notes.screenshotFailed")
+                : t("overlay.notes.screenshot")
+          }
+          onClick={takeShot}
+        >
+          {shot === "taken" ? (
+            <svg
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              className="lucide-check"
+            >
+              <path
+                d="M3.5 8.5 L6.5 11.5 L12.5 5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : (
+            <svg
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              className="lucide-camera"
+            >
+              <path
+                d="M2.5 5.8 a1.3 1.3 0 0 1 1.3 -1.3 h1.4 l1 -1.4 h3.6 l1 1.4 h1.4 a1.3 1.3 0 0 1 1.3 1.3 v5.4 a1.3 1.3 0 0 1 -1.3 1.3 h-8.4 a1.3 1.3 0 0 1 -1.3 -1.3 Z"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinejoin="round"
+              />
+              <circle
+                cx="8"
+                cy="8.4"
+                r="2"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+            </svg>
+          )}
+        </button>
         <button
           type="button"
           className="sx"

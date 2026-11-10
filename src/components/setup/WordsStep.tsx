@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowRight, Check } from "lucide-react";
+import { ArrowRight, Check } from "@/icons";
 import { commands, events, type DictionaryEntry } from "@/bindings";
 import { Button } from "../ui/Button";
 import type { StepProps } from "./SetupFlow";

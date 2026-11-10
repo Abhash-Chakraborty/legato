@@ -1037,7 +1037,146 @@ pub fn transcript_parts(lines: &[PromptLine<'_>]) -> Vec<String> {
     parts
 }
 
-pub const SUMMARY_SYSTEM: &str = "You summarise one recorded conversation for the person who recorded it. Lines marked You are that person; every other line is someone else, from the call or the room, marked Them or with their name or a speaker number. Them is a label, not a name: in what you write, call that person \"the other person\" (or \"the others\" when there may be several), never Them. Use only what the transcript says. Write in the transcript's language. Answer with JSON only.";
+pub const SUMMARY_SYSTEM: &str = "You summarise one recorded conversation for the person who recorded it. Lines marked You are that person; every other line is someone else, from the call or the room, marked Them or with their name or a speaker number. Them is a label, not a name: in what you write, call that person \"the other person\" (or \"the others\" when there may be several), never Them. Use only what the transcript says. Lines marked Screen are words read from a screenshot that person took at that moment: what was on their screen, not something anyone said. Use them to tell what was being shown, and never quote them as speech. A line marked Title is what the meeting is called in that person's calendar, and a line marked Notes is what they typed during the conversation: what mattered to them, so give those points their due, though neither was said aloud. Write in the transcript's language. Answer with JSON only.";
+
+/// Screens wider than this are scaled down to it when saved.
+pub const SHOT_MAX_WIDTH: u32 = 2560;
+
+/// A screenshot saved without loss that comes out bigger than this (a
+/// video or a photo on screen) is saved as a JPEG instead.
+pub const SHOT_LOSSLESS_MAX: usize = 700 * 1024;
+
+/// The most a note keeps of the words read on one screenshot.
+const SHOT_TEXT_MAX: usize = 4000;
+
+/// How much of a screenshot's words a summary request carries.
+const SHOT_PROMPT_CHARS: usize = 600;
+
+/// The size a screen of `width` by `height` is saved at: as it is, or
+/// scaled down to [`SHOT_MAX_WIDTH`] with its shape kept.
+pub fn shot_size(width: u32, height: u32) -> (u32, u32) {
+    if width <= SHOT_MAX_WIDTH || width == 0 {
+        return (width, height);
+    }
+    let scaled = (height as u64 * SHOT_MAX_WIDTH as u64 + width as u64 / 2) / width as u64;
+    (SHOT_MAX_WIDTH, scaled.max(1) as u32)
+}
+
+/// A screenshot's file name in the notes folder: the note, where in the
+/// recording it was taken, and `n` when two fall in the same moment.
+pub fn shot_file_name(note_id: i64, at_ms: i64, n: u32, ext: &str) -> String {
+    if n == 0 {
+        format!("note-{note_id}-shot-{at_ms}.{ext}")
+    } else {
+        format!("note-{note_id}-shot-{at_ms}-{n}.{ext}")
+    }
+}
+
+/// The words read on a screen as a note keeps them: one line per line
+/// read, no empty ones, cut at a word past [`SHOT_TEXT_MAX`].
+pub fn screen_text(raw: &str) -> String {
+    let mut out = String::new();
+    for line in raw.lines() {
+        let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
+        if line.is_empty() {
+            continue;
+        }
+        if out.chars().count() + line.chars().count() + 1 > SHOT_TEXT_MAX {
+            break;
+        }
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&line);
+    }
+    out
+}
+
+/// What a summary request says of a screenshot: the start of its words on
+/// one line, or None when none were read.
+pub fn screen_line(text: &str) -> Option<String> {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.is_empty() {
+        return None;
+    }
+    if flat.chars().count() <= SHOT_PROMPT_CHARS {
+        return Some(flat);
+    }
+    let cut: String = flat.chars().take(SHOT_PROMPT_CHARS).collect();
+    let cut = cut.rsplit_once(' ').map_or(cut.as_str(), |(head, _)| head);
+    Some(format!("{cut}…"))
+}
+
+/// How much of the person's own notes a summary request carries.
+const OWN_NOTES_CHARS: usize = 1500;
+
+/// The person's own notes as one line for a summary request, or None when
+/// they wrote none.
+pub fn own_notes_line(my_notes: &str) -> Option<String> {
+    let flat = my_notes
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+    if flat.is_empty() {
+        return None;
+    }
+    if flat.chars().count() <= OWN_NOTES_CHARS {
+        return Some(flat);
+    }
+    let cut: String = flat.chars().take(OWN_NOTES_CHARS).collect();
+    let cut = cut.rsplit_once(' ').map_or(cut.as_str(), |(head, _)| head);
+    Some(format!("{cut}…"))
+}
+
+/// The transcript opened by what the meeting is called and what the person
+/// typed while it ran, as lines marked Title and Notes.
+pub fn with_context<'a>(
+    lines: Vec<PromptLine<'a>>,
+    title: Option<&'a str>,
+    own_notes: Option<&'a str>,
+) -> Vec<PromptLine<'a>> {
+    let lead = [("Title", title), ("Notes", own_notes)]
+        .into_iter()
+        .filter_map(|(who, text)| {
+            Some(PromptLine {
+                at_ms: 0,
+                who,
+                text: text.map(str::trim).filter(|t| !t.is_empty())?,
+            })
+        });
+    lead.chain(lines).collect()
+}
+
+/// The transcript with each screenshot's words where it was taken, as a
+/// line marked Screen. `screens` are (time, words) in order.
+pub fn with_screens<'a>(
+    lines: Vec<PromptLine<'a>>,
+    screens: &'a [(i64, String)],
+) -> Vec<PromptLine<'a>> {
+    if screens.is_empty() {
+        return lines;
+    }
+    let mut out = Vec::with_capacity(lines.len() + screens.len());
+    let mut screens = screens.iter().peekable();
+    for line in lines {
+        while let Some((at, text)) = screens.next_if(|(at, _)| *at <= line.at_ms) {
+            out.push(PromptLine {
+                at_ms: *at,
+                who: "Screen",
+                text,
+            });
+        }
+        out.push(line);
+    }
+    out.extend(screens.map(|(at, text)| PromptLine {
+        at_ms: *at,
+        who: "Screen",
+        text,
+    }));
+    out
+}
 
 /// At most this many tags are suggested for a note.
 pub const TAG_MAX: usize = 3;
@@ -2796,6 +2935,84 @@ mod tests {
         assert!(is_default_title("Busy"));
         assert!(is_default_title("Privater Termin"));
         assert!(!is_default_title("Busy season planning"));
+    }
+
+    #[test]
+    fn screenshots_are_sized_named_and_read() {
+        assert_eq!(shot_size(1920, 1080), (1920, 1080));
+        assert_eq!(shot_size(3840, 2160), (2560, 1440));
+        assert_eq!(shot_size(5120, 1440), (2560, 720));
+        assert_eq!(
+            shot_file_name(12, 754_000, 0, "webp"),
+            "note-12-shot-754000.webp"
+        );
+        assert_eq!(
+            shot_file_name(12, 754_000, 2, "jpg"),
+            "note-12-shot-754000-2.jpg"
+        );
+        assert_eq!(
+            screen_text("  Q3   revenue \r\n\n  by region\t EMEA 4.2M \n"),
+            "Q3 revenue\nby region EMEA 4.2M"
+        );
+        assert_eq!(screen_text(" \n \n"), "");
+        assert_eq!(
+            screen_line("Q3 revenue\nby region").as_deref(),
+            Some("Q3 revenue by region")
+        );
+        assert_eq!(screen_line("  "), None);
+        let long = "word ".repeat(400);
+        let line = screen_line(&long).unwrap();
+        assert!(line.ends_with("word…") && line.chars().count() <= 601);
+    }
+
+    #[test]
+    fn a_screenshots_words_sit_where_it_was_taken() {
+        let lines = vec![
+            PromptLine {
+                at_ms: 1_000,
+                who: "You",
+                text: "Here is the dashboard.",
+            },
+            PromptLine {
+                at_ms: 9_000,
+                who: "Them",
+                text: "The EMEA number looks low.",
+            },
+        ];
+        let screens = vec![
+            (4_000, "Revenue by region".to_string()),
+            (20_000, "Pipeline".to_string()),
+        ];
+        let merged = with_screens(lines, &screens);
+        let shape: Vec<(&str, i64)> = merged.iter().map(|l| (l.who, l.at_ms)).collect();
+        assert_eq!(
+            shape,
+            [
+                ("You", 1_000),
+                ("Screen", 4_000),
+                ("Them", 9_000),
+                ("Screen", 20_000)
+            ]
+        );
+        assert!(transcript_parts(&merged)[0].contains("[0:04] Screen: Revenue by region"));
+        assert!(SUMMARY_SYSTEM.contains("Lines marked Screen"));
+
+        // The meeting's name and the person's own notes open the transcript.
+        let notes = own_notes_line(" ask about EMEA \n\n  budget cut?  ").unwrap();
+        assert_eq!(notes, "ask about EMEA; budget cut?");
+        assert_eq!(own_notes_line(" \n "), None);
+        let opened = with_context(merged, Some("Quarterly review"), Some(&notes));
+        assert_eq!(
+            (opened[0].who, opened[0].text, opened[1].who),
+            ("Title", "Quarterly review", "Notes")
+        );
+        assert_eq!(opened.len(), 6);
+        let lines = vec![PromptLine {
+            at_ms: 0,
+            who: "You",
+            text: "Hello.",
+        }];
+        assert_eq!(with_context(lines, None, Some("  ")).len(), 1);
     }
 
     #[test]

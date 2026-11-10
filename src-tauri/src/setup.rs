@@ -121,6 +121,7 @@ pub fn scene_target() -> Option<AppInfo> {
         title: String::new(),
         site: None,
         category,
+        markup: crate::format_rules::markup_for(category.as_str(), "", None, ""),
     })
 }
 

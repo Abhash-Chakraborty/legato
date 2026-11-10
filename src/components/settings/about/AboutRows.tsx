@@ -3,11 +3,19 @@ import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
 import { emit } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink } from "@/icons";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { Button } from "../../ui/Button";
 import { useSettings } from "../../../hooks/useSettings";
 import { useUpdateStore } from "../../../stores/updateStore";
+import { useNavStore } from "../../../stores/navStore";
+import { toast } from "sonner";
+import { WhatsNewModal } from "../../whats-new/WhatsNewModal";
+import {
+  findLatestReleaseNote,
+  type ReleaseNote,
+} from "../../whats-new/releaseNotes";
+import { showTourAgain } from "../../pages/home/GetToKnow";
 
 const SOURCE_URL = "https://github.com/Abhash-Chakraborty/legato";
 
@@ -79,6 +87,67 @@ export const SourceCodeRow: React.FC = () => {
         <ExternalLink className="h-4 w-4" aria-hidden="true" />
         {t("settings.about.sourceCode.button")}
       </Button>
+    </SettingContainer>
+  );
+};
+
+/** What changed in this version, shown again on request. */
+export const WhatsNewRow: React.FC = () => {
+  const { t } = useTranslation();
+  const [note, setNote] = useState<ReleaseNote | null>(null);
+  const show = () => {
+    const latest = findLatestReleaseNote();
+    if (latest) setNote(latest);
+    else toast(t("settings.about.whatsNew.none"));
+  };
+  return (
+    <>
+      <SettingContainer
+        title={t("settings.about.whatsNew.title")}
+        description={t("settings.about.whatsNew.description")}
+      >
+        <Button variant="secondary" onClick={show}>
+          {t("settings.about.whatsNew.button")}
+        </Button>
+      </SettingContainer>
+      {note && (
+        <WhatsNewModal note={note} open onDismiss={() => setNote(null)} />
+      )}
+    </>
+  );
+};
+
+/** Setup from the start, and the Get to know Legato list back on Home. */
+export const SetupAgainRow: React.FC = () => {
+  const { t } = useTranslation();
+  const go = useNavStore((s) => s.go);
+  return (
+    <SettingContainer
+      title={t("settings.about.setupAgain.title")}
+      description={t("settings.about.setupAgain.description")}
+    >
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button
+          variant="secondary"
+          onClick={() => {
+            showTourAgain();
+            go("home");
+            toast(t("settings.about.setupAgain.tourShown"));
+          }}
+        >
+          {t("settings.about.setupAgain.tour")}
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent("legato:setup", { detail: { step: "mic" } }),
+            )
+          }
+        >
+          {t("settings.about.setupAgain.button")}
+        </Button>
+      </div>
     </SettingContainer>
   );
 };

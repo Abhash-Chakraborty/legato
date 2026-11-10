@@ -1,7 +1,7 @@
 import React, { useId, useState } from "react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, Pin, Settings2, X } from "lucide-react";
+import { ChevronDown, Pin, Settings2, X } from "@/icons";
 import { commands, type DictionaryView, type LearnMode } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { Button } from "../../ui/Button";

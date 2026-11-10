@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw } from "@/icons";
 import { commands, events, type TrashItem, type TrashKind } from "@/bindings";
 import { relativeTime } from "../pages/dictionary/list";
 import { durationLabel } from "../notes/notes";

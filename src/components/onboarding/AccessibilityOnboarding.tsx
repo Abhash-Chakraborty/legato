@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { commands } from "@/bindings";
 import { useSettingsStore } from "@/stores/settingsStore";
 import LegatoLogo from "../icons/LegatoLogo";
-import { Mic, Check, Loader2 } from "lucide-react";
+import { Mic, Check, Loader2 } from "@/icons";
 
 interface AccessibilityOnboardingProps {
   onComplete: () => void;

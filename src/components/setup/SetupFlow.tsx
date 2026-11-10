@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { Check, ChevronLeft } from "lucide-react";
+import { Check, ChevronLeft } from "@/icons";
 import { commands, events } from "@/bindings";
 import type { Page } from "../../stores/navStore";
 import LegatoGlyph from "../icons/LegatoGlyph";

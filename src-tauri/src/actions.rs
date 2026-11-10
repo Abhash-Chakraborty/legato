@@ -494,9 +494,10 @@ pub(crate) async fn process_transcription_output(
         if medium {
             stage(Stage::Polishing);
             let place = crate::ai_rules::Place {
-                app: target.map(|a| a.name.as_str()),
+                app: target.map(|a| a.place()),
                 category,
                 your_name: Some(settings.your_name.as_str()),
+                markup: target.map(|a| a.markup),
             };
             match ai::medium_pass(app, &settings, &styled, marked.hits.len(), &place).await {
                 Ok(Some(cleaned)) => styled = cleaned,
@@ -506,8 +507,8 @@ pub(crate) async fn process_transcription_output(
         }
         styled = style_rules::apply(&styled, category, tone);
     }
-    let text = if marked.hits.is_empty() {
-        styled
+    let restore: Box<dyn Fn(&str) -> String + Send + Sync> = if marked.hits.is_empty() {
+        Box::new(|text: &str| text.to_string())
     } else {
         let wanted = |test: fn(&str) -> bool| {
             marked
@@ -524,10 +525,24 @@ pub(crate) async fn process_transcription_output(
                 .then(|| crate::selection::copy_selection(app).ok().flatten())
                 .flatten(),
         };
-        snippet_rules::unmark(&styled, &marked.hits, |id| {
-            snippet_rules::fill(snippets.text_of(id).unwrap_or_default(), &vars)
+        // Each snippet is filled once, so the dictated text and a
+        // transform's version of it carry the same date and clipboard.
+        let filled: Vec<String> = marked
+            .hits
+            .iter()
+            .map(|id| snippet_rules::fill(snippets.text_of(*id).unwrap_or_default(), &vars))
+            .collect();
+        let hits = marked.hits.clone();
+        Box::new(move |text: &str| {
+            snippet_rules::unmark(text, &hits, |id| {
+                hits.iter()
+                    .position(|h| *h == id)
+                    .and_then(|i| filled.get(i).cloned())
+                    .unwrap_or_default()
+            })
         })
     };
+    let text = restore(&styled);
     let snippet_hits = marked.hits;
 
     let mut final_text = text.clone();
@@ -542,10 +557,37 @@ pub(crate) async fn process_transcription_output(
         stage(Stage::Transforming);
         let started = Instant::now();
         let timeout = crate::ai::dictation_timeout(&settings);
-        let app_name = target.map(|a| a.name.as_str());
-        match crate::transforms::apply(app, &settings, &chosen, &final_text, app_name, timeout)
+        // The transform sees snippets as markers, so saved text comes out
+        // as saved; a dictation that is one snippet has nothing to rewrite.
+        let placeholders = snippet_hits.len();
+        let given = if placeholders > 0 {
+            snippet_rules::to_ai(&styled)
+        } else {
+            final_text.clone()
+        };
+        let result = if marked.whole {
+            Ok(None)
+        } else {
+            crate::transforms::apply(
+                app,
+                &settings,
+                &chosen,
+                &given,
+                &crate::transforms::destination(target),
+                placeholders,
+                timeout,
+            )
             .await
-        {
+        };
+        let result = result.map(|answer| {
+            answer.and_then(|answer| {
+                if placeholders == 0 {
+                    return Some(answer);
+                }
+                snippet_rules::from_ai(&answer, placeholders).map(|marked| restore(&marked))
+            })
+        });
+        match result {
             Ok(Some(processed_text)) => {
                 transform_run = Some(crate::transforms::DictationTransform {
                     id: chosen.id.clone(),
@@ -1128,15 +1170,27 @@ impl ShortcutAction for TranscribeAction {
 
                             let fixes = processed.all_fixes(&fixes);
                             if !fixes.is_empty() {
-                                let words: Vec<&str> =
-                                    fixes.iter().map(|f| f.to.as_str()).collect();
-                                ah.state::<Arc<DictionaryManager>>().record_fixes(
-                                    &words,
-                                    app_info
-                                        .as_ref()
-                                        .filter(|_| remember_app)
-                                        .map(|a| (a.name.as_str(), Some(a.exe_path.as_str()))),
-                                );
+                                // Counted off to the side: it reloads the
+                                // Dictionary, which the paste needn't wait
+                                // for.
+                                let dictionary =
+                                    ah.state::<Arc<DictionaryManager>>().inner().clone();
+                                let words: Vec<String> =
+                                    fixes.iter().map(|f| f.to.clone()).collect();
+                                let fixed_in = app_info
+                                    .as_ref()
+                                    .filter(|_| remember_app)
+                                    .map(|a| (a.name.clone(), a.exe_path.clone()));
+                                std::thread::spawn(move || {
+                                    let words: Vec<&str> =
+                                        words.iter().map(String::as_str).collect();
+                                    dictionary.record_fixes(
+                                        &words,
+                                        fixed_in.as_ref().map(|(name, path)| {
+                                            (name.as_str(), Some(path.as_str()))
+                                        }),
+                                    );
+                                });
                             }
 
                             ah.state::<Arc<crate::managers::snippets::SnippetManager>>()
@@ -1567,6 +1621,7 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         ("correct_last", crate::correct::shortcut),
         ("copy_last", crate::transforms::copy_last),
         ("toggle_notes", crate::notes::toggle),
+        ("note_screenshot", crate::note_shots::shortcut),
     ] {
         map.insert(
             id.to_string(),

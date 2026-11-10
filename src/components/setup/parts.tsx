@@ -1,5 +1,5 @@
 import React from "react";
-import { FileText, Mail, MessageCircle } from "lucide-react";
+import { FileText, Mail, MessageCircle } from "@/icons";
 import { formatKeyCombination } from "../../lib/utils/keyboard";
 import type { Scene } from "./setup";
 

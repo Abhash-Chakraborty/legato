@@ -1649,6 +1649,12 @@ pub fn get_default_settings() -> AppSettings {
             "super+alt+m",
         ),
         (
+            "note_screenshot",
+            "Screenshot into notes",
+            "While a note records, puts a screenshot of the screen into it.",
+            "super+alt+p",
+        ),
+        (
             crate::inyon::COMPANION_BINDING,
             "Talk to the companion",
             "Hold it and speak to Inyon's companion agent; its reply shows on the bar.",
@@ -1870,6 +1876,13 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
             }
         }
         // Every transform has a binding, empty when it has no shortcut.
+        // A shipped prompt nobody edited takes its current wording.
+        for transform in &mut settings.transforms {
+            if let Some(prompt) = crate::transform_rules::refreshed_prompt(transform) {
+                transform.prompt = prompt.to_string();
+                updated = true;
+            }
+        }
         if ensure_transform_bindings(&mut settings) {
             updated = true;
         }

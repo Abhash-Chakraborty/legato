@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, Mic, Square } from "lucide-react";
+import { Check, Mic, Square } from "@/icons";
 import { commands, events, type Note } from "@/bindings";
 import { takeDictation, useNotesStore } from "../../../stores/notesStore";
 import { Button } from "../../ui/Button";

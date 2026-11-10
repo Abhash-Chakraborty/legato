@@ -1,13 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Merge,
-  Pencil,
-  Pin,
-  PinOff,
-  Trash2,
-  type LucideIcon,
-} from "lucide-react";
+import { Merge, Pencil, Pin, PinOff, Trash2, type LucideIcon } from "@/icons";
 import type { DictionaryEntry } from "@/bindings";
 import { AppIcon } from "../home/AppIcon";
 import { isLearned, relativeTime, shortDate } from "./list";

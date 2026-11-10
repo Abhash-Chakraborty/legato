@@ -208,13 +208,25 @@ fn apply_dictionary(
     body: Option<&Value>,
     now: i64,
 ) -> Result<Applied> {
-    let existing: Option<i64> = conn
+    let mut existing: Option<i64> = conn
         .query_row(
             "SELECT id FROM dictionary_entry WHERE text = ?1 COLLATE NOCASE",
             [key],
             |r| r.get(0),
         )
         .optional()?;
+    // The key is the word in lower case, and SQLite's NOCASE only knows
+    // A to Z: "Österreich" is found by comparing as the key was made.
+    if existing.is_none() && !key.is_ascii() {
+        let mut stmt = conn.prepare("SELECT id, text FROM dictionary_entry")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        existing = rows
+            .into_iter()
+            .find(|(_, text)| text.to_lowercase() == key)
+            .map(|(id, _)| id);
+    }
     let Some(body) = body else {
         if let Some(id) = existing {
             conn.execute("DELETE FROM dictionary_heard WHERE entry_id = ?1", [id])?;

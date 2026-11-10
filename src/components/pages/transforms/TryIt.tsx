@@ -1,11 +1,12 @@
 import React, { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { History, Play } from "lucide-react";
+import { History, Play } from "@/icons";
 import {
   commands,
   type AiStatus,
   type PostProcessProvider,
   type Transform,
+  type TryPlace,
 } from "@/bindings";
 import { Button } from "../../ui/Button";
 import { Dropdown } from "../../ui/Dropdown";
@@ -13,6 +14,18 @@ import { DiffText } from "../../shared/DiffText";
 import { finalText } from "../home/format";
 import { formatRunTime } from "./list";
 import { modelLine, providerFor } from "./model";
+
+/** Apps to try a transform as if the text went there: each shows
+ *  formatting its own way and calls for its own kind of text. */
+const PLACES: (TryPlace & { id: string })[] = [
+  { id: "whatsapp", app: "WhatsApp", category: "personal" },
+  { id: "telegram", app: "Telegram", category: "personal" },
+  { id: "slack", app: "Slack", category: "work" },
+  { id: "mattermost", app: "Mattermost", category: "work" },
+  { id: "gmail", app: "Gmail", category: "email" },
+  { id: "word", app: "Word", category: "documents" },
+  { id: "claude", app: "Claude", category: "ai" },
+];
 
 type Outcome =
   | { kind: "text"; before: string; text: string; ms: number }
@@ -59,13 +72,14 @@ export const TryIt: React.FC<TryItProps> = ({
   const textId = useId();
   const [id, setId] = useState(initialId ?? transforms[0]?.id ?? "");
   const [text, setText] = useState("");
+  const [placeId, setPlaceId] = useState("none");
   const [running, setRunning] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [view, setView] = useState<"changes" | "result">("changes");
   const [noRecent, setNoRecent] = useState(false);
 
   const transform = transforms.find((x) => x.id === id) ?? transforms[0];
-  useEffect(() => setOutcome(null), [id]);
+  useEffect(() => setOutcome(null), [id, placeId]);
 
   const loadRecent = async () => {
     const result = await commands
@@ -91,8 +105,13 @@ export const TryIt: React.FC<TryItProps> = ({
     if (!transform || !text.trim() || running) return;
     setRunning(true);
     const before = text;
+    const place = PLACES.find((p) => p.id === placeId);
     const result = await commands
-      .tryTransform(transform, before)
+      .tryTransform(
+        transform,
+        before,
+        place ? { app: place.app, category: place.category } : null,
+      )
       .catch(() => null);
     setRunning(false);
     if (!result || result.status === "error") {
@@ -132,6 +151,19 @@ export const TryIt: React.FC<TryItProps> = ({
             onSelect={setId}
           />
         )}
+        <Dropdown
+          className="w-[190px]"
+          ariaLabel={t("transforms.try.place")}
+          options={[
+            { value: "none", label: t("transforms.try.anyApp") },
+            ...PLACES.map((p) => ({
+              value: p.id,
+              label: t("transforms.try.inApp", { app: p.app }),
+            })),
+          ]}
+          selectedValue={placeId}
+          onSelect={setPlaceId}
+        />
         <Button
           onClick={run}
           disabled={!text.trim() || running}

@@ -15,6 +15,8 @@ pub mod transforms;
 pub mod ai_rules;
 #[path = "../../../src-tauri/src/cleanup_rules.rs"]
 pub mod cleanup_rules;
+#[path = "../../../src-tauri/src/format_rules.rs"]
+pub mod format_rules;
 #[path = "../../../src-tauri/src/inyon_rules.rs"]
 pub mod inyon_rules;
 #[path = "../../../src-tauri/src/learn_rules.rs"]
@@ -670,7 +672,19 @@ impl Phone {
         self.save_dictation(text, app, "not_pasted")
     }
 
+    /// Puts back a dictation deleted a moment ago, where it was: with the
+    /// time it had, not now. It's a new entry to the PC, which was told the
+    /// old one is gone.
+    pub fn restore_dictation(&self, text: &str, app: &str, at: i64, cancelled: bool) -> Result<()> {
+        let status = if cancelled { "cancelled" } else { "pasted" };
+        self.save_dictation_at(text, app, status, at)
+    }
+
     fn save_dictation(&self, text: &str, app: &str, status: &str) -> Result<()> {
+        self.save_dictation_at(text, app, status, now_s())
+    }
+
+    fn save_dictation_at(&self, text: &str, app: &str, status: &str, at: i64) -> Result<()> {
         let words = text.split_whitespace().count() as i64;
         let app = if app.trim().is_empty() {
             "Phone"
@@ -681,7 +695,7 @@ impl Phone {
             "INSERT INTO transcription_history (file_name, timestamp, title, transcription_text,
                 app_name, word_count, status)
              VALUES ('', ?1, 'Phone', ?2, ?3, ?4, ?5)",
-            params![now_s(), text, app, words, status],
+            params![at, text, app, words, status],
         )?;
         Ok(())
     }

@@ -319,21 +319,45 @@ pub struct TryOutcome {
     pub problem: Option<AiStatusKind>,
 }
 
+/// An app to try a transform as if the text went there.
+#[derive(Deserialize, Type)]
+pub struct TryPlace {
+    /// The app's or site's name, such as "WhatsApp".
+    pub app: String,
+    pub category: crate::context::AppCategory,
+}
+
 /// Runs a transform on sample text without pasting it, for Try it. The
-/// transform may be unsaved, as in the editor.
+/// transform may be unsaved, as in the editor. With a `place`, it runs as
+/// it would for text going into that app.
 #[tauri::command]
 #[specta::specta]
 pub async fn try_transform(
     app: AppHandle,
     transform: Transform,
     text: String,
+    place: Option<TryPlace>,
 ) -> Result<TryOutcome, String> {
     if text.trim().is_empty() {
         return Err("Type or paste some text first".to_string());
     }
     let settings = get_settings(&app);
     let started = Instant::now();
-    let result = transforms::apply(&app, &settings, &transform, &text, None, TRY_TIMEOUT).await;
+    let to = match &place {
+        Some(p) => crate::transform_rules::Destination {
+            app: Some(p.app.as_str()),
+            category: Some(p.category.as_str()),
+            markup: Some(crate::format_rules::markup_for(
+                p.category.as_str(),
+                &p.app,
+                None,
+                "",
+            )),
+            phone: false,
+        },
+        None => Default::default(),
+    };
+    let result = transforms::apply(&app, &settings, &transform, &text, &to, 0, TRY_TIMEOUT).await;
     let ms = started.elapsed().as_millis() as u32;
     Ok(match result {
         Ok(text) => TryOutcome {

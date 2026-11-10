@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Search } from "lucide-react";
+import { Search } from "@/icons";
 import { commands, type Note } from "@/bindings";
 import { isYou, taskGroups, whenLabel, type TaskShow } from "../../notes/notes";
 import { Titled } from "./SummaryTab";

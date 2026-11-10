@@ -25,6 +25,7 @@ mod document;
 mod edit_reader;
 mod elevation;
 pub mod engine_supervisor;
+mod format_rules;
 mod handy_migration;
 mod input;
 mod inyon;
@@ -37,6 +38,7 @@ pub mod mcp;
 mod mcp_rules;
 mod mic_rules;
 mod note_copies;
+mod note_shots;
 mod notes;
 mod notes_panel;
 mod notes_rules;
@@ -1111,6 +1113,7 @@ pub fn run(cli_args: CliArgs) {
             commands::style::get_style_apps,
             commands::style::move_app,
             commands::style::add_site,
+            commands::style::set_app_markup,
             commands::style::restore_app_defaults,
             commands::style::pick_window,
             commands::style::preview_style,
@@ -1203,6 +1206,11 @@ pub fn run(cli_args: CliArgs) {
             commands::notes::summarise_note,
             commands::notes::summarise_note_as,
             commands::notes::name_note_with_ai,
+            commands::notes::take_note_screenshot,
+            commands::notes::delete_note_screenshot,
+            commands::notes::restore_note_screenshot,
+            commands::notes::copy_note_screenshot,
+            commands::notes::get_notes_folder,
             commands::notes::ask_note,
             commands::notes::notes_what_did_i_miss,
             commands::notes::ask_all_notes,

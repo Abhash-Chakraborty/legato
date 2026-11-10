@@ -8,7 +8,7 @@ import {
   Eraser,
   Replace,
   type LucideIcon,
-} from "lucide-react";
+} from "@/icons";
 import { commands, type TodayFix } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useSettingsStore } from "../../../stores/settingsStore";

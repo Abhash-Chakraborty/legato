@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { CornerDownLeft } from "lucide-react";
+import { CornerDownLeft } from "@/icons";
 import { pieces } from "./list";
 
 /** A snippet's text on one line: variables as chips, line breaks as ↵. */

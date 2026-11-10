@@ -9,7 +9,7 @@ import {
   Languages,
   RefreshCw,
   Search,
-} from "lucide-react";
+} from "@/icons";
 import type { ModelCardStatus } from "@/components/onboarding";
 import { ModelCard } from "@/components/onboarding";
 import { useModelStore } from "@/stores/modelStore";

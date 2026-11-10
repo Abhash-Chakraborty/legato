@@ -9,7 +9,7 @@ import {
   Languages,
   Loader2,
   Trash2,
-} from "lucide-react";
+} from "@/icons";
 import type { ModelInfo } from "@/bindings";
 import { formatModelSize } from "../../lib/utils/format";
 import {

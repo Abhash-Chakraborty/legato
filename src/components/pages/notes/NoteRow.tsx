@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Mic, Trash2, Users } from "lucide-react";
+import { Mic, Trash2, Users } from "@/icons";
 import type { Note, NoteLine } from "@/bindings";
 import { AppIcon } from "../home/AppIcon";
 import { clock, durationLabel, whenLabel } from "../../notes/notes";

@@ -27,7 +27,7 @@ A new install starts with dictation only, and the last step of setup asks which 
 
 ## Shortcuts
 
-Keys that work in any app, even with the window closed: Dictate and Shortcut behaviour, Dictate then transform, Cancel and Add selection to Dictionary; Transform the selection, Ask and Show the last changes; Open Scratchpad; Start or stop notes; Talk to the companion for Inyon; Paste last dictation, Copy last dictation and Correct last dictation; and the Keyboard backend. See [Dictation](dictation.md).
+Keys that work in any app, even with the window closed: Dictate and Shortcut behaviour, Dictate then transform, Cancel and Add selection to Dictionary; Transform the selection, Ask and Show the last changes; Open Scratchpad; Start or stop notes and Screenshot into notes; Talk to the companion for Inyon; Paste last dictation, Copy last dictation and Correct last dictation; and the Keyboard backend. See [Dictation](dictation.md).
 
 ## Audio
 
@@ -80,7 +80,7 @@ History: Keep at most and Keep recordings. Apps: Remember which app I dictated i
 
 ## About
 
-Updates: the version, Check for updates automatically and Show what's new after an update. Troubleshooting: App data and Logs open their folders. Open source: a link to the source code.
+Updates: the version, Check for updates automatically, Show what's new after an update, What's new in this version (the same list again, whenever you want it) and Setup and the tour: Run setup again, and Show the list on Home for [Get to know Legato](getting-started.md#get-to-know-legato). Troubleshooting: App data and Logs open their folders. Open source: a link to the source code.
 
 Legato looks for a new version when it starts, and nothing installs until you choose to. To force checks off without changing the setting, set the environment variable `LEGATO_DISABLE_UPDATER=1` before Legato starts. The switch then shows "Disabled by system configuration (LEGATO_DISABLE_UPDATER)" and can't be turned back on.
 

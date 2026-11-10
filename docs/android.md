@@ -83,6 +83,8 @@ Transforms rewrite text with the AI provider you set up on your PC.
 - **On selected text:** select text in any app and pick Transform from its menu.
 - **In Legato:** transform a dictation in Home, a Scratchpad note (or just the selected part) or a note's transcript, from its menu.
 
+A transform is told what kind of app you're typing in, and its result is written the way that app shows formatting: `*bold*` in WhatsApp, `**bold**` in Telegram, Markdown in Mattermost and Discord, plain text in an email. When the transform runs on the PC, it knows only the kind of app, so a chat gets plain text.
+
 Without a shared key, transforms run on the PC while the phone is connected, and the PC's AI key stays there. Turn on Share AI keys with your phone on the PC (Settings › Devices) and the phone sends transforms straight to your AI provider, connected or not, and asks the PC only if that fails. The phone keeps the key sealed in its secure hardware, and with it, what the phone writes up with its own model gets the same AI cleanup as on your PC. Settings › Transforms › Where they run says which applies. See [Transforms, Ask and your AI provider](transforms.md).
 
 ## Shared clipboard

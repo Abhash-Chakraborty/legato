@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowRight, History } from "lucide-react";
+import { ArrowRight, History } from "@/icons";
 import { toast } from "sonner";
 import {
   commands,

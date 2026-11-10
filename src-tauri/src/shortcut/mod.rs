@@ -169,7 +169,7 @@ pub fn binding_is_active(settings: &AppSettings, id: &str, binding: &ShortcutBin
     let transforms_on = settings.post_process_enabled;
     match id {
         "transcribe_with_post_process" | "transform_selection" | "view_changes" => transforms_on,
-        "toggle_notes" => settings.notes_enabled,
+        "toggle_notes" | "note_screenshot" => settings.notes_enabled,
         "open_scratchpad" => settings.scratchpad_enabled,
         "ask" => transforms_on && settings.ask_enabled,
         crate::inyon::COMPANION_BINDING => settings.inyon.hub.is_some(),

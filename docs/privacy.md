@@ -44,7 +44,7 @@ With Let AI apps read Legato on, AI apps on this PC can read your dictations, no
 
 A paired phone connects straight to the PC: over Wi-Fi when they share a network, over Bluetooth when they don't. There's no account and no server in between. The link is TLS with a certificate on both sides, and after pairing each side accepts only the other's certificate. The PC listens for phones only while pairing is open or a phone is paired.
 
-Your Dictionary, snippets, history, notes, Scratchpad, transforms and style tones sync. You can switch each kind off in Settings › Devices › What syncs. Audio recordings, speech models, the microphone, shortcuts, the paste method and Legato bar settings never sync.
+Your Dictionary, snippets, history, notes, Scratchpad, transforms and style tones sync. You can switch each kind off in Settings › Devices › What syncs. Audio recordings, screenshots in notes, speech models, the microphone, shortcuts, the paste method and Legato bar settings never sync.
 
 API keys stay on the PC unless you turn on Share AI keys with your phone. Then they go only over the encrypted link, and the phone keeps them encrypted. See [Legato for Android](android.md) and the [phone sync protocol](phone-sync.md#what-syncs).
 

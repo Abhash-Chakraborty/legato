@@ -151,12 +151,20 @@ windows = { version = "0.62.2", features = [
   "Win32_Storage_EnhancedStorage",
   "Data_Xml_Dom",
   "Media_Control",
+  "Media_Ocr",
+  "Graphics_Imaging",
+  "Storage_Streams",
   "Foundation",
   "UI_Notifications",
   "Win32_UI_WindowsAndMessaging",
 ] }
-# App icons for the history list (context.rs); the version tauri already uses.
-image = { version = "0.25", default-features = false, features = ["png"] }
+# App icons for the history list (context.rs) and screenshots in notes
+# (note_shots.rs); the version tauri already uses.
+image = { version = "0.25", default-features = false, features = [
+  "png",
+  "webp",
+  "jpeg",
+] }
 winreg = "0.55"
 
 # Whisper backend per Windows arch. x86_64 ships the Vulkan GPU backend and

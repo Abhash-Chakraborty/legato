@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { AppWindow, Copy, History } from "lucide-react";
+import { AppWindow, Copy, History } from "@/icons";
 import { commands, type ScratchNote } from "@/bindings";
 import { useScratchStore } from "../../../stores/scratchStore";
 import { Button } from "../../ui/Button";

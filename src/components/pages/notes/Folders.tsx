@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { ChevronDown, Folder, FolderPlus } from "lucide-react";
+import { ChevronDown, Folder, FolderPlus } from "@/icons";
 import { commands, type Note, type NoteFolder } from "@/bindings";
 import { ActionMenu } from "../../ui/ActionMenu";
 import { Button } from "../../ui/Button";

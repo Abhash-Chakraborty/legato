@@ -234,6 +234,22 @@ pub fn find(conn: &Connection, text: &str) -> Result<Option<DictionaryEntry>> {
     }
 }
 
+/// The word that has `form` among its other forms ("Abhash" for "Abhash
+/// Chakraborty"), if one does.
+pub fn find_by_also(conn: &Connection, form: &str) -> Result<Option<DictionaryEntry>> {
+    let id: Option<i64> = conn
+        .query_row(
+            "SELECT entry_id FROM dictionary_also WHERE form = ?1 COLLATE NOCASE",
+            params![clean_word(form)],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match id {
+        Some(id) => get(conn, id),
+        None => Ok(None),
+    }
+}
+
 /// Every word, oldest first.
 pub fn list(conn: &Connection) -> Result<Vec<DictionaryEntry>> {
     let mut stmt = conn.prepare(&format!(
@@ -704,7 +720,9 @@ pub fn is_known(conn: &Connection, word: &str, heard: &str) -> Result<bool> {
         return Ok(true);
     }
     let Some(entry) = find(conn, word)? else {
-        return Ok(false);
+        // Another form of a word you have is right as it is: nothing to
+        // propose, and learning it would split the word in two.
+        return Ok(find_by_also(conn, word)?.is_some());
     };
     Ok(entry.text == clean_word(word)
         && (entry.heard.iter().any(|h| h.eq_ignore_ascii_case(heard))
@@ -887,6 +905,20 @@ pub fn learn(
     now: i64,
 ) -> Result<Learned> {
     let heard: Vec<String> = heard.map(|h| vec![h.to_string()]).unwrap_or_default();
+    // A correction to another form of a word ("Abhash" for "Abhash
+    // Chakraborty") stays that word's: a new entry would take the form
+    // away from it. Its heard forms turn into the word itself, so the
+    // misheard version isn't added to them.
+    if find(conn, word)?.is_none() {
+        if let Some(owner) = find_by_also(conn, word)? {
+            return Ok(Learned {
+                entry: owner.clone(),
+                created: false,
+                extended: false,
+                before: Some(owner),
+            });
+        }
+    }
     match find(conn, word)? {
         Some(before) => {
             let tx = conn.transaction()?;
@@ -1459,6 +1491,39 @@ mod tests {
         assert_eq!(list(&conn).unwrap(), before);
         assert_eq!(before[0].hits, 1);
         assert_eq!(before[0].last_app.as_deref(), Some("Slack"));
+    }
+
+    #[test]
+    fn a_fix_to_another_form_of_a_word_stays_with_the_word() {
+        let mut conn = db();
+        let mut full = input("Abhash Chakraborty", &[]);
+        full.also = vec!["Abhash".into()];
+        let entry = add(&mut conn, &full, DictionarySource::Manual, 1).unwrap();
+        // Already right as it is: nothing to propose.
+        assert!(is_known(&conn, "Abhash", "a bash").unwrap());
+        // Learned anyway (Add automatically), it doesn't become a word of
+        // its own and take the form away.
+        let learned = learn(
+            &mut conn,
+            "Abhash",
+            Some("a bash"),
+            DictionarySource::Fixed,
+            true,
+            None,
+            2,
+        )
+        .unwrap();
+        assert!(!learned.created && !learned.extended);
+        assert_eq!(learned.entry.id, entry.id);
+        let all = list(&conn).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].also, vec!["Abhash"]);
+        assert!(all[0].heard.is_empty());
+        assert_eq!(
+            find_by_also(&conn, "abhash").unwrap().map(|e| e.id),
+            Some(entry.id)
+        );
+        assert!(find_by_also(&conn, "Chakraborty").unwrap().is_none());
     }
 
     #[test]

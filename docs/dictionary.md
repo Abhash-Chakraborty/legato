@@ -62,6 +62,8 @@ Learn from my edits is on by default. Find it under Learning and matching on the
 - **Ask first**, the default: the word waits under Needs review, and the bar says "Spotted …". Add it, Edit it first, or Don't learn. Add all takes every word at once. On the keyboard, Enter adds the selected word, E edits it and Delete turns it down.
 - **Add automatically**: the word goes straight into the Dictionary, and the bar says so with Undo.
 
+Everyday editing isn't learned: making "its" into "it's", "deploy" into "deployed" or "10am" into "11am" fixes the text and teaches nothing. A fix to a word you already have under Also written as stays with that word. A dictation of a word or two can teach when you fix it with Correct.
+
 Words you turn down land in Never learn, and Learn from my edits never proposes them again. Edit the list there to let a word be learned again.
 
 ## Spelled differently each time
@@ -79,6 +81,12 @@ Matching, under Learning and matching, sets how close a heard word must be to on
 | Loose   | Catches more misses, and may now and then correct a word that was right.         |
 
 A few rules keep matching from changing words that were right. A run of ordinary words is never read as one of yours, so "a bash script" stays as it is even with a name such as "Abaash" in your Dictionary. A heard-as form inside its own word written out in full is left alone, and a misspelled surname after a first name you have as a word of its own is still fixed.
+
+- **Endings stay.** A possessive or a plural keeps its ending: "Dokploi's dashboard" becomes "Dokploy's dashboard".
+- **Capitals are the word's own.** "AWS Lamda" becomes "AWS Lambda" and "Iphone" becomes "iPhone". A word you saved in lower case still takes a capital at the start of a sentence.
+- **Numbers must match.** With "iPhone 15" in your Dictionary, "iPhone 16" is left as it is.
+- **Names inside names.** With "carol" heard as "Karol" and "Carol Danvers" also in your Dictionary, "Carol Danvers" stays whole.
+- **Ordinary words as heard-as forms.** A heard-as form that is also a real word, such as "carol", is replaced until Legato has seen the word in your dictations. After that it's replaced only in a dictation that has the words yours usually comes with, so "neon sign" stays when "Neon" is heard for "Inyon".
 
 Vocabulary hint, in the same card, shows the list the speech model receives before each dictation, in order.
 

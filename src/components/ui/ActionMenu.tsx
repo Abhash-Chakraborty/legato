@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Check, type LucideIcon } from "lucide-react";
+import { Check, type LucideIcon } from "@/icons";
 import { reveal } from "../../lib/utils/reveal";
 
 export type ActionMenuItem =

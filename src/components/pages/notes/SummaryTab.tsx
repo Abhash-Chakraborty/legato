@@ -12,13 +12,15 @@ import {
   Play,
   RotateCw,
   Users,
-} from "lucide-react";
+} from "@/icons";
 import {
   commands,
   type AiStatus,
   type AiStatusKind,
   type Note,
+  type NoteShot,
 } from "@/bindings";
+import { ShotThumb, ShotViewer, useNotesFolder } from "../../notes/NoteShots";
 import { useSettings } from "../../../hooks/useSettings";
 import { describeAi } from "../../../lib/utils/aiStatus";
 import { useAiStore, watchAi } from "../../../stores/aiStore";
@@ -317,6 +319,8 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
   const [regenerating, setRegenerating] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [done, setDone] = useState<Record<number, boolean>>({});
+  const [openShot, setOpenShot] = useState<number | null>(null);
+  const dir = useNotesFolder();
 
   useEffect(watchAi, []);
   useEffect(() => setDone({}), [note.id, note.summary_at]);
@@ -399,6 +403,40 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
       {clock(ms)}
     </button>
   );
+  // A screenshot goes under the last topic that began before it was
+  // taken. Ones from before the first timed topic, or in a summary whose
+  // topics have no times, are listed on their own.
+  const shots = note.shots ?? [];
+  const topicShots: NoteShot[][] = topics.map(() => []);
+  const looseShots: NoteShot[] = [];
+  for (const shot of shots) {
+    let owner = -1;
+    topics.forEach((topic, i) => {
+      if (
+        topic.at_ms != null &&
+        topic.at_ms <= shot.at_ms &&
+        (owner < 0 || topic.at_ms >= (topics[owner].at_ms ?? 0))
+      )
+        owner = i;
+    });
+    if (owner >= 0) topicShots[owner].push(shot);
+    else looseShots.push(shot);
+  }
+  const shotStrip = (list: NoteShot[]) =>
+    dir &&
+    list.length > 0 && (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {list.map((shot) => (
+          <ShotThumb
+            key={shot.id}
+            shot={shot}
+            dir={dir}
+            onOpen={() => setOpenShot(shot.id)}
+            className="w-[176px]"
+          />
+        ))}
+      </div>
+    );
   const details = note.outline?.details ?? [];
   const sections = (note.outline?.sections ?? []).filter(
     (s) => s.points.length > 0,
@@ -500,9 +538,27 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
                   <p className="mt-0.5 text-sm leading-relaxed text-text-2">
                     {topic.text}
                   </p>
+                  {shotStrip(topicShots[i] ?? [])}
                 </div>
               ))}
             </div>
+          )}
+          {looseShots.length > 0 && (
+            <section className="mt-6">
+              <h3 className="mb-2 text-sm font-medium">
+                {t("notes.shots.heading")}
+              </h3>
+              {shotStrip(looseShots)}
+            </section>
+          )}
+          {dir && (
+            <ShotViewer
+              shots={shots}
+              open={openShot}
+              setOpen={setOpenShot}
+              dir={dir}
+              onPlay={onPlay}
+            />
           )}
           {sections.map((section, i) => (
             <section key={i} className="mt-6">

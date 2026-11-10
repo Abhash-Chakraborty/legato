@@ -756,6 +756,11 @@ pub async fn medium_pass(
         );
         return Ok(None);
     }
+    // A symbol the model added where the app shows none is taken out.
+    let cleaned = match place.markup {
+        Some(markup) => crate::format_rules::fit_answer(&input, &cleaned, markup),
+        None => cleaned,
+    };
     let Some(restored) = crate::snippet_rules::from_ai(&cleaned, placeholders) else {
         warn!("Cleanup at Medium: the answer lost a snippet, kept the rule-based text");
         return Ok(None);
@@ -765,7 +770,7 @@ pub async fn medium_pass(
 }
 
 /// The single-word heard forms that are real words, for the prompt.
-fn ordinary_forms(heard: &[String]) -> Vec<&str> {
+pub(crate) fn ordinary_forms(heard: &[String]) -> Vec<&str> {
     heard
         .iter()
         .map(String::as_str)
@@ -917,6 +922,7 @@ pub async fn check_on_fixes(app: &AppHandle) -> Result<ai_rules::CheckScore, Str
             app: case.app_name.as_deref(),
             category: case.category.as_deref().unwrap_or("other"),
             your_name: Some(settings.your_name.as_str()),
+            markup: None,
         };
         let system = ai_rules::cleanup_system_prompt(0, &place);
         let request = ai_rules::cleanup_request(&words, heard);

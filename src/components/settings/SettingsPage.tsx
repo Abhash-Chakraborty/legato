@@ -6,7 +6,7 @@ import React, {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, Search, X } from "lucide-react";
+import { Check, Search, X } from "@/icons";
 import { useSettings } from "../../hooks/useSettings";
 import { useTextHighlight } from "../../hooks/useTextHighlight";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -222,7 +222,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               >
                 <Icon
                   aria-hidden
-                  className={`im im-${s.motion ?? "none"} h-[17px] w-[17px] flex-none stroke-[1.75] ${on ? "text-text" : "text-text-3 group-hover:text-text-2"}`}
+                  className={`${s.motion ? `im im-${s.motion}` : ""} h-[17px] w-[17px] flex-none stroke-[1.75] ${on ? "text-text" : "text-text-3 group-hover:text-text-2"}`}
                 />
                 <span className="truncate">
                   {t(`settings.sections.${s.id}.title`)}

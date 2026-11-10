@@ -1661,9 +1661,9 @@ async changeBarShowChangesSetting(enabled: boolean) : Promise<Result<null, strin
     else return { status: "error", error: e  as any };
 }
 },
-async tryTransform(transform: Transform, text: string) : Promise<Result<TryOutcome, string>> {
+async tryTransform(transform: Transform, text: string, place: TryPlace | null) : Promise<Result<TryOutcome, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("try_transform", { transform, text }) };
+    return { status: "ok", data: await TAURI_INVOKE("try_transform", { transform, text, place }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1793,6 +1793,13 @@ async getStyleApps() : Promise<Result<StyleApp[], string>> {
 },
 async moveApp(rule: AppRule, category: AppCategory) : Promise<AppRule[]> {
     return await TAURI_INVOKE("move_app", { rule, category });
+},
+/**
+ * Says how an app or site shows formatting (Markdown, a chat's own
+ * symbols, none), or with null lets Legato tell from the app again.
+ */
+async setAppMarkup(rule: AppRule, markup: Markup | null) : Promise<AppRule[]> {
+    return await TAURI_INVOKE("set_app_markup", { rule, markup });
 },
 async addSite(name: string, category: AppCategory) : Promise<Result<AppRule[], string>> {
     try {
@@ -2352,6 +2359,59 @@ async summariseNote(id: number) : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Takes a screenshot of the screen the pointer is on, for the note being
+ * recorded. Errors are codes: "idle" when nothing records, "failed" when
+ * Windows didn't hand over the screen.
+ */
+async takeNoteScreenshot() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("take_note_screenshot") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Removes a screenshot from its note; returns it, for Undo.
+ */
+async deleteNoteScreenshot(id: number) : Promise<Result<NoteShot | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_note_screenshot", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Puts a removed screenshot back.
+ */
+async restoreNoteScreenshot(shot: NoteShot) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_note_screenshot", { shot }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Puts a screenshot on the clipboard as a picture.
+ */
+async copyNoteScreenshot(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("copy_note_screenshot", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The folder notes keep their audio and screenshots in, so the page can
+ * show a screenshot by its file name.
+ */
+async getNotesFolder() : Promise<string> {
+    return await TAURI_INVOKE("get_notes_folder");
 },
 /**
  * Names the note with your AI; returns the new title. Errors are codes
@@ -3357,7 +3417,28 @@ folder?: string | null;
 /**
  * Corrections to the transcript will update the summary shortly.
  */
-summary_due?: boolean }
+summary_due?: boolean; 
+/**
+ * Screenshots taken while it recorded, in order.
+ */
+shots?: NoteShot[] }
+/**
+ * A screenshot taken while a note recorded.
+ */
+export type NoteShot = { id: number; note_id: number; 
+/**
+ * Milliseconds from the start of the recording.
+ */
+at_ms: number; 
+/**
+ * The picture's file name in the notes folder.
+ */
+file: string; width: number; height: number; bytes: number; 
+/**
+ * The words Windows read on the screen, for the summary; empty when
+ * it read none.
+ */
+text?: string }
 /**
  * A folder of notes, with how many it holds.
  */
@@ -3621,7 +3702,12 @@ pattern: string;
 /**
  * How the Style page names it.
  */
-name: string; category: AppCategory }
+name: string; category: AppCategory; 
+/**
+ * The formatting it shows, when you chose one; None lets Legato tell
+ * from the app.
+ */
+markup?: Markup | null }
 export type AppRuleKind = 
 /**
  * An app, by its name ("Claude Code") or executable ("slack.exe").
@@ -4041,7 +4127,47 @@ words: number; last_at: number | null;
 /**
  * The rule that moves it, and whether one is saved.
  */
-rule: AppRule; moved: boolean }
+rule: AppRule; moved: boolean; 
+/**
+ * The formatting Legato writes for it, and whether you chose it.
+ */
+markup: Markup; markup_set: boolean }
+/**
+ * The markup a destination shows as formatting.
+ */
+export type Markup = 
+/**
+ * Markdown as it is: Mattermost, Discord, GitHub, Obsidian, Notion,
+ * AI chats and Markdown files.
+ */
+"markdown" | 
+/**
+ * One symbol each side, `*bold*` `_italic_` `~strike~`: WhatsApp,
+ * Slack and Signal. No headings or tables.
+ */
+"chat" | 
+/**
+ * `**bold**` `__italic__` `~~strike~~`: Telegram. No headings or
+ * tables.
+ */
+"telegram" | 
+/**
+ * No markup at all: email, documents and any ordinary text field,
+ * where the symbols would show as typed.
+ */
+"plain" | 
+/**
+ * Code editors and terminals: nothing is converted.
+ */
+"verbatim"
+/**
+ * An app to try a transform as if the text went there.
+ */
+export type TryPlace = { 
+/**
+ * The app's or site's name, such as "WhatsApp".
+ */
+app: string; category: AppCategory }
 /**
  * Style per kind of app, one field each so the settings file reads plainly.
  */

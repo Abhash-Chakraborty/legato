@@ -9,7 +9,7 @@ import {
   Plug,
   Scissors,
   Type,
-} from "lucide-react";
+} from "@/icons";
 import { useSettings } from "../../hooks/useSettings";
 import { useModelStore } from "../../stores/modelStore";
 import { useAiStore, watchAi } from "../../stores/aiStore";
@@ -41,7 +41,8 @@ export const DoneStep: React.FC<StepProps> = ({ go, setFoot, finish }) => {
   useEffect(() => {
     if (autostartOffered.current || !settings) return;
     autostartOffered.current = true;
-    if (!settings.autostart_enabled) {
+    // Run again from Settings › About, setup leaves the choice alone.
+    if (!settings.autostart_enabled && !settings.onboarding_completed) {
       void updateSetting("autostart_enabled", true);
     }
   }, [settings, updateSetting]);

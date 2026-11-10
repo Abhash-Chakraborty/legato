@@ -149,6 +149,27 @@ pub struct Note {
     /// Corrections to the transcript will update the summary shortly.
     #[serde(default)]
     pub summary_due: bool,
+    /// Screenshots taken while it recorded, in order.
+    #[serde(default)]
+    pub shots: Vec<NoteShot>,
+}
+
+/// A screenshot taken while a note recorded.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct NoteShot {
+    pub id: i64,
+    pub note_id: i64,
+    /// Milliseconds from the start of the recording.
+    pub at_ms: i64,
+    /// The picture's file name in the notes folder.
+    pub file: String,
+    pub width: i64,
+    pub height: i64,
+    pub bytes: i64,
+    /// The words Windows read on the screen, for the summary; empty when
+    /// it read none.
+    #[serde(default)]
+    pub text: String,
 }
 
 /// A folder of notes, with how many it holds.
@@ -296,7 +317,113 @@ fn map(row: &Row<'_>) -> rusqlite::Result<Note> {
         seen: seen.and_then(|a| serde_json::from_str(&a).ok()),
         folder: row.get("folder")?,
         summary_due: false,
+        shots: Vec::new(),
     })
+}
+
+fn map_shot(r: &Row<'_>) -> rusqlite::Result<NoteShot> {
+    Ok(NoteShot {
+        id: r.get(0)?,
+        note_id: r.get(1)?,
+        at_ms: r.get(2)?,
+        file: r.get(3)?,
+        width: r.get(4)?,
+        height: r.get(5)?,
+        bytes: r.get(6)?,
+        text: r.get(7)?,
+    })
+}
+
+const SHOT_COLUMNS: &str = "id, note_id, at_ms, file, width, height, bytes, text";
+
+/// A note's screenshots, in the order they were taken.
+pub fn shots(conn: &Connection, note_id: i64) -> Result<Vec<NoteShot>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {SHOT_COLUMNS} FROM note_shot WHERE note_id = ?1 ORDER BY at_ms, id"
+    ))?;
+    let rows = stmt
+        .query_map(params![note_id], map_shot)?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
+/// Saves a screenshot's row once its picture is written.
+pub fn add_shot(
+    conn: &Connection,
+    note_id: i64,
+    at_ms: i64,
+    file: &str,
+    size: (i64, i64),
+    bytes: i64,
+) -> Result<NoteShot> {
+    conn.execute(
+        "INSERT INTO note_shot (note_id, at_ms, file, width, height, bytes)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![note_id, at_ms, file, size.0, size.1, bytes],
+    )?;
+    Ok(NoteShot {
+        id: conn.last_insert_rowid(),
+        note_id,
+        at_ms,
+        file: file.to_string(),
+        width: size.0,
+        height: size.1,
+        bytes,
+        text: String::new(),
+    })
+}
+
+/// Keeps the words read on a screenshot.
+pub fn set_shot_text(conn: &Connection, id: i64, text: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE note_shot SET text = ?2 WHERE id = ?1",
+        params![id, text],
+    )?;
+    Ok(())
+}
+
+/// Removes a screenshot's row and returns it, for Undo; its picture stays
+/// until Undo has gone.
+pub fn delete_shot(conn: &Connection, id: i64) -> Result<Option<NoteShot>> {
+    let shot = conn
+        .query_row(
+            &format!("SELECT {SHOT_COLUMNS} FROM note_shot WHERE id = ?1"),
+            params![id],
+            map_shot,
+        )
+        .optional()?;
+    if shot.is_some() {
+        conn.execute("DELETE FROM note_shot WHERE id = ?1", params![id])?;
+    }
+    Ok(shot)
+}
+
+/// Puts a screenshot's row back with its id.
+pub fn restore_shot(conn: &Connection, shot: &NoteShot) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO note_shot (id, note_id, at_ms, file, width, height, bytes, text)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            shot.id,
+            shot.note_id,
+            shot.at_ms,
+            shot.file,
+            shot.width,
+            shot.height,
+            shot.bytes,
+            shot.text
+        ],
+    )?;
+    Ok(())
+}
+
+/// Whether any note still shows this picture.
+pub fn shot_file_in_use(conn: &Connection, file: &str) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM note_shot WHERE file = ?1)",
+        params![file],
+        |r| r.get(0),
+    )?)
 }
 
 fn map_line(row: &Row<'_>) -> rusqlite::Result<NoteLine> {
@@ -350,6 +477,7 @@ fn fill(conn: &Connection, mut note: Note) -> Result<Note> {
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
+    note.shots = shots(conn, note.id)?;
     Ok(note)
 }
 
@@ -1073,12 +1201,14 @@ pub fn delete(conn: &mut Connection, id: i64) -> Result<Option<DeletedRecording>
     let lines = lines(conn, id)?;
     let failed = failed_lines(conn, id)?;
     let tx = conn.transaction()?;
+    // The note carries its screenshots, so a restore brings them back.
     for table in [
         "note_line",
         "note_tag",
         "note_action",
         "note_failed_line",
         "note_speaker",
+        "note_shot",
     ] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE note_id = ?1"),
@@ -1174,6 +1304,9 @@ pub fn restore(conn: &mut Connection, deleted: &DeletedRecording) -> Result<()> 
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![f.id, n.id, f.at_ms, f.end_ms, f.who.as_str()],
         )?;
+    }
+    for shot in &n.shots {
+        restore_shot(&tx, shot)?;
     }
     tx.commit()?;
     Ok(())
@@ -1311,6 +1444,10 @@ pub fn merge(
     tx.execute(
         "UPDATE note_failed_line SET note_id = ?2, at_ms = at_ms + ?3, end_ms = end_ms + ?3
          WHERE note_id = ?1",
+        params![later, earlier, offset_ms],
+    )?;
+    tx.execute(
+        "UPDATE note_shot SET note_id = ?2, at_ms = at_ms + ?3 WHERE note_id = ?1",
         params![later, earlier, offset_ms],
     )?;
     for (speaker, name, recognised, voice) in &theirs {
@@ -1605,9 +1742,42 @@ pub fn docx(
     when: &str,
     lines: &[NoteLine],
     names: (&str, &str, &str),
+    pictures: &[(i64, Vec<u8>)],
 ) -> Result<Vec<u8>> {
     let (you, them, me) = names;
-    document::docx(&blocks(note, when, me, Some((lines, you, them))))
+    let mut blocks = blocks(note, when, me, Some((lines, you, them)));
+    let shots = shot_blocks(note, pictures);
+    if !shots.is_empty() {
+        // Before the transcript, which runs long.
+        let at = blocks
+            .iter()
+            .position(|b| matches!(b, Block::Heading(h) if h == "Transcript"))
+            .unwrap_or(blocks.len());
+        blocks.splice(at..at, shots);
+    }
+    document::docx(&blocks)
+}
+
+/// A note's screenshots for a Word file, each with when it was taken.
+/// `pictures` are the JPEGs by screenshot; one without its picture is left
+/// out.
+fn shot_blocks(note: &Note, pictures: &[(i64, Vec<u8>)]) -> Vec<Block> {
+    let mut out = Vec::new();
+    for shot in &note.shots {
+        let Some((_, jpeg)) = pictures.iter().find(|(id, _)| *id == shot.id) else {
+            continue;
+        };
+        if out.is_empty() {
+            out.push(Block::Heading("Screenshots".into()));
+        }
+        out.push(Block::Image {
+            jpeg: jpeg.clone(),
+            width: shot.width.max(1) as u32,
+            height: shot.height.max(1) as u32,
+            caption: format!("Screenshot at {}", clock(shot.at_ms)),
+        });
+    }
+    out
 }
 
 /// The note's parts in reading order: the summary and its topics, then
@@ -2011,7 +2181,7 @@ mod tests {
              <ul><li>☑ [You] <b>Write it up</b>: with images.</li></ul><h2>Details</h2>\
              <p><b>Builds</b>: Twice as fast (1:05)</p><h2>My notes</h2><p>First<br>line</p><p>Second</p>"
         );
-        let bytes = docx(&note, "Oct 17", &[line], ("You", "Them", "")).unwrap();
+        let bytes = docx(&note, "Oct 17", &[line], ("You", "Them", ""), &[]).unwrap();
         let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
         let mut doc = String::new();
         std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").unwrap(), &mut doc)
@@ -2249,6 +2419,74 @@ mod tests {
         assert_eq!(get(&conn, a.id).unwrap().unwrap().folder, None);
         set_folder(&mut conn, &[b.id], None).unwrap();
         assert_eq!(get(&conn, b.id).unwrap().unwrap().folder, None);
+    }
+
+    #[test]
+    fn screenshots_stay_with_their_note() {
+        let mut conn = db();
+        let note = meeting(&conn);
+        let first = add_shot(
+            &conn,
+            note.id,
+            4_000,
+            "note-1-shot-4000.webp",
+            (1920, 1080),
+            180_000,
+        )
+        .unwrap();
+        add_shot(
+            &conn,
+            note.id,
+            1_000,
+            "note-1-shot-1000.jpg",
+            (1920, 1080),
+            240_000,
+        )
+        .unwrap();
+        set_shot_text(&conn, first.id, "Q3 revenue by region").unwrap();
+        let got = get(&conn, note.id).unwrap().unwrap();
+        // In the order they were taken.
+        assert_eq!(
+            got.shots.iter().map(|s| s.at_ms).collect::<Vec<_>>(),
+            [1_000, 4_000]
+        );
+        assert_eq!(got.shots[1].text, "Q3 revenue by region");
+        assert!(shot_file_in_use(&conn, "note-1-shot-4000.webp").unwrap());
+
+        // One comes off and back.
+        let gone = delete_shot(&conn, first.id).unwrap().unwrap();
+        assert_eq!(shots(&conn, note.id).unwrap().len(), 1);
+        assert!(!shot_file_in_use(&conn, &gone.file).unwrap());
+        restore_shot(&conn, &gone).unwrap();
+        assert_eq!(shots(&conn, note.id).unwrap(), got.shots);
+        assert_eq!(delete_shot(&conn, 999).unwrap(), None);
+
+        // A deleted note takes them along, and Undo brings them back.
+        let deleted = delete(&mut conn, note.id).unwrap().unwrap();
+        assert!(shots(&conn, note.id).unwrap().is_empty());
+        restore(&mut conn, &deleted).unwrap();
+        assert_eq!(get(&conn, note.id).unwrap().unwrap().shots, got.shots);
+
+        // Merged into an earlier note, they move on with the transcript.
+        let later = meeting(&conn);
+        add_shot(
+            &conn,
+            later.id,
+            2_000,
+            "note-2-shot-2000.webp",
+            (1280, 720),
+            90_000,
+        )
+        .unwrap();
+        let before = merge(&mut conn, note.id, later.id, 60_000, 120_000, None).unwrap();
+        let joined = get(&conn, note.id).unwrap().unwrap();
+        assert_eq!(
+            joined.shots.iter().map(|s| s.at_ms).collect::<Vec<_>>(),
+            [1_000, 4_000, 62_000]
+        );
+        unmerge(&mut conn, &before).unwrap();
+        assert_eq!(get(&conn, note.id).unwrap().unwrap().shots.len(), 2);
+        assert_eq!(get(&conn, later.id).unwrap().unwrap().shots[0].at_ms, 2_000);
     }
 
     #[test]

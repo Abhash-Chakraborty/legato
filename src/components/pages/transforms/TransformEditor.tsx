@@ -1,6 +1,6 @@
 import React, { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Trash2 } from "lucide-react";
+import { Trash2 } from "@/icons";
 import {
   commands,
   type AiStatus,

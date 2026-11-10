@@ -1,5 +1,5 @@
 import React, { useId, useRef } from "react";
-import { X } from "lucide-react";
+import { X } from "@/icons";
 
 /** Forms typed as chips: Enter or a comma adds one, Backspace on an empty
  *  field removes the last. What's still typed counts as a chip too. */

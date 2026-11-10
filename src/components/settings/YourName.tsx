@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { X } from "@/icons";
 import { commands, type YourName as Saved } from "@/bindings";
 import { Input } from "../ui/Input";
 import { SettingContainer } from "../ui/SettingContainer";

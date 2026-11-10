@@ -16,7 +16,7 @@ import {
   Search,
   Upload,
   X,
-} from "lucide-react";
+} from "@/icons";
 import { toast } from "sonner";
 import {
   commands,

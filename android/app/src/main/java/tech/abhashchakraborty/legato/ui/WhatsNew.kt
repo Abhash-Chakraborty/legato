@@ -30,6 +30,16 @@ import tech.abhashchakraborty.legato.Legato
  * release; the sheet shows the one for the version just installed, once.
  */
 val RELEASE_NOTES: Map<String, List<String>> = linkedMapOf(
+    "0.4.2" to listOf(
+        "A transform's result fits the app you're typing in: *bold* in WhatsApp, **bold** in Telegram, Markdown in Mattermost and Discord, plain text in an email.",
+        "Transforms know whether you're writing an email, a chat message or a document, and shape the text for it.",
+        "Undo after deleting a dictation brings it back where it was, with the time it had.",
+        "The QR scanner can scan again after you cancel or a code doesn't work.",
+        "Sync now becomes Try again when your PC isn't connected, and reaches for it again.",
+        "Settings › About › What's new shows this list whenever you want it.",
+        "Problems are said in plain words instead of the error the app got.",
+        "Home says Connected next to your PC until something has synced, instead of \"synced just now\".",
+    ),
     "0.4.1" to listOf(
         "Installing an update no longer turns off the Legato bubble in Accessibility, and no longer stops at a Settings page first on Xiaomi devices.",
         "This one update still came the old way: if the bubble is off, open Legato's App info, choose Allow restricted settings, then turn it on in Accessibility. Settings › Bubble over Gboard shows the way.",
@@ -86,17 +96,36 @@ fun WhatsNew(legato: Legato): Boolean {
         RELEASE_NOTES.filterKeys { v -> seen == null || newer(v, seen) }
     }
     if (!open) return false
-    val close = {
+    WhatsNewSheet(since, title = "What's new in $version") {
         legato.prefs.edit().putString(PREF_SEEN, version).apply()
         open = false
     }
+    return true
+}
+
+/** The notes of the installed version, or of the newest one written up. */
+fun latestNotes(): Map<String, List<String>> {
+    val version = BuildConfig.VERSION_NAME
+    val notes = RELEASE_NOTES[version]
+    if (notes != null) return mapOf(version to notes)
+    return RELEASE_NOTES.entries.firstOrNull()?.let { mapOf(it.key to it.value) } ?: emptyMap()
+}
+
+/** A sheet listing what changed, version by version. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WhatsNewSheet(
+    since: Map<String, List<String>>,
+    title: String = "What's new in ${since.keys.firstOrNull() ?: BuildConfig.VERSION_NAME}",
+    close: () -> Unit,
+) {
     ModalBottomSheet(
         onDismissRequest = close,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 28.dp)) {
-            Text("What's new in $version", style = MaterialTheme.typography.titleLarge)
+            Text(title, style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(8.dp))
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                 since.forEach { (v, lines) ->
@@ -115,7 +144,6 @@ fun WhatsNew(legato: Legato): Boolean {
             Button(onClick = close, modifier = Modifier.fillMaxWidth()) { Text("Got it") }
         }
     }
-    return true
 }
 
 private const val PREF_SEEN = "whats_new_seen"

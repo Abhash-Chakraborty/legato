@@ -166,6 +166,13 @@ pub fn apply(app: &AppHandle, corrected: String) {
             get_settings(&app).word_correction_threshold,
         );
         fix_history(&app, &session.pasted, &corrected, &edits);
+        // Home keeps every fix; the Dictionary learns names and terms, not
+        // everyday editing such as "its" made "it's".
+        let is_word = crate::spelling::checker();
+        let edits: Vec<learn_rules::Edit> = edits
+            .into_iter()
+            .filter(|e| !learn_rules::everyday_edit(e, &*is_word))
+            .collect();
         let review = get_settings(&app).learn_mode == LearnMode::Ask;
         let words = if review {
             ask(&app, &edits, session.target.as_ref())

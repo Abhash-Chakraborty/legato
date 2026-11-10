@@ -319,7 +319,7 @@ class Legato(private val context: Context) : CoreListener {
         if (request != null) {
             try {
                 val answer = LlmClient.complete(request, vault.get(KEY_PREFIX + request.providerId), text)
-                return core.readTransformAnswer(answer, text)
+                return core.readTransformAnswerFor(answer, text, app ?: "")
             } catch (e: Exception) {
                 if (!core.pcTransforms()) throw e
                 onLine("The transform didn't run here (${e.message}); asking ${state.value.pcName ?: "the PC"}")
@@ -352,9 +352,10 @@ class Legato(private val context: Context) : CoreListener {
             try {
                 core.block()
             } catch (e: Exception) {
-                val why = e.message ?: e.toString()
-                notice(why)
-                onLine(why)
+                // The log keeps the error as it came; the screen says it in
+                // plain words.
+                onLine(e.message ?: e.toString())
+                notice(plainWords(e, state.value.pcName))
             }
             refresh()
             bump()
@@ -868,6 +869,27 @@ class Legato(private val context: Context) : CoreListener {
             }
             return out
         }
+    }
+}
+
+/**
+ * A failure in words for the screen: what went wrong and what to do, in
+ * place of the error text a library gave.
+ */
+fun plainWords(e: Throwable, pc: String?): String {
+    val raw = (e.message ?: "").substringAfter("Exception: ").trim()
+    val low = raw.lowercase()
+    val name = pc ?: "your PC"
+    return when {
+        raw.isEmpty() -> "That didn't work. Try again."
+        listOf("timed out", "timeout", "unreachable", "refused", "reset", "broken pipe", "no route", "not connected", "closed").any { it in low } ->
+            "Couldn't reach $name. Check it's on, Legato is running there, and this device is on its network or near it."
+        "database is locked" in low || "busy" in low -> "Legato was busy for a moment. Try again."
+        "no such table" in low || "sqlite" in low || "constraint" in low -> "Legato couldn't save that. Try again, and restart the app if it keeps happening."
+        "certificate" in low || "tls" in low || "handshake" in low -> "$name didn't recognise this device. Pair again from Settings › Devices on the PC."
+        // The core words its own problems for people already.
+        raw.length <= 140 && !raw.contains("::") && !raw.contains("Error(") -> raw
+        else -> "That didn't work. Try again."
     }
 }
 

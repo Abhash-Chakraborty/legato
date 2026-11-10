@@ -88,6 +88,7 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit, onGuide: () -> Unit)
     val state by legato.state.collectAsStateWithLifecycle()
     var confirmUnpair by remember { mutableStateOf(false) }
     var pcMenu by remember { mutableStateOf(false) }
+    var whatsNew by remember { mutableStateOf(false) }
     var clipMode by remember { mutableStateOf(false) }
     var clipsOpen by remember { mutableStateOf(false) }
     var auto by remember { mutableStateOf(legato.autoClipboard) }
@@ -108,7 +109,15 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit, onGuide: () -> Unit)
             if (state.paired) {
                 PcCard(
                     legato = legato,
-                    onSync = { legato.run { if (!syncNow()) legato.notice("Not connected to $pc right now.") } },
+                    // Not connected: try to reach it again, and say so.
+                    onSync = {
+                        legato.run {
+                            if (!syncNow()) {
+                                connect()
+                                legato.notice("Not connected to $pc right now. Trying again.")
+                            }
+                        }
+                    },
                     onMore = { pcMenu = true },
                 )
             } else {
@@ -182,12 +191,16 @@ fun SettingsScreen(onPair: () -> Unit, onDebug: () -> Unit, onGuide: () -> Unit)
                 Hairline()
                 UpdateRows(legato)
                 Hairline()
+                SettingRow("What's new", "The changes in this version.", onClick = { whatsNew = true }, trailing = { Chevron() })
+                Hairline()
                 SettingRow("Setup guide", "The first-run steps again.", onClick = onGuide, trailing = { Chevron() })
                 Hairline()
                 SettingRow("Advanced", "Connection details and the log.", onClick = onDebug, trailing = { Chevron() })
             }
         }
     }
+
+    if (whatsNew) WhatsNewSheet(latestNotes(), close = { whatsNew = false })
 
     if (pcMenu) {
         MenuSheet(
@@ -253,7 +266,6 @@ private fun PcCard(legato: Legato, onSync: () -> Unit, onMore: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = onSync,
-                    enabled = state.online,
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -262,7 +274,7 @@ private fun PcCard(legato: Legato, onSync: () -> Unit, onMore: () -> Unit) {
                 ) {
                     Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(8.dp))
-                    Text("Sync now")
+                    Text(if (state.online) "Sync now" else "Try again")
                 }
                 TextButton(onClick = onMore, modifier = Modifier.weight(1f).heightIn(min = 44.dp)) {
                     Icon(Icons.Default.MoreHoriz, contentDescription = null, modifier = Modifier.size(18.dp))

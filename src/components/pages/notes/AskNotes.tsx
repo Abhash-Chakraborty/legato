@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, Loader2 } from "@/icons";
 import { commands, type Note } from "@/bindings";
 import { useAiStore } from "../../../stores/aiStore";
 import { useNavStore } from "../../../stores/navStore";

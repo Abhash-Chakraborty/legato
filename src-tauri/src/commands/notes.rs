@@ -2,10 +2,10 @@
 
 use crate::loopback::{self, AudioApp};
 use crate::managers::dictionary_store::WordKind;
-use crate::managers::notes_store::Speaker;
 use crate::managers::notes_store::{
     DeletedRecording, MergedNotes, Note, NoteFolder, NoteLine, NoteMatch, Voice,
 };
+use crate::managers::notes_store::{NoteShot, Speaker};
 use crate::notes::{
     self, LineEdit, NotesManager, SessionInfo, StartNotes, SuggestedFix, WordFix, WordFixed,
 };
@@ -298,6 +298,44 @@ pub fn get_notes_session() -> Option<SessionInfo> {
 #[specta::specta]
 pub async fn summarise_note_as(app: AppHandle, id: i64, kind: String) -> Result<(), String> {
     notes::resummarise_as(&app, id, &kind).await
+}
+
+/// Takes a screenshot of the screen the pointer is on, for the note being
+/// recorded. Errors are codes: "idle" when nothing records, "failed" when
+/// Windows didn't hand over the screen.
+#[tauri::command]
+#[specta::specta]
+pub fn take_note_screenshot(app: AppHandle) -> Result<(), String> {
+    crate::note_shots::take(&app)
+}
+
+/// Removes a screenshot from its note; returns it, for Undo.
+#[tauri::command]
+#[specta::specta]
+pub fn delete_note_screenshot(app: AppHandle, id: i64) -> Result<Option<NoteShot>, String> {
+    text(crate::note_shots::delete(&app, id))
+}
+
+/// Puts a removed screenshot back.
+#[tauri::command]
+#[specta::specta]
+pub fn restore_note_screenshot(app: AppHandle, shot: NoteShot) -> Result<(), String> {
+    text(crate::note_shots::restore(&app, &shot))
+}
+
+/// Puts a screenshot on the clipboard as a picture.
+#[tauri::command]
+#[specta::specta]
+pub fn copy_note_screenshot(app: AppHandle, id: i64) -> Result<(), String> {
+    text(crate::note_shots::copy(&app, id))
+}
+
+/// The folder notes keep their audio and screenshots in, so the page can
+/// show a screenshot by its file name.
+#[tauri::command]
+#[specta::specta]
+pub fn get_notes_folder(notes: Notes<'_>) -> String {
+    notes.audio_dir().to_string_lossy().into_owned()
 }
 
 /// Names the note with your AI; returns the new title. Errors are codes

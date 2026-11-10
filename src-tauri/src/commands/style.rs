@@ -6,6 +6,7 @@ use crate::audio_toolkit::text::{
 };
 use crate::cleanup_rules::{self, CleanupLevel, CleanupRules};
 use crate::context::{self, AppCategory, AppRule, AppRuleKind, ForegroundWindow};
+use crate::format_rules::Markup;
 use crate::managers::history::HistoryManager;
 use crate::managers::snippet_store;
 use crate::managers::snippets::SnippetManager;
@@ -36,6 +37,9 @@ pub struct StyleApp {
     /// The rule that moves it, and whether one is saved.
     pub rule: AppRule,
     pub moved: bool,
+    /// The formatting Legato writes for it, and whether you chose it.
+    pub markup: Markup,
+    pub markup_set: bool,
 }
 
 fn style_app(
@@ -45,10 +49,13 @@ fn style_app(
     last_at: Option<i64>,
 ) -> StyleApp {
     let rule = context::rule_for(info, info.category);
-    let moved = rules
+    let saved = rules
         .iter()
-        .any(|r| r.kind == rule.kind && r.pattern == rule.pattern);
+        .find(|r| r.kind == rule.kind && r.pattern == rule.pattern);
+    let moved = saved.is_some();
     StyleApp {
+        markup: info.markup,
+        markup_set: saved.is_some_and(|r| r.markup.is_some()),
         name: info.site.clone().unwrap_or_else(|| info.name.clone()),
         exe_path: info.exe_path.clone(),
         exe: info.exe.clone(),
@@ -108,6 +115,15 @@ pub fn get_style_apps(
             last_at: None,
             rule: rule.clone(),
             moved: true,
+            markup: rule.markup.unwrap_or_else(|| {
+                crate::format_rules::markup_for(
+                    rule.category.as_str(),
+                    &rule.name,
+                    (rule.kind == AppRuleKind::Site).then_some(rule.name.as_str()),
+                    "",
+                )
+            }),
+            markup_set: rule.markup.is_some(),
         });
     }
     Ok(out)
@@ -127,10 +143,42 @@ fn save_rules(app: &AppHandle, rules: Vec<AppRule>) -> Vec<AppRule> {
 #[specta::specta]
 pub fn move_app(app: AppHandle, rule: AppRule, category: AppCategory) -> Vec<AppRule> {
     let mut rules = get_settings(&app).app_rules;
+    // The formatting you chose for it moves along.
+    let markup = rules
+        .iter()
+        .find(|r| r.kind == rule.kind && r.pattern == rule.pattern)
+        .and_then(|r| r.markup)
+        .or(rule.markup);
     rules.retain(|r| !(r.kind == rule.kind && r.pattern == rule.pattern));
-    let moved = AppRule { category, ..rule };
-    if context::builtin_category(&moved) != category {
+    let moved = AppRule {
+        category,
+        markup,
+        ..rule
+    };
+    if context::builtin_category(&moved) != category || moved.markup.is_some() {
         rules.push(moved);
+    }
+    save_rules(&app, rules)
+}
+
+/// Says how an app or site shows formatting (Markdown, a chat's own
+/// symbols, none), or with None lets Legato tell from the app again.
+#[tauri::command]
+#[specta::specta]
+pub fn set_app_markup(app: AppHandle, rule: AppRule, markup: Option<Markup>) -> Vec<AppRule> {
+    let mut rules = get_settings(&app).app_rules;
+    let category = rules
+        .iter()
+        .find(|r| r.kind == rule.kind && r.pattern == rule.pattern)
+        .map_or(rule.category, |r| r.category);
+    rules.retain(|r| !(r.kind == rule.kind && r.pattern == rule.pattern));
+    let set = AppRule {
+        category,
+        markup,
+        ..rule
+    };
+    if context::builtin_category(&set) != category || markup.is_some() {
+        rules.push(set);
     }
     save_rules(&app, rules)
 }
@@ -154,6 +202,7 @@ pub fn add_site(
             pattern: name.to_lowercase(),
             name,
             category,
+            markup: None,
         },
         category,
     ))

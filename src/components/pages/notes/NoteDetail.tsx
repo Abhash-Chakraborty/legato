@@ -17,7 +17,7 @@ import {
   Tag,
   Trash2,
   X,
-} from "lucide-react";
+} from "@/icons";
 import { commands, type Note } from "@/bindings";
 import { ActionMenu } from "../../ui/ActionMenu";
 import { AppIcon } from "../home/AppIcon";

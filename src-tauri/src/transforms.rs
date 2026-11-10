@@ -11,7 +11,7 @@ use crate::managers::history::HistoryManager;
 use crate::managers::transform_store::{self as store, NewRun, RunResult, RunSource};
 use crate::selection;
 use crate::settings::{get_settings, AppSettings, PasteMethod, Transform, TransformOutput};
-use crate::transform_rules::{self as rules, PromptContext};
+use crate::transform_rules::{self as rules, Destination, PromptContext};
 use crate::{overlay, tray};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -131,6 +131,8 @@ pub enum BarNotice {
     },
     /// Correct last dictation found nothing pasted in the last 10 minutes.
     NothingToCorrect,
+    /// The screenshot shortcut was pressed with no note recording.
+    NothingRecording,
     /// A Notes recording is transcribed.
     NoteReady {
         id: i64,
@@ -405,28 +407,41 @@ pub(crate) fn problem_text(problem: &AiProblem) -> String {
     }
 }
 
-/// Dictionary words for prompts that ask for them, most used first.
-fn dictionary_words(app: &AppHandle) -> Vec<String> {
+/// The Dictionary for prompts, pinned words first, then the most used.
+fn dictionary_entries(app: &AppHandle) -> Vec<crate::managers::dictionary_store::DictionaryEntry> {
     let Some(dictionary) = app.try_state::<Arc<DictionaryManager>>() else {
         return Vec::new();
     };
     let mut entries = dictionary.list().unwrap_or_default();
     entries.sort_by(|a, b| b.pinned.cmp(&a.pinned).then(b.hits.cmp(&a.hits)));
+    entries.truncate(rules::PROMPT_DICTIONARY_LIMIT);
     entries
-        .into_iter()
-        .take(rules::PROMPT_DICTIONARY_LIMIT)
-        .map(|e| e.text)
-        .collect()
 }
 
-/// Runs a transform's prompt on `text`. Ok(None) means the model answered
-/// with nothing.
+/// Where a transform's result goes, from the app it was captured in.
+pub fn destination(app: Option<&AppInfo>) -> Destination<'_> {
+    match app {
+        Some(a) => Destination {
+            app: Some(a.place()).filter(|p| !p.is_empty()),
+            category: Some(a.category.as_str()),
+            markup: Some(a.markup),
+            phone: false,
+        },
+        None => Destination::default(),
+    }
+}
+
+/// Runs a transform's prompt on `text`, which may carry `snippets` markers
+/// of saved text, and fits the answer's formatting to where it goes.
+/// Ok(None) means the model answered with nothing, or with something that
+/// can't be used.
 pub async fn apply(
     app: &AppHandle,
     settings: &AppSettings,
     transform: &Transform,
     text: &str,
-    app_name: Option<&str>,
+    to: &Destination<'_>,
+    snippets: usize,
     timeout: Duration,
 ) -> Result<Option<String>, AiProblem> {
     let Some(config) = AiConfig::for_transform(settings, transform) else {
@@ -435,8 +450,10 @@ pub async fn apply(
             transform.provider_id.as_deref(),
         ));
     };
-    // Every transform gets the Dictionary's spellings, asked for or not.
-    let words = dictionary_words(app);
+    // Every transform gets the Dictionary's spellings, asked for or not,
+    // with how each word gets misheard.
+    let entries = dictionary_entries(app);
+    let words = prompt_words(&entries);
     let clipboard = if rules::wants_clipboard(&transform.prompt) {
         app.clipboard().read_text().ok()
     } else {
@@ -445,10 +462,11 @@ pub async fn apply(
     let system = rules::system_prompt(
         &transform.prompt,
         &PromptContext {
-            app: app_name,
-            dictionary: &words,
+            destination: *to,
+            words: &words,
             clipboard: clipboard.as_deref(),
             your_name: Some(settings.your_name.as_str()),
+            snippets,
         },
     );
     debug!(
@@ -464,7 +482,34 @@ pub async fn apply(
         );
         return Ok(None);
     }
+    if snippets > 0 && crate::snippet_rules::from_ai(&answer, snippets).is_none() {
+        warn!(
+            "Transform '{}': the answer lost a snippet, kept the text as it was",
+            transform.id
+        );
+        return Ok(None);
+    }
+    let answer = match to.markup {
+        Some(markup) => crate::format_rules::fit_answer(text, &answer, markup),
+        None => answer,
+    };
     Ok((!answer.is_empty()).then_some(answer))
+}
+
+/// Dictionary entries as prompts list them.
+fn prompt_words(
+    entries: &[crate::managers::dictionary_store::DictionaryEntry],
+) -> Vec<crate::ai_rules::PromptWord<'_>> {
+    entries
+        .iter()
+        .map(|e| crate::ai_rules::PromptWord {
+            text: &e.text,
+            heard: &e.heard,
+            also: &e.also,
+            ordinary: ai::ordinary_forms(&e.heard),
+            kind: e.kind.map(|k| k.noun()),
+        })
+        .collect()
 }
 
 /// A request to run on captured text.
@@ -627,7 +672,7 @@ fn on_shortcut(app: &AppHandle, work: impl FnOnce(&AppHandle) + Send + 'static) 
 
 fn run_transform_on(app: &AppHandle, transform: Transform, captured: Captured) {
     let settings = get_settings(app);
-    let app_name = captured.app.as_ref().map(|a| a.name.clone());
+    let target = captured.app.clone();
     let text = captured.text.clone();
     let job = Job {
         transform_id: transform.id.clone(),
@@ -642,7 +687,8 @@ fn run_transform_on(app: &AppHandle, transform: Transform, captured: Captured) {
             &settings,
             &transform,
             &text,
-            app_name.as_deref(),
+            &destination(target.as_ref()),
+            0,
             SELECTION_TIMEOUT,
         )
         .await
@@ -793,12 +839,14 @@ fn run_ask(app: &AppHandle, instruction: String) {
     });
     let rewriting = !captured.text.trim().is_empty();
     let user = rules::ask_request(&instruction, rewriting.then_some(captured.text.as_str()));
-    let words = dictionary_words(app);
+    let entries = dictionary_entries(app);
+    let markup = captured.app.as_ref().map(|a| a.markup);
     let system = rules::ask_system_prompt(&PromptContext {
-        app: captured.app.as_ref().map(|a| a.name.as_str()),
-        dictionary: &words,
+        destination: destination(captured.app.as_ref()),
+        words: &prompt_words(&entries),
         clipboard: None,
         your_name: Some(settings.your_name.as_str()),
+        snippets: 0,
     });
     let input = captured.text.clone();
     let job = Job {
@@ -826,6 +874,10 @@ fn run_ask(app: &AppHandle, instruction: String) {
                 );
                 return Ok(None);
             }
+            let answer = match markup {
+                Some(markup) => crate::format_rules::fit_answer(&input, &answer, markup),
+                None => answer,
+            };
             Ok((!answer.is_empty()).then_some(answer))
         },
     );

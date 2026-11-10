@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, X } from "lucide-react";
+import { ChevronRight, X } from "@/icons";
 import {
   commands,
   type CleanupLevel,

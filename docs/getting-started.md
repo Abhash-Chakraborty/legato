@@ -57,6 +57,14 @@ The last screen lists the keys to remember and how Legato is set up, with a link
 
 Choose Open Legato. From now on Legato runs in the tray, and the window can stay closed.
 
+Skipped setup, or want to practise again? Settings › About › Run setup again starts it from the microphone check. Run this way, it leaves Start Legato when Windows starts as you set it.
+
+## Get to know Legato
+
+Setup teaches dictation. The rest is on Home, in a short list called Get to know Legato. It shows one feature you haven't tried at a time: what it's for, its shortcut, and Show me, which takes you there. All lists every row.
+
+A row ticks itself once Legato can see the feature in use: a word in your Dictionary, a snippet, a note, a paired phone, a calendar, an AI model. For the others, Show me ticks it. Skip ticks a row you don't want, and the list goes away once every row is ticked or you close it. Settings › About › Show the list on Home brings it back.
+
 ## Your first dictation
 
 1. Click into a text field in any app, such as a chat or an email.
@@ -85,6 +93,7 @@ These work in any app, even with Legato's window closed. Change them in Settings
 | Correct last dictation      | Alt+Shift+C      | Opens your last dictation on the bar to fix; the fix is learned     |
 | Open Scratchpad             | Win+Alt+S        | Press to open the Scratchpad; hold to dictate into a new note       |
 | Start or stop notes         | Win+Alt+M        | Starts recording a meeting, or stops it (needs Notes)               |
+| Screenshot into notes       | Win+Alt+P        | Puts a screenshot in the note that's recording (needs Notes)        |
 | Talk to the companion       | Win+Alt+I        | Hold and speak to Inyon's companion agent (needs an Inyon pairing)  |
 
 If two shortcuts share the same keys, Settings says which one does nothing so you can give it other keys.

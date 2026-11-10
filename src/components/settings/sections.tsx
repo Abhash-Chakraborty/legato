@@ -15,7 +15,7 @@ import {
   Shield,
   Smartphone,
   type LucideIcon,
-} from "lucide-react";
+} from "@/icons";
 import type { AiStatus, AppSettings, ModelInfo } from "@/bindings";
 import type { SettingsSection } from "../../stores/navStore";
 import { useModelStore } from "../../stores/modelStore";
@@ -142,7 +142,12 @@ import {
 } from "./debug/OnboardingPreview";
 import { DebugModeRow } from "./debug/DebugModeRow";
 import { AiCheck } from "./debug/AiCheck";
-import { SourceCodeRow, VersionRow } from "./about/AboutRows";
+import {
+  SetupAgainRow,
+  SourceCodeRow,
+  VersionRow,
+  WhatsNewRow,
+} from "./about/AboutRows";
 
 /** What a dependent row looks at to decide whether it can be changed. */
 export interface RowContext {
@@ -535,6 +540,20 @@ export const buildSections = (
               "settings.general.shortcut.bindings.toggle_notes.description",
             ],
             render: () => <ShortcutInput shortcutId="toggle_notes" grouped />,
+            requires: ({ settings }) =>
+              (settings?.notes_enabled ?? true)
+                ? null
+                : { reasonKey: "settings.requires.notesFeature" },
+          },
+          {
+            id: "note-screenshot",
+            searchKeys: [
+              "settings.general.shortcut.bindings.note_screenshot.name",
+              "settings.general.shortcut.bindings.note_screenshot.description",
+            ],
+            render: () => (
+              <ShortcutInput shortcutId="note_screenshot" grouped />
+            ),
             requires: ({ settings }) =>
               (settings?.notes_enabled ?? true)
                 ? null
@@ -1632,6 +1651,23 @@ export const buildSections = (
               "settings.about.whatsNewUpdates.description",
             ],
             render: () => <ShowWhatsNewOnUpdate grouped />,
+          },
+          {
+            id: "whats-new-now",
+            searchKeys: [
+              "settings.about.whatsNew.title",
+              "settings.about.whatsNew.description",
+            ],
+            render: () => <WhatsNewRow />,
+          },
+          {
+            id: "setup-again",
+            searchKeys: [
+              "settings.about.setupAgain.title",
+              "settings.about.setupAgain.description",
+              "settings.about.setupAgain.tour",
+            ],
+            render: () => <SetupAgainRow />,
           },
         ],
       },

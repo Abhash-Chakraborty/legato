@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search } from "@/icons";
 import {
   commands,
   events,

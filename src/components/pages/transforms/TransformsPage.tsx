@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Mic, Plus } from "lucide-react";
+import { Mic, Plus } from "@/icons";
 import { toast } from "sonner";
 import { commands, type Transform } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";

@@ -7,16 +7,7 @@ import React, {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import {
-  Check,
-  History,
-  Loader2,
-  Mic,
-  Pause,
-  Play,
-  Square,
-  X,
-} from "lucide-react";
+import { Check, History, Loader2, Mic, Pause, Play, Square, X } from "@/icons";
 import { commands, events, type NoteLine } from "@/bindings";
 import { LineText } from "@/components/notes/LineText";
 import {
@@ -27,6 +18,7 @@ import {
   type Voice,
 } from "@/components/notes/notes";
 import { SpeakerTag } from "@/components/notes/SpeakerTag";
+import { ShotButton } from "@/components/notes/ShotButton";
 import { SideMeter } from "@/components/pages/notes/RecordingStrip";
 import { AppToaster } from "@/components/shell/AppToaster";
 import { Button } from "@/components/ui/Button";
@@ -495,6 +487,7 @@ export const NotesPanel: React.FC = () => {
               <p className="min-w-0 flex-1 text-xs leading-snug text-text-3">
                 {t("notesPanel.closeHint")}
               </p>
+              <ShotButton disabled={busy} />
               <Button
                 variant="secondary"
                 size="sm"

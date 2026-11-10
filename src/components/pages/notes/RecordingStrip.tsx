@@ -1,14 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import {
-  ChevronDown,
-  ChevronUp,
-  Loader2,
-  Pause,
-  Play,
-  Square,
-} from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2, Pause, Play, Square } from "@/icons";
 import { commands, type NoteLine, type SessionInfo } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useLiveLines, useNotesStore } from "../../../stores/notesStore";
@@ -16,6 +9,7 @@ import { Button } from "../../ui/Button";
 import { LineText } from "../../notes/LineText";
 import { clock, longClock, voiceChoices, type Voice } from "../../notes/notes";
 import { SpeakerTag } from "../../notes/SpeakerTag";
+import { ShotButton } from "../../notes/ShotButton";
 
 const BARS = 8;
 
@@ -163,6 +157,7 @@ export const RecordingStrip: React.FC<{ session: SessionInfo }> = ({
         )}
         {!finishing && (
           <div className="flex flex-none items-center gap-1.5">
+            <ShotButton disabled={busy} />
             <Button
               variant="secondary"
               size="sm"

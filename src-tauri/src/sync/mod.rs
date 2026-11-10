@@ -1143,15 +1143,23 @@ impl hub::Events for AppEvents {
                 .cloned()
                 .ok_or("That transform isn't switched on on the PC")?;
             let started = std::time::Instant::now();
-            let where_ = app
+            // The phone names only the kind of app it's typing into.
+            let kind = app
                 .as_deref()
-                .and_then(crate::transform_rules::phone_app_words);
+                .filter(|k| crate::transform_rules::phone_app_words(k).is_some());
+            let to = crate::transform_rules::Destination {
+                app: None,
+                category: kind,
+                markup: kind.and_then(|k| crate::format_rules::markup_for_package("", k)),
+                phone: kind.is_some(),
+            };
             let result = tauri::async_runtime::block_on(crate::transforms::apply(
                 &handle,
                 &settings,
                 &transform,
                 &text,
-                where_,
+                &to,
+                0,
                 Duration::from_secs(60),
             ));
             log::info!(
@@ -1171,7 +1179,7 @@ impl hub::Events for AppEvents {
 /// The app a phone typed into, as the pipeline styles for it: only its kind
 /// is known. None for no kind or one this version doesn't know ("other").
 fn phone_app(kind: Option<&str>) -> Option<crate::context::AppInfo> {
-    let category = serde_json::from_value(json!(kind?)).ok()?;
+    let category: crate::context::AppCategory = serde_json::from_value(json!(kind?)).ok()?;
     Some(crate::context::AppInfo {
         exe_path: String::new(),
         exe: String::new(),
@@ -1179,6 +1187,7 @@ fn phone_app(kind: Option<&str>) -> Option<crate::context::AppInfo> {
         title: String::new(),
         site: None,
         category,
+        markup: crate::format_rules::markup_for(category.as_str(), "", None, ""),
     })
 }
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "@/icons";
 import { toast } from "sonner";
 import { commands, type HistoryEntry } from "@/bindings";
 import { reveal } from "../../../lib/utils/reveal";

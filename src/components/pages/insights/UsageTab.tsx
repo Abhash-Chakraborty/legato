@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight } from "@/icons";
 import type { Insights, InsightsRange } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useNavStore } from "../../../stores/navStore";

@@ -9,7 +9,7 @@ import {
   SendHorizontal,
   Square,
   X,
-} from "lucide-react";
+} from "@/icons";
 import type { ChatMessage } from "./setupStore";
 import { blocks, type Scene } from "./setup";
 import { AppGlyph, appOf } from "./parts";

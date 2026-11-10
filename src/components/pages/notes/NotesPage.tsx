@@ -15,7 +15,7 @@ import {
   Search,
   Settings2,
   Tag,
-} from "lucide-react";
+} from "@/icons";
 import { commands, type Note, type NoteKind, type NoteLine } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";

@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Pencil, Trash2, type LucideIcon } from "lucide-react";
+import { Pencil, Trash2, type LucideIcon } from "@/icons";
 import type { Snippet } from "@/bindings";
 import { AppIcon } from "../home/AppIcon";
 import { relativeTime } from "../dictionary/list";

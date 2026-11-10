@@ -16,6 +16,8 @@ const CONTEXT_SIDE: usize = 30;
 /// Share of the pasted words the field must still hold, or the paste is
 /// taken as gone (deleted, or the field is another one).
 const MIN_KEPT: f64 = 0.6;
+/// A paste this short is judged by how many words changed, not what share.
+const SHORT_PASTE: usize = 3;
 /// Larger pastes or fields aren't aligned word by word.
 const MAX_PASTED_WORDS: usize = 400;
 const MAX_FIELD_WORDS: usize = 5000;
@@ -280,7 +282,9 @@ fn align(pasted: &[Token<'_>], field: &[Token<'_>]) -> (Vec<Op>, usize) {
             cost[i * w + j] = swap.min(gone).min(added);
         }
     }
-    let mut j = (0..=n).min_by_key(|&j| cost[m * w + j]).unwrap_or(0);
+    // Of two ends that cost the same, the later one: a last word that was
+    // changed reads as swapped for the field's word, not as deleted.
+    let mut j = (0..=n).rev().min_by_key(|&j| cost[m * w + j]).unwrap_or(0);
     let mut i = m;
     let mut ops = Vec::new();
     while i > 0 {
@@ -356,6 +360,25 @@ pub fn context(field: &str, start: usize, end: usize) -> String {
         .join(" ")
 }
 
+/// Whether an edit is everyday editing, not a word to learn: the new word
+/// is an ordinary lowercase word ("its" made "it's", "deploy" made
+/// "deployed", "affect" made "effect"), or only a number in it changed
+/// ("10am" made "11am"). `is_word` is the spell checker's answer. A
+/// capitalised word is kept: a name can be an ordinary word too.
+pub fn everyday_edit(edit: &Edit, is_word: &dyn Fn(&str) -> bool) -> bool {
+    let letters = |s: &str| -> String { s.chars().filter(|c| !c.is_ascii_digit()).collect() };
+    if edit.word.chars().any(|c| c.is_ascii_digit())
+        && letters(&edit.word).eq_ignore_ascii_case(&letters(&edit.heard))
+    {
+        return true;
+    }
+    edit.word == edit.word.to_lowercase()
+        && edit
+            .word
+            .split_whitespace()
+            .all(|w| is_word(w.trim_matches(|c: char| !c.is_alphanumeric())))
+}
+
 /// The words someone changed in `field` after Legato pasted `pasted` there:
 /// one or two words swapped for one or two others that look or sound like
 /// them, at `threshold` or Loose, whichever is looser. Ordinary words, case
@@ -368,7 +391,18 @@ pub fn find_edits(pasted: &str, field: &str, threshold: f64) -> Vec<Edit> {
     }
     let (ops, first) = align(&p, &f);
     let kept = ops.iter().filter(|op| **op == Op::Same).count();
-    if (kept as f64) < MIN_KEPT * p.len() as f64 || kept == p.len() && ops.len() == p.len() {
+    // A paste of a word or three can't keep six in ten of its words and
+    // still be corrected: "Hi Carol" fixed to "Hi Karol" keeps half, and
+    // "doc ploy" fixed to "Dokploy" keeps none. It counts when the field
+    // holds about as many words, as it does when the text was corrected on
+    // its own, and at most two of them changed; what changed still has to
+    // look or sound like what it replaced.
+    let enough = if p.len() <= SHORT_PASTE {
+        kept + 2 >= p.len() && f.len() <= p.len() + 1
+    } else {
+        (kept as f64) >= MIN_KEPT * p.len() as f64
+    };
+    if !enough || kept == p.len() && ops.len() == p.len() {
         return Vec::new();
     }
     let threshold = threshold.max(MIN_THRESHOLD);
@@ -786,6 +820,36 @@ mod tests {
         assert!(find_edits("mail karol at datev", "mail karol@datev.de", 0.18).is_empty());
         // No change at all.
         assert!(find_edits("all good here", "all good here", 0.18).is_empty());
+    }
+
+    #[test]
+    fn a_short_paste_teaches_and_everyday_edits_do_not() {
+        // Corrected on its own, a paste of two words keeps one.
+        assert_eq!(
+            words(&find_edits("Hi Carol", "Hi Karol", 0.18)),
+            vec![("Carol", "Karol")]
+        );
+        assert_eq!(
+            words(&find_edits("doc ploy", "Dokploy", 0.18)),
+            vec![("doc ploy", "Dokploy")]
+        );
+        // In a field with more around it, two words are too few to place.
+        assert!(find_edits("Hi Carol", "Morning. Hi Karol, see below for more", 0.18).is_empty());
+
+        let is_word = |w: &str| ["it's", "deployed", "effect", "karol"].contains(&w);
+        let edit = |heard: &str, word: &str| Edit {
+            heard: heard.into(),
+            word: word.into(),
+            context: String::new(),
+        };
+        assert!(everyday_edit(&edit("its", "it's"), &is_word));
+        assert!(everyday_edit(&edit("deploy", "deployed"), &is_word));
+        assert!(everyday_edit(&edit("affect", "effect"), &is_word));
+        assert!(everyday_edit(&edit("10am", "11am"), &is_word));
+        // A name is learned, even one that's a word too.
+        assert!(!everyday_edit(&edit("Carol", "Karol"), &is_word));
+        assert!(!everyday_edit(&edit("doc ploy", "Dokploy"), &is_word));
+        assert!(!everyday_edit(&edit("cube cuddle", "kubectl"), &is_word));
     }
 
     #[test]

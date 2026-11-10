@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Check } from "lucide-react";
+import { Check } from "@/icons";
 import type { ScratchNote } from "@/bindings";
 import { relativeTime } from "../pages/dictionary/list";
 import { wordCount } from "./notes";

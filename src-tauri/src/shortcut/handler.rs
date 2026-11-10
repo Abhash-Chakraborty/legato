@@ -36,7 +36,7 @@ pub fn handle_shortcut_event(
 
     // Any other shortcut closes Correct first, so what it does goes to the
     // app rather than the bar.
-    if is_pressed && binding_id != "correct_last" {
+    if is_pressed && !matches!(binding_id, "correct_last" | "note_screenshot") {
         crate::correct::give_back(app);
     }
 

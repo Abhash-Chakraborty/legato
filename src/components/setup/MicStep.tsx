@@ -8,7 +8,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   TriangleAlert,
-} from "lucide-react";
+} from "@/icons";
 import { commands, events } from "@/bindings";
 import { useSettings } from "../../hooks/useSettings";
 import { Button } from "../ui/Button";

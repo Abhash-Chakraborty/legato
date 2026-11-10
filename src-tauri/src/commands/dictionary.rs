@@ -179,7 +179,10 @@ pub fn test_dictionary(
         });
         entries.push(word);
     }
+    // With the word check a dictation runs with, so an ordinary word is
+    // treated here as it is there.
     let (_, corrector) = store::compile(&entries);
+    let corrector = corrector.with_word_check(crate::spelling::checker());
     let threshold = crate::settings::get_settings(&app).word_correction_threshold;
     // As if no word went to the model, so every word is matched.
     let (text, fixes) = corrector.apply(&text, false, threshold);

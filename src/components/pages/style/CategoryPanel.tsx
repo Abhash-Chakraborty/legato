@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pencil } from "lucide-react";
+import { Pencil } from "@/icons";
 import {
   commands,
   type AfterPaste,

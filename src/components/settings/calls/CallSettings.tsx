@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { PhoneIncoming } from "lucide-react";
+import { PhoneIncoming } from "@/icons";
 import { commands, type CallApp, type CallSettings } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useNavStore } from "../../../stores/navStore";

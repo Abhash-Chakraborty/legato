@@ -14,7 +14,7 @@ import {
   Settings,
   Type,
   type LucideIcon,
-} from "lucide-react";
+} from "@/icons";
 import type { AppSettings } from "@/bindings";
 import { useSettings } from "../hooks/useSettings";
 import { useNavStore, type Page } from "../stores/navStore";

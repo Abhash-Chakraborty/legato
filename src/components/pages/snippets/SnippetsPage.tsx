@@ -16,7 +16,7 @@ import {
   Trash2,
   Upload,
   X,
-} from "lucide-react";
+} from "@/icons";
 import { toast } from "sonner";
 import { commands, type Snippet } from "@/bindings";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";

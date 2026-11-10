@@ -15,7 +15,7 @@ import {
   Smartphone,
   Wifi,
   X,
-} from "lucide-react";
+} from "@/icons";
 import {
   commands,
   type ClipRow,

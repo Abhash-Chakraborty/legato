@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { CalendarDays, Check, Copy, RefreshCw, Video, X } from "lucide-react";
+import { CalendarDays, Check, Copy, RefreshCw, Video, X } from "@/icons";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   commands,

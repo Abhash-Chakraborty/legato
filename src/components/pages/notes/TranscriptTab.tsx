@@ -9,9 +9,15 @@ import {
   SpellCheck,
   Users,
   X,
-} from "lucide-react";
+} from "@/icons";
 import { toast } from "sonner";
-import { commands, type Note, type NoteLine } from "@/bindings";
+import { commands, type Note, type NoteLine, type NoteShot } from "@/bindings";
+import {
+  ShotThumb,
+  ShotViewer,
+  shotsBetween,
+  useNotesFolder,
+} from "../../notes/NoteShots";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";
 import { useSettings } from "../../../hooks/useSettings";
 import { useSpeakerModel } from "../../../hooks/useSpeakerModel";
@@ -123,6 +129,51 @@ export const TranscriptTab: React.FC<{
     () => (lines ?? []).filter((l) => !query.trim() || lineMatches(l, query)),
     [lines, query],
   );
+
+  // Screenshots sit between the lines, where they were taken. A search
+  // keeps the ones whose screen had the words.
+  const dir = useNotesFolder();
+  const shots = useMemo(() => note.shots ?? [], [note.shots]);
+  const [openShot, setOpenShot] = useState<number | null>(null);
+  const shotsShown = useMemo(() => {
+    if (!dir) return [];
+    const q = query.trim().toLowerCase();
+    return q
+      ? shots.filter((s) => (s.text ?? "").toLowerCase().includes(q))
+      : shots;
+  }, [dir, shots, query]);
+  const shotRow = (shot: NoteShot) =>
+    dir && (
+      <li
+        key={`shot-${shot.id}`}
+        className="grid grid-cols-[52px_minmax(0,1fr)] items-start gap-x-2 px-1.5 py-2"
+      >
+        <button
+          type="button"
+          disabled={!src}
+          onClick={() => playFrom(shot.at_ms)}
+          title={
+            src
+              ? t("notes.transcript.playFrom", { time: clock(shot.at_ms) })
+              : undefined
+          }
+          className="mt-0.5 justify-self-start rounded-[var(--r-xs)] px-1 text-xs tabular-nums text-text-3 enabled:hover:bg-surface-3 enabled:hover:text-text disabled:cursor-default"
+        >
+          {clock(shot.at_ms)}
+        </button>
+        <div className="min-w-0">
+          <ShotThumb
+            shot={shot}
+            dir={dir}
+            onOpen={() => setOpenShot(shot.id)}
+            className="w-full max-w-[380px]"
+          />
+          <span className="mt-1 block text-xs text-text-3">
+            {t("notes.shots.caption")}
+          </span>
+        </div>
+      </li>
+    );
   const current = playing || at > 0 ? lineAt(lines ?? [], at) : -1;
   const currentId = current >= 0 ? lines?.[current]?.id : undefined;
 
@@ -386,7 +437,7 @@ export const TranscriptTab: React.FC<{
         </div>
       )}
 
-      {query.trim() && shown.length === 0 ? (
+      {query.trim() && shown.length === 0 && shotsShown.length === 0 ? (
         <div className="grid place-items-center gap-1.5 py-10 text-center">
           <p className="text-[15px] font-medium">
             {t("notes.transcript.noResults", { query: query.trim() })}
@@ -401,44 +452,66 @@ export const TranscriptTab: React.FC<{
         </div>
       ) : (
         <ol ref={listRef} aria-label={t("notes.detail.tab.transcript")}>
-          {shown.map((line) => {
+          {shown.map((line, i) => {
             const now = line.id === currentId;
             const mark = line.id === marked;
+            // Screenshots taken since the line before sit above this one.
+            const before = shotsBetween(
+              shotsShown,
+              i === 0 ? -Infinity : shown[i - 1].at_ms,
+              line.at_ms,
+            );
             return (
-              <li
-                key={line.id}
-                data-line={line.id}
-                className={`grid ${voices.length ? "grid-cols-[52px_96px_minmax(0,1fr)]" : "grid-cols-[52px_52px_minmax(0,1fr)]"} items-baseline gap-x-2 rounded-[var(--r-sm)] px-1.5 py-[7px] text-[15px] leading-relaxed transition-colors duration-[var(--dur-2)] ${
-                  now ? "bg-teal-50" : mark ? "bg-surface-2" : ""
-                }`}
-              >
-                <button
-                  type="button"
-                  disabled={!src}
-                  onClick={() => playFrom(line.at_ms)}
-                  title={
-                    src
-                      ? t("notes.transcript.playFrom", {
-                          time: clock(line.at_ms),
-                        })
-                      : undefined
-                  }
-                  className="justify-self-start rounded-[var(--r-xs)] px-1 text-xs tabular-nums text-text-3 enabled:hover:bg-surface-3 enabled:hover:text-text disabled:cursor-default"
+              <React.Fragment key={line.id}>
+                {before.map(shotRow)}
+                <li
+                  data-line={line.id}
+                  className={`grid ${voices.length ? "grid-cols-[52px_96px_minmax(0,1fr)]" : "grid-cols-[52px_52px_minmax(0,1fr)]"} items-baseline gap-x-2 rounded-[var(--r-sm)] px-1.5 py-[7px] text-[15px] leading-relaxed transition-colors duration-[var(--dur-2)] ${
+                    now ? "bg-teal-50" : mark ? "bg-surface-2" : ""
+                  }`}
                 >
-                  {clock(line.at_ms)}
-                </button>
-                <SpeakerTag line={line} className="text-[13px]" />
-                <LineText
-                  line={line}
-                  voices={voices}
-                  canAddWord
-                  player={src ? player : undefined}
-                  current={now}
-                />
-              </li>
+                  <button
+                    type="button"
+                    disabled={!src}
+                    onClick={() => playFrom(line.at_ms)}
+                    title={
+                      src
+                        ? t("notes.transcript.playFrom", {
+                            time: clock(line.at_ms),
+                          })
+                        : undefined
+                    }
+                    className="justify-self-start rounded-[var(--r-xs)] px-1 text-xs tabular-nums text-text-3 enabled:hover:bg-surface-3 enabled:hover:text-text disabled:cursor-default"
+                  >
+                    {clock(line.at_ms)}
+                  </button>
+                  <SpeakerTag line={line} className="text-[13px]" />
+                  <LineText
+                    line={line}
+                    voices={voices}
+                    canAddWord
+                    player={src ? player : undefined}
+                    current={now}
+                  />
+                </li>
+              </React.Fragment>
             );
           })}
+          {shotsBetween(
+            shotsShown,
+            shown.length ? shown[shown.length - 1].at_ms : -Infinity,
+            Infinity,
+          ).map(shotRow)}
         </ol>
+      )}
+      {dir && (
+        <ShotViewer
+          shots={shots}
+          open={openShot}
+          setOpen={setOpenShot}
+          dir={dir}
+          onPlay={src ? playFrom : undefined}
+        />
       )}
       {lines && (
         <AddWordFromSelection noteId={note.id} lines={lines} root={listRef} />

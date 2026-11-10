@@ -778,6 +778,10 @@
   --s-hair: rgb(255 255 255 / 0.2);
   --s-border: rgb(255 255 255 / 0.14);
 }
+/* The camera, for the moment after a screenshot was taken. */
+.sx.sx-done {
+  color: var(--s-accent);
+}
 .scard.notes.dark .sx {
   background: rgb(255 255 255 / 0.16);
   color: #fff;

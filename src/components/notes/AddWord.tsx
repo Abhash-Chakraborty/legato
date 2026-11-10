@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { BookPlus } from "lucide-react";
+import { BookPlus } from "@/icons";
 import { commands, type NoteLine, type WordKind } from "@/bindings";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";

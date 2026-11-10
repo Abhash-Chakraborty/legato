@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Play, Pause } from "lucide-react";
+import { Play, Pause } from "@/icons";
 
 interface AudioPlayerProps {
   /** Audio source URL. If not provided, onLoadRequest must be provided. */

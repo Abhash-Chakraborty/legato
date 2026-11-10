@@ -21,29 +21,42 @@ A transform on the selection waits up to 30 seconds for the model. Nothing is pa
 
 ## The transforms Legato ships
 
-| Transform       | What it does                                                        | Starts |
-| --------------- | ------------------------------------------------------------------- | ------ |
-| Polish          | Fixes grammar and self-corrections, tightens wording, keeps my tone | On     |
-| Prompt engineer | Turns a spoken request into a clear prompt for Claude or ChatGPT    | On     |
-| Bullet points   | Turns a ramble into a tight list, every detail kept                 | On     |
-| To German       | Natural German; names, numbers and code untouched                   | On     |
-| Commit message  | A conventional commit from a spoken summary                         | On     |
-| Reply draft     | Drafts a reply to the selected message in my voice, below it        | Off    |
+| Transform       | What it does                                                                                                    | Starts |
+| --------------- | --------------------------------------------------------------------------------------------------------------- | ------ |
+| Polish          | Fixes grammar and self-corrections, tightens wording, keeps my tone, and shapes the text for the app it goes to | On     |
+| Prompt engineer | Turns a spoken request into a clear prompt for Claude or ChatGPT                                                | On     |
+| Bullet points   | Turns a ramble into a tight list, every detail kept                                                             | On     |
+| To German       | Natural German; names, numbers and code untouched                                                               | On     |
+| Commit message  | A conventional commit from a spoken summary                                                                     | On     |
+| Reply draft     | Drafts a reply to the selected message in my voice, below it                                                    | Off    |
 
 Polish and Prompt engineer are built in: you can change them but not delete them. Each card shows how often the transform ran and when it last did.
+
+## What a transform knows
+
+Every transform is told more than its prompt, so it fits where the text is going:
+
+- **The app and its kind**: the site in a browser tab counts, so Gmail in Chrome is an email. In an email, a transform that leaves the shape open writes a greeting line, short paragraphs and your sign-off. In a chat it keeps the message short and in your voice. In a document it writes paragraphs and lists. A prompt for an AI is made clearer, never answered.
+- **The formatting the app shows**: `*bold*` in WhatsApp, Markdown in Mattermost, none in an email. See [Formatting that fits the app](style.md#formatting-that-fits-the-app).
+- **Your name**, and **your Dictionary** with how each word gets misheard, so a name the speech model got wrong can still come out right.
+- **Your snippets** are kept out of it: the model sees a marker where a snippet's text goes, and the saved text is put back afterwards exactly as you saved it.
+
+Your prompt comes first. What Legato adds only settles what the prompt leaves open, so To German still just translates.
+
+An answer that can't be used falls back to what you said: one where the model explains its instructions, or one that lost a snippet. A line such as "Here's the polished text:" in front of the answer is taken off.
 
 ## Make your own
 
 New transform opens the editor:
 
 - **Name**, **Description** and **Prompt**: what you ask the model to do with the text.
-- **Insert** adds a variable to the prompt: `{{app}}` (the app the text is in), `{{dictionary}}` (your Dictionary words, most used first) or `{{clipboard}}` (what's on the clipboard). The clipboard is read only when the prompt asks for it. Every transform is told the app, your name and how your Dictionary spells its words anyway; the variables put them where you want them in the prompt.
+- **Insert** adds a variable to the prompt: `{{app}}` (the app the text is in), `{{dictionary}}` (your Dictionary words, most used first) or `{{clipboard}}` (what's on the clipboard). The clipboard is read only when the prompt asks for it. Every transform is told the app, your name and how your Dictionary spells its words anyway (see [What a transform knows](#what-a-transform-knows)); the variables put them where you want them in the prompt.
 - **Model**: the one in Settings › AI, or its own provider and model. A transform's own model uses the key saved for that provider.
 - **Result**: Replace the text, Add below (the selection stays and the result goes under it) or Copy (the result goes on the clipboard and nothing changes).
 - **Show changes**: the bar shows what changed, with Keep and Undo.
 - **Shortcut**: runs it on the selection in any app, once it's saved.
 
-Test runs the transform from the editor. Try it on the Transforms page runs any transform on text you type or a recent dictation and shows the changes word by word. Recent runs lists every run with what happened to it: Kept, Undone, Copied or Failed.
+Test runs the transform from the editor. Try it on the Transforms page runs any transform on text you type or a recent dictation and shows the changes word by word. Pick an app beside the transform, such as As in WhatsApp or As in Gmail, to see what it writes for that app. Recent runs lists every run with what happened to it: Kept, Undone, Copied or Failed.
 
 ## After every dictation
 

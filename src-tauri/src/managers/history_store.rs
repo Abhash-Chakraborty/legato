@@ -463,6 +463,22 @@ pub static MIGRATIONS: &[M] = &[
          );
          ALTER TABLE snippet ADD COLUMN also TEXT;",
     ),
+    // Notes: screenshots taken while a note records. `at_ms` is where in
+    // the recording, `file` a name in the recordings folder, `text` what
+    // Windows read on the screen (empty when it read nothing).
+    M::up(
+        "CREATE TABLE note_shot (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id INTEGER NOT NULL,
+            at_ms INTEGER NOT NULL,
+            file TEXT NOT NULL,
+            width INTEGER NOT NULL,
+            height INTEGER NOT NULL,
+            bytes INTEGER NOT NULL,
+            text TEXT NOT NULL DEFAULT ''
+         );
+         CREATE INDEX note_shot_note ON note_shot (note_id, at_ms);",
+    ),
 ];
 
 /// The schema version that added the columns and tables `backfill` fills in.

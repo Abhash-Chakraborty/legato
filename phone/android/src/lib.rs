@@ -423,6 +423,22 @@ impl Core {
         self.changed()
     }
 
+    /// Undo for a dictation deleted from Home: back with the time it had.
+    pub fn restore_history(
+        &self,
+        text: String,
+        app: String,
+        at: i64,
+        cancelled: bool,
+    ) -> Result<(), CoreError> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(());
+        }
+        self.phone.restore_dictation(text, &app, at, cancelled)?;
+        self.changed()
+    }
+
     /// Keeps the words of a dictation cancelled on this phone, so Home can
     /// still copy them.
     pub fn keep_cancelled(&self, text: String, app: String) -> Result<(), CoreError> {
@@ -602,12 +618,10 @@ impl Core {
         else {
             return Ok(None);
         };
-        let kind = (!package.is_empty()).then(|| legato_phone::finish::category_of(&package));
-        let words = kind.and_then(legato_phone::transform_rules::phone_app_words);
         let system = legato_phone::transforms::system_prompt(
             &self.phone.conn()?,
             &transform_id,
-            words,
+            &legato_phone::transforms::destination(&package),
             clipboard.as_deref(),
         )?;
         Ok(Some(TransformRequest {
@@ -623,7 +637,20 @@ impl Core {
     /// Reads a provider's answer as the PC does: None when it's empty or
     /// talks about its instructions instead of giving the text.
     pub fn read_transform_answer(&self, answer: String, input: String) -> Option<String> {
-        legato_phone::transforms::read_answer(&answer, &input)
+        legato_phone::transforms::read_answer(&answer, &input, None)
+    }
+
+    /// [`Self::read_transform_answer`] for text going into the app
+    /// `package`: bold, lists and headings are written the way that app
+    /// shows them (`*bold*` in WhatsApp, none in an email).
+    pub fn read_transform_answer_for(
+        &self,
+        answer: String,
+        input: String,
+        package: String,
+    ) -> Option<String> {
+        let to = legato_phone::transforms::destination(&package);
+        legato_phone::transforms::read_answer(&answer, &input, to.markup)
     }
 
     /// Text from this device's model, finished as the PC finishes a dictation

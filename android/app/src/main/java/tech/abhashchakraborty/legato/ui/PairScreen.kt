@@ -275,6 +275,9 @@ private fun ScanFrame() {
 
 /** The back camera, reading QR codes until one is a Legato pairing link. */
 @Composable
+/** How long before the scanner hands over a code it just handed over. */
+private const val RESCAN_MS = 4_000L
+
 private fun QrScanner(onCode: (String) -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -296,21 +299,27 @@ private fun QrScanner(onCode: (String) -> Unit, modifier: Modifier = Modifier) {
                 val provider = future.get()
                 val preview = Preview.Builder().build().also { it.setSurfaceProvider(view.surfaceProvider) }
                 val reader = QRCodeReader()
-                var found = false
+                // The same code is handed over again only after a few
+                // seconds, so a cancelled or failed try can scan again
+                // without the question coming straight back.
+                var last = ""
+                var lastAt = 0L
                 val analysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
                 analysis.setAnalyzer(executor) { image ->
                     try {
-                        if (!found) {
+                        run {
                             val plane = image.planes[0]
                             val buffer = plane.buffer
                             val bytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
                             val source = PlanarYUVLuminanceSource(bytes, plane.rowStride, image.height, 0, 0, image.width, image.height, false)
                             val text = runCatching { reader.decode(BinaryBitmap(HybridBinarizer(source))).text }.getOrNull()
                             reader.reset()
-                            if (text != null && text.startsWith(LINK_PREFIX)) {
-                                found = true
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            if (text != null && text.startsWith(LINK_PREFIX) && (text != last || now - lastAt > RESCAN_MS)) {
+                                last = text
+                                lastAt = now
                                 ContextCompat.getMainExecutor(ctx).execute { callback(text) }
                             }
                         }

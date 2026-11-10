@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Search } from "lucide-react";
+import { Search } from "@/icons";
 import type { TransformRun } from "@/bindings";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";
 import { AppIcon } from "../home/AppIcon";

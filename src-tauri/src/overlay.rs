@@ -32,7 +32,7 @@ const OVERLAY_CHANGES_HEIGHT: f64 = 290.0;
 const OVERLAY_PICK_WIDTH: f64 = 320.0;
 const OVERLAY_PICK_HEIGHT: f64 = 360.0;
 
-const OVERLAY_NOTES_WIDTH: f64 = 300.0;
+const OVERLAY_NOTES_WIDTH: f64 = 332.0;
 const OVERLAY_CALL_WIDTH: f64 = 380.0;
 /// Room for a meeting's link, or a line saying the calendar gave none.
 const OVERLAY_CALL_HEIGHT: f64 = 144.0;

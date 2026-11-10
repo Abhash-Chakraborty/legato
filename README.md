@@ -71,7 +71,7 @@ bun run tauri dev      # run it
 bun run tauri build    # installers in src-tauri/target/release/bundle
 ```
 
-Built with Tauri 2 (Rust and React), transcribe.cpp on GGML, Silero VAD and SQLite. The command-line flags and debug mode are in [docs/cli.md](docs/cli.md).
+Built with Tauri 2 (Rust and React), transcribe.cpp on GGML, Silero VAD and SQLite. Icons are [Lucide](https://lucide.dev), with hover motion from [pqoqubbw/icons](https://github.com/pqoqubbw/icons) (MIT). The command-line flags and debug mode are in [docs/cli.md](docs/cli.md).
 
 ## Status
 

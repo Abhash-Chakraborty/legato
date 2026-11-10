@@ -12,7 +12,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Trash2,
-} from "lucide-react";
+} from "@/icons";
 import {
   commands,
   type AiStatus,

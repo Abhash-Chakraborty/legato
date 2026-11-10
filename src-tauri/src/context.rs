@@ -6,6 +6,7 @@
 //! the slower lookups (the app's display name, its category) happen later,
 //! when the history row is written.
 
+use crate::format_rules::Markup;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -67,6 +68,10 @@ pub struct AppRule {
     /// How the Style page names it.
     pub name: String,
     pub category: AppCategory,
+    /// The formatting it shows, when you chose one; None lets Legato tell
+    /// from the app.
+    #[serde(default)]
+    pub markup: Option<Markup>,
 }
 
 static RULES: Lazy<RwLock<Vec<AppRule>>> = Lazy::new(Default::default);
@@ -80,7 +85,9 @@ pub fn set_rules(rules: Vec<AppRule>) {
     }
 }
 
-fn apply_rules(info: &mut AppInfo, rules: &[AppRule]) {
+/// Applies the rule for this app or site, if any; returns the formatting
+/// the rule sets.
+fn apply_rules(info: &mut AppInfo, rules: &[AppRule]) -> Option<Markup> {
     if BROWSERS.contains(&info.exe.as_str()) {
         let title = info.title.to_lowercase();
         if let Some(rule) = rules.iter().find(|r| {
@@ -88,7 +95,7 @@ fn apply_rules(info: &mut AppInfo, rules: &[AppRule]) {
         }) {
             info.site = Some(rule.name.clone());
             info.category = rule.category;
-            return;
+            return rule.markup;
         }
         if info.site.is_some() {
             // A built-in site keeps its kind unless a rule names it.
@@ -100,8 +107,9 @@ fn apply_rules(info: &mut AppInfo, rules: &[AppRule]) {
                         .is_some_and(|s| s.eq_ignore_ascii_case(&r.pattern))
             }) {
                 info.category = rule.category;
+                return rule.markup;
             }
-            return;
+            return None;
         }
     }
     let name = info.name.to_lowercase();
@@ -117,7 +125,9 @@ fn apply_rules(info: &mut AppInfo, rules: &[AppRule]) {
         })
     {
         info.category = rule.category;
+        return rule.markup;
     }
+    None
 }
 
 /// The kind of app a rule's target has without any rules.
@@ -145,18 +155,21 @@ pub fn rule_for(info: &AppInfo, category: AppCategory) -> AppRule {
             pattern: site.to_lowercase(),
             name: site.clone(),
             category,
+            markup: None,
         },
         None if info.name == "Claude Code" => AppRule {
             kind: AppRuleKind::App,
             pattern: "claude code".into(),
             name: info.name.clone(),
             category,
+            markup: None,
         },
         None => AppRule {
             kind: AppRuleKind::App,
             pattern: info.exe.clone(),
             name: info.name.clone(),
             category,
+            markup: None,
         },
     }
 }
@@ -173,6 +186,16 @@ pub struct AppInfo {
     /// The site in a browser tab, matched from the window title ("Gmail").
     pub site: Option<String>,
     pub category: AppCategory,
+    /// How it shows formatting: its own symbols for bold, Markdown, or none.
+    pub markup: Markup,
+}
+
+impl AppInfo {
+    /// What a person would call the place the text goes: the site in a
+    /// browser tab ("Gmail"), else the app.
+    pub fn place(&self) -> &str {
+        self.site.as_deref().unwrap_or(&self.name)
+    }
 }
 
 /// The window in front when the current dictation started. Set by the
@@ -305,7 +328,16 @@ pub fn resolve(window: &ForegroundWindow) -> AppInfo {
         .read()
         .map(|r| r.clone())
         .unwrap_or_else(|e| e.into_inner().clone());
-    apply_rules(&mut info, &rules);
+    // A rule may move the app to another kind, which changes the formatting
+    // it gets unless the rule names one.
+    info.markup = apply_rules(&mut info, &rules).unwrap_or_else(|| {
+        crate::format_rules::markup_for(
+            info.category.as_str(),
+            &info.name,
+            info.site.as_deref(),
+            &info.title,
+        )
+    });
     info
 }
 
@@ -420,7 +452,19 @@ const SITES: &[(&str, AppCategory)] = &[
     ("GitHub", AppCategory::Code),
     ("Notion", AppCategory::Documents),
     ("Google Docs", AppCategory::Documents),
+    ("Mattermost", AppCategory::Work),
+    ("Google Chat", AppCategory::Work),
+    ("Zulip", AppCategory::Work),
+    ("Element", AppCategory::Work),
+    ("Rocket.Chat", AppCategory::Work),
+    ("Messenger", AppCategory::Personal),
+    ("GitLab", AppCategory::Code),
+    ("Proton Mail", AppCategory::Email),
 ];
+
+/// Sites that put their name after other words in one part of the title:
+/// a Mattermost tab reads "Town Square - Acme Mattermost".
+const SITE_SUFFIXES: &[(&str, AppCategory)] = &[("Mattermost", AppCategory::Work)];
 
 /// Desktop apps by executable.
 const APPS: &[(&str, AppCategory)] = &[
@@ -430,6 +474,10 @@ const APPS: &[(&str, AppCategory)] = &[
     ("discord.exe", AppCategory::Personal),
     ("signal.exe", AppCategory::Personal),
     ("slack.exe", AppCategory::Work),
+    ("mattermost.exe", AppCategory::Work),
+    ("element.exe", AppCategory::Work),
+    ("zulip.exe", AppCategory::Work),
+    ("rocket.chat.exe", AppCategory::Work),
     ("ms-teams.exe", AppCategory::Work),
     ("teams.exe", AppCategory::Work),
     ("outlook.exe", AppCategory::Email),
@@ -440,6 +488,8 @@ const APPS: &[(&str, AppCategory)] = &[
     ("onenote.exe", AppCategory::Documents),
     ("notion.exe", AppCategory::Documents),
     ("obsidian.exe", AppCategory::Documents),
+    ("typora.exe", AppCategory::Documents),
+    ("logseq.exe", AppCategory::Documents),
     ("claude.exe", AppCategory::Ai),
     ("chatgpt.exe", AppCategory::Ai),
     ("code.exe", AppCategory::Code),
@@ -537,6 +587,12 @@ fn classify(exe_path: &str, exe: &str, described: Option<&str>, title: &str) -> 
         {
             site = Some(found.to_string());
             category = *cat;
+        } else if let Some((found, cat)) = SITE_SUFFIXES.iter().find(|(s, _)| {
+            let end = format!(" {}", s.to_lowercase());
+            parts.iter().any(|p| p.to_lowercase().ends_with(&end))
+        }) {
+            site = Some(found.to_string());
+            category = *cat;
         }
     }
 
@@ -546,6 +602,7 @@ fn classify(exe_path: &str, exe: &str, described: Option<&str>, title: &str) -> 
         category = AppCategory::Ai;
     }
 
+    let markup = crate::format_rules::markup_for(category.as_str(), &name, site.as_deref(), title);
     AppInfo {
         exe_path: exe_path.to_string(),
         exe: exe.to_string(),
@@ -553,6 +610,7 @@ fn classify(exe_path: &str, exe: &str, described: Option<&str>, title: &str) -> 
         title: title.to_string(),
         site,
         category,
+        markup,
     }
 }
 
@@ -1063,23 +1121,27 @@ mod tests {
                 pattern: "slack.exe".into(),
                 name: "Slack".into(),
                 category: AppCategory::Personal,
+                markup: None,
             },
             AppRule {
                 kind: AppRuleKind::Site,
                 pattern: "linear".into(),
                 name: "Linear".into(),
                 category: AppCategory::Work,
+                markup: None,
             },
             AppRule {
                 kind: AppRuleKind::Site,
                 pattern: "gmail".into(),
                 name: "Gmail".into(),
                 category: AppCategory::Other,
+                markup: None,
             },
         ];
         let mut slack = info("slack.exe", Some("Slack"), "general - Slack");
-        apply_rules(&mut slack, &rules);
+        assert_eq!(apply_rules(&mut slack, &rules), None);
         assert_eq!(slack.category, AppCategory::Personal);
+        assert_eq!(slack.markup, Markup::Chat);
         let mut linear = info(
             "chrome.exe",
             Some("Google Chrome"),
@@ -1099,6 +1161,55 @@ mod tests {
         assert_eq!(gmail.category, AppCategory::Other);
         assert_eq!(builtin_category(&rules[0]), AppCategory::Work);
         assert_eq!(rule_for(&linear, AppCategory::Ai).pattern, "linear");
+
+        // A rule can name the formatting, for a chat Legato can't tell.
+        let chat = vec![AppRule {
+            kind: AppRuleKind::Site,
+            pattern: "acme chat".into(),
+            name: "Acme Chat".into(),
+            category: AppCategory::Work,
+            markup: Some(Markup::Markdown),
+        }];
+        let mut tab = info(
+            "chrome.exe",
+            Some("Google Chrome"),
+            "general - Acme Chat - Google Chrome",
+        );
+        assert_eq!(tab.markup, Markup::Plain);
+        assert_eq!(apply_rules(&mut tab, &chat), Some(Markup::Markdown));
+    }
+
+    #[test]
+    fn chats_are_known_with_their_formatting() {
+        let mm = info(
+            "chrome.exe",
+            Some("Google Chrome"),
+            "Town Square - Acme Mattermost - Google Chrome",
+        );
+        assert_eq!(
+            (mm.site.as_deref(), mm.category, mm.markup),
+            (Some("Mattermost"), AppCategory::Work, Markup::Markdown)
+        );
+        let app = info("mattermost.exe", Some("Mattermost"), "Town Square - Acme");
+        assert_eq!(
+            (app.category, app.markup),
+            (AppCategory::Work, Markup::Markdown)
+        );
+        let wa = info(
+            "chrome.exe",
+            Some("Google Chrome"),
+            "(2) WhatsApp - Google Chrome",
+        );
+        assert_eq!(wa.markup, Markup::Chat);
+        assert_eq!(wa.place(), "WhatsApp");
+        let tg = info("telegram.exe", Some("Telegram Desktop"), "Telegram");
+        assert_eq!(tg.markup, Markup::Telegram);
+        let mail = info(
+            "chrome.exe",
+            Some("Google Chrome"),
+            "Inbox - Gmail - Google Chrome",
+        );
+        assert_eq!(mail.markup, Markup::Plain);
     }
 
     #[test]

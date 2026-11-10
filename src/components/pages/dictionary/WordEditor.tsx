@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Trash2 } from "lucide-react";
+import { Trash2 } from "@/icons";
 import { toast } from "sonner";
 import {
   commands,

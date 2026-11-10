@@ -254,6 +254,53 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
     .0
 }
 
+/// A word without the punctuation around it.
+fn core_of(word: &str) -> &str {
+    let (prefix, suffix) = extract_punctuation(word);
+    word.get(prefix.len()..word.len() - suffix.len())
+        .unwrap_or(word)
+}
+
+/// A word and its possessive ending: "Dokploy's" is ("Dokploy", "'s").
+fn split_possessive(core: &str) -> (&str, &str) {
+    for ending in ["'s", "\u{2019}s", "'S", "\u{2019}S"] {
+        if let Some(stem) = core.strip_suffix(ending) {
+            if stem.chars().any(char::is_alphanumeric) {
+                return (stem, &core[stem.len()..]);
+            }
+        }
+    }
+    (core, "")
+}
+
+/// The digits of a match key, in order. A word with a number in it is
+/// another word with another number: "iPhone 16" isn't "iPhone 15".
+fn digits_of(key: &str) -> String {
+    key.chars().filter(char::is_ascii_digit).collect()
+}
+
+/// The word in the case of what it replaces. Said in capitals, it's
+/// written in capitals: everything it replaces was, or the first word of
+/// it was ("CHARGE B" for "ChargeBee"), unless those capitals are the
+/// word's own ("AWS Lamda" for "AWS Lambda"). Otherwise a word with
+/// capitals of its own ("iPhone") is pasted as spelled, and an
+/// all-lowercase one takes a capital at the start of a sentence.
+fn case_like(found: &[&str], word: &str) -> String {
+    let capitals = |text: &str| {
+        let letters: Vec<char> = text.chars().filter(|c| c.is_alphabetic()).collect();
+        letters.len() >= 2 && letters.iter().all(|c| c.is_uppercase())
+    };
+    let first = found.first().map_or("", |w| core_of(w));
+    let its_own = word.split_whitespace().next() == Some(first);
+    if capitals(&found.concat()) || (capitals(first) && !its_own) {
+        return word.to_uppercase();
+    }
+    if word.chars().any(char::is_uppercase) {
+        return word.to_string();
+    }
+    preserve_case_pattern(found.first().map_or("", |w| core_of(w)), word)
+}
+
 /// The fuzzy matcher behind [`apply_custom_words`], reporting what it changed
 /// as `(heard, word)` pairs. Words at the same index in `exact_case` are
 /// pasted exactly as spelled instead of taking the heard word's case, and
@@ -283,15 +330,14 @@ fn correct_close_words(
     let mut i = 0;
 
     while i < words.len() {
-        // A word already spelled as one of the user's own stays as it is.
-        let (prefix, suffix) = extract_punctuation(words[i]);
-        let core = words[i]
-            .get(prefix.len()..words[i].len() - suffix.len())
-            .unwrap_or(words[i]);
+        // A word already spelled as one of the user's own stays as it is,
+        // with a possessive ending or without.
+        let core = core_of(words[i]);
         // A word spelled as one of the user's own may still start a longer
         // one: "Abhash Chakravorty" becomes "Abhash Chakraborty" though
         // "Abhash" is a word of its own.
-        let spelled_right = protected.contains(core);
+        let spelled_right =
+            protected.contains(core) || protected.contains(split_possessive(core).0);
         let shortest = if spelled_right { 2 } else { 1 };
 
         let mut best_match: Option<(usize, usize, f64)> = None;
@@ -319,26 +365,28 @@ fn correct_close_words(
             }
             // A real word on its own is what was said, not a close miss of
             // a Dictionary word: "neon" stays though "Inyon" is near.
-            if n == 1 && is_word.is_some_and(|f| f(core)) {
+            if n == 1 && is_word.is_some_and(|f| f(core) || f(split_possessive(core).0)) {
                 continue;
             }
             // Nor are a few real words in a row: "a bash" stays, though
             // "Abhash" sounds close.
-            if n > 1
-                && is_word.is_some_and(|f| {
-                    ngram_words.iter().all(|w| {
-                        let (prefix, suffix) = extract_punctuation(w);
-                        f(w.get(prefix.len()..w.len() - suffix.len()).unwrap_or(w))
-                    })
-                })
-            {
+            if n > 1 && is_word.is_some_and(|f| ngram_words.iter().all(|w| f(core_of(w)))) {
                 continue;
             }
-            let ngram = build_ngram(ngram_words);
+            // A possessive ending isn't part of the word: "Dokploi's" is
+            // compared as "Dokploi", and the ending goes back on.
+            let (last_stem, _) = split_possessive(core_of(ngram_words[n - 1]));
+            let mut compared: Vec<&str> = ngram_words[..n - 1].to_vec();
+            compared.push(last_stem);
+            let ngram = build_ngram(&compared);
 
             if let Some((index, score)) =
                 find_best_match(&ngram, &custom_word_match_keys, threshold)
             {
+                // A number is part of the name it's in.
+                if digits_of(&ngram) != digits_of(&build_match_key(&custom_words[index])) {
+                    continue;
+                }
                 if spelled_right
                     && !custom_words[index]
                         .to_lowercase()
@@ -348,7 +396,14 @@ fn correct_close_words(
                 }
                 // A window holding the word already written out would only
                 // swallow its neighbours: "Ask Abhash Chakraborty" stays.
-                let written = ngram_words.join(" ").to_lowercase();
+                // Compared without the punctuation around each word, so
+                // "written in TypeScript." keeps its "in".
+                let written = compared
+                    .iter()
+                    .map(|w| core_of(w))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .to_lowercase();
                 let word = custom_words[index].to_lowercase();
                 if written != word
                     && written
@@ -375,21 +430,33 @@ fn correct_close_words(
             let (prefix, _) = extract_punctuation(ngram_words[0]);
             let (_, suffix) = extract_punctuation(ngram_words[n - 1]);
 
-            // Preserve case from first word, unless the word is case sensitive.
+            // The case of what was heard, unless the word is case sensitive.
             let corrected = if exact_case.get(index).copied().unwrap_or(false) {
                 replacement.clone()
             } else {
-                preserve_case_pattern(ngram_words[0], replacement)
+                case_like(ngram_words, replacement)
             };
 
             let joined = ngram_words.join(" ");
             let heard = joined
                 .get(prefix.len()..joined.len() - suffix.len())
                 .unwrap_or(&joined);
+            // A possessive goes back on, and so does a plural's "s" when
+            // the rest is the word exactly ("webhooks" stays "webhooks").
+            let (stem, possessive) = split_possessive(heard);
+            let plural = possessive.is_empty()
+                && build_match_key(heard)
+                    .strip_suffix('s')
+                    .is_some_and(|rest| rest == build_match_key(replacement));
+            let (heard, ending) = match (possessive.is_empty(), plural) {
+                (false, _) => (stem, possessive),
+                (true, true) => (&heard[..heard.len() - 1], &heard[heard.len() - 1..]),
+                (true, false) => (heard, ""),
+            };
             if heard != corrected {
                 changes.push((heard.to_string(), corrected.clone()));
             }
-            result.push(format!("{}{}{}", prefix, corrected, suffix));
+            result.push(format!("{prefix}{corrected}{ending}{suffix}"));
             i += n;
         } else {
             result.push(words[i].to_string());
@@ -442,6 +509,9 @@ pub struct CompiledDictionary {
     /// Normalised heard form to an index into `words`.
     heard_index: HashMap<String, usize>,
     spelled: HashSet<String>,
+    /// Every word and other form of more than one word, ASCII-lowercased:
+    /// the names a heard form may sit inside.
+    spelled_phrases: Vec<String>,
     is_word: Option<IsWord>,
 }
 
@@ -461,11 +531,11 @@ fn matchable_form(form: &str) -> bool {
 }
 
 /// Whether `span` of `lower` (the dictation, ASCII-lowercased) lies inside
-/// the word or one of its other forms written out in full.
-fn within_written(lower: &str, span: std::ops::Range<usize>, word: &DictionaryWord) -> bool {
-    std::iter::once(&word.text)
-        .chain(&word.also)
-        .map(|form| form.to_ascii_lowercase())
+/// one of `forms` written out in full: a Dictionary word or one of its
+/// other forms, ASCII-lowercased. A heard form there is part of a name.
+fn within_written(lower: &str, span: std::ops::Range<usize>, forms: &[String]) -> bool {
+    forms
+        .iter()
         .filter(|form| form.len() > span.len())
         .any(|form| {
             lower
@@ -523,16 +593,22 @@ impl CompiledDictionary {
                 .join("|");
             Regex::new(&format!(r"(?i)\b(?:{alternation})\b")).ok()
         };
-        let spelled = words
+        let spelled: HashSet<String> = words
             .iter()
             .flat_map(|w| std::iter::once(&w.text).chain(&w.also))
             .cloned()
+            .collect();
+        let spelled_phrases = spelled
+            .iter()
+            .filter(|form| form.contains(char::is_whitespace))
+            .map(|form| form.to_ascii_lowercase())
             .collect();
         Self {
             words,
             heard,
             heard_index,
             spelled,
+            spelled_phrases,
             is_word: None,
         }
     }
@@ -552,7 +628,9 @@ impl CompiledDictionary {
         let ordinary = !found.contains(char::is_whitespace)
             && !found.eq_ignore_ascii_case(&word.text)
             && self.is_word.as_ref().is_some_and(|f| f(found));
-        !ordinary || word.context.iter().any(|c| said.contains(c))
+        // A word never said before has no company to tell by yet, and its
+        // heard form is what the person asked for: it's replaced.
+        !ordinary || word.context.is_empty() || word.context.iter().any(|c| said.contains(c))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -589,9 +667,10 @@ impl CompiledDictionary {
                     // A heard form inside the word already written out
                     // stays: "Abhash" heard for "Abhash Chakraborty" mustn't
                     // turn "Abhash Chakraborty" into "… Chakraborty
-                    // Chakraborty".
+                    // Chakraborty". So does one inside another word's name:
+                    // "carol" heard for "Karol" leaves "Carol Danvers".
                     let span = caps.get(0).map_or(0..0, |m| m.range());
-                    if within_written(&lower, span, word) {
+                    if within_written(&lower, span, &self.spelled_phrases) {
                         return found.to_string();
                     }
                     let out = if word.case_sensitive {
@@ -1381,6 +1460,72 @@ mod tests {
             heard: heard.iter().map(|h| h.to_string()).collect(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn endings_case_and_numbers_survive_a_close_miss() {
+        let fix = |words: &[&str], text: &str| {
+            let words: Vec<String> = words.iter().map(|w| w.to_string()).collect();
+            apply_custom_words(text, &words, 0.18)
+        };
+        // A possessive and a plural keep their endings.
+        assert_eq!(
+            fix(&["Dokploy"], "open Dokploi's dashboard"),
+            "open Dokploy's dashboard"
+        );
+        assert_eq!(
+            fix(&["Dokploy"], "Dokploy's logs and two webhooks"),
+            "Dokploy's logs and two webhooks"
+        );
+        assert_eq!(fix(&["webhook"], "add two webhooks"), "add two webhooks");
+        // A short word before the word, with punctuation after it, stays.
+        assert_eq!(
+            fix(&["TypeScript"], "written in TypeScript."),
+            "written in TypeScript."
+        );
+        assert_eq!(
+            fix(&["webhook"], "add a webhook, then test"),
+            "add a webhook, then test"
+        );
+        // Capitals are the word's own, not the first heard word's.
+        assert_eq!(
+            fix(&["AWS Lambda"], "on AWS Lamda now"),
+            "on AWS Lambda now"
+        );
+        assert_eq!(fix(&["iPhone"], "Iphone setup"), "iPhone setup");
+        assert_eq!(fix(&["kubectl"], "Kubectle is down"), "Kubectl is down");
+        assert_eq!(fix(&["kubectl"], "RUN KUBECTLE NOW"), "RUN KUBECTL NOW");
+        // Another number is another thing.
+        assert_eq!(
+            fix(&["iPhone 15"], "the iPhone 16 is out"),
+            "the iPhone 16 is out"
+        );
+        assert_eq!(
+            fix(&["iPhone 15"], "the iPhon 15 is out"),
+            "the iPhone 15 is out"
+        );
+    }
+
+    #[test]
+    fn a_heard_form_never_said_before_is_replaced_and_names_are_left_whole() {
+        let is_word: IsWord = Arc::new(|w: &str| w.eq_ignore_ascii_case("carol"));
+        // No dictation with Karol in it yet: the heard form is the
+        // person's instruction.
+        let dict = CompiledDictionary::new(vec![word("Karol", &["carol"])])
+            .with_word_check(is_word.clone());
+        assert_eq!(
+            dict.apply("ask Carol about it", false, 0.18).0,
+            "ask Karol about it"
+        );
+        // Inside another word of the Dictionary, it's part of that name.
+        let dict =
+            CompiledDictionary::new(vec![word("Karol", &["carol"]), word("Carol Danvers", &[])])
+                .with_word_check(is_word);
+        assert_eq!(
+            dict.apply("Carol Danvers called, tell Carol", false, 0.18)
+                .0,
+            "Carol Danvers called, tell Karol"
+        );
     }
 
     #[test]

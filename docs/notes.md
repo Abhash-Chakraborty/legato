@@ -18,6 +18,7 @@ Each track is cut into lines at pauses, and every line is transcribed on your PC
 You can also start from anywhere:
 
 - **Start or stop notes** (Win+Alt+M by default) starts a meeting with the call app you're in, or stops the recording.
+- **Screenshot into notes** (Win+Alt+P by default) puts a screenshot of your screen in the note that's recording. See [Screenshots](#screenshots).
 - Take notes on the bubble, or Notes on the island, which also start a meeting with the call app you're in. See [Dictation](dictation.md) for the bubble and the island.
 
 Settings › Features › Notes turns the whole feature off. That hides the Notes page, its shortcut and its buttons.
@@ -53,6 +54,18 @@ My notes is a private text box on every note. Type while you listen, or choose D
 
 > **Note:** Settings › Legato bar › Hide from screenshots and screen sharing keeps the bar, the bubble and the Notes side panel out of a screen you share. Still let people know you're recording.
 
+## Screenshots
+
+While a note records, the camera button takes a screenshot of the whole screen the pointer is on and puts it in the note. It's on the bar's Notes pill, in the Notes side panel and on the Notes page, and Screenshot into notes (Win+Alt+P by default) does the same from any app. The screen is grabbed the moment you click; saving happens afterwards, so nothing waits. A tick on the button says it was taken.
+
+- **In the transcript**, each screenshot sits at the moment it was taken. Click it to see it full size, play the recording from there, copy the picture or delete it (with Undo). Searching the transcript also finds screenshots by the words that were on screen.
+- **In the summary**, a screenshot shows under the topic that was being discussed when you took it.
+- **What was on screen** is read by Windows' own text recognition, on this PC, and given to the summary with the transcript, so it can say what was being shown.
+- **Small files**: a screen of text and windows is saved without loss, usually a few hundred kilobytes. A video or a photo on screen is saved as a high-quality JPEG. Screens wider than 2560 pixels are scaled down to that.
+- **Word copies** of the note include the pictures, up to 40 of them.
+
+Screenshots stay on this PC with the note's audio; they aren't synced to your phone. Deleting the note deletes them. Legato's own bar, bubble and Notes panel aren't in a screenshot while Hide from screenshots and screen sharing is on.
+
 ## Telling voices apart
 
 A meeting's lines can each get the voice that said them: Speaker 1, Speaker 2, or a name you give. This needs the speaker model (NVIDIA Streaming Sortformer, about 139 MB, run on your PC). Your first meeting downloads it, or download it in Settings › Context & calls › Speaker model. Tell speakers apart turns the feature off.
@@ -77,7 +90,7 @@ You aren't listed: Legato recognises Settings › General › Your name, your fi
 
 ## The summary
 
-With an AI provider set up in Settings › AI, and Notes summaries and Ask turned on there, each note gets a summary after it stops. It has the main points, Decisions, Next steps with who owns each one, and Topics and Details that play the recording from the moment they came up. A note shorter than about 40 words is too short to summarise.
+With an AI provider set up in Settings › AI, and Notes summaries and Ask turned on there, each note gets a summary after it stops. It has the main points, Decisions, Next steps with who owns each one, and Topics and Details that play the recording from the moment they came up. A note shorter than about 40 words is too short to summarise. The summary is written from the transcript, with the meeting's name from your calendar and what you typed in My notes as a guide to what mattered.
 
 The summary also names the note while it still has its default title, and tags it while it has no tags. A title or tags you set yourself are never changed. A note called Busy, from a calendar that shares no details, counts as untitled and gets a name too.
 

@@ -7,7 +7,7 @@ import {
   Keyboard,
   Pencil,
   Trash2,
-} from "lucide-react";
+} from "@/icons";
 import type { Transform, TransformUsage } from "@/bindings";
 import { ActionMenu } from "../../ui/ActionMenu";
 import { formatRunTime } from "./list";

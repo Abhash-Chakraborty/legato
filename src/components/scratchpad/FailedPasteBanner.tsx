@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, Copy, TriangleAlert, X } from "lucide-react";
+import { Check, Copy, TriangleAlert, X } from "@/icons";
 import { copyToClipboard } from "../pages/home/clipboard";
 import { commands, type ScratchNote } from "@/bindings";
 import { AppIcon } from "../pages/home/AppIcon";

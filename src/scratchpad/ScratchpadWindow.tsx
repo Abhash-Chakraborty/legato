@@ -42,7 +42,7 @@ import {
   Trash2,
   Type,
   X,
-} from "lucide-react";
+} from "@/icons";
 import {
   commands,
   events,
@@ -479,7 +479,9 @@ export const ScratchpadWindow: React.FC = () => {
     const id = ++run.current;
     const noteId = active.id;
     setTransforming(tf.name);
-    const result = await commands.tryTransform(tf, part).catch(() => null);
+    const result = await commands
+      .tryTransform(tf, part, null)
+      .catch(() => null);
     if (id !== run.current) return;
     setTransforming(null);
     if (latest.current.active?.id !== noteId) return;

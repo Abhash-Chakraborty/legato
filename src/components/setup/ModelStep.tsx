@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { Check, Cpu, Languages, Loader2 } from "lucide-react";
+import { Check, Cpu, Languages, Loader2 } from "@/icons";
 import { commands, type GpuDeviceOption, type ModelInfo } from "@/bindings";
 import { useModelStore } from "../../stores/modelStore";
 import { getLanguageLabel } from "../../lib/constants/languages";

@@ -1,19 +1,24 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Crosshair, Globe, RotateCcw, Search, X } from "lucide-react";
+import { Crosshair, Globe, RotateCcw, Search, X } from "@/icons";
 import { toast } from "sonner";
 import {
   commands,
   type AppCategory,
   type AppRule,
+  type Markup,
   type StyleApp,
 } from "@/bindings";
+import { Dropdown } from "../../ui/Dropdown";
 import { useTextHighlight } from "../../../hooks/useTextHighlight";
 import { Button } from "../../ui/Button";
 import { Sheet } from "../../ui/Sheet";
 import { AppIcon } from "../home/AppIcon";
 
 const PICK_SECONDS = 3;
+
+/** The formattings an app can be given by hand. */
+const MARKUPS: Markup[] = ["markdown", "chat", "telegram", "plain", "verbatim"];
 
 const keyOf = (a: StyleApp) => `${a.rule.kind}:${a.rule.pattern}`;
 
@@ -103,6 +108,19 @@ export const EditApps: React.FC<EditAppsProps> = ({
     onRules(rules);
     if (picked && keyOf(picked) === keyOf(app))
       setPicked({ ...picked, category: to });
+  };
+
+  // How the app shows bold and lists: Legato's own guess, or yours.
+  const format = async (app: StyleApp, value: string) => {
+    const markup = value === "auto" ? null : (value as Markup);
+    const rules = await commands
+      .setAppMarkup(app.rule, markup)
+      .catch(() => null);
+    if (!rules) {
+      toast.error(t("style.edit.format.failed"));
+      return;
+    }
+    onRules(rules);
   };
 
   const addSite = async () => {
@@ -203,17 +221,46 @@ export const EditApps: React.FC<EditAppsProps> = ({
                   app={a}
                   detail={detailOf(a)}
                   action={
-                    category === "other" ? null : (
-                      <button
-                        type="button"
-                        onClick={() => move(a, "other")}
-                        aria-label={t("style.edit.remove", { app: a.name })}
-                        title={t("style.edit.remove", { app: a.name })}
-                        className="grid h-8 w-8 flex-none place-items-center rounded-[var(--r-sm)] text-text-3 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0"
-                      >
-                        <X className="h-4 w-4" aria-hidden="true" />
-                      </button>
-                    )
+                    <>
+                      <Dropdown
+                        className="w-[168px] flex-none [&_.select-btn]:h-8 [&_.select-btn]:min-w-0 [&_.select-btn]:text-[13px]"
+                        menuClassName="right-0 w-[230px]"
+                        ariaLabel={t("style.edit.format.label", {
+                          app: a.name,
+                        })}
+                        selectedValue={a.markup_set ? a.markup : "auto"}
+                        onSelect={(value) => format(a, value)}
+                        options={[
+                          {
+                            value: "auto",
+                            label: a.markup_set
+                              ? t("style.edit.format.auto")
+                              : t("style.edit.format.autoIs", {
+                                  format: t(
+                                    `style.edit.format.names.${a.markup}`,
+                                  ),
+                                }),
+                            description: t("style.edit.format.autoHelp"),
+                          },
+                          ...MARKUPS.map((m) => ({
+                            value: m,
+                            label: t(`style.edit.format.names.${m}`),
+                            description: t(`style.edit.format.help.${m}`),
+                          })),
+                        ]}
+                      />
+                      {category === "other" ? null : (
+                        <button
+                          type="button"
+                          onClick={() => move(a, "other")}
+                          aria-label={t("style.edit.remove", { app: a.name })}
+                          title={t("style.edit.remove", { app: a.name })}
+                          className="grid h-8 w-8 flex-none place-items-center rounded-[var(--r-sm)] text-text-3 transition-colors duration-[var(--dur-1)] hover:bg-surface-3 hover:text-text hover:duration-0"
+                        >
+                          <X className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      )}
+                    </>
                   }
                 />
               ))}

@@ -8,7 +8,7 @@ import {
   Pencil,
   Trash2,
   X,
-} from "lucide-react";
+} from "@/icons";
 import { commands, type NoteLine, type WordFix } from "@/bindings";
 import { useNotesStore } from "../../stores/notesStore";
 import { ActionMenu, type ActionMenuItem } from "../ui/ActionMenu";

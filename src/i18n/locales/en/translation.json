@@ -189,6 +189,10 @@
             "name": "Start or stop notes",
             "description": "Starts recording a meeting with the call app you're in, or stops the recording."
           },
+          "note_screenshot": {
+            "name": "Screenshot into notes",
+            "description": "While a note records, puts a screenshot of the screen the pointer is on into it."
+          },
           "talk_to_companion": {
             "name": "Talk to the companion",
             "description": "Hold and speak to Inyon's companion agent, which looks after your other sessions. Its reply shows on the bar."
@@ -657,6 +661,19 @@
       "updates": {
         "off": "Update checks are off.",
         "install": "Install update"
+      },
+      "whatsNew": {
+        "title": "What's new in this version",
+        "description": "The list of changes shown after the last update.",
+        "button": "Show",
+        "none": "No notes for this version."
+      },
+      "setupAgain": {
+        "title": "Setup and the tour",
+        "description": "Check the microphone, pick a model and practise again, or put the Get to know Legato list back on Home.",
+        "button": "Run setup again",
+        "tour": "Show the list on Home",
+        "tourShown": "Get to know Legato is back on Home"
       }
     },
     "saved": "Saved",
@@ -1638,6 +1655,7 @@
       "correction_copiedLearnedMore_one": "The fix is on the clipboard; learned “{{word}}” and {{count}} more",
       "correction_copiedLearnedMore_other": "The fix is on the clipboard; learned “{{word}}” and {{count}} more",
       "nothing_to_correct": "Nothing pasted in the last 10 minutes to correct",
+      "nothing_recording": "Screenshots go into a note while it records",
       "correctedReview": "Fixed; “{{word}}” waits in Needs review",
       "correctedReviewMore_one": "Fixed; “{{word}}” and {{count}} more wait in Needs review",
       "correctedReviewMore_other": "Fixed; “{{word}}” and {{count}} more wait in Needs review",
@@ -1669,7 +1687,10 @@
       "pause": "Pause notes",
       "resume": "Resume notes",
       "stop": "Stop notes",
-      "open": "Show the notes panel"
+      "open": "Show the notes panel",
+      "screenshot": "Take a screenshot",
+      "screenshotTaken": "Screenshot saved to the note",
+      "screenshotFailed": "Couldn't take a screenshot"
     },
     "call": {
       "started": "Call started in {{app}}",
@@ -1925,6 +1946,62 @@
         "added": "{{word}} added to your Dictionary · used from your next dictation",
         "extended": "“{{heard}}” added as a way Legato hears {{word}}",
         "known": "{{word}} is already in your Dictionary"
+      }
+    },
+    "tour": {
+      "title": "Get to know Legato",
+      "progress": "{{done}} of {{count}}",
+      "all": "All",
+      "less": "Less",
+      "hide": "Hide this list",
+      "show": "Show me",
+      "skip": "Skip",
+      "done": "Done",
+      "rows": {
+        "dictionary": {
+          "title": "Teach it your words",
+          "body": "Names and terms Legato gets wrong go in your Dictionary, and it writes them your way from then on."
+        },
+        "correct": {
+          "title": "Fix a dictation where it stands",
+          "body": "Press {{keys}} after a paste to edit what you said. Your fix replaces it in the app, and Legato learns the words you changed.",
+          "bodyNoKeys": "Correct on the bar after a paste lets you edit what you said. Your fix replaces it in the app, and Legato learns the words you changed."
+        },
+        "style": {
+          "title": "Sound right in every app",
+          "body": "Chats stay casual, email stays formal and code stays as said. Style shows what Legato does in each kind of app."
+        },
+        "ai": {
+          "title": "Add your AI",
+          "body": "With a model of your own, Legato cleans up what you say, runs transforms and summarises your notes. A local model works too."
+        },
+        "transforms": {
+          "title": "Rewrite text with a shortcut",
+          "body": "Select text in any app and press {{keys}} to polish it, turn it into a list or translate it.",
+          "bodyNoKeys": "Select text in any app and run a transform to polish it, turn it into a list or translate it."
+        },
+        "snippets": {
+          "title": "Save what you say often",
+          "body": "Say a short phrase and Legato pastes your address, a link or a whole reply."
+        },
+        "notes": {
+          "title": "Take notes in a meeting",
+          "body": "{{keys}} records a call, writes the transcript, tells the voices apart and summarises it. Screenshots go in with one click.",
+          "bodyNoKeys": "Notes records a call, writes the transcript, tells the voices apart and summarises it. Screenshots go in with one click."
+        },
+        "scratchpad": {
+          "title": "Think out loud in the Scratchpad",
+          "body": "{{keys}} opens a window that stays on top for dictating drafts before they go anywhere.",
+          "bodyNoKeys": "The Scratchpad is a window that stays on top for dictating drafts before they go anywhere."
+        },
+        "phone": {
+          "title": "Take it to your phone",
+          "body": "Legato for Android dictates in any app and keeps your Dictionary, snippets and notes in step with this PC."
+        },
+        "calendar": {
+          "title": "Add your calendar",
+          "body": "Notes take the meeting's name, and a minute before a meeting the bar offers to join and take notes."
+        }
       }
     }
   },
@@ -2279,6 +2356,9 @@
     "try": {
       "title": "Try it",
       "transform": "Transform to try",
+      "place": "App to try it for",
+      "anyApp": "No particular app",
+      "inApp": "As in {{app}}",
       "run": "Run",
       "running": "Running…",
       "text": "Text",
@@ -2771,7 +2851,28 @@
       "moveFailed": "Couldn't move it",
       "restore": "Restore defaults",
       "restored": "{{category}} has its built-in apps again",
-      "done": "Done"
+      "done": "Done",
+      "format": {
+        "label": "Formatting for {{app}}",
+        "auto": "Automatic",
+        "autoIs": "Auto · {{format}}",
+        "autoHelp": "Legato tells from the app",
+        "failed": "Couldn't save the formatting",
+        "names": {
+          "markdown": "Markdown",
+          "chat": "*bold* chat style",
+          "telegram": "Telegram style",
+          "plain": "Plain text",
+          "verbatim": "Leave as is"
+        },
+        "help": {
+          "markdown": "**bold**, # headings, lists and tables, as Mattermost, Discord and GitHub show them",
+          "chat": "*bold*, _italic_ and ~strike~, as WhatsApp, Slack and Signal show them",
+          "telegram": "**bold**, __italic__ and ~~strike~~",
+          "plain": "No symbols: for email, documents and ordinary text fields",
+          "verbatim": "Nothing is converted: for code and terminals"
+        }
+      }
     },
     "model": {
       "title": "Speech model",
@@ -3443,6 +3544,29 @@
       "back": "Back 10 seconds",
       "forward": "Forward 10 seconds",
       "speed": "Speed {{speed}}, click for the next"
+    },
+    "shots": {
+      "take": "Take a screenshot",
+      "takeHelp": "Take a screenshot of this screen into the note",
+      "taken": "Screenshot saved to the note",
+      "idle": "Screenshots are taken while a note records",
+      "failed": "Couldn't take a screenshot",
+      "heading": "Screenshots",
+      "caption": "Screenshot",
+      "alt": "Screenshot at {{time}}",
+      "open": "Open the screenshot from {{time}}",
+      "title": "Screenshot at {{time}}",
+      "position": "{{n}} of {{count}}",
+      "previous": "Previous screenshot",
+      "next": "Next screenshot",
+      "close": "Close",
+      "copy": "Copy picture",
+      "copied": "Screenshot copied",
+      "copyFailed": "Couldn't copy the screenshot",
+      "play": "Play from here",
+      "delete": "Delete",
+      "deleted": "Screenshot deleted",
+      "deleteFailed": "Couldn't delete the screenshot"
     }
   },
   "calls": {

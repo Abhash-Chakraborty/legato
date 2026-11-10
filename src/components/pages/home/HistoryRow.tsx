@@ -13,7 +13,7 @@ import {
   Star,
   Trash2,
   type LucideIcon,
-} from "lucide-react";
+} from "@/icons";
 import type { HistoryEntry } from "@/bindings";
 import { AudioPlayer } from "../../ui/AudioPlayer";
 import { ActionMenu, type ActionMenuItem } from "../../ui/ActionMenu";

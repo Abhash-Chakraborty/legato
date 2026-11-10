@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Copy, Pin, PinOff, Trash2, type LucideIcon } from "lucide-react";
+import { Copy, Pin, PinOff, Trash2, type LucideIcon } from "@/icons";
 import type { ScratchNote } from "@/bindings";
 import { AppIcon } from "../home/AppIcon";
 import { relativeTime } from "../dictionary/list";

@@ -35,6 +35,10 @@ use tauri_specta::Event;
 
 /// How often the meters and the clock update.
 const TICK: Duration = Duration::from_millis(125);
+/// The most screenshots a note's Word file carries, so it stays a size
+/// that syncs and opens quickly.
+const WORD_PICTURES: usize = 40;
+
 /// The silence between two merged recordings, so the join is heard.
 const MERGE_GAP_MS: i64 = 1000;
 /// How long a merge can be undone, with the audio it set aside kept.
@@ -767,7 +771,14 @@ impl NotesManager {
         let note = self.get(id)?.ok_or_else(|| anyhow!("That note is gone"))?;
         let lines = self.lines(id)?;
         let me = get_settings(&self.app).your_name;
-        store::docx(&note, &when(&note), &lines, ("You", "Them", &me))
+        // Word shows no WebP, so each screenshot goes in as a JPEG.
+        let pictures: Vec<(i64, Vec<u8>)> = note
+            .shots
+            .iter()
+            .take(WORD_PICTURES)
+            .filter_map(|s| Some((s.id, crate::note_shots::as_jpeg(&self.dir, s)?)))
+            .collect();
+        store::docx(&note, &when(&note), &lines, ("You", "Them", &me), &pictures)
     }
 
     pub fn markdown(&self, id: i64) -> Result<String> {
@@ -996,6 +1007,9 @@ impl NotesManager {
                 Err(e) => debug!("Couldn't remove a deleted note's audio: {e}"),
             }
         }
+        // Its screenshots go with it.
+        let pictures: Vec<String> = deleted.note.shots.iter().map(|s| s.file.clone()).collect();
+        crate::note_shots::remove_pictures(&self.dir, &pictures);
     }
 
     /// Saves a line, unless it's the microphone hearing the call through the
@@ -1233,6 +1247,14 @@ pub fn is_recording() -> bool {
 /// Recording, or transcribing the end of a recording.
 pub fn is_busy() -> bool {
     is_recording() || lock(&FINISHING).is_some()
+}
+
+/// The note being recorded and how far into it the recording is, in
+/// milliseconds; None when nothing records.
+pub fn recording_position() -> Option<(i64, i64)> {
+    lock(&SESSION)
+        .as_ref()
+        .map(|s| (s.info.note_id, s.shared.elapsed().as_millis() as i64))
 }
 
 fn current_note() -> Option<i64> {
@@ -2609,6 +2631,24 @@ pub async fn summarise(app: &AppHandle, note_id: i64) {
         m.changed();
         return;
     }
+    // What was on screen when a screenshot was taken goes in where it
+    // happened, so the summary can say what was shown.
+    let screens: Vec<(i64, String)> = note
+        .iter()
+        .flat_map(|n| &n.shots)
+        .filter_map(|s| Some((s.at_ms, notes_rules::screen_line(&s.text)?)))
+        .collect();
+    let prompt = notes_rules::with_screens(prompt, &screens);
+    // What the meeting is called, when you or the calendar named it, and
+    // what you typed while it ran say what mattered.
+    let own_notes = note
+        .as_ref()
+        .and_then(|n| notes_rules::own_notes_line(&n.my_notes));
+    let named = note.as_ref().map(|n| n.title.as_str()).filter(|t| {
+        !notes_rules::is_default_title(t)
+            && note.as_ref().and_then(|n| n.outline.title.as_deref()) != Some(*t)
+    });
+    let prompt = notes_rules::with_context(prompt, named, own_notes.as_deref());
     save(
         m.conn()
             .and_then(|c| store::set_status(&c, note_id, NoteStatus::Summarising)),
