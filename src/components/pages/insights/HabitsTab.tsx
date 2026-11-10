@@ -92,6 +92,25 @@ const SuggestedWordsCard: React.FC = () => {
     // New dictations since the Dictionary last loaded may add some.
     useDictionaryStore.getState().load();
   }, []);
+  // With nothing to suggest, one line says so: a whole card of it pushed
+  // the rest of the tab off the bottom of the window.
+  if (!spellings || spellings.length === 0)
+    return (
+      <section
+        aria-label={t("insights.suggested.title")}
+        className="flex min-h-12 min-w-0 flex-wrap items-center gap-x-4 gap-y-1 rounded-[var(--r-lg)] border border-line bg-surface px-5 py-2 min-[900px]:col-span-2"
+      >
+        <h2 className="text-sm font-medium text-text-2">
+          {t("insights.suggested.title")}
+        </h2>
+        <span className="min-w-0 flex-1 text-[13px] text-text-3">
+          {spellings ? t("insights.suggested.none") : ""}
+        </span>
+        <Button variant="secondary" size="sm" onClick={() => go("dictionary")}>
+          {t("insights.fixedWords.open")}
+        </Button>
+      </section>
+    );
   return (
     <Card
       title={t("insights.suggested.title")}
@@ -105,26 +124,11 @@ const SuggestedWordsCard: React.FC = () => {
       <p className="-mt-1 mb-3 text-[13px] text-text-3">
         {t("insights.suggested.help")}
       </p>
-      {spellings === null ? null : spellings.length === 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
-          <span className="text-[13px] text-text-2">
-            {t("insights.suggested.none")}
-          </span>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => go("dictionary")}
-          >
-            {t("insights.fixedWords.open")}
-          </Button>
-        </div>
-      ) : (
-        <SpellingList
-          spellings={spellings}
-          now={Date.now() / 1000}
-          className="-mx-5 -mb-5 overflow-hidden rounded-b-[var(--r-lg)] border-t border-line"
-        />
-      )}
+      <SpellingList
+        spellings={spellings}
+        now={Date.now() / 1000}
+        className="-mx-5 -mb-5 overflow-hidden rounded-b-[var(--r-lg)] border-t border-line"
+      />
     </Card>
   );
 };

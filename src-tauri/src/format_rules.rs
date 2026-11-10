@@ -140,19 +140,19 @@ pub fn prompt_note(markup: Markup) -> &'static str {
         Markup::Chat => {
             "It is a chat that shows *bold*, _italic_, ~strikethrough~ and `code` written \
              exactly like that, with one symbol each side. It has no headings and no tables: \
-             use short lines, and a line starting with \"- \" for each item of a list. Most \
-             messages need no formatting at all."
+             use short lines, and put each item of a list on a line of its own, starting \
+             with \"- \". Most messages need no formatting at all."
         }
         Markup::Telegram => {
             "It is a chat that shows **bold**, __italic__, ~~strikethrough~~ and `code` \
              written exactly like that. It has no headings and no tables: use short lines, \
-             and a line starting with \"- \" for each item of a list. Most messages need no \
-             formatting at all."
+             and put each item of a list on a line of its own, starting with \"- \". Most \
+             messages need no formatting at all."
         }
         Markup::Plain => {
             "It shows plain text only: no Markdown, no asterisks, backticks or # headings, \
-             because they would appear as typed. Use line breaks and paragraphs, and a line \
-             starting with \"- \" or \"1.\" for each item of a list."
+             because they would appear as typed. Use line breaks and paragraphs, and put each \
+             item of a list on a line of its own, starting with \"- \" or \"1.\"."
         }
         Markup::Verbatim => {
             "It is code or a terminal: keep code, file names, paths and commands exactly, and \

@@ -91,8 +91,13 @@ fn save(app: &AppHandle, note_id: i64, at_ms: i64, frame: &Frame) -> Result<Note
         }
         n += 1;
     };
-    std::fs::write(dir.join(&name), &bytes)?;
     let conn = m.conn()?;
+    // The note may have stopped and been dropped while the picture was
+    // made; then there's nothing to put it in.
+    if store::get(&conn, note_id)?.is_none() {
+        return Err(anyhow!("The note is gone"));
+    }
+    std::fs::write(dir.join(&name), &bytes)?;
     store::add_shot(
         &conn,
         note_id,

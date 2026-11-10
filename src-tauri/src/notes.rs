@@ -2383,7 +2383,13 @@ fn finish(app: &AppHandle, session: Session) -> Option<FollowUp> {
         }
     };
 
-    if saved == 0 && failed == 0 {
+    // A screenshot was taken on purpose: the note stays for it, even with
+    // nothing said.
+    let has_shots = m
+        .conn()
+        .and_then(|c| store::shots(&c, note_id))
+        .is_ok_and(|shots| !shots.is_empty());
+    if saved == 0 && failed == 0 && !has_shots {
         info!("Notes heard nothing; the note isn't kept");
         let _ = m.conn().and_then(|mut c| store::delete(&mut c, note_id));
         let _ = std::fs::remove_file(&out);

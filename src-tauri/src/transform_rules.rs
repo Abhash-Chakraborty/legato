@@ -298,11 +298,12 @@ fn kind_note(category: &str) -> Option<&'static str> {
         }
         "personal" => {
             "It is a chat message to someone they know: keep it short and in their voice, \
-             with no greeting or sign-off they didn't say."
+             capitals as they wrote them, with no greeting or sign-off they didn't say. \
+             Filler words such as \"um\" still go."
         }
         "work" => {
             "It is a work chat message: brief and direct, with no email-style greeting or \
-             sign-off."
+             sign-off. Filler words such as \"um\" still go."
         }
         "documents" => {
             "It is a document: full sentences in paragraphs, and a list where they enumerate."

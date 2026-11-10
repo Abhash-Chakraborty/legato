@@ -64,7 +64,7 @@ While a note records, the camera button takes a screenshot of the whole screen t
 - **Small files**: a screen of text and windows is saved without loss, usually a few hundred kilobytes. A video or a photo on screen is saved as a high-quality JPEG. Screens wider than 2560 pixels are scaled down to that.
 - **Word copies** of the note include the pictures, up to 40 of them.
 
-Screenshots stay on this PC with the note's audio; they aren't synced to your phone. Deleting the note deletes them. Legato's own bar, bubble and Notes panel aren't in a screenshot while Hide from screenshots and screen sharing is on.
+A note with a screenshot is kept even when nothing was said. Screenshots stay on this PC with the note's audio; they aren't synced to your phone. Deleting the note deletes them. Legato's own bar, bubble and Notes panel aren't in a screenshot while Hide from screenshots and screen sharing is on.
 
 ## Telling voices apart
 
