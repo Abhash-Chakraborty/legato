@@ -19,7 +19,7 @@ Each row shows the text and where it went: the app it was pasted into, how long 
 
 Search (press `/` or Ctrl+F) looks through transcripts and app names. The filters show All, Starred, Fixed or Transformed dictations, or one app's. Rows also take keys: ↑ and ↓ (or J and K) move, Enter copies, F fixes a word, S stars, Del deletes.
 
-The rail at the right shows what's set up right now (model, microphone, spoken language, AI and your Dictate shortcut) and the steps a dictation goes through, each a link to where you change it.
+The card at the top says how to dictate: your Dictate shortcut, in keys that go down while Legato listens, and the model that will write it up, with Copy last and Scratchpad beside them. The rail at the right shows what's set up right now (model, microphone, spoken language and AI) and the steps a dictation goes through, each a link to where you change it.
 
 ### Dictations that need another go
 

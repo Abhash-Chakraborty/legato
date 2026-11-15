@@ -27,7 +27,6 @@ import { useAiStore, watchAi } from "../../../stores/aiStore";
 import { describeAi } from "../../../lib/utils/aiStatus";
 import { AiDotMark, useAiAction } from "../../shared/AiStatusLine";
 import { getLanguageLabel } from "../../../lib/constants/languages";
-import { formatKeyCombination } from "../../../lib/utils/keyboard";
 import { getTranslatedModelName } from "../../../lib/utils/modelTranslation";
 
 const BARS = 6;
@@ -167,10 +166,6 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
     !!aiStatus &&
     aiStatus.kind !== "none";
 
-  const binding = settings?.bindings?.transcribe?.current_binding ?? "";
-  const keys = formatKeyCombination(binding).split(" + ").filter(Boolean);
-  const activation = settings?.shortcut_activation ?? "hold_or_toggle";
-
   const autoTransform = settings?.transforms?.find(
     (tr) => tr.id === settings?.auto_transform_id && tr.enabled !== false,
   );
@@ -225,23 +220,6 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
                 </button>
               )
             }
-          />
-          <Fact
-            label={t("home.rail.shortcut")}
-            value={
-              keys.length ? (
-                <span className="mt-0.5 inline-flex flex-wrap gap-1">
-                  {keys.map((key) => (
-                    <kbd key={key} className="kbd">
-                      {key}
-                    </kbd>
-                  ))}
-                </span>
-              ) : (
-                t("home.rail.noShortcut")
-              )
-            }
-            detail={t(`home.rail.activation.${activation}`)}
           />
         </div>
       </section>

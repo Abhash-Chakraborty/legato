@@ -1890,13 +1890,6 @@
       "language": "Spoken language",
       "autoLanguage": "Auto",
       "ai": "AI",
-      "shortcut": "Dictate shortcut",
-      "noShortcut": "Not set",
-      "activation": {
-        "hold_or_toggle": "hold to talk, tap to keep listening",
-        "push_to_talk": "hold to talk",
-        "toggle": "tap to start, tap again to paste"
-      },
       "pipeline": "What happens to a dictation",
       "steps": {
         "transcribe": "Transcribe",
