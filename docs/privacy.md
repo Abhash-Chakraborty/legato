@@ -4,6 +4,7 @@ Legato turns speech into text on your PC. This page covers what stays there, wha
 
 ## What stays on your PC
 
+- **Your screen.** With Use words on screen on, the window you dictate into is read once per dictation by Windows' own text recognition, on this PC. The picture is dropped at once; only names and terms are kept, until the dictation is pasted.
 - **Your voice.** Recording, voice detection and the speech model all run on this PC. Audio is never sent to an AI provider or any other service.
 - **What you said.** Dictations, notes, transcripts, your Dictionary, snippets and the Scratchpad live in files on this PC.
 - **Speakers.** The speaker model that tells voices apart in Notes runs on this PC. When you name a speaker, the 8-second clip Legato keeps of their voice is never synced or sent anywhere.
@@ -25,6 +26,8 @@ Legato has no analytics, no telemetry and no crash reporting, and it has no acco
 | Your calendars                  | Every ten minutes, for each calendar you added                                   | A request for its secret iCal address                                                    |
 | Your Inyon hub                  | While paired                                                                     | Your answers to agents, what you say to the companion, notes you send to a session       |
 | Your phone or tablet            | While paired and within reach                                                    | Synced data, straight to the device (see [Phone sync](#phone-sync))                      |
+
+With Use words on screen on (Dictionary › Learning and matching), what goes to your AI provider with a dictation includes the terms Legato read in the window in front (names, products and code, at most 40) and that window's title. Turn it off there to send neither. See [Use words on screen](dictionary.md#use-words-on-screen).
 
 ### Your AI provider
 

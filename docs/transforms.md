@@ -39,6 +39,7 @@ Every transform is told more than its prompt, so it fits where the text is going
 - **The app and its kind**: the site in a browser tab counts, so Gmail in Chrome is an email. In an email, a transform that leaves the shape open writes a greeting line, short paragraphs and your sign-off. In a chat it keeps the message short and in your voice. In a document it writes paragraphs and lists. A prompt for an AI is made clearer, never answered.
 - **The formatting the app shows**: `*bold*` in WhatsApp, Markdown in Mattermost, none in an email. See [Formatting that fits the app](style.md#formatting-that-fits-the-app).
 - **Your name**, and **your Dictionary** with how each word gets misheard, so a name the speech model got wrong can still come out right.
+- **What's on your screen**, with [Use words on screen](dictionary.md#use-words-on-screen) on: the window's title and the names, products and code Legato read in it, so a term that's new to your Dictionary is still spelled the way you see it.
 - **Your snippets** are kept out of it: the model sees a marker where a snippet's text goes, and the saved text is put back afterwards exactly as you saved it.
 
 Your prompt comes first. What Legato adds only settles what the prompt leaves open, so To German still just translates.

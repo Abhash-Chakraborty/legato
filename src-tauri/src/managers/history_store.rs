@@ -540,6 +540,8 @@ pub enum FixSource {
     Manual,
     /// Fixed by the AI correction pass.
     Ai,
+    /// Spelled the way the window in front had it (Use words on screen).
+    Screen,
 }
 
 /// A fix made on one dictation.

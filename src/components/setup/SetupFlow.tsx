@@ -220,7 +220,7 @@ export const SetupFlow: React.FC<SetupFlowProps> = ({
                       onClick={() => go(groupStep(g))}
                       className="flex items-center gap-1.5 rounded-[6px] px-1 py-1 text-text-3 hover:text-text"
                     >
-                      <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                      <Check className="pop h-3.5 w-3.5" aria-hidden="true" />
                       {label}
                       {dots}
                       <span className="sr-only">{t("setup.finished")}</span>
@@ -259,6 +259,22 @@ export const SetupFlow: React.FC<SetupFlowProps> = ({
             </button>
           )}
         </header>
+        {/* How far along setup is, filling a step at a time. */}
+        <div
+          className="h-1 w-full overflow-hidden rounded-full bg-surface-3"
+          role="progressbar"
+          aria-label={t("setup.steps")}
+          aria-valuemin={0}
+          aria-valuemax={STEPS.length - 1}
+          aria-valuenow={stepIndex}
+        >
+          <div
+            className="h-full origin-left rounded-full bg-teal-600 transition-transform duration-[var(--dur-4)] ease-[var(--ease-spring)]"
+            style={{
+              transform: `scaleX(${Math.max(0.04, stepIndex / (STEPS.length - 1))})`,
+            }}
+          />
+        </div>
 
         <div
           ref={stageRef}

@@ -692,6 +692,7 @@ pub async fn medium_pass(
     text: &str,
     placeholders: usize,
     place: &ai_rules::Place<'_>,
+    screen: &[String],
 ) -> Result<Option<String>, AiProblem> {
     if text.trim().is_empty() {
         return Ok(None);
@@ -710,15 +711,17 @@ pub async fn medium_pass(
         .and_then(|d| d.list().ok())
         .unwrap_or_default();
     entries.sort_by(|a, b| b.pinned.cmp(&a.pinned).then(b.hits.cmp(&a.hits)));
-    let words: Vec<PromptWord> = entries
-        .iter()
-        .map(|e| PromptWord {
+    // What's on the screen comes first: it's what the dictation is most
+    // likely about, and the list may be cut.
+    let words: Vec<PromptWord> = ai_rules::screen_words(screen)
+        .into_iter()
+        .chain(entries.iter().map(|e| PromptWord {
             text: &e.text,
             heard: &e.heard,
             also: &e.also,
             ordinary: ordinary_forms(&e.heard),
             kind: e.kind.map(|k| k.noun()),
-        })
+        }))
         .collect();
     let input = crate::snippet_rules::to_ai(text);
     let request = ai_rules::cleanup_request(&words, &input);
@@ -785,6 +788,7 @@ pub async fn correction_pass(
     app: &AppHandle,
     settings: &AppSettings,
     text: &str,
+    screen: &[String],
 ) -> Result<Option<Corrected>, AiProblem> {
     if !settings.ai_correction_enabled || text.trim().is_empty() {
         return Ok(None);
@@ -800,7 +804,7 @@ pub async fn correction_pass(
         return Ok(None);
     };
     let mut entries = match dictionary.list() {
-        Ok(entries) if !entries.is_empty() => entries,
+        Ok(entries) if !entries.is_empty() || !screen.is_empty() => entries,
         Ok(_) => return Ok(None),
         Err(e) => {
             warn!("Correction pass skipped: couldn't read the Dictionary: {e}");
@@ -809,15 +813,17 @@ pub async fn correction_pass(
     };
     // The most used words first, in case the list is cut.
     entries.sort_by(|a, b| b.pinned.cmp(&a.pinned).then(b.hits.cmp(&a.hits)));
-    let words: Vec<PromptWord> = entries
-        .iter()
-        .map(|e| PromptWord {
+    // What's on the screen comes first: it's what the dictation is most
+    // likely about, and the list may be cut.
+    let words: Vec<PromptWord> = ai_rules::screen_words(screen)
+        .into_iter()
+        .chain(entries.iter().map(|e| PromptWord {
             text: &e.text,
             heard: &e.heard,
             also: &e.also,
             ordinary: ordinary_forms(&e.heard),
             kind: e.kind.map(|k| k.noun()),
-        })
+        }))
         .collect();
 
     let json_hint = !config.provider.supports_structured_output
@@ -922,7 +928,7 @@ pub async fn check_on_fixes(app: &AppHandle) -> Result<ai_rules::CheckScore, Str
             app: case.app_name.as_deref(),
             category: case.category.as_deref().unwrap_or("other"),
             your_name: Some(settings.your_name.as_str()),
-            markup: None,
+            ..Default::default()
         };
         let system = ai_rules::cleanup_system_prompt(0, &place);
         let request = ai_rules::cleanup_request(&words, heard);

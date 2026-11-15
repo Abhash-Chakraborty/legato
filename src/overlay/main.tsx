@@ -8,7 +8,7 @@ import {
   syncThemeFromSettings,
 } from "@/lib/utils/theme";
 import type { Theme } from "@/bindings";
-import "@/i18n";
+import "@/i18n/small";
 import { installContextMenu } from "@/lib/contextMenu";
 
 // A separate webview from the settings window, so the overlay has to set

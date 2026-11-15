@@ -12,11 +12,11 @@ export const AppToaster: React.FC<{ bottom?: number }> = ({ bottom }) => (
       unstyled: true,
       classNames: {
         toast:
-          "bg-background border border-mid-gray/20 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 text-sm",
+          "bg-surface border border-line rounded-[var(--r-lg)] shadow-[var(--shadow-3)] px-4 py-3 flex items-center gap-3 text-sm",
         title: "font-medium",
-        description: "text-mid-gray",
+        description: "text-text-3",
         actionButton:
-          "px-2 py-1 text-xs font-medium rounded-lg border bg-mid-gray/10 border-mid-gray/20 hover:bg-background-ui/30 hover:border-logo-primary cursor-pointer whitespace-nowrap",
+          "btn px-2.5 py-1 text-xs font-medium rounded-[var(--r-sm)] border border-transparent bg-teal-50 text-teal-700 hover:bg-teal-100 cursor-pointer whitespace-nowrap",
         cancelButton:
           "px-2 py-1 text-xs font-medium rounded-lg text-text-2 hover:text-text cursor-pointer whitespace-nowrap",
       },

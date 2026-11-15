@@ -237,6 +237,8 @@ const settingUpdaters: {
     commands.changeCleanupRulesSetting(value as CleanupRules),
   style_enabled: (value) =>
     commands.changeStyleEnabledSetting(value as boolean),
+  screen_context: (value) =>
+    commands.changeScreenContextSetting(value as boolean),
   learn_from_edits: (value) =>
     commands.changeLearnFromEditsSetting(value as boolean),
   learn_mode: (value) => commands.changeLearnModeSetting(value as LearnMode),

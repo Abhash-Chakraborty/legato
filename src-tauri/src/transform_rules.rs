@@ -250,6 +250,10 @@ pub struct Destination<'a> {
     pub markup: Option<Markup>,
     /// It's an app on their phone, known only by its kind.
     pub phone: bool,
+    /// The window's title as it reads, when Use words on screen is on.
+    pub title: Option<&'a str>,
+    /// Terms seen in the window that the Dictionary doesn't have.
+    pub screen: &'a [String],
 }
 
 /// What a prompt's variables resolve to, and what the model is told about
@@ -387,6 +391,22 @@ fn destination_note(to: &Destination, name_app: bool) -> String {
     }
     if let Some(markup) = to.markup {
         parts.push(format_rules::prompt_note(markup).to_string());
+    }
+    if let Some(title) = to
+        .title
+        .and_then(|t| crate::screen_rules::title_for_prompt(t, to.app.unwrap_or_default(), 80))
+    {
+        parts.push(format!(
+            "The window is titled \"{title}\", which may name the file, the channel or the \
+             person the text is for."
+        ));
+    }
+    if !to.screen.is_empty() {
+        parts.push(format!(
+            "On their screen right now: {}. Where the text means one of these, or has words \
+             that clearly sound like one, spell it this way.",
+            to.screen.join(", ")
+        ));
     }
     if parts.is_empty() {
         return String::new();
@@ -704,6 +724,7 @@ mod tests {
                     category: Some("personal"),
                     markup: Some(Markup::Chat),
                     phone: false,
+                    ..Default::default()
                 },
                 your_name: Some("Sam Rao"),
                 snippets: 1,
@@ -726,6 +747,7 @@ mod tests {
                 category: Some("email"),
                 markup: Some(Markup::Plain),
                 phone: false,
+                ..Default::default()
             },
             ..Default::default()
         });
@@ -745,6 +767,23 @@ mod tests {
         assert!(system_prompt("Hi {{app}}", &phone).contains("Hi an email app on their phone"));
         assert!(system_prompt("Tidy it.", &phone)
             .contains("The text goes into an email app on their phone. It is an email"));
+        // What the window shows is told too.
+        let seen = vec!["Dokploy".to_string(), "kubectl".to_string()];
+        let on_screen = system_prompt(
+            "Tidy it.",
+            &PromptContext {
+                destination: Destination {
+                    app: Some("Code"),
+                    category: Some("code"),
+                    title: Some("deploy.sh - infra - Code"),
+                    screen: &seen,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        assert!(on_screen.contains("The window is titled \"deploy.sh - infra\""));
+        assert!(on_screen.contains("On their screen right now: Dokploy, kubectl."));
         // Nothing known, nothing said.
         assert!(system_prompt("Tidy it.", &PromptContext::default()).ends_with("</instruction>"));
     }

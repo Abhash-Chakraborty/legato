@@ -21,6 +21,8 @@ pub mod format_rules;
 pub mod inyon_rules;
 #[path = "../../../src-tauri/src/learn_rules.rs"]
 pub mod learn_rules;
+#[path = "../../../src-tauri/src/screen_rules.rs"]
+pub mod screen_rules;
 #[path = "../../../src-tauri/src/snippet_rules.rs"]
 pub mod snippet_rules;
 #[path = "../../../src-tauri/src/style_rules.rs"]

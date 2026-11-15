@@ -360,6 +360,9 @@ pub(crate) struct ProcessedTranscription {
     pub transcription: String,
     /// Words the correction pass fixed, as (heard text, Dictionary word).
     pub ai_fixes: Vec<(String, String)>,
+    /// Words spelled the way the window in front had them, as (heard
+    /// text, term on screen).
+    pub screen_fixes: Vec<(String, String)>,
     pub final_text: String,
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
@@ -382,7 +385,142 @@ impl ProcessedTranscription {
             to: to.clone(),
             source: FixSource::Ai,
         }));
+        fixes.extend(self.screen_fixes.iter().map(|(from, to)| AppliedFix {
+            from: from.clone(),
+            to: to.clone(),
+            source: FixSource::Screen,
+        }));
         fixes
+    }
+}
+
+/// Apps whose windows are never read: password managers and the like, the
+/// ones the shared clipboard never sends from either.
+fn screen_is_private(settings: &AppSettings, window: &context::ForegroundWindow) -> bool {
+    let exe = window
+        .exe_path
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or_default();
+    settings
+        .sync
+        .clipboard_never
+        .iter()
+        .any(|never| never.eq_ignore_ascii_case(exe))
+}
+
+/// Starts reading the window in front for the dictation that just began,
+/// when Use words on screen is on.
+pub(crate) fn look_at_screen(app: &AppHandle, front: Option<&context::ForegroundWindow>) {
+    let settings = get_settings(app);
+    let (Some(front), Some(handle)) = (front, context::foreground_handle()) else {
+        return;
+    };
+    if !settings.screen_context || screen_is_private(&settings, front) {
+        crate::screen::forget();
+        return;
+    }
+    crate::screen::look(handle, crate::spelling::checker());
+}
+
+/// What a dictation knows of the window it goes to, with Use words on
+/// screen on: the terms seen there that the Dictionary doesn't have, the
+/// window's title, and the end of what was dictated into it just before.
+struct ScreenContext {
+    terms: Vec<String>,
+    /// Every Dictionary word and other form, as spelled.
+    spelled: std::collections::HashSet<String>,
+    title: Option<String>,
+    before: Option<String>,
+}
+
+fn screen_context(
+    app: &AppHandle,
+    settings: &AppSettings,
+    target: Option<&AppInfo>,
+) -> Option<ScreenContext> {
+    if !settings.screen_context {
+        return None;
+    }
+    let spelled: std::collections::HashSet<String> = app
+        .try_state::<Arc<DictionaryManager>>()
+        .and_then(|d| d.list().ok())
+        .unwrap_or_default()
+        .into_iter()
+        .flat_map(|e| std::iter::once(e.text).chain(e.also))
+        .collect();
+    let known: std::collections::HashSet<String> =
+        spelled.iter().map(|w| w.to_lowercase()).collect();
+    let terms = crate::screen_rules::fresh(crate::screen::seen(), &|w| known.contains(w));
+    let title =
+        target.and_then(|a| crate::screen_rules::title_for_prompt(&a.title, &a.name, TITLE_CHARS));
+    // Only what went into this very window, a short while ago.
+    let before = context::foreground_handle().and_then(|here| {
+        crate::clipboard::last_paste(BEFORE_WITHIN)
+            .filter(|(window, _)| *window == here)
+            .and_then(|(_, text)| crate::screen_rules::tail_for_prompt(&text, BEFORE_CHARS))
+    });
+    Some(ScreenContext {
+        terms,
+        spelled,
+        title,
+        before,
+    })
+}
+
+/// How much of a window's title and of the dictation before the AI gets.
+const TITLE_CHARS: usize = 80;
+const BEFORE_CHARS: usize = 240;
+/// A dictation this long ago is no longer what this one carries on from.
+const BEFORE_WITHIN: Duration = Duration::from_secs(120);
+
+/// Offers the terms a dictation took from the screen to the Dictionary, so
+/// the next one gets them right without the screen: under Needs review, or
+/// added straight away, as Learn from my edits is set.
+fn learn_from_screen(
+    app: &AppHandle,
+    settings: &AppSettings,
+    used: &[(String, String)],
+    target: Option<&AppInfo>,
+    text: &str,
+) {
+    // A change of capitals alone has nothing misheard to remember.
+    let learnt: Vec<(String, String, String)> = used
+        .iter()
+        .filter(|(heard, term)| !heard.eq_ignore_ascii_case(term))
+        .map(|(heard, term)| {
+            let at = text.find(term.as_str()).unwrap_or(0);
+            let context = crate::learn_rules::context(text, at, at + term.len());
+            (term.clone(), heard.clone(), context)
+        })
+        .collect();
+    if learnt.is_empty() {
+        return;
+    }
+    let Some(dictionary) = app.try_state::<Arc<DictionaryManager>>() else {
+        return;
+    };
+    let fix_app = target
+        .filter(|_| settings.remember_app)
+        .map(|t| (t.name.as_str(), Some(t.exe_path.as_str())));
+    match settings.learn_mode {
+        crate::settings::LearnMode::Ask => match dictionary.add_pending(&learnt, fix_app) {
+            Ok(added) => debug!("{} term(s) from the screen wait for review", added.len()),
+            Err(e) => warn!("Couldn't keep terms from the screen for review: {e}"),
+        },
+        crate::settings::LearnMode::Auto => {
+            for (word, heard, _) in &learnt {
+                if let Err(e) = dictionary.learn(
+                    word,
+                    Some(heard),
+                    crate::managers::dictionary_store::DictionarySource::Fixed,
+                    false,
+                    fix_app,
+                ) {
+                    warn!("Couldn't learn a term from the screen: {e}");
+                }
+            }
+        }
     }
 }
 
@@ -454,6 +592,24 @@ pub(crate) async fn process_transcription_output(
     let mut ai_problem = None;
     let category = target.map(|a| a.category.as_str()).unwrap_or("other");
 
+    // What the window in front shows: its terms spell the words that are
+    // close to them, by rule first and then with the AI's ear.
+    let screen = screen_context(app, &settings, target);
+    let no_terms: Vec<String> = Vec::new();
+    let terms = screen.as_ref().map_or(&no_terms, |s| &s.terms);
+    let mut screen_fixes: Vec<(String, String)> = Vec::new();
+    if let Some(screen) = screen.as_ref().filter(|s| !s.terms.is_empty()) {
+        let (spelled, changes) = crate::audio_toolkit::text::apply_screen_terms(
+            &text,
+            &screen.terms,
+            &screen.spelled,
+            settings.word_correction_threshold,
+            &crate::spelling::checker(),
+        );
+        text = spelled;
+        screen_fixes = changes;
+    }
+
     // With Cleanup at Medium the correction pass rides along in its request,
     // so a dictation waits for one round trip, not two.
     let medium = settings.cleanup_level == CleanupLevel::Medium
@@ -465,10 +621,17 @@ pub(crate) async fn process_transcription_output(
         {
             stage(Stage::Fixing);
         }
-        match ai::correction_pass(app, &settings, &text).await {
+        match ai::correction_pass(app, &settings, &text, terms).await {
             Ok(Some(corrected)) => {
                 text = corrected.text;
-                ai_fixes = corrected.changes;
+                // A fix to a term from the screen is the screen's.
+                for change in corrected.changes {
+                    if terms.contains(&change.1) {
+                        screen_fixes.push(change);
+                    } else {
+                        ai_fixes.push(change);
+                    }
+                }
             }
             Ok(None) => {}
             Err(problem) => ai_problem = Some(problem),
@@ -498,9 +661,24 @@ pub(crate) async fn process_transcription_output(
                 category,
                 your_name: Some(settings.your_name.as_str()),
                 markup: target.map(|a| a.markup),
+                title: screen.as_ref().and_then(|s| s.title.as_deref()),
+                before: screen.as_ref().and_then(|s| s.before.as_deref()),
             };
-            match ai::medium_pass(app, &settings, &styled, marked.hits.len(), &place).await {
-                Ok(Some(cleaned)) => styled = cleaned,
+            match ai::medium_pass(app, &settings, &styled, marked.hits.len(), &place, terms).await {
+                Ok(Some(cleaned)) => {
+                    // Which of the screen's terms the cleanup put in, and
+                    // for what.
+                    for edit in crate::learn_rules::find_edits(
+                        &styled,
+                        &cleaned,
+                        settings.word_correction_threshold,
+                    ) {
+                        if terms.contains(&edit.word) {
+                            screen_fixes.push((edit.heard, edit.word));
+                        }
+                    }
+                    styled = cleaned;
+                }
                 Ok(None) => {}
                 Err(problem) => ai_problem = Some(problem),
             }
@@ -573,7 +751,7 @@ pub(crate) async fn process_transcription_output(
                 &settings,
                 &chosen,
                 &given,
-                &crate::transforms::destination(target),
+                &crate::transforms::destination(target, settings.screen_context, terms),
                 placeholders,
                 timeout,
             )
@@ -610,9 +788,14 @@ pub(crate) async fn process_transcription_output(
         }
     }
 
+    if !screen_fixes.is_empty() {
+        learn_from_screen(app, &settings, &screen_fixes, target, &final_text);
+    }
+
     ProcessedTranscription {
         transcription: text,
         ai_fixes,
+        screen_fixes,
         final_text,
         post_processed_text,
         post_process_prompt,
@@ -645,6 +828,9 @@ impl ShortcutAction for TranscribeAction {
         // in Style. Read before the overlay shows, though the overlay never
         // takes focus.
         let front = context::foreground_window();
+        // The window is read while you speak, so what you're looking at
+        // can be spelled the way it's written there.
+        look_at_screen(app, front.as_ref());
         let speech_model = {
             let settings = get_settings(app);
             let models = app.state::<Arc<ModelManager>>();

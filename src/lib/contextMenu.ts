@@ -1,7 +1,9 @@
 import { Menu, type MenuOptions } from "@tauri-apps/api/menu";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { commands } from "@/bindings";
-import i18n from "@/i18n";
+// The window's own i18n (every string, or the small windows' slice) has
+// set this instance up by the time a menu opens.
+import i18n from "i18next";
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
 type Item = NonNullable<MenuOptions["items"]>[number];

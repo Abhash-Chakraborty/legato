@@ -76,6 +76,26 @@ export const LearningCard: React.FC<{ view: DictionaryView }> = ({ view }) => {
       {open && (
         <div id={bodyId} className="border-t border-line px-4">
           <SettingContainer
+            title={t("dictionary.learning.screen.title")}
+            description={t("dictionary.learning.screen.help")}
+          >
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings?.screen_context ?? true}
+              aria-label={t("dictionary.learning.screen.title")}
+              className="toggle"
+              onClick={() => {
+                if (!isUpdating("screen_context"))
+                  updateSetting(
+                    "screen_context",
+                    !(settings?.screen_context ?? true),
+                  );
+              }}
+            />
+          </SettingContainer>
+          <div className="border-t border-line" />
+          <SettingContainer
             title={t("dictionary.learning.edits.title")}
             description={t("dictionary.learning.edits.help")}
           >

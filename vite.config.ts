@@ -2,12 +2,35 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { resolve } from "path";
+import { readFileSync } from "fs";
+import type { Plugin } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
 
+/** The sections of translation.json the bar and the bubble use. Those two
+ *  windows are always loaded, so they get these strings alone
+ *  (src/i18n/small.ts) instead of every string in the app. */
+const SMALL_LOCALE = ["overlay", "bubble", "inyon", "ai", "contextMenu"];
+
+const smallLocale = (): Plugin => {
+  const file = resolve(__dirname, "src/i18n/locales/en/translation.json");
+  return {
+    name: "legato-small-locale",
+    resolveId: (id) =>
+      id === "virtual:small-locale" ? "\0small-locale" : null,
+    load(id) {
+      if (id !== "\0small-locale") return null;
+      this.addWatchFile(file);
+      const all = JSON.parse(readFileSync(file, "utf8"));
+      const kept = Object.fromEntries(SMALL_LOCALE.map((k) => [k, all[k]]));
+      return `export default JSON.parse(${JSON.stringify(JSON.stringify(kept))});`;
+    },
+  };
+};
+
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), smallLocale()],
 
   // Path aliases
   resolve: {

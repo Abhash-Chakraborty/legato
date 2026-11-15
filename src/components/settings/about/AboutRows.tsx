@@ -95,8 +95,8 @@ export const SourceCodeRow: React.FC = () => {
 export const WhatsNewRow: React.FC = () => {
   const { t } = useTranslation();
   const [note, setNote] = useState<ReleaseNote | null>(null);
-  const show = () => {
-    const latest = findLatestReleaseNote();
+  const show = async () => {
+    const latest = await findLatestReleaseNote().catch(() => null);
     if (latest) setNote(latest);
     else toast(t("settings.about.whatsNew.none"));
   };

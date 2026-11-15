@@ -467,6 +467,44 @@ fn correct_close_words(
     (result.join(" "), changes)
 }
 
+/// The closest a heard word must be to a term on the screen, whatever the
+/// Dictionary's own matching is set to: the screen is a guess at what was
+/// meant, not the person's word list.
+const SCREEN_THRESHOLD: f64 = 0.2;
+
+/// Spells words the way the screen in front does: a close miss of a term
+/// seen there ("Dokploi" for "Dokploy") and its capitals ("typescript" for
+/// "TypeScript"). Ordinary words are left alone (`is_word`), and so is
+/// anything spelled as the Dictionary has it (`spelled`). Returns the text
+/// and each change as (heard, term).
+pub fn apply_screen_terms(
+    text: &str,
+    terms: &[String],
+    spelled: &HashSet<String>,
+    threshold: f64,
+    is_word: &IsWord,
+) -> (String, Vec<(String, String)>) {
+    // Short terms are close to too many words to guess from.
+    let terms: Vec<String> = terms
+        .iter()
+        .filter(|t| build_match_key(t).chars().count() >= 4)
+        .cloned()
+        .collect();
+    // A term with capitals of its own is written exactly so.
+    let exact: Vec<bool> = terms
+        .iter()
+        .map(|t| t.chars().any(char::is_uppercase))
+        .collect();
+    correct_close_words(
+        text,
+        &terms,
+        &exact,
+        spelled,
+        threshold.min(SCREEN_THRESHOLD),
+        Some(is_word),
+    )
+}
+
 /// One word in the user's Dictionary, as the corrector sees it.
 #[derive(Clone, Debug, Default)]
 pub struct DictionaryWord {
@@ -1460,6 +1498,45 @@ mod tests {
             heard: heard.iter().map(|h| h.to_string()).collect(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn words_take_the_spelling_the_screen_has() {
+        let is_word: IsWord = Arc::new(|w: &str| {
+            [
+                "the", "deploy", "on", "is", "in", "script", "react", "neon", "sign",
+            ]
+            .contains(&w.to_lowercase().as_str())
+        });
+        let terms: Vec<String> = ["Dokploy", "TypeScript", "kubectl", "Inyon", "MCP"]
+            .map(String::from)
+            .to_vec();
+        let spelled: HashSet<String> = ["Dokploi"].map(String::from).into_iter().collect();
+        let fix = |text: &str, spelled: &HashSet<String>| {
+            apply_screen_terms(text, &terms, spelled, 0.18, &is_word)
+        };
+        let none = HashSet::new();
+        // A close miss and a word in the wrong case take the screen's.
+        let (text, changes) = fix("the Dokploi deploy is in typescript", &none);
+        assert_eq!(text, "the Dokploy deploy is in TypeScript");
+        assert_eq!(
+            changes,
+            vec![
+                ("Dokploi".to_string(), "Dokploy".to_string()),
+                ("typescript".to_string(), "TypeScript".to_string())
+            ]
+        );
+        // A lower-case term still takes a sentence's capital.
+        assert_eq!(fix("Kubectle is on", &none).0, "Kubectl is on");
+        // Real words stay, however close a term is; so does a word the
+        // Dictionary spells that way, and a term too short to guess from.
+        assert_eq!(fix("the neon sign", &none).0, "the neon sign");
+        assert_eq!(fix("the Dokploi deploy", &spelled).0, "the Dokploi deploy");
+        assert_eq!(fix("the MCB is on", &none).0, "the MCB is on");
+        assert_eq!(
+            apply_screen_terms("anything", &[], &none, 0.18, &is_word).0,
+            "anything"
+        );
     }
 
     #[test]

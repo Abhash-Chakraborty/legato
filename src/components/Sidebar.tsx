@@ -29,16 +29,25 @@ interface NavItem {
   feature?: "notes_enabled" | "scratchpad_enabled" | "insights_enabled";
   /** The move its icon plays on hover (`.im-*` in controls.css). */
   motion: string;
+  /** The page's own colour, behind its icon (`.tile-*` in play.css). */
+  hue: string;
 }
 
 // What you do with dictation first, then the words and prompts you keep,
 // then what you record and jot down, and how you use it; configuration sits
 // at the bottom.
 const TOP: NavItem[] = [
-  { id: "home", labelKey: "sidebar.home", icon: House, motion: "lift" },
+  {
+    id: "home",
+    labelKey: "sidebar.home",
+    hue: "teal",
+    icon: House,
+    motion: "lift",
+  },
   {
     id: "dictionary",
     labelKey: "sidebar.dictionary",
+    hue: "violet",
     icon: BookA,
     motion: "tilt",
     gapBefore: true,
@@ -46,19 +55,28 @@ const TOP: NavItem[] = [
   {
     id: "snippets",
     labelKey: "sidebar.snippets",
+    hue: "rose",
     icon: Scissors,
     motion: "snip",
   },
-  { id: "style", labelKey: "sidebar.style", icon: Type, motion: "type" },
+  {
+    id: "style",
+    labelKey: "sidebar.style",
+    hue: "amber",
+    icon: Type,
+    motion: "type",
+  },
   {
     id: "transforms",
     labelKey: "sidebar.transforms",
+    hue: "sky",
     icon: Replace,
     motion: "swap",
   },
   {
     id: "notes",
     labelKey: "sidebar.notes",
+    hue: "green",
     icon: AudioLines,
     motion: "meter",
     gapBefore: true,
@@ -67,6 +85,7 @@ const TOP: NavItem[] = [
   {
     id: "scratchpad",
     labelKey: "sidebar.scratchpad",
+    hue: "orange",
     icon: NotebookPen,
     motion: "write",
     feature: "scratchpad_enabled",
@@ -74,16 +93,24 @@ const TOP: NavItem[] = [
   {
     id: "insights",
     labelKey: "sidebar.insights",
+    hue: "indigo",
     icon: ChartColumn,
     motion: "bars",
     feature: "insights_enabled",
   },
 ];
 const BOTTOM: NavItem[] = [
-  { id: "models", labelKey: "sidebar.models", icon: Cpu, motion: "chip" },
+  {
+    id: "models",
+    labelKey: "sidebar.models",
+    hue: "slate",
+    icon: Cpu,
+    motion: "chip",
+  },
   {
     id: "settings",
     labelKey: "sidebar.settings",
+    hue: "slate",
     icon: Settings,
     motion: "turn",
   },
@@ -120,7 +147,7 @@ const NavButton: React.FC<{
       aria-current={current ? "page" : undefined}
       aria-label={collapsed ? label : undefined}
       title={collapsed ? label : undefined}
-      className={`group relative flex h-[38px] w-full items-center gap-3 rounded-[var(--r-md)] px-2.5 text-[15px] text-text transition-colors duration-[var(--dur-1)] hover:duration-0 ring-inside ${
+      className={`group relative flex h-10 w-full items-center gap-2.5 rounded-[var(--r-md)] px-[7px] text-[15px] text-text transition-colors duration-[var(--dur-1)] hover:duration-0 ring-inside ${
         current
           ? "bg-sidebar-active font-medium"
           : "hover:bg-surface-3 active:bg-surface-4"
@@ -129,13 +156,16 @@ const NavButton: React.FC<{
       {current && (
         <span
           aria-hidden="true"
-          className="absolute -start-3 top-2.5 bottom-2.5 w-[3px] rounded-e-[3px] bg-teal-700"
+          className="nav-mark absolute -start-3 top-2.5 bottom-2.5 w-[3px] rounded-e-[3px] bg-teal-700"
         />
       )}
-      <Icon
-        aria-hidden
-        className={`im im-${item.motion} h-[18px] w-[18px] flex-none stroke-[1.75] ${current ? "text-text" : "text-text-2 group-hover:text-text"}`}
-      />
+      {/* Each page has a colour of its own; the page you're on wears it. */}
+      <span className={`tile tile-${item.hue} ${current ? "on" : ""}`}>
+        <Icon
+          aria-hidden
+          className={`im im-${item.motion} h-4 w-4 flex-none stroke-[1.9]`}
+        />
+      </span>
       {!collapsed && (
         <span className="min-w-0 flex-1 truncate text-start">{label}</span>
       )}

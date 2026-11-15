@@ -176,6 +176,27 @@ pub struct Place<'a> {
     pub your_name: Option<&'a str>,
     /// How the app shows formatting, when that's known.
     pub markup: Option<crate::format_rules::Markup>,
+    /// The window's title, trimmed for a prompt: the file, the channel or
+    /// the person the text is for.
+    pub title: Option<&'a str>,
+    /// The end of what was dictated into the same window just before.
+    pub before: Option<&'a str>,
+}
+
+/// What a term taken from the screen is, in the word list the AI gets.
+pub const SCREEN_KIND: &str = "on their screen right now";
+
+/// Terms seen on the screen as words for the AI's list: spelled as the
+/// screen has them, with no heard forms of their own.
+pub fn screen_words(terms: &[String]) -> Vec<PromptWord<'_>> {
+    terms
+        .iter()
+        .map(|term| PromptWord {
+            text: term,
+            kind: Some(SCREEN_KIND),
+            ..Default::default()
+        })
+        .collect()
 }
 
 /// A kind of app in words, for the place note.
@@ -216,6 +237,19 @@ pub fn place_note(place: &Place) -> String {
             out.push_str(" Add no formatting symbols or headings; keep any the speaker dictated.")
         }
         _ => {}
+    }
+    if let Some(title) = place.title.map(str::trim).filter(|t| !t.is_empty()) {
+        out.push_str(&format!(
+            " The window is titled \"{title}\", which may name the file, the channel or the \
+             person it is for; use it only to spell names right."
+        ));
+    }
+    if let Some(before) = place.before.map(str::trim).filter(|b| !b.is_empty()) {
+        out.push_str(&format!(
+            " Just before, into the same window, they dictated: \"{before}\". That is only \
+             context: never repeat it, and when the new text carries on a sentence it left \
+             open, don't start it with a capital."
+        ));
     }
     if let Some(name) = place.your_name.map(str::trim).filter(|n| !n.is_empty()) {
         out.push_str(&format!(" The speaker is {name}; \"I\" means them."));
@@ -1110,6 +1144,7 @@ mod tests {
                 category: "work",
                 your_name: Some("Sam Rao"),
                 markup: Some(crate::format_rules::Markup::Chat),
+                ..Default::default()
             },
         );
         assert!(prompt.starts_with(DICTATION_OPENING));
@@ -1124,6 +1159,7 @@ mod tests {
             category: "ai",
             your_name: None,
             markup: Some(crate::format_rules::Markup::Markdown),
+            ..Default::default()
         });
         assert!(!ai.contains("formatting symbols"));
         assert!(ai.contains("never answer"));
@@ -1142,6 +1178,22 @@ mod tests {
             ..Default::default()
         });
         assert!(mail.contains("plain text only"));
+        // The window's title and what was said just before are context.
+        let more = place_note(&Place {
+            app: Some("Slack"),
+            category: "work",
+            title: Some("#releases"),
+            before: Some("…the build is green and"),
+            ..Default::default()
+        });
+        assert!(more.contains("titled \"#releases\""));
+        assert!(more.contains("they dictated: \"…the build is green and\""));
+        // A term from the screen is a word like any other, said to be there.
+        let terms = vec!["Dokploy".to_string()];
+        let words = screen_words(&terms);
+        let request = cleanup_request(&words, "restart doc ploy");
+        assert!(request.contains("- Dokploy, on their screen right now, kept exactly as written"));
+        assert!(sounds_like("doc ploy", &words[0]));
     }
 
     #[test]

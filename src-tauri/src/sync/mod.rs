@@ -1152,6 +1152,7 @@ impl hub::Events for AppEvents {
                 category: kind,
                 markup: kind.and_then(|k| crate::format_rules::markup_for_package("", k)),
                 phone: kind.is_some(),
+                ..Default::default()
             };
             let result = tauri::async_runtime::block_on(crate::transforms::apply(
                 &handle,

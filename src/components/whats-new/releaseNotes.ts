@@ -3,26 +3,17 @@ export interface ReleaseNote {
   markdown: string;
 }
 
-interface ReleaseNoteRecord {
-  version: string;
-  markdown: string;
-}
-
 interface FindReleaseNoteOptions {
   currentVersion: string;
   lastSeenVersion: string;
 }
 
-const releaseNoteModules = import.meta.glob<string>(
-  "../../content/release-notes/*.md",
-  {
-    eager: true,
-    import: "default",
-    query: "?raw",
-  },
-);
-
-const releaseNotesByVersion = new Map<string, ReleaseNoteRecord>();
+// Each version's notes load when they're shown: the list of versions comes
+// from the file names alone.
+const loaders = import.meta.glob<string>("../../content/release-notes/*.md", {
+  import: "default",
+  query: "?raw",
+});
 
 const parseVersion = (version: string): [number, number, number] | null => {
   const normalized = version.trim().replace(/^v/i, "");
@@ -32,19 +23,21 @@ const parseVersion = (version: string): [number, number, number] | null => {
   return [Number(match[1]), Number(match[2]), Number(match[3])];
 };
 
-for (const [path, markdown] of Object.entries(releaseNoteModules)) {
+const loadersByVersion = new Map<string, () => Promise<string>>();
+
+for (const [path, load] of Object.entries(loaders)) {
   const match = path.match(/release-notes\/([^/]+)\.md$/);
-  if (!match) continue;
-
-  const version = match[1];
-
-  if (!parseVersion(version)) continue;
-
-  releaseNotesByVersion.set(version, {
-    version,
-    markdown,
-  });
+  if (!match || !parseVersion(match[1])) continue;
+  loadersByVersion.set(match[1], load);
 }
+
+const read = async (
+  version: string | undefined,
+): Promise<ReleaseNote | null> => {
+  const load = version ? loadersByVersion.get(version) : undefined;
+  if (!version || !load) return null;
+  return { version, markdown: await load() };
+};
 
 const compareVersions = (a: string, b: string) => {
   const parsedA = parseVersion(a);
@@ -61,33 +54,30 @@ const compareVersions = (a: string, b: string) => {
   return 0;
 };
 
+/** The newest notes at or below this version that haven't been seen. */
 export const findReleaseNoteToShow = ({
   currentVersion,
   lastSeenVersion,
-}: FindReleaseNoteOptions): ReleaseNote | null => {
-  if (!parseVersion(currentVersion)) return null;
+}: FindReleaseNoteOptions): Promise<ReleaseNote | null> => {
+  if (!parseVersion(currentVersion)) return Promise.resolve(null);
 
   const hasValidLastSeenVersion = parseVersion(lastSeenVersion) !== null;
-  const candidate = Array.from(releaseNotesByVersion.values())
-    .filter((note) => compareVersions(note.version, currentVersion) <= 0)
+  const candidate = Array.from(loadersByVersion.keys())
+    .filter((version) => compareVersions(version, currentVersion) <= 0)
     .filter(
-      (note) =>
+      (version) =>
         !hasValidLastSeenVersion ||
-        compareVersions(note.version, lastSeenVersion) > 0,
+        compareVersions(version, lastSeenVersion) > 0,
     )
-    .sort((a, b) => compareVersions(b.version, a.version))[0];
+    .sort((a, b) => compareVersions(b, a))[0];
 
-  if (!candidate) return null;
-
-  return candidate;
+  return read(candidate);
 };
 
-export const findLatestReleaseNote = (): ReleaseNote | null => {
-  const candidate = Array.from(releaseNotesByVersion.values()).sort((a, b) =>
-    compareVersions(b.version, a.version),
-  )[0];
-
-  if (!candidate) return null;
-
-  return candidate;
-};
+/** The newest notes there are. */
+export const findLatestReleaseNote = (): Promise<ReleaseNote | null> =>
+  read(
+    Array.from(loadersByVersion.keys()).sort((a, b) =>
+      compareVersions(b, a),
+    )[0],
+  );

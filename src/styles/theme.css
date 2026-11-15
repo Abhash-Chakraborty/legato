@@ -92,12 +92,13 @@
     "Figtree", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --mono: "Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace;
 
-  /* radii (Windows 11 scale): cards and lists 12, controls 8 and 6, pills 5 */
-  --r-xl: 16px;
-  --r-lg: 12px;
-  --r-md: 8px;
-  --r-sm: 6px;
-  --r-xs: 5px;
+  /* radii: the main panel 18, cards and lists 14, controls 10 and 8,
+     small marks 6 */
+  --r-xl: 18px;
+  --r-lg: 14px;
+  --r-md: 10px;
+  --r-sm: 8px;
+  --r-xs: 6px;
 
   /* elevation */
   --shadow-1: 0 1px 2px rgba(20, 20, 20, 0.05);
@@ -114,11 +115,12 @@
   --dur-4: 320ms;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
-  --ease-spring: cubic-bezier(0.3, 1.3, 0.5, 1); /* marks of 20 px or less */
+  /* one small overshoot: presses springing back, knobs, ticks, menus */
+  --ease-spring: cubic-bezier(0.3, 1.45, 0.45, 1);
 
-  /* a switch that is on: near-black in light, teal in dark */
-  --toggle-on: var(--text);
-  --toggle-on-hover: #000;
+  /* a switch that is on wears the accent */
+  --toggle-on: var(--teal-fill);
+  --toggle-on-hover: var(--teal-fill-hover);
 
   /* keyboard focus: a 2 px outline at offset 2 */
   --focus-outer: #1a1a1a;

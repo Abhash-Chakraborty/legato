@@ -1,9 +1,13 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useSettings } from "../../hooks/useSettings";
 import { findReleaseNoteToShow } from "./releaseNotes";
 import type { ReleaseNote } from "./releaseNotes";
-import { WhatsNewModal } from "./WhatsNewModal";
+// The notes are Markdown, and its reader loads with them: only after an
+// update, not at every launch.
+const WhatsNewModal = lazy(() =>
+  import("./WhatsNewModal").then((m) => ({ default: m.WhatsNewModal })),
+);
 
 export const WhatsNewGate: React.FC = () => {
   const { settings, isLoading, updateSetting } = useSettings();
@@ -25,10 +29,11 @@ export const WhatsNewGate: React.FC = () => {
         const currentVersion = await getVersion();
         if (cancelled) return;
 
-        const releaseNote = findReleaseNoteToShow({
+        const releaseNote = await findReleaseNoteToShow({
           currentVersion,
           lastSeenVersion: settings.whats_new_last_seen_version ?? "",
         });
+        if (cancelled) return;
 
         if (
           !releaseNote ||
@@ -68,5 +73,9 @@ export const WhatsNewGate: React.FC = () => {
 
   if (!note) return null;
 
-  return <WhatsNewModal note={note} open={isOpen} onDismiss={dismiss} />;
+  return (
+    <Suspense fallback={null}>
+      <WhatsNewModal note={note} open={isOpen} onDismiss={dismiss} />
+    </Suspense>
+  );
 };

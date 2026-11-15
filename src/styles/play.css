@@ -1,0 +1,320 @@
+/* The playful layer: how Legato's basics feel under the pointer.
+
+   Controls answer with one small spring. Buttons press in and spring back,
+   a switch's knob lands with a little overshoot, tabs draw their line out
+   from the middle, menus and dialogs grow from where they opened, and each
+   feature has a colour of its own behind its icon. One overshoot, under a
+   third of a second, never a loop; with reduced motion the durations are
+   zero (theme.css) and nothing moves.
+
+   Imported outside the components layer so it also reaches controls drawn
+   with utility classes; every selector here is narrow for that reason. */
+
+/* ------------------------------------------------- feature colours */
+/* --h is the ink (icon on the tint, text), --hf the fill behind a white
+   icon. Light first, then dark. */
+.tile {
+  --h: var(--teal-700);
+  --hf: var(--teal-fill);
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--h);
+  background: color-mix(in srgb, var(--h) 13%, transparent);
+  transition:
+    transform var(--dur-4) var(--ease-spring),
+    background-color var(--dur-2) var(--ease-out),
+    color var(--dur-2) var(--ease-out);
+}
+.tile.on {
+  color: #fff;
+  background: var(--hf);
+}
+.tile.lg {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+/* The control it sits in, under the pointer: the tile leans in. */
+.group:hover > .tile,
+.group:focus-visible > .tile {
+  transform: scale(1.1) rotate(-4deg);
+}
+.group:active > .tile {
+  transform: scale(0.94);
+  transition-duration: 60ms;
+}
+.tile-violet {
+  --h: #6d4fd8;
+  --hf: #6d4fd8;
+}
+.tile-rose {
+  --h: #c0356b;
+  --hf: #d1447a;
+}
+.tile-amber {
+  --h: #a85a07;
+  --hf: #c4700f;
+}
+.tile-sky {
+  --h: #0b6aa8;
+  --hf: #0f7cc2;
+}
+.tile-green {
+  --h: #3d7a1c;
+  --hf: #4a8f24;
+}
+.tile-orange {
+  --h: #bd4410;
+  --hf: #d4551c;
+}
+.tile-indigo {
+  --h: #4a45d6;
+  --hf: #4f4ae0;
+}
+.tile-slate {
+  --h: #4b5868;
+  --hf: #566475;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .tile-violet {
+    --h: #b6a5ff;
+  }
+  :root:not([data-theme="light"]) .tile-rose {
+    --h: #f7a3c4;
+  }
+  :root:not([data-theme="light"]) .tile-amber {
+    --h: #f5bd4f;
+  }
+  :root:not([data-theme="light"]) .tile-sky {
+    --h: #7fcdf7;
+  }
+  :root:not([data-theme="light"]) .tile-green {
+    --h: #a6dc6b;
+  }
+  :root:not([data-theme="light"]) .tile-orange {
+    --h: #fbb27a;
+  }
+  :root:not([data-theme="light"]) .tile-indigo {
+    --h: #aab0ff;
+  }
+  :root:not([data-theme="light"]) .tile-slate {
+    --h: #c3ccd8;
+  }
+}
+:root[data-theme="dark"] .tile-violet {
+  --h: #b6a5ff;
+}
+:root[data-theme="dark"] .tile-rose {
+  --h: #f7a3c4;
+}
+:root[data-theme="dark"] .tile-amber {
+  --h: #f5bd4f;
+}
+:root[data-theme="dark"] .tile-sky {
+  --h: #7fcdf7;
+}
+:root[data-theme="dark"] .tile-green {
+  --h: #a6dc6b;
+}
+:root[data-theme="dark"] .tile-orange {
+  --h: #fbb27a;
+}
+:root[data-theme="dark"] .tile-indigo {
+  --h: #aab0ff;
+}
+:root[data-theme="dark"] .tile-slate {
+  --h: #c3ccd8;
+}
+
+/* ------------------------------------------------------------ buttons */
+/* Hover arrives at once; a press goes in fast and springs back out. */
+.btn {
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    transform var(--dur-4) var(--ease-spring);
+}
+.btn:hover {
+  transition-duration: 0ms, 0ms, 0ms, var(--dur-2), var(--dur-4);
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.95);
+  transition-duration: 0ms, 0ms, 0ms, 0ms, 70ms;
+}
+.btn-primary:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.16),
+    0 1px 2px color-mix(in srgb, var(--teal-fill) 45%, transparent);
+}
+.btn-primary:hover:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.16),
+    0 4px 12px color-mix(in srgb, var(--teal-fill) 38%, transparent);
+  transform: translateY(-1px);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.95);
+}
+
+/* ------------------------------------------------------------- switch */
+/* The knob lands with one overshoot; the track fills in the accent. */
+.toggle::after {
+  transition:
+    transform var(--dur-4) var(--ease-spring),
+    width var(--dur-1) var(--ease-out);
+}
+
+/* --------------------------------------------------------------- tabs */
+/* The line under the chosen tab draws out from its middle. */
+[role="tab"].border-b-2 {
+  position: relative;
+  border-bottom-color: transparent;
+}
+[role="tab"].border-b-2::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -2px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--teal-600);
+  transform: scaleX(0);
+  transition: transform var(--dur-4) var(--ease-spring);
+}
+[role="tab"].border-b-2[aria-selected="true"]::after {
+  transform: scaleX(1);
+}
+[role="tab"].border-b-2:hover:not([aria-selected="true"])::after {
+  background: var(--border-strong);
+  transform: scaleX(0.45);
+}
+
+/* A pill in a segmented control pops in when it's chosen. */
+.seg-on {
+  animation: seg-pop var(--dur-4) var(--ease-spring);
+}
+@keyframes seg-pop {
+  from {
+    transform: scale(0.9);
+  }
+}
+
+/* ---------------------------------------------------- menus, dialogs */
+.menu {
+  border-radius: var(--r-md);
+  animation: menu-pop var(--dur-3) var(--ease-spring) both;
+}
+@keyframes menu-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(-6px);
+  }
+}
+.dialog-backdrop {
+  animation: dialog-fade var(--dur-2) var(--ease-out) both;
+}
+.dialog-panel {
+  animation: dialog-pop var(--dur-4) var(--ease-spring) both;
+}
+@keyframes dialog-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dialog-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(8px);
+  }
+}
+
+/* ------------------------------------------------------------ sidebar */
+/* The mark beside the current page grows in from its middle. */
+.nav-mark {
+  animation: nav-mark var(--dur-4) var(--ease-spring) both;
+}
+@keyframes nav-mark {
+  from {
+    transform: scaleY(0.2);
+  }
+}
+
+/* ---------------------------------------------------- cards and rows */
+/* A card you can click lifts a little; pressing sets it back down. */
+.lift {
+  transition:
+    transform var(--dur-4) var(--ease-spring),
+    box-shadow var(--dur-2) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+.lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-2);
+}
+.lift:active {
+  transform: translateY(0) scale(0.99);
+  transition-duration: 70ms, 0ms, 0ms;
+}
+
+/* Rows of a list that just loaded come in one after another (--i). */
+.rise {
+  animation: rise var(--dur-4) var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 8) * 28ms);
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* A tick, a count or a badge that just changed pops once. */
+.pop {
+  animation: pop var(--dur-4) var(--ease-spring) both;
+}
+@keyframes pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+
+/* A keycap goes down when the shortcut it shows is being held. */
+.kbd.down {
+  transform: translateY(1px);
+  box-shadow: none;
+  background: var(--teal-50);
+  border-color: var(--teal-300);
+  color: var(--teal-700);
+}
+.kbd {
+  transition:
+    transform 80ms var(--ease-out),
+    background-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+
+/* The microphone tile breathes while Legato listens. */
+.listening {
+  animation: listening 1.4s var(--ease-out) infinite;
+}
+@keyframes listening {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--hf) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .listening {
+    animation: none;
+  }
+}

@@ -8,7 +8,7 @@ import {
   syncThemeFromSettings,
 } from "@/lib/utils/theme";
 import type { Theme } from "@/bindings";
-import "@/i18n";
+import "@/i18n/small";
 import { installContextMenu } from "@/lib/contextMenu";
 
 // Its own webview, so it follows the theme on its own, as the bar does.

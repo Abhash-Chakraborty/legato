@@ -92,6 +92,8 @@ interface Row {
   used?: boolean;
   /** Left out while its feature is switched off. */
   on: boolean;
+  /** Its page's colour (`.tile-*` in play.css). */
+  hue: string;
 }
 
 /**
@@ -142,6 +144,7 @@ export const GetToKnow: React.FC = () => {
       [
         {
           id: "dictionary",
+          hue: "violet",
           icon: BookA,
           page: "dictionary",
           used: used.words > 0,
@@ -149,15 +152,17 @@ export const GetToKnow: React.FC = () => {
         },
         {
           id: "correct",
+          hue: "teal",
           icon: Pencil,
           page: "settings",
           section: "shortcuts",
           binding: "correct_last",
           on: true,
         },
-        { id: "style", icon: Type, page: "style", on: true },
+        { id: "style", hue: "amber", icon: Type, page: "style", on: true },
         {
           id: "ai",
+          hue: "slate",
           icon: Plug,
           page: "settings",
           section: "ai",
@@ -166,6 +171,7 @@ export const GetToKnow: React.FC = () => {
         },
         {
           id: "transforms",
+          hue: "sky",
           icon: Replace,
           page: "transforms",
           binding: "transform_selection",
@@ -173,6 +179,7 @@ export const GetToKnow: React.FC = () => {
         },
         {
           id: "snippets",
+          hue: "rose",
           icon: Scissors,
           page: "snippets",
           used: used.snippets > 0,
@@ -180,6 +187,7 @@ export const GetToKnow: React.FC = () => {
         },
         {
           id: "notes",
+          hue: "green",
           icon: NotebookPen,
           page: "notes",
           binding: "toggle_notes",
@@ -188,6 +196,7 @@ export const GetToKnow: React.FC = () => {
         },
         {
           id: "scratchpad",
+          hue: "orange",
           icon: SquarePen,
           page: "scratchpad",
           binding: "open_scratchpad",
@@ -196,6 +205,7 @@ export const GetToKnow: React.FC = () => {
         },
         {
           id: "phone",
+          hue: "indigo",
           icon: Smartphone,
           page: "settings",
           section: "devices",
@@ -204,6 +214,7 @@ export const GetToKnow: React.FC = () => {
         },
         {
           id: "calendar",
+          hue: "green",
           icon: CalendarDays,
           page: "settings",
           section: "connections",
@@ -290,12 +301,15 @@ export const GetToKnow: React.FC = () => {
           const ticked = isDone(row);
           const Icon = row.icon;
           return (
-            <li key={row.id} className="flex items-start gap-3 px-3.5 py-3">
+            <li
+              key={row.id}
+              className="group flex items-start gap-3 px-3.5 py-3"
+            >
               <span
-                className={`mt-0.5 grid h-7 w-7 flex-none place-items-center rounded-[var(--r-sm)] ${ticked ? "bg-teal-50 text-teal-700" : "bg-surface-2 text-text-2"}`}
+                className={`tile lg mt-0.5 ${ticked ? "on" : `tile-${row.hue}`}`}
               >
                 {ticked ? (
-                  <Check className="h-4 w-4" aria-hidden="true" />
+                  <Check className="pop h-4 w-4" aria-hidden="true" />
                 ) : (
                   <Icon className="h-4 w-4" aria-hidden="true" />
                 )}

@@ -418,17 +418,42 @@ fn dictionary_entries(app: &AppHandle) -> Vec<crate::managers::dictionary_store:
     entries
 }
 
-/// Where a transform's result goes, from the app it was captured in.
-pub fn destination(app: Option<&AppInfo>) -> Destination<'_> {
+/// Where a transform's result goes, from the app it was captured in. With
+/// Use words on screen on (`screen`), the window's title goes along, and
+/// the terms seen in the window (`terms`).
+pub fn destination<'a>(
+    app: Option<&'a AppInfo>,
+    screen: bool,
+    terms: &'a [String],
+) -> Destination<'a> {
     match app {
         Some(a) => Destination {
             app: Some(a.place()).filter(|p| !p.is_empty()),
             category: Some(a.category.as_str()),
             markup: Some(a.markup),
             phone: false,
+            title: Some(a.title.as_str()).filter(|t| screen && !t.trim().is_empty()),
+            screen: if screen { terms } else { &[] },
         },
         None => Destination::default(),
     }
+}
+
+/// The terms seen in the window in front that the Dictionary doesn't have,
+/// when Use words on screen is on.
+pub fn screen_terms(app: &AppHandle, settings: &AppSettings) -> Vec<String> {
+    if !settings.screen_context {
+        return Vec::new();
+    }
+    let known: std::collections::HashSet<String> = app
+        .try_state::<Arc<DictionaryManager>>()
+        .and_then(|d| d.list().ok())
+        .unwrap_or_default()
+        .into_iter()
+        .flat_map(|e| std::iter::once(e.text).chain(e.also))
+        .map(|w| w.to_lowercase())
+        .collect();
+    crate::screen_rules::fresh(crate::screen::seen(), &|w| known.contains(w))
 }
 
 /// Runs a transform's prompt on `text`, which may carry `snippets` markers
@@ -662,6 +687,9 @@ fn on_shortcut(app: &AppHandle, work: impl FnOnce(&AppHandle) + Send + 'static) 
         return;
     }
     selection::mask_menu_key(app);
+    // The window is read while the keys come up and the selection is
+    // copied, so the transform knows the names and code around the text.
+    crate::actions::look_at_screen(app, context::foreground_window().as_ref());
     let app = app.clone();
     std::thread::spawn(move || {
         selection::wait_for_keys_up();
@@ -673,6 +701,7 @@ fn on_shortcut(app: &AppHandle, work: impl FnOnce(&AppHandle) + Send + 'static) 
 fn run_transform_on(app: &AppHandle, transform: Transform, captured: Captured) {
     let settings = get_settings(app);
     let target = captured.app.clone();
+    let seen = screen_terms(app, &settings);
     let text = captured.text.clone();
     let job = Job {
         transform_id: transform.id.clone(),
@@ -687,7 +716,7 @@ fn run_transform_on(app: &AppHandle, transform: Transform, captured: Captured) {
             &settings,
             &transform,
             &text,
-            &destination(target.as_ref()),
+            &destination(target.as_ref(), settings.screen_context, &seen),
             0,
             SELECTION_TIMEOUT,
         )
@@ -841,8 +870,9 @@ fn run_ask(app: &AppHandle, instruction: String) {
     let user = rules::ask_request(&instruction, rewriting.then_some(captured.text.as_str()));
     let entries = dictionary_entries(app);
     let markup = captured.app.as_ref().map(|a| a.markup);
+    let seen = screen_terms(app, &settings);
     let system = rules::ask_system_prompt(&PromptContext {
-        destination: destination(captured.app.as_ref()),
+        destination: destination(captured.app.as_ref(), settings.screen_context, &seen),
         words: &prompt_words(&entries),
         clipboard: None,
         your_name: Some(settings.your_name.as_str()),

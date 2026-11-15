@@ -315,7 +315,11 @@ pub fn init(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_millis(1500));
-        let covered = foreground_fills_screen();
+        // Only the bubble and the island step aside for a window that fills
+        // the screen; with neither on there's nothing to look for.
+        let settings = get_settings(&app);
+        let watching = settings.bubble_enabled || crate::overlay::island_on(&settings);
+        let covered = watching && foreground_fills_screen();
         let was = COVERED.swap(covered, Ordering::SeqCst);
         if was != covered {
             crate::overlay::island_cover_changed(&app, covered);

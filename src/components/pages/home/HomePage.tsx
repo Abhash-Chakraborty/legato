@@ -30,6 +30,7 @@ import {
 import { HistoryRow, type RowActions } from "./HistoryRow";
 import { HomeRail } from "./HomeRail";
 import { GetToKnow } from "./GetToKnow";
+import { ReadyCard } from "./ReadyCard";
 import {
   isPendingDelete,
   scheduleDelete,
@@ -383,6 +384,7 @@ export const HomePage: React.FC = () => {
             : t(phoneToday ? "home.nothingTodayHere" : "home.nothingToday")}
         </p>
 
+        {!query && <ReadyCard last={visible[0]} />}
         {!query && <GetToKnow />}
 
         {!fixHintHidden && !learnedAny && visible.length > 0 && (

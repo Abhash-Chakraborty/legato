@@ -25,13 +25,14 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref,
   ) {
-    // Hover arrives at once and fades out over 100 ms; a press scales to 0.97.
+    // Hover arrives at once and fades out over 100 ms; a press goes in and
+    // springs back (.btn in styles/play.css).
     const baseClasses =
-      "inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium border cursor-pointer select-none transition-[background-color,border-color,color,transform] duration-[var(--dur-1)] ease-[var(--ease-out)] hover:duration-0 active:scale-[0.97] active:duration-0 disabled:opacity-45 disabled:cursor-not-allowed disabled:active:scale-100";
+      "btn inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium border cursor-pointer select-none disabled:opacity-45 disabled:cursor-not-allowed";
 
     const variantClasses = {
       primary:
-        "text-white bg-teal-fill border-transparent hover:bg-teal-fill-hover disabled:hover:bg-teal-fill",
+        "btn-primary text-white bg-teal-fill border-transparent hover:bg-teal-fill-hover disabled:hover:bg-teal-fill",
       "primary-soft":
         "text-teal-700 bg-teal-50 border-transparent hover:bg-teal-100 disabled:hover:bg-teal-50",
       secondary:

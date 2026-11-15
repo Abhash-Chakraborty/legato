@@ -978,6 +978,10 @@ pub struct AppSettings {
     /// Reads the field after a paste and proposes the words you corrected.
     #[serde(default = "default_true")]
     pub learn_from_edits: bool,
+    /// Reads the words in the window a dictation goes to, so names, code
+    /// and products on screen come out spelled as they are there.
+    #[serde(default = "default_true")]
+    pub screen_context: bool,
     #[serde(default)]
     pub learn_mode: LearnMode,
     /// Notes summaries and Ask about this note may use the AI.
@@ -1753,6 +1757,7 @@ pub fn get_default_settings() -> AppSettings {
         styles: Styles::default(),
         app_rules: Vec::new(),
         learn_from_edits: true,
+        screen_context: true,
         learn_mode: LearnMode::default(),
         ai_notes_enabled: true,
         notes_live_transcript: true,
@@ -1846,7 +1851,24 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     settings
 }
 
+/// The settings as last read or written. Legato asks for its settings
+/// hundreds of times a minute (every poll, every step of a dictation), and
+/// reading them from the store meant parsing the whole file and building
+/// every default each time. Only `write_settings` changes them, so the
+/// copy here is always the store's.
+static CURRENT: std::sync::RwLock<Option<AppSettings>> = std::sync::RwLock::new(None);
+
 pub fn get_settings(app: &AppHandle) -> AppSettings {
+    if let Some(settings) = CURRENT.read().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        return settings.clone();
+    }
+    let settings = read_settings(app);
+    *CURRENT.write().unwrap_or_else(|e| e.into_inner()) = Some(settings.clone());
+    settings
+}
+
+/// Reads the settings from the store, bringing an older store up to date.
+fn read_settings(app: &AppHandle) -> AppSettings {
     let store = app
         .store(crate::portable::store_path(SETTINGS_STORE_PATH))
         .expect("Failed to initialize store");
@@ -2129,6 +2151,7 @@ pub fn write_settings(app: &AppHandle, settings: AppSettings) {
         .expect("Failed to initialize store");
 
     store.set("settings", serde_json::to_value(&settings).unwrap());
+    *CURRENT.write().unwrap_or_else(|e| e.into_inner()) = Some(settings);
 }
 
 /// Adds an empty binding for each transform that has none. Returns whether

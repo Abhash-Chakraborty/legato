@@ -53,6 +53,18 @@ Words you fix this way show as "first fixed on Home" in the Dictionary.
 
 Select a word in any app and press Win+Alt+W. Legato copies the selection, puts your clipboard back as it was, and adds the word spelled exactly as selected. The bar confirms it, or says the word is already there. A selection can be one word or a name up to four words long.
 
+## Use words on screen
+
+Names, products and code you're looking at are often not in your Dictionary yet: a new tool, a function, someone's surname in the email you're answering. With Use words on screen on (Learning and matching on the Dictionary page; on to start with), Legato reads the window you dictate into once, while you speak, and takes the terms worth knowing from it: words written like code or a product (`useState`, TypeScript, legato-phone) and words the Windows spell checker doesn't know. Ordinary words, addresses, paths and numbers are left out, and so is anything your Dictionary already has.
+
+Those terms then help in three ways:
+
+- **Spelling by rule.** A word that isn't a real word and is close to a term on screen takes the screen's spelling and capitals: "typescript" becomes TypeScript, "Dokploi" becomes Dokploy. Real words are never changed this way.
+- **Your AI's ear.** With Cleanup at Medium or the correction pass on, the terms go along with your Dictionary, so "doc ploy" can become Dokploy when it's on screen. The window's title and the end of what you dictated into the same window just before go along too, so a dictation can carry on a sentence. Transforms and Ask get the terms and the title as well.
+- **Your Dictionary learns.** A word fixed from the screen is offered under Needs review with what was heard, or added straight away, as When it finds a word is set. From then on it works without the screen. Home marks such a fix "your screen".
+
+The window is read on this PC by Windows' own text recognition, the picture is dropped at once, and only the terms are kept, for that dictation. Password managers (the apps the shared clipboard never sends from) are never read. Nothing is read when you aren't dictating or running a transform.
+
 ## Learn from my edits
 
 Correct on the bar after a paste learns the words you change, even with Learn from my edits off, and follows When it finds a word below; see [Correct a dictation](dictation.md#correct-a-dictation). When you correct a word in the app itself right after Legato pastes it, Legato can learn that too. Ten seconds after a paste, it reads the field once, on this PC, and compares it with what it pasted. The field's text stays in memory and is dropped after the comparison. Slack, Teams and VS Code often don't share their text, so it learns less there.

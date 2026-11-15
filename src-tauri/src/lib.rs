@@ -46,6 +46,8 @@ mod overlay;
 mod paste_tx;
 pub mod portable;
 mod scratchpad;
+mod screen;
+mod screen_rules;
 mod secrets;
 mod selection;
 mod settings;
@@ -1064,6 +1066,7 @@ pub fn run(cli_args: CliArgs) {
             commands::dictionary::get_your_name,
             commands::dictionary::set_your_name,
             commands::dictionary::change_learn_from_edits_setting,
+            commands::dictionary::change_screen_context_setting,
             commands::dictionary::change_learn_mode_setting,
             commands::ai::get_ai_status,
             commands::ai::test_ai_connection,
@@ -1580,6 +1583,19 @@ pub fn run(cli_args: CliArgs) {
             if scratchpad_only {
                 open_scratchpad_from_cli(&app_handle, cli_args.new_note);
             }
+
+            // Started to the tray, the window loads the app (which sets up
+            // the shortcuts) and then rests like one closed to the tray:
+            // it stops drawing and gives back what memory it can.
+            let resting = app_handle.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(20));
+                if let Some(window) = resting.get_webview_window("main") {
+                    if !window.is_visible().unwrap_or(true) {
+                        desktop::webview_resting(&window, true);
+                    }
+                }
+            });
 
             Ok(())
         })

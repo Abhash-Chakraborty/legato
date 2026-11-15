@@ -17,8 +17,9 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, RwLock};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
 /// What the pipeline needs from the Dictionary for one transcription.
@@ -77,6 +78,10 @@ pub struct DictionaryManager {
     undo: Mutex<(u32, HashMap<u32, FixUndo>)>,
 }
 
+/// A rebuild is waiting to run, and how long it waits.
+static REFRESH_DUE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const REFRESH_AFTER: std::time::Duration = std::time::Duration::from_secs(20);
+
 impl DictionaryManager {
     /// Opens the Dictionary in the history database, which `HistoryManager`
     /// has already migrated.
@@ -112,6 +117,24 @@ impl DictionaryManager {
             Err(e) => *e.into_inner() = lexicon,
         }
         Ok(())
+    }
+
+    /// Rebuilds what dictations match against in a while, once for however
+    /// many calls arrive meanwhile.
+    fn refresh_soon(&self) {
+        if REFRESH_DUE.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let app = self.app_handle.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(REFRESH_AFTER);
+            REFRESH_DUE.store(false, Ordering::SeqCst);
+            if let Some(dictionary) = app.try_state::<Arc<DictionaryManager>>() {
+                if let Err(e) = dictionary.refresh() {
+                    error!("Failed to reload the Dictionary: {}", e);
+                }
+            }
+        });
     }
 
     /// Call after every write: the next dictation uses the change, and the
@@ -214,8 +237,16 @@ impl DictionaryManager {
             return;
         }
         match self.conn() {
+            // A count going up changes nothing a dictation matches against,
+            // only the order of the hint, so the Dictionary isn't rebuilt
+            // for every fix: once, a little later, covers a run of them.
             Ok(mut conn) => match store::record_fixes(&mut conn, words, app, Self::now()) {
-                Ok(()) => self.changed(),
+                Ok(()) => {
+                    self.refresh_soon();
+                    if let Err(e) = DictionaryChanged.emit(&self.app_handle) {
+                        error!("Failed to emit dictionary-changed: {}", e);
+                    }
+                }
                 Err(e) => error!("Failed to count Dictionary fixes: {}", e),
             },
             Err(e) => error!("Failed to open the Dictionary: {}", e),

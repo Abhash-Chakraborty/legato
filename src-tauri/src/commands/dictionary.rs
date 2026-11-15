@@ -573,6 +573,18 @@ pub fn set_your_name(
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_screen_context_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = crate::settings::get_settings(&app);
+    settings.screen_context = enabled;
+    crate::settings::write_settings(&app, settings);
+    if !enabled {
+        crate::screen::forget();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_learn_from_edits_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = crate::settings::get_settings(&app);
     settings.learn_from_edits = enabled;

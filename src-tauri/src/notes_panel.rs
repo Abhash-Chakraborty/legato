@@ -100,6 +100,7 @@ pub fn show(app: &AppHandle) {
         return;
     };
     dock(app, &window);
+    crate::desktop::webview_resting(&window, false);
     let _ = window.show();
     let _ = window.set_focus();
     set_open(app, true);
@@ -109,6 +110,8 @@ pub fn show(app: &AppHandle) {
 pub fn hide(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.hide();
+        // Hidden, it stops drawing and gives back what memory it can.
+        crate::desktop::webview_resting(&window, true);
     }
     set_open(app, false);
 }

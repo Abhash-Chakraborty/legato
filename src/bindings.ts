@@ -1454,6 +1454,14 @@ async setYourName(name: string, heard: string[]) : Promise<Result<YourName, stri
     else return { status: "error", error: e  as any };
 }
 },
+async changeScreenContextSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_screen_context_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeLearnFromEditsSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_learn_from_edits_setting", { enabled }) };
@@ -3081,7 +3089,11 @@ export type FixSource =
 /**
  * Fixed by the AI correction pass.
  */
-"ai"
+"ai" | 
+/**
+ * Spelled the way the window in front had it (Use words on screen).
+ */
+"screen"
 /**
  * One fix made today, for Home's rail.
  */
@@ -4304,7 +4316,12 @@ app_rules?: AppRule[];
 /**
  * Reads the field after a paste and proposes the words you corrected.
  */
-learn_from_edits?: boolean; learn_mode?: LearnMode; 
+learn_from_edits?: boolean; 
+/**
+ * Reads the words in the window a dictation goes to, so names, code
+ * and products on screen come out spelled as they are there.
+ */
+screen_context?: boolean; learn_mode?: LearnMode; 
 /**
  * Notes summaries and Ask about this note may use the AI.
  */

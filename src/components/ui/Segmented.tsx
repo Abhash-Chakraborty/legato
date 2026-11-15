@@ -65,7 +65,7 @@ export const Segmented = <T extends string>({
           onClick={() => onChange(o.value)}
           className={`h-7 rounded-[calc(var(--r-sm)-2px)] px-3 text-[13px] transition-colors duration-[var(--dur-1)] hover:duration-0 disabled:cursor-not-allowed disabled:text-text-4 ${
             value === o.value
-              ? "bg-surface font-medium text-text shadow-[var(--shadow-1)]"
+              ? "seg-on bg-surface font-medium text-text shadow-[var(--shadow-1)]"
               : "text-text-2 enabled:hover:text-text"
           }`}
         >

@@ -2,6 +2,9 @@
 @import "./styles/theme.css";
 /* In the components layer so utility classes on a control still win. */
 @import "./styles/controls.css" layer(components);
+/* How the basics feel under the pointer; outside the layer, so it reaches
+   controls drawn with utility classes too. */
+@import "./styles/play.css";
 
 /* Register the tokens (src/styles/theme.css) as Tailwind utilities: Handy's
    names first, so its classes keep working, then the Legato ones. */

@@ -1845,6 +1845,7 @@
       "fixedByYou": "by you",
       "fixedByDictionary": "Dictionary",
       "fixedByAi": "AI correction pass",
+      "fixedByScreen": "your screen",
       "before": "Before {{name}}:",
       "beforeTransform": "Before the transform:",
       "showAll": "Show all",
@@ -2003,6 +2004,29 @@
           "body": "Notes take the meeting's name, and a minute before a meeting the bar offers to join and take notes."
         }
       }
+    },
+    "ready": {
+      "label": "Dictation",
+      "listening": "Listening…",
+      "how": {
+        "hold_or_toggle": {
+          "before": "Hold",
+          "after": "and talk, or tap it to keep listening"
+        },
+        "push_to_talk": {
+          "before": "Hold",
+          "after": "and talk"
+        },
+        "toggle": {
+          "before": "Press",
+          "after": "to start, and again to paste"
+        }
+      },
+      "noShortcut": "Dictation has no shortcut yet",
+      "setShortcut": "Set a shortcut",
+      "copyLast": "Copy last",
+      "copied": "Last dictation copied",
+      "scratchpad": "Scratchpad"
     }
   },
   "dictionary": {
@@ -2121,6 +2145,10 @@
           "auto": "learns from your edits automatically",
           "off": "not learning from edits"
         }
+      },
+      "screen": {
+        "title": "Use words on screen",
+        "help": "While you dictate, Legato reads the words in the window in front, on this PC, so names, code and products you're looking at come out spelled as they are there. A word it fixes that way is offered to your Dictionary. With an AI model set up, those terms and the window's title go to it with your dictation. Password managers are never read."
       },
       "edits": {
         "title": "Learn from my edits",

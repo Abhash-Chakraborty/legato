@@ -9,6 +9,7 @@
 use crate::managers::notes_store::{self as store, NoteShot};
 use crate::notes::{self, manager};
 use crate::notes_rules;
+use crate::screen::{self, Frame};
 use anyhow::{anyhow, Result};
 use log::{debug, info, warn};
 use std::path::{Path, PathBuf};
@@ -35,13 +36,6 @@ pub fn shortcut(app: &AppHandle) {
     }
 }
 
-/// A screen as grabbed: 32-bit pixels, blue first, top row first.
-struct Frame {
-    width: u32,
-    height: u32,
-    bgra: Vec<u8>,
-}
-
 /// Takes a screenshot for the note being recorded. The screen is grabbed
 /// before this returns; the picture is saved and read afterwards. Errors
 /// are codes the page words: "idle" when nothing records, "failed" when
@@ -49,7 +43,7 @@ struct Frame {
 pub fn take(app: &AppHandle) -> Result<(), String> {
     let (note_id, at_ms) = notes::recording_position().ok_or_else(|| "idle".to_string())?;
     let started = Instant::now();
-    let frame = grab().map_err(|e| {
+    let frame = screen::grab_pointer_screen().map_err(|e| {
         warn!("Couldn't take a screenshot: {e}");
         "failed".to_string()
     })?;
@@ -162,7 +156,7 @@ fn encode(frame: &Frame) -> Result<(Vec<u8>, &'static str, (u32, u32))> {
 /// Reads the words on the screen and keeps them with the screenshot.
 fn read(app: &AppHandle, shot: &NoteShot, frame: &Frame) {
     let started = Instant::now();
-    let text = match recognise(frame) {
+    let text = match screen::recognise(frame) {
         Ok(text) => notes_rules::screen_text(&text),
         Err(e) => {
             debug!("No text read from a screenshot: {e}");
@@ -310,143 +304,4 @@ pub fn as_jpeg(dir: &Path, shot: &NoteShot) -> Option<Vec<u8>> {
     {
         None
     }
-}
-
-#[cfg(not(windows))]
-fn grab() -> Result<Frame> {
-    Err(anyhow!("Screenshots need Windows"))
-}
-
-#[cfg(not(windows))]
-fn recognise(_frame: &Frame) -> Result<String> {
-    Err(anyhow!("Text recognition needs Windows"))
-}
-
-/// The whole screen the pointer is on, as it shows now. Legato's own bar,
-/// bubble and Notes panel stay out of it while they're hidden from screen
-/// capture (Settings › Legato bar).
-#[cfg(windows)]
-fn grab() -> Result<Frame> {
-    use std::ffi::c_void;
-    use windows::Win32::Foundation::POINT;
-    use windows::Win32::Graphics::Gdi::{
-        BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-        GetDIBits, GetMonitorInfoW, MonitorFromPoint, ReleaseDC, SelectObject, BITMAPINFO,
-        BITMAPINFOHEADER, BI_RGB, CAPTUREBLT, DIB_RGB_COLORS, MONITORINFO,
-        MONITOR_DEFAULTTOPRIMARY, SRCCOPY,
-    };
-    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
-
-    unsafe {
-        let mut pointer = POINT::default();
-        // Without the pointer's place, the primary screen is taken.
-        let _ = GetCursorPos(&mut pointer);
-        let monitor = MonitorFromPoint(pointer, MONITOR_DEFAULTTOPRIMARY);
-        let mut info = MONITORINFO {
-            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
-            ..Default::default()
-        };
-        if !GetMonitorInfoW(monitor, &mut info).as_bool() {
-            return Err(anyhow!("Windows didn't say where the screen is"));
-        }
-        let area = info.rcMonitor;
-        let (width, height) = (area.right - area.left, area.bottom - area.top);
-        if width <= 0 || height <= 0 {
-            return Err(anyhow!("The screen has no size"));
-        }
-
-        let screen = GetDC(None);
-        if screen.is_invalid() {
-            return Err(anyhow!("Windows gave no screen to copy from"));
-        }
-        let memory = CreateCompatibleDC(Some(screen));
-        let bitmap = CreateCompatibleBitmap(screen, width, height);
-        let before = SelectObject(memory, bitmap.into());
-        let copied = BitBlt(
-            memory,
-            0,
-            0,
-            width,
-            height,
-            Some(screen),
-            area.left,
-            area.top,
-            SRCCOPY | CAPTUREBLT,
-        );
-        let mut header = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: width,
-                // Top row first.
-                biHeight: -height,
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let mut bgra = vec![0u8; width as usize * height as usize * 4];
-        // The bitmap must be out of the memory DC before its bits are read.
-        SelectObject(memory, before);
-        let lines = if copied.is_ok() {
-            GetDIBits(
-                screen,
-                bitmap,
-                0,
-                height as u32,
-                Some(bgra.as_mut_ptr() as *mut c_void),
-                &mut header,
-                DIB_RGB_COLORS,
-            )
-        } else {
-            0
-        };
-        let _ = DeleteObject(bitmap.into());
-        let _ = DeleteDC(memory);
-        ReleaseDC(None, screen);
-        if let Err(e) = copied {
-            return Err(anyhow!("Windows didn't copy the screen: {e}"));
-        }
-        if lines <= 0 {
-            return Err(anyhow!("Windows didn't hand over the screen's pixels"));
-        }
-        Ok(Frame {
-            width: width as u32,
-            height: height as u32,
-            bgra,
-        })
-    }
-}
-
-/// The words on the screen, read by Windows' own text recognition in the
-/// languages Windows is set up for. Nothing leaves the PC.
-#[cfg(windows)]
-fn recognise(frame: &Frame) -> Result<String> {
-    use windows::Graphics::Imaging::{BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap};
-    use windows::Media::Ocr::OcrEngine;
-    use windows::Storage::Streams::DataWriter;
-
-    let max = OcrEngine::MaxImageDimension()?;
-    if frame.width > max || frame.height > max {
-        return Err(anyhow!("The screen is larger than Windows reads"));
-    }
-    let engine = OcrEngine::TryCreateFromUserProfileLanguages()?;
-    let writer = DataWriter::new()?;
-    writer.WriteBytes(&frame.bgra)?;
-    let buffer = writer.DetachBuffer()?;
-    let bitmap = SoftwareBitmap::CreateCopyWithAlphaFromBuffer(
-        &buffer,
-        BitmapPixelFormat::Bgra8,
-        frame.width as i32,
-        frame.height as i32,
-        BitmapAlphaMode::Ignore,
-    )?;
-    let result = engine.RecognizeAsync(&bitmap)?.join()?;
-    let mut text = String::new();
-    for line in result.Lines()? {
-        text.push_str(&line.Text()?.to_string());
-        text.push('\n');
-    }
-    Ok(text)
 }

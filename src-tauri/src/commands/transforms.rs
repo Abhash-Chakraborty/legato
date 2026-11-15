@@ -354,6 +354,7 @@ pub async fn try_transform(
                 "",
             )),
             phone: false,
+            ..Default::default()
         },
         None => Default::default(),
     };

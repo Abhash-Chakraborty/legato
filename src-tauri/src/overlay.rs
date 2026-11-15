@@ -1320,7 +1320,7 @@ pub mod island_hit {
             }
             // Quick only while the pointer is near: from across the screen
             // it can't reach the island before the next look.
-            std::thread::sleep(Duration::from_millis(if near { 33 } else { 120 }));
+            std::thread::sleep(Duration::from_millis(if near { 33 } else { 200 }));
         }
     }
 
@@ -1363,7 +1363,8 @@ pub mod island_hit {
         if !ok {
             return (false, true);
         }
-        const REACH: i32 = 200;
+        // Far enough that a quick flick is seen coming between two looks.
+        const REACH: i32 = 320;
         let near = cursor.x > rect.left - REACH
             && cursor.x < rect.right + REACH
             && cursor.y > rect.top - REACH

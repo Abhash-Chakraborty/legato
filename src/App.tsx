@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useState,
@@ -10,22 +12,7 @@ import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { ModelStateEvent, RecordingErrorEvent } from "./lib/types/events";
 import "./App.css";
-import Onboarding, {
-  AccessibilityOnboarding,
-  ModelMigration,
-} from "./components/onboarding";
-import {
-  ModelsSettings,
-  type OnboardingPreviewStep,
-} from "./components/settings";
-import { SettingsPage } from "./components/settings/SettingsPage";
-import { DictionaryPage } from "./components/pages/dictionary/DictionaryPage";
-import { SnippetsPage } from "./components/pages/snippets/SnippetsPage";
-import { ScratchpadPage } from "./components/pages/scratchpad/ScratchpadPage";
-import { StylePage } from "./components/pages/style/StylePage";
-import { TransformsPage } from "./components/pages/transforms/TransformsPage";
-import { NotesPage } from "./components/pages/notes/NotesPage";
-import { InsightsPage } from "./components/pages/insights/InsightsPage";
+import type { OnboardingPreviewStep } from "./components/settings";
 import { watchNotes } from "./stores/notesStore";
 import { watchCalls } from "./stores/callsStore";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -33,6 +20,7 @@ import { Sidebar } from "./components/Sidebar";
 import { AppToaster } from "./components/shell/AppToaster";
 import { TitleBar } from "./components/shell/TitleBar";
 import { WhatsNewGate } from "./components/whats-new";
+import { pages, warmPages } from "./pages";
 import {
   useNavStore,
   type Page,
@@ -43,8 +31,22 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { commands, events } from "@/bindings";
 import { HomePage } from "@/components/pages/home/HomePage";
 import { deleteRetiredModel } from "@/components/onboarding/retiredModels";
-import { SetupFlow } from "@/components/setup/SetupFlow";
 import { isStep, type Step } from "@/components/setup/setup";
+
+// First-run setup and the screens a returning user rarely sees load when
+// they're needed, not with every launch.
+const SetupFlow = lazy(() =>
+  import("@/components/setup/SetupFlow").then((m) => ({
+    default: m.SetupFlow,
+  })),
+);
+const Onboarding = lazy(() => import("./components/onboarding/Onboarding"));
+const AccessibilityOnboarding = lazy(
+  () => import("./components/onboarding/AccessibilityOnboarding"),
+);
+const ModelMigration = lazy(
+  () => import("./components/onboarding/ModelMigration"),
+);
 
 type OnboardingStep =
   | "accessibility"
@@ -56,29 +58,31 @@ type OnboardingStep =
 // Stable identity so preview effects do not re-run due to callback changes.
 const NOOP = () => {};
 
+/** Home is part of the shell, since it's what opens; every other page is
+ *  loaded the first time it's shown (and warmed up once the app is idle). */
 const renderPage = (
   page: Page,
   onPreviewOnboarding: (step: OnboardingPreviewStep) => void,
 ) => {
   switch (page) {
     case "dictionary":
-      return <DictionaryPage />;
+      return <pages.Dictionary />;
     case "snippets":
-      return <SnippetsPage />;
+      return <pages.Snippets />;
     case "style":
-      return <StylePage />;
+      return <pages.Style />;
     case "scratchpad":
-      return <ScratchpadPage />;
+      return <pages.Scratchpad />;
     case "transforms":
-      return <TransformsPage />;
+      return <pages.Transforms />;
     case "notes":
-      return <NotesPage />;
+      return <pages.Notes />;
     case "insights":
-      return <InsightsPage />;
+      return <pages.Insights />;
     case "models":
-      return <ModelsSettings />;
+      return <pages.Models />;
     case "settings":
-      return <SettingsPage onPreviewOnboarding={onPreviewOnboarding} />;
+      return <pages.Settings onPreviewOnboarding={onPreviewOnboarding} />;
     default:
       return <HomePage />;
   }
@@ -169,6 +173,8 @@ function App() {
       });
       refreshAudioDevices();
       refreshOutputDevices();
+      // The other pages load while nothing else is going on.
+      warmPages();
     }
   }, [onboardingStep, refreshAudioDevices, refreshOutputDevices]);
 
@@ -498,7 +504,9 @@ function App() {
                   key={page}
                   className={`view-enter ${page === "notes" || page === "scratchpad" ? "flex min-h-0 flex-1 flex-col" : ""}`}
                 >
-                  {renderPage(page, setOnboardingPreview)}
+                  <Suspense fallback={null}>
+                    {renderPage(page, setOnboardingPreview)}
+                  </Suspense>
                 </div>
               </ErrorBoundary>
             </div>
@@ -514,7 +522,9 @@ function App() {
     content = (
       <div className="flex h-screen flex-col bg-bg">
         <TitleBar minimal />
-        <div className="min-h-0 flex-1 overflow-y-auto">{content}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <Suspense fallback={null}>{content}</Suspense>
+        </div>
       </div>
     );
   }

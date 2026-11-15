@@ -20,11 +20,11 @@ export const WhatsNewPreview: React.FC<WhatsNewPreviewProps> = ({
   const [note, setNote] = useState<ReleaseNote | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const preview = () => {
+  const preview = async () => {
     setIsLoading(true);
 
     try {
-      const releaseNote = findLatestReleaseNote();
+      const releaseNote = await findLatestReleaseNote();
 
       if (!releaseNote) {
         toast.info(t("settings.debug.whatsNewPreview.noNotes"));

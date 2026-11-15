@@ -88,6 +88,7 @@ pub fn destination(package: &str) -> Destination<'static> {
         category: Some(category),
         markup: format_rules::markup_for_package(package, category),
         phone: true,
+        ..Default::default()
     }
 }
 
