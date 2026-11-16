@@ -546,6 +546,25 @@ fn init_logger() {
     }
 }
 
+/// The same on Unix, where a file descriptor is the handle: the protocol
+/// keeps a duplicate of stdout, and fd 1 goes to stderr for native output.
+#[cfg(unix)]
+fn take_stdout_for_protocol() -> io::Result<File> {
+    use std::os::fd::FromRawFd;
+    // SAFETY: plain fd duplication; the new fd is owned by the returned File.
+    unsafe {
+        let fd = libc::dup(libc::STDOUT_FILENO);
+        if fd < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if libc::dup2(libc::STDERR_FILENO, libc::STDOUT_FILENO) < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(File::from_raw_fd(fd))
+    }
+}
+
+#[cfg(windows)]
 fn take_stdout_for_protocol() -> io::Result<File> {
     use std::os::windows::io::FromRawHandle;
     // Native code writes through the CRT's fd 1, so redirect that one. The

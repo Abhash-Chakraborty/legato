@@ -22,6 +22,19 @@ pub fn get_cursor_position(app_handle: &AppHandle) -> Option<(i32, i32)> {
     enigo.location().ok()
 }
 
+/// The paste chord's modifier and the key V sits on: Ctrl and VK_V, or on a
+/// Mac Command and the key the keyboard layout in use gives V under Command.
+fn paste_keys() -> (Key, Key) {
+    #[cfg(target_os = "macos")]
+    {
+        (Key::Meta, crate::mac::command_v_key())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        (Key::Control, Key::Other(0x56)) // VK_V
+    }
+}
+
 /// Sends a Ctrl+V paste command using the virtual key code for V.
 /// This ensures the paste works regardless of keyboard layout (e.g., Russian, AZERTY, DVORAK).
 ///
@@ -32,7 +45,7 @@ pub fn get_cursor_position(app_handle: &AppHandle) -> Option<(i32, i32)> {
 /// against those. Callers that can detect a failed chord (e.g. the
 /// receipt-sequenced paste path) may use a much shorter hold.
 pub fn send_paste_ctrl_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
-    let (modifier_key, v_key_code) = (Key::Control, Key::Other(0x56)); // VK_V
+    let (modifier_key, v_key_code) = paste_keys();
 
     // Press modifier + V
     enigo
@@ -54,7 +67,7 @@ pub fn send_paste_ctrl_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> 
 /// Sends a Ctrl+Shift+V paste command.
 /// This is commonly used in terminal applications to paste without formatting.
 pub fn send_paste_ctrl_shift_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
-    let (modifier_key, v_key_code) = (Key::Control, Key::Other(0x56)); // VK_V
+    let (modifier_key, v_key_code) = paste_keys();
 
     // Press Ctrl + Shift + V
     enigo
@@ -79,8 +92,16 @@ pub fn send_paste_ctrl_shift_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), St
     Ok(())
 }
 
+/// A Mac keyboard has no Insert key, and Command+V pastes in its terminals
+/// too, so this is the same chord there.
+#[cfg(target_os = "macos")]
+pub fn send_paste_shift_insert(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
+    send_paste_ctrl_v(enigo, hold_ms)
+}
+
 /// Sends a Shift+Insert paste command.
 /// This is more universal for terminal applications and legacy software.
+#[cfg(not(target_os = "macos"))]
 pub fn send_paste_shift_insert(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
     let insert_key_code = Key::Other(0x2D); // VK_INSERT
 

@@ -11,6 +11,13 @@ fn target(provider_id: &str) -> String {
     format!("Legato/{provider_id}")
 }
 
+/// What the system calls the place the keys are kept, for messages.
+const VAULT_NAME: &str = if cfg!(target_os = "macos") {
+    "the keychain"
+} else {
+    "Windows Credential Manager"
+};
+
 #[cfg(windows)]
 mod vault {
     use windows::core::{HSTRING, PWSTR};
@@ -102,8 +109,66 @@ mod vault {
     }
 }
 
-/// Legato only ships on Windows; this keeps other builds compiling.
-#[cfg(not(windows))]
+/// On a Mac they live in the login keychain as generic passwords: the
+/// service is "Legato" and the account the same name Credential Manager
+/// uses ("Legato/anthropic"), so Keychain Access lists them together.
+#[cfg(target_os = "macos")]
+mod vault {
+    use security_framework::item::{ItemClass, ItemSearchOptions, Limit};
+    use security_framework::passwords::{
+        delete_generic_password, generic_password, set_generic_password, PasswordOptions,
+    };
+
+    const SERVICE: &str = "Legato";
+    /// `errSecItemNotFound`.
+    const NOT_FOUND: i32 = -25300;
+
+    pub fn read(target: &str) -> Result<Option<String>, String> {
+        match generic_password(PasswordOptions::new_generic_password(SERVICE, target)) {
+            Ok(bytes) => String::from_utf8(bytes)
+                .map(Some)
+                .map_err(|_| "the saved key isn't valid text".to_string()),
+            Err(e) if e.code() == NOT_FOUND => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    pub fn write(target: &str, secret: &str) -> Result<(), String> {
+        set_generic_password(SERVICE, target, secret.as_bytes()).map_err(|e| e.to_string())
+    }
+
+    pub fn delete(target: &str) -> Result<(), String> {
+        match delete_generic_password(SERVICE, target) {
+            Ok(()) => Ok(()),
+            Err(e) if e.code() == NOT_FOUND => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// The accounts of every item matching `filter` ("Legato/*").
+    pub fn list(filter: &str) -> Vec<String> {
+        let prefix = filter.trim_end_matches('*');
+        let Ok(found) = ItemSearchOptions::new()
+            .class(ItemClass::generic_password())
+            .service(SERVICE)
+            .load_attributes(true)
+            .limit(Limit::All)
+            .search()
+        else {
+            return Vec::new();
+        };
+        found
+            .iter()
+            .filter_map(|item| item.simplify_dict())
+            .filter_map(|attributes| attributes.get("acct").cloned())
+            .filter(|account| account.starts_with(prefix))
+            .collect()
+    }
+}
+
+/// Anywhere else they're kept in memory only; this keeps other builds
+/// compiling.
+#[cfg(not(any(windows, target_os = "macos")))]
 mod vault {
     use std::collections::HashMap;
     use std::sync::Mutex;
@@ -199,7 +264,7 @@ pub fn set_api_key(app: &AppHandle, provider_id: &str, key: &str) -> Result<(), 
     } else {
         vault::write(&target, key)
     }
-    .map_err(|e| format!("Couldn't save the key in Windows Credential Manager: {e}"))?;
+    .map_err(|e| format!("Couldn't save the key in {VAULT_NAME}: {e}"))?;
 
     let mut settings = settings::get_settings(app);
     if settings

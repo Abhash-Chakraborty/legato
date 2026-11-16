@@ -28,8 +28,13 @@
 //! transcript stays on the clipboard a bit longer", never "stale content gets
 //! pasted".
 
+// The transaction's rules build everywhere, for their tests; only the
+// Windows module puts them to work.
+#![cfg_attr(not(windows), allow(dead_code))]
+
 use std::time::{Duration, Instant};
 
+#[cfg(windows)]
 mod windows;
 
 /// How long after the *last* observed read the transcript stays on the
@@ -173,6 +178,7 @@ pub(crate) fn send_chord(
 /// the caller should fall back to the legacy paste path. On `Ok`, publishing
 /// and chord injection have completed and the guarded restore (plus
 /// auto-submit) finishes asynchronously.
+#[cfg(windows)]
 pub(crate) fn try_reliable_paste(
     text: &str,
     app_handle: &tauri::AppHandle,
@@ -191,6 +197,21 @@ pub(crate) fn try_reliable_paste(
         auto_submit_key,
         clipboard_handling,
     )
+}
+
+/// The receipt needs Windows' delayed rendering; elsewhere the caller's
+/// timed paste does the job.
+#[cfg(not(windows))]
+pub(crate) fn try_reliable_paste(
+    _text: &str,
+    _app_handle: &tauri::AppHandle,
+    _paste_method: &crate::settings::PasteMethod,
+    _enigo: &mut enigo::Enigo,
+    _auto_submit: bool,
+    _auto_submit_key: crate::settings::AutoSubmitKey,
+    _clipboard_handling: crate::settings::ClipboardHandling,
+) -> Result<(), String> {
+    Err("the paste that waits for the app to read the clipboard needs Windows".to_string())
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@
 //! sentence about the Dictionary word, and so close misses never swallow a
 //! real word.
 
+#[cfg(windows)]
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -47,6 +48,16 @@ pub fn is_word(word: &str) -> bool {
     known
 }
 
+/// No spell checker is asked anywhere else yet, so every word counts as
+/// unknown there, as on a Windows without one.
+#[cfg(not(windows))]
+mod win {
+    pub fn check(_word: &str) -> bool {
+        false
+    }
+}
+
+#[cfg(windows)]
 mod win {
     use super::RefCell;
     use windows::core::{HSTRING, PCWSTR};

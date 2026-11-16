@@ -20,6 +20,41 @@ const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const SILERO_VAD_THRESHOLD: f32 = 0.3;
 const EARSHOT_VAD_THRESHOLD: f32 = 0.5;
 
+/// On a Mac the system's output is muted through AppleScript, which needs
+/// no permission for the volume. If it fails, nothing is muted.
+#[cfg(target_os = "macos")]
+fn set_mute(mute: bool) {
+    let script = format!("set volume output muted {mute}");
+    let _ = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .output();
+}
+
+#[cfg(target_os = "macos")]
+fn get_mute() -> Option<bool> {
+    let out = std::process::Command::new("osascript")
+        .args(["-e", "output muted of (get volume settings)"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    match String::from_utf8_lossy(&out.stdout).trim() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn set_mute(_mute: bool) {}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn get_mute() -> Option<bool> {
+    None
+}
+
+#[cfg(windows)]
 fn set_mute(mute: bool) {
     // Works on most systems using standard audio drivers. If unsupported,
     // fails silently.
@@ -62,6 +97,7 @@ fn set_mute(mute: bool) {
 /// `None` when it couldn't (any audio endpoint error). Callers treat `None` as
 /// "unknown" and fall back to unmuting on stop, so we never strand the user's
 /// audio muted.
+#[cfg(windows)]
 fn get_mute() -> Option<bool> {
     unsafe {
         use windows::Win32::{

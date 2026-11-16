@@ -386,14 +386,20 @@ fn modifiers_to_strings(modifiers: handy_keys::Modifiers) -> Vec<String> {
     if modifiers.contains(handy_keys::Modifiers::CTRL) {
         result.push("ctrl".to_string());
     }
+    // The names handy-keys itself writes into a shortcut on each system.
+    let (opt, cmd) = if cfg!(target_os = "macos") {
+        ("option", "command")
+    } else {
+        ("alt", "super")
+    };
     if modifiers.contains(handy_keys::Modifiers::OPT) {
-        result.push("alt".to_string());
+        result.push(opt.to_string());
     }
     if modifiers.contains(handy_keys::Modifiers::SHIFT) {
         result.push("shift".to_string());
     }
     if modifiers.contains(handy_keys::Modifiers::CMD) {
-        result.push("super".to_string());
+        result.push(cmd.to_string());
     }
     if modifiers.contains(handy_keys::Modifiers::FN) {
         result.push("fn".to_string());

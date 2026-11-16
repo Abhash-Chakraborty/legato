@@ -1566,6 +1566,27 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
 
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
+/// A default shortcut as a Mac gets it. Windows' defaults belong to macOS
+/// and its apps there: Ctrl+Space switches the input source, and Command
+/// with Option closes windows, hides toolbars and minimises. So dictation
+/// moves to Option+Space, the Win+Alt family to Control+Option, and
+/// Alt+Shift to Option+Shift, in the names handy-keys writes on a Mac.
+fn mac_default_keys(keys: &str) -> String {
+    match keys {
+        "ctrl+space" => "option+space".to_string(),
+        "ctrl+shift+space" => "option+shift+space".to_string(),
+        _ => keys
+            .split('+')
+            .map(|key| match key {
+                "super" => "ctrl",
+                "alt" => "option",
+                other => other,
+            })
+            .collect::<Vec<_>>()
+            .join("+"),
+    }
+}
+
 pub fn get_default_settings() -> AppSettings {
     let default_shortcut = "ctrl+space";
 
@@ -1703,12 +1724,23 @@ pub fn get_default_settings() -> AppSettings {
         );
     }
 
+    // The shortcuts above are Windows'; a Mac has its own.
+    if cfg!(target_os = "macos") {
+        for binding in bindings.values_mut() {
+            let keys = mac_default_keys(&binding.default_binding);
+            binding.default_binding = keys.clone();
+            binding.current_binding = keys;
+        }
+    }
+
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
         bindings,
         shortcut_activation: ShortcutActivation::default(),
         hold_threshold_ms: default_hold_threshold_ms(),
-        audio_feedback: false,
+        // A Mac has no bar yet to show that Legato is listening, so the
+        // start and stop sounds say it there.
+        audio_feedback: cfg!(target_os = "macos"),
         audio_feedback_volume: default_audio_feedback_volume(),
         sound_theme: default_sound_theme(),
         start_hidden: default_start_hidden(),
@@ -2135,7 +2167,10 @@ fn apply_settings_migrations(
 pub fn update_checks_forced_disabled() -> bool {
     use std::sync::OnceLock;
     static IS_UPDATER_DISABLED: OnceLock<bool> = OnceLock::new();
-    *IS_UPDATER_DISABLED.get_or_init(|| utils::env_flag_enabled("LEGATO_DISABLE_UPDATER"))
+    // No Mac build is published to update to yet, so a Mac never checks.
+    *IS_UPDATER_DISABLED.get_or_init(|| {
+        cfg!(target_os = "macos") || utils::env_flag_enabled("LEGATO_DISABLE_UPDATER")
+    })
 }
 
 /// Effective updater state: the user's stored preference, overridden to `false`
@@ -2869,5 +2904,21 @@ mod tests {
             migrate(serde_json::json!({ "background_audio": "pause" })),
             get_default_settings().background_audio
         );
+    }
+
+    #[test]
+    fn a_macs_default_shortcuts_keep_clear_of_macos() {
+        assert_eq!(mac_default_keys("ctrl+space"), "option+space");
+        assert_eq!(mac_default_keys("ctrl+shift+space"), "option+shift+space");
+        assert_eq!(mac_default_keys("super+alt+w"), "ctrl+option+w");
+        assert_eq!(mac_default_keys("alt+shift+z"), "option+shift+z");
+        assert_eq!(mac_default_keys("escape"), "escape");
+        assert_eq!(mac_default_keys(""), "");
+        // Every default is one the Mac's key listener can read, and none
+        // leaves Command with Option, which macOS and its apps use.
+        for binding in get_default_settings().bindings.values() {
+            let keys = mac_default_keys(&binding.default_binding);
+            assert!(!keys.contains("super") && !keys.contains("alt"), "{keys}");
+        }
     }
 }

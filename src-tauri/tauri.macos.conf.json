@@ -1,0 +1,14 @@
+{
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "targets": ["app", "dmg"],
+    "icon": ["icons/icon.icns", "icons/icon.png"],
+    "category": "Productivity",
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "hardenedRuntime": true,
+      "signingIdentity": "-",
+      "entitlements": "Entitlements.plist"
+    }
+  }
+}

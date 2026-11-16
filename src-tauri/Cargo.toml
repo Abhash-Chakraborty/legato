@@ -106,6 +106,14 @@ tauri-plugin-dialog = "2.8.4"
 hf-hub = { git = "https://github.com/cjpais/hf-hub", branch = "cancellable-downloads", features = [
   "tokio",
 ] }
+# App icons for the history list (context.rs), screenshots in notes
+# (note_shots.rs) and pictures on the shared clipboard (sync/clipboard.rs);
+# the version tauri already uses.
+image = { version = "0.25", default-features = false, features = [
+  "png",
+  "webp",
+  "jpeg",
+] }
 
 [target.'cfg(windows)'.dependencies]
 # Launch at login, in the current user's Run key only.
@@ -158,13 +166,6 @@ windows = { version = "0.62.2", features = [
   "UI_Notifications",
   "Win32_UI_WindowsAndMessaging",
 ] }
-# App icons for the history list (context.rs) and screenshots in notes
-# (note_shots.rs); the version tauri already uses.
-image = { version = "0.25", default-features = false, features = [
-  "png",
-  "webp",
-  "jpeg",
-] }
 winreg = "0.55"
 
 # Whisper backend per Windows arch. x86_64 ships the Vulkan GPU backend and
@@ -188,6 +189,18 @@ transcribe-cpp = { version = "0.4.0", default-features = false, features = [
 
 [target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
 transcribe-cpp = { version = "0.4.0", default-features = false }
+
+# The Mac build: ggml's Metal backend, linked statically, so the app bundle
+# carries no extra libraries.
+[target.'cfg(target_os = "macos")'.dependencies]
+transcribe-cpp = { version = "0.4.0", default-features = false, features = [
+  "metal",
+] }
+# Launch at login, as a launch agent in the user's Library.
+auto-launch = "0.6.0"
+# API keys and other secrets in the login keychain (secrets.rs); the version
+# native-tls already uses.
+security-framework = "3"
 
 # TEMPORARY: tao pinned to a cjpais/tao branch past 0.35.3, not upstream: dev
 # past 0.35.3 carries tao #1231 (removed window subclassing), which left the

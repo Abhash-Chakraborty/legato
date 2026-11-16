@@ -1,3 +1,7 @@
+// The bar is a Windows window so far. Elsewhere its window is never made, so
+// what's kept below of placing and showing it has nothing to do there.
+#![cfg_attr(not(windows), allow(dead_code, unused_imports, unused_variables))]
+
 use crate::input;
 use crate::settings;
 use crate::settings::{
@@ -100,8 +104,13 @@ const ISLAND_HEIGHT: f64 = 388.0;
 const OVERLAY_TOP_OFFSET: f64 = 4.0;
 const OVERLAY_BOTTOM_OFFSET: f64 = 40.0;
 
+/// Off Windows the bar has no window to raise.
+#[cfg(not(windows))]
+fn force_overlay_topmost(_overlay_window: &tauri::webview::WebviewWindow) {}
+
 /// Forces a window to be topmost using the Win32 API.
 /// This is more reliable than Tauri's set_always_on_top which can be overridden
+#[cfg(windows)]
 fn force_overlay_topmost(overlay_window: &tauri::webview::WebviewWindow) {
     use windows::Win32::UI::WindowsAndMessaging::{
         SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
@@ -168,8 +177,15 @@ fn is_mouse_within_monitor(
 
 static WINDOWS_OVERLAY_IS_STREAMING: AtomicBool = AtomicBool::new(false);
 
+/// Only WebView2 zooms the page with the system's text size.
+#[cfg(not(windows))]
+fn windows_text_scale_factor() -> f64 {
+    1.0
+}
+
 /// Windows accessibility text size (Settings > Accessibility > Text size), a
 /// separate axis from display scaling that WebView2 applies as a document zoom.
+#[cfg(windows)]
 fn windows_text_scale_factor() -> f64 {
     // Absent until the user moves the slider off 100%; stored as a percentage.
     winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
@@ -210,8 +226,20 @@ fn windows_overlay_bounds(
     (x, y, width, height)
 }
 
+/// Off Windows the bar has no window to place.
+#[cfg(not(windows))]
+fn place_windows_overlay(
+    _app_handle: &AppHandle,
+    _overlay_window: &tauri::webview::WebviewWindow,
+    _logical_width: f64,
+    _logical_height: f64,
+) -> Result<(), String> {
+    Ok(())
+}
+
 /// Moves and sizes the overlay in one native SetWindowPos, bypassing tao's
 /// current-DPI logical conversion that mislands cross-monitor moves.
+#[cfg(windows)]
 fn place_windows_overlay(
     app_handle: &AppHandle,
     overlay_window: &tauri::webview::WebviewWindow,
@@ -279,7 +307,14 @@ fn place_windows_overlay(
     Ok(())
 }
 
+/// The bar has no window off Windows yet: a dictation's state shows on the
+/// menu bar icon, and everything below that would show the bar finds no
+/// window and does nothing.
+#[cfg(not(windows))]
+pub fn create_recording_overlay(_app_handle: &AppHandle) {}
+
 /// Creates the recording overlay window and keeps it hidden by default
+#[cfg(windows)]
 pub fn create_recording_overlay(app_handle: &AppHandle) {
     if get_monitor_with_cursor(app_handle).is_none() {
         debug!("Failed to determine overlay position, not creating overlay window");
@@ -434,8 +469,18 @@ fn show_caption(app_handle: &AppHandle) {
     });
 }
 
+/// Off Windows the live transcript box has no window either.
+#[cfg(not(windows))]
+fn place_caption(
+    _app_handle: &AppHandle,
+    _overlay_window: &tauri::webview::WebviewWindow,
+) -> Result<(), String> {
+    Ok(())
+}
+
 /// Moves and sizes the bar's window for the live transcript box, in the
 /// monitor's physical pixels like `place_windows_overlay`.
+#[cfg(windows)]
 fn place_caption(
     app_handle: &AppHandle,
     overlay_window: &tauri::webview::WebviewWindow,
@@ -705,8 +750,11 @@ pub fn set_bar_focus(app_handle: &AppHandle, on: bool) {
         if on {
             let _ = window.set_focus();
             // Windows may refuse a plain focus change after a shortcut.
-            if let Ok(hwnd) = window.hwnd() {
-                crate::context::focus_window(hwnd.0 as isize);
+            #[cfg(windows)]
+            {
+                if let Ok(hwnd) = window.hwnd() {
+                    crate::context::focus_window(hwnd.0 as isize);
+                }
             }
         }
     });
@@ -1306,6 +1354,7 @@ pub mod island_hit {
         });
         take_clicks(window, false);
         TOLD.store(UNTOLD, Ordering::SeqCst);
+        #[cfg(windows)]
         HWND_OF.store(window.hwnd().map_or(0, |h| h.0 as isize), Ordering::SeqCst);
         *ARMED.lock().unwrap_or_else(|e| e.into_inner()) = Some(window.clone());
         WAKE.notify_all();
@@ -1387,6 +1436,7 @@ pub mod island_hit {
 
     /// Whether the pointer is on what the window shows: the island's shape
     /// while the island is up, otherwise anywhere on the bar's window.
+    #[cfg(windows)]
     pub fn pointer_on(window: &tauri::webview::WebviewWindow) -> bool {
         if ARMED.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
             return cursor_on_shape(HWND_OF.load(Ordering::SeqCst)).0;
@@ -1409,6 +1459,7 @@ pub mod island_hit {
 
     /// Whether the left mouse button is down now, or went down and up
     /// since the last look.
+    #[cfg(windows)]
     fn left_button_down() -> bool {
         use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
         // SAFETY: a plain query of the key's state.
@@ -1418,6 +1469,7 @@ pub mod island_hit {
 
     /// How long a stroke of a shake is, in physical pixels: about a
     /// centimetre on any screen.
+    #[cfg(windows)]
     fn shake_stroke() -> i32 {
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::HiDpi::GetDpiForWindow;
@@ -1431,6 +1483,7 @@ pub mod island_hit {
     /// where the drag began. Dropped (`done`), it stays there, or goes back
     /// to the middle if that's where it was let go. Returns the offset to
     /// keep (see `island_offset` in the settings) once dropped.
+    #[cfg(windows)]
     pub fn drag(window: &tauri::webview::WebviewWindow, dx: f64, done: bool) -> Option<f32> {
         use windows::Win32::Foundation::RECT;
         use windows::Win32::Graphics::Gdi::{
@@ -1495,6 +1548,7 @@ pub mod island_hit {
 
     /// Whether the cursor is on the island's shape, whether it's within a
     /// short reach of its window, and where it is across the screen.
+    #[cfg(windows)]
     fn cursor_on_shape(hwnd: isize) -> (bool, bool, i32) {
         use windows::Win32::Foundation::{HWND, POINT, RECT};
         use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
@@ -1523,5 +1577,32 @@ pub mod island_hit {
             near,
             cursor.x,
         )
+    }
+
+    // Off Windows the island never shows, so the pointer is never on it.
+
+    #[cfg(not(windows))]
+    pub fn pointer_on(_window: &tauri::webview::WebviewWindow) -> bool {
+        false
+    }
+
+    #[cfg(not(windows))]
+    fn left_button_down() -> bool {
+        false
+    }
+
+    #[cfg(not(windows))]
+    fn shake_stroke() -> i32 {
+        28
+    }
+
+    #[cfg(not(windows))]
+    pub fn drag(_window: &tauri::webview::WebviewWindow, _dx: f64, _done: bool) -> Option<f32> {
+        None
+    }
+
+    #[cfg(not(windows))]
+    fn cursor_on_shape(_hwnd: isize) -> (bool, bool, i32) {
+        (false, false, 0)
     }
 }
