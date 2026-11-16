@@ -31,6 +31,15 @@ env:
   MODEL_FILE: whisper-tiny.en-Q8_0.gguf
   MODEL_URL: https://huggingface.co/handy-computer/whisper-tiny.en-gguf/resolve/becb8bcb804405dc97b380a523d9975888820986/whisper-tiny.en-Q8_0.gguf
   MODEL_SHA256: e8c9b73c06344307d8b346e07fbe93dd88d894627854bcff31523f1ce44394fa
+  # What macOS's own voice is asked to say, and the words that must come
+  # back.
+  SENTENCE: The quick brown fox jumps over the lazy dog near the river bank.
+  SENTENCE_WORDS: quick brown fox lazy dog river
+  # A recording for a runner whose voice gives no sound: President Kennedy,
+  # from whisper.cpp's samples (public domain), 11 s of 16 kHz mono PCM.
+  SAMPLE_URL: https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.7.4/samples/jfk.wav
+  SAMPLE_SHA256: 59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e
+  SAMPLE_WORDS: fellow americans ask country
 
 jobs:
   check:
@@ -221,17 +230,51 @@ jobs:
           grep -F "$MODEL_ID" smoke/list-models.txt > smoke/model-line.txt
           grep -q "✓" smoke/model-line.txt
 
-      # A real sentence in macOS's own voice, as the 16 kHz mono 16-bit WAV
-      # the app records.
-      - name: Speak a sentence
+      # A real sentence as the 16 kHz mono 16-bit WAV the app records: in
+      # macOS's own voice where the runner can speak. The first run's voice
+      # gave a file with no sound in it, so a runner like that gets a public
+      # recording, and the summary says which one was used.
+      - name: A sentence to transcribe
+        timeout-minutes: 5
         run: |
-          say -o smoke/spoken.aiff "The quick brown fox jumps over the lazy dog near the river bank."
-          afconvert -f WAVE -d LEI16@16000 -c 1 smoke/spoken.aiff smoke/spoken.wav
+          say_it() {
+            rm -f smoke/said.aiff smoke/said.wav
+            if [ -n "$1" ]; then
+              say -v "$1" -o smoke/said.aiff "$SENTENCE" || return 1
+            else
+              say -o smoke/said.aiff "$SENTENCE" || return 1
+            fi
+            afconvert -f WAVE -d LEI16@16000 -c 1 smoke/said.aiff smoke/said.wav || return 1
+            stat -f %z smoke/said.wav
+          }
+          echo "voices installed: $(say -v '?' 2> /dev/null | wc -l | tr -d ' ')" | tee smoke/speech.txt
+          SPOKEN=""
+          # Four seconds of speech is about 128 kB; a voice with no sound
+          # leaves a few kB.
+          for voice in "" Samantha Alex Daniel Fred; do
+            BYTES="$(say_it "$voice" 2> /dev/null || echo 0)"
+            echo "say with ${voice:-the default voice}: $BYTES bytes of audio" | tee -a smoke/speech.txt
+            if [ "$BYTES" -gt 60000 ]; then
+              SPOKEN="${voice:-default}"
+              break
+            fi
+          done
+          if [ -n "$SPOKEN" ]; then
+            cp smoke/said.wav smoke/spoken.wav
+            echo "$SENTENCE_WORDS" > smoke/expected.txt
+            echo "input: macOS's own voice ($SPOKEN)" | tee -a smoke/speech.txt
+          else
+            curl --fail --location --retry 3 --output smoke/spoken.wav "$SAMPLE_URL"
+            echo "$SAMPLE_SHA256  smoke/spoken.wav" | shasum -a 256 -c -
+            echo "$SAMPLE_WORDS" > smoke/expected.txt
+            echo "input: macOS's voice gave no sound on this runner, so a recording of President Kennedy (whisper.cpp's jfk.wav)" | tee -a smoke/speech.txt
+          fi
           afinfo smoke/spoken.wav
 
       # The same sentence on each device by its index first, so that if the
       # run below fails the summary still says which of the GPU and the CPU
-      # the runner could really use. Recorded, not required.
+      # the runner could really use. Recorded, not required: a runner's GPU
+      # is a virtual one that ggml's Metal backend can't compute on.
       - name: Transcribe on each device
         timeout-minutes: 10
         run: |
@@ -239,14 +282,14 @@ jobs:
           for index in $(grep -o "index=[0-9]*" smoke/list-devices.txt | cut -d= -f2); do
             if "$BIN" --transcribe-file smoke/spoken.wav --model "$MODEL_ID" --device-index "$index" --json \
               > "smoke/device-$index.json" 2> "smoke/device-$index.stderr"; then
-              echo "device $index: $(jq -c '{bound_backend, load_ms, best_ms, rtf, text}' "smoke/device-$index.json")" | tee -a smoke/per-device.txt
+              echo "device $index: $(jq -c '{bound_backend, audio_secs, load_ms, best_ms, text}' "smoke/device-$index.json")" | tee -a smoke/per-device.txt
             else
               echo "device $index: failed ($(tail -1 "smoke/device-$index.stderr"))" | tee -a smoke/per-device.txt
             fi
           done
 
       # As the app does it: the device its settings pick, which is the GPU
-      # when there is one.
+      # when transcribe.cpp finds one it can use.
       - name: Transcribe it
         timeout-minutes: 5
         run: |
@@ -256,16 +299,22 @@ jobs:
           echo "Heard: $TEXT"
           echo "Backend: $(jq -r .bound_backend smoke/transcribe.json)"
           FOUND=0
-          for word in quick brown fox lazy dog river; do
+          WORDS=0
+          for word in $(cat smoke/expected.txt); do
+            WORDS=$((WORDS + 1))
             case "$TEXT" in *"$word"*) FOUND=$((FOUND + 1)) ;; esac
           done
-          echo "$FOUND of 6 words found"
-          test "$FOUND" -ge 4
+          # Two thirds of the words, rounded up: one misheard word in a
+          # sentence is the model's business, not the build's.
+          NEED=$(((WORDS * 2 + 2) / 3))
+          echo "$FOUND of $WORDS words found, $NEED needed" | tee smoke/words.txt
+          test "$FOUND" -ge "$NEED"
 
       # The window a new user meets. The runner has no microphone and can't
       # answer macOS's permission questions, so this shows only that Legato
-      # starts, stays up and draws.
+      # starts, stays up and draws. It runs even if the transcription failed.
       - name: Start the app
+        if: ${{ !cancelled() && env.APP != '' }}
         timeout-minutes: 5
         run: |
           NAME="$(basename "$BIN")"
@@ -278,8 +327,9 @@ jobs:
           fi
           screencapture -x smoke/screen.png || echo "screencapture failed: $?" | tee -a smoke/launch.txt
           # What macOS itself says about the app: in the Dock or not, in front or not.
-          lsappinfo info -only name,type,pid,bundleID,isfrontmost Legato 2>&1 | tee -a smoke/launch.txt || true
+          lsappinfo info -app Legato 2>&1 | tee -a smoke/launch.txt || true
           cp "$HOME/Library/Logs/io.github.abhash-chakraborty.legato/"*.log smoke/ 2> /dev/null || echo "no log file" | tee -a smoke/launch.txt
+          cp "$HOME/Library/Logs/DiagnosticReports/"*egato* smoke/ 2> /dev/null || echo "no crash report" | tee -a smoke/launch.txt
           pkill -x "$NAME" || true
           grep -q "^running" smoke/launch.txt
 
@@ -310,7 +360,9 @@ jobs:
             echo '```'
             show "sizes" sizes.txt
             show "--list-devices" list-devices.txt
+            show "the sentence" speech.txt
             show "transcription, as the app picks the device" transcribe.json
+            show "words that came back" words.txt
             show "transcription, device by device" per-device.txt
             show "launch" launch.txt
             show "icon" icon.txt
