@@ -256,12 +256,13 @@ const SpokenLanguage: React.FC = () => {
   );
 };
 
-/** What Legato for Mac doesn't have yet: the bar, bubble and island, call
- *  detection, admin apps, and the shortcuts whose results show on the bar.
+/** What Legato for Mac doesn't have yet: the bar, bubble and island, phone
+ *  sync, call detection, admin apps, and the shortcuts whose results show
+ *  on the bar.
  *  Left out of Settings there rather than shown as switches that do
  *  nothing (see docs/mac.md). */
 const NOT_ON_MAC = {
-  sections: ["bar"],
+  sections: ["bar", "devices"],
   groups: ["calls-master", "calls-detection", "call-start", "call-end"],
   rows: [
     "admin-apps",

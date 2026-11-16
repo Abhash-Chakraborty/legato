@@ -22,7 +22,7 @@ A build machine has no microphone and nobody to answer macOS's permission questi
 - **The menu bar icon.** It changes while Legato listens and while it writes, and its menu picks the model, copies the last dictation and quits. Closing the window leaves Legato in the menu bar.
 - **Sounds.** The start and stop sounds are on by default on a Mac, since the Legato bar isn't there yet to show that it's listening.
 - **The window.** It keeps the Mac's own close, minimise and zoom buttons, and shortcuts are shown with the Mac's key names.
-- **Your words.** The Dictionary, snippets, cleanup and Style's tone work as on Windows, and so do Home and Insights.
+- **Your words.** The Dictionary, snippets and cleanup are the same code as on Windows, and so are Home and Insights.
 - **Keys.** An AI provider's API key is kept in your login keychain.
 - **Starting at login.** Settings › General › Launch at login adds a launch agent for your account.
 
