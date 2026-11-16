@@ -409,6 +409,7 @@ fn paste_with(
 /// What the clipboard held when it was neither text nor an image (files
 /// copied in Explorer, a format only one app reads), copied byte for byte so
 /// a paste or a copy of the selection can put it back.
+#[cfg(windows)]
 pub(crate) mod raw {
     use tauri::{AppHandle, Manager};
 
@@ -534,6 +535,29 @@ pub(crate) mod raw {
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+        false
+    }
+}
+
+/// Only Windows' clipboard is copied format by format so far. Elsewhere a
+/// clipboard that held neither text nor an image is cleared after a paste.
+#[cfg(not(windows))]
+pub(crate) mod raw {
+    use tauri::AppHandle;
+
+    pub struct Snapshot;
+
+    impl Snapshot {
+        pub fn formats(&self) -> usize {
+            0
+        }
+    }
+
+    pub fn snapshot() -> Option<Snapshot> {
+        None
+    }
+
+    pub fn restore(_app: &AppHandle, _snapshot: &Snapshot) -> bool {
         false
     }
 }

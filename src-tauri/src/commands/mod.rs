@@ -216,6 +216,15 @@ pub fn initialize_enigo(app: AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
+    // On a Mac, trying this without Accessibility has macOS put its prompt
+    // up. Setup asks first and explains why; until then, don't try.
+    #[cfg(target_os = "macos")]
+    {
+        if !crate::mac::accessibility_granted() {
+            return Err("Legato needs Accessibility access before it can paste".into());
+        }
+    }
+
     // Try to initialize
     match EnigoState::new() {
         Ok(enigo_state) => {
@@ -242,6 +251,16 @@ pub fn initialize_shortcuts(app: AppHandle) -> Result<(), String> {
     if app.try_state::<ShortcutsInitialized>().is_some() {
         log::debug!("Shortcuts already initialized");
         return Ok(());
+    }
+
+    // A Mac's key listener can't start until Accessibility is granted, and
+    // one started too early would never hear a key; wait for the grant
+    // (setup asks for it and calls this again).
+    #[cfg(target_os = "macos")]
+    {
+        if !crate::mac::accessibility_granted() {
+            return Err("Legato needs Accessibility access before its shortcuts work".into());
+        }
     }
 
     // Initialize shortcuts

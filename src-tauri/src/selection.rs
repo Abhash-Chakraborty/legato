@@ -134,6 +134,11 @@ pub fn word_from_selection(selected: &str) -> Option<String> {
 /// Taps an unassigned key while the shortcut's Win or Alt is still down, so
 /// letting go of them doesn't open Start or focus a menu bar.
 pub(crate) fn mask_menu_key(app: &AppHandle) {
+    // A Mac has no Start menu or Alt-opened menu bar to keep shut, and the
+    // code names another key there.
+    if cfg!(target_os = "macos") {
+        return;
+    }
     let _ = with_enigo(app, |enigo| {
         enigo
             .key(Key::Other(MENU_MASK_VK), Direction::Click)
@@ -141,17 +146,37 @@ pub(crate) fn mask_menu_key(app: &AppHandle) {
     });
 }
 
-/// Sends Ctrl plus a virtual key to the app in front.
+/// The key a Windows virtual-key code names. Enigo takes the code as it is
+/// on Windows; a Mac numbers its keys differently.
+#[cfg(not(target_os = "macos"))]
+fn key_for(vk: u32) -> Result<Key, String> {
+    Ok(Key::Other(vk))
+}
+
+#[cfg(target_os = "macos")]
+fn key_for(vk: u32) -> Result<Key, String> {
+    crate::mac::key_for_windows_vk(vk).ok_or_else(|| format!("No Mac key for key code {vk:#x}"))
+}
+
+/// The modifier apps take their shortcuts with: Ctrl, or Command on a Mac.
+const APP_MODIFIER: Key = if cfg!(target_os = "macos") {
+    Key::Meta
+} else {
+    Key::Control
+};
+
+/// Sends Ctrl (Command on a Mac) plus a virtual key to the app in front.
 pub(crate) fn send_ctrl(app: &AppHandle, vk: u32) -> Result<(), String> {
+    let key = key_for(vk)?;
     with_enigo(app, |enigo| {
         enigo
-            .key(Key::Control, Direction::Press)
+            .key(APP_MODIFIER, Direction::Press)
             .map_err(|e| format!("Failed to press Ctrl: {}", e))?;
         let click = enigo
-            .key(Key::Other(vk), Direction::Click)
+            .key(key, Direction::Click)
             .map_err(|e| format!("Failed to press the key: {}", e));
         enigo
-            .key(Key::Control, Direction::Release)
+            .key(APP_MODIFIER, Direction::Release)
             .map_err(|e| format!("Failed to release Ctrl: {}", e))?;
         click
     })
@@ -179,9 +204,10 @@ pub(crate) fn select_back(app: &AppHandle, count: usize) -> Result<(), String> {
 
 /// Presses one virtual key in the app in front.
 pub(crate) fn send_key(app: &AppHandle, vk: u32) -> Result<(), String> {
+    let key = key_for(vk)?;
     with_enigo(app, |enigo| {
         enigo
-            .key(Key::Other(vk), Direction::Click)
+            .key(key, Direction::Click)
             .map_err(|e| format!("Failed to press the key: {}", e))
     })
 }
@@ -202,7 +228,7 @@ fn with_enigo<T>(
 
 /// Waits until Win, Alt, Ctrl and Shift are up, so the Ctrl+C below isn't
 /// read as Win+Alt+Ctrl+C.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn wait_for_keys_up() {
     let deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < deadline && modifiers_down() {
@@ -222,12 +248,18 @@ pub(crate) fn modifiers_down() -> bool {
         .any(|key| unsafe { GetAsyncKeyState(i32::from(key.0)) } as u16 & 0x8000 != 0)
 }
 
-#[cfg(not(windows))]
+/// Whether Command, Option, Control or Shift is held.
+#[cfg(target_os = "macos")]
+pub(crate) fn modifiers_down() -> bool {
+    crate::mac::modifiers_down()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub(crate) fn modifiers_down() -> bool {
     false
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub(crate) fn wait_for_keys_up() {
     std::thread::sleep(Duration::from_millis(200));
 }

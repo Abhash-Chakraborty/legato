@@ -1,6 +1,14 @@
 fn main() {
     generate_translations();
 
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        // The microphone and playback crates link two CoreAudio functions
+        // that only exist from macOS 14.2. Linked weakly, Legato still
+        // starts on the older systems its bundle says it runs on.
+        println!("cargo:rustc-link-arg=-Wl,-weak_framework,CoreAudio");
+        link_clang_rt_osx();
+    }
+
     // Stage transcribe-cpp's runtime DLLs (and the dynamically loaded ggml
     // backend modules) for the installer. Self-gates on the dynamic-backends
     // posture used on x86_64; it's a no-op for the static ARM64 build, where
@@ -11,6 +19,33 @@ fn main() {
     stage_vc_runtime_dlls();
 
     tauri_build::build()
+}
+
+/// Links clang's compiler runtime, which has `__isPlatformVersionAtLeast`.
+///
+/// ggml's Metal backend guards newer Metal calls with `@available`. Built
+/// for a macOS older than the SDK (the bundle's minimum is 11.0), clang
+/// turns those checks into calls into `libclang_rt.osx.a`, which rustc
+/// doesn't link. A build for the Mac it runs on folds the checks away, so
+/// only the bundled build misses the symbol.
+fn link_clang_rt_osx() {
+    let output = std::process::Command::new("clang")
+        .arg("--print-resource-dir")
+        .output()
+        .expect("run `clang --print-resource-dir` to locate libclang_rt.osx.a");
+    assert!(
+        output.status.success(),
+        "`clang --print-resource-dir` failed; cannot locate libclang_rt.osx.a"
+    );
+    let resource_dir = String::from_utf8(output.stdout).expect("clang resource dir is UTF-8");
+    let darwin_dir = std::path::Path::new(resource_dir.trim()).join("lib/darwin");
+    assert!(
+        darwin_dir.join("libclang_rt.osx.a").exists(),
+        "libclang_rt.osx.a not found in {}",
+        darwin_dir.display()
+    );
+    println!("cargo:rustc-link-search=native={}", darwin_dir.display());
+    println!("cargo:rustc-link-lib=static=clang_rt.osx");
 }
 
 /// Stage the MSVC runtime DLLs into `transcribe-libs/` for app-local deployment.

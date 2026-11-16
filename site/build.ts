@@ -34,6 +34,7 @@ export const GROUPS: {
     pages: [
       { slug: "getting-started", nav: "Getting started", icon: "play" },
       { slug: "install", nav: "Install on Windows", icon: "laptop" },
+      { slug: "mac", nav: "Legato on a Mac", icon: "monitor" },
       { slug: "android", nav: "Legato for Android", icon: "smartphone" },
     ],
   },

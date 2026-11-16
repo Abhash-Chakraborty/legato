@@ -1,0 +1,680 @@
+name: "macOS"
+
+# Builds Legato for Apple silicon and tries the result on the runner: the
+# app must list its compute devices, transcribe a sentence macOS's own voice
+# speaks, and start. Nobody on the project has a Mac, so this is the only
+# place the Mac build runs before a person tries it.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [mac]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# With pipefail, so a step that pipes Legato's output into tee still fails
+# when Legato does.
+defaults:
+  run:
+    shell: bash
+
+env:
+  TARGET: aarch64-apple-darwin
+  # The smallest English model in the catalog (src-tauri/src/catalog), pinned
+  # to the catalog's revision and hash.
+  MODEL_ID: handy-computer/whisper-tiny.en-gguf/whisper-tiny.en-Q8_0.gguf
+  MODEL_FILE: whisper-tiny.en-Q8_0.gguf
+  MODEL_URL: https://huggingface.co/handy-computer/whisper-tiny.en-gguf/resolve/becb8bcb804405dc97b380a523d9975888820986/whisper-tiny.en-Q8_0.gguf
+  MODEL_SHA256: e8c9b73c06344307d8b346e07fbe93dd88d894627854bcff31523f1ce44394fa
+  # What macOS's own voice is asked to say, and the words that must come
+  # back.
+  SENTENCE: The quick brown fox jumps over the lazy dog near the river bank.
+  SENTENCE_WORDS: quick brown fox lazy dog river
+  # A recording for a runner whose voice gives no sound: President Kennedy,
+  # from whisper.cpp's samples (public domain), 11 s of 16 kHz mono PCM.
+  SAMPLE_URL: https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.7.4/samples/jfk.wav
+  SAMPLE_SHA256: 59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e
+  SAMPLE_WORDS: fellow americans ask country
+
+jobs:
+  check:
+    name: clippy
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Say what the runner is
+        run: |
+          sw_vers
+          uname -m
+          sysctl -n machdep.cpu.brand_string
+          xcodebuild -version || true
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: ${{ env.TARGET }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: macos-check
+          # The dependencies take most of the time; keep them even when
+          # Legato's own code doesn't build yet.
+          cache-on-failure: true
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --target "$TARGET" --all-targets
+
+      # A dependency added for the Mac changes Cargo.lock; the file in the
+      # repository should already say so.
+      - name: Cargo.lock is up to date
+        if: always()
+        run: |
+          git diff --stat -- src-tauri/Cargo.lock
+          git diff -- src-tauri/Cargo.lock > Cargo.lock.diff
+          if [ -s Cargo.lock.diff ]; then
+            echo "::warning::Cargo.lock changed during the build; commit the uploaded file"
+          fi
+
+      - name: Upload Cargo.lock
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cargo-lock
+          path: |
+            src-tauri/Cargo.lock
+            Cargo.lock.diff
+          retention-days: 7
+
+  # The unit tests were written on Windows; this is where one that assumed
+  # Windows (a path with backslashes, say) shows itself.
+  test:
+    name: tests
+    needs: check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.TARGET }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: macos-test
+          cache-on-failure: true
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --target "$TARGET" --no-fail-fast
+
+      # Keeping a secret in the keychain and reading it back. It needs a
+      # login keychain a test may use, which not every runner gives, so the
+      # result is recorded and doesn't decide the job.
+      - name: Keychain round trip
+        continue-on-error: true
+        working-directory: src-tauri
+        run: |
+          {
+            echo "### Keychain round trip"
+            echo '```'
+            if cargo test --target "$TARGET" --lib keychain_tests -- --ignored 2>&1 | tail -n 15; then
+              echo "passed"
+            else
+              echo "FAILED"
+            fi
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          ! grep -q "^FAILED" "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: build and smoke test
+    needs: check
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.TARGET }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: macos-release
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      # The bundle config for a Mac is src-tauri/tauri.macos.conf.json: an
+      # .app and a .dmg, signed ad hoc, with no updater artifacts.
+      - name: Build
+        run: bun run tauri build --target "$TARGET"
+
+      - name: Find the bundle
+        run: |
+          BUNDLE="src-tauri/target/$TARGET/release/bundle"
+          APP="$(ls -d "$BUNDLE"/macos/*.app | head -1)"
+          DMG="$(ls "$BUNDLE"/dmg/*.dmg | head -1)"
+          BIN="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+          test -x "$BIN"
+          {
+            echo "APP=$APP"
+            echo "DMG=$DMG"
+            echo "BIN=$BIN"
+          } >> "$GITHUB_ENV"
+          mkdir -p smoke
+          du -sh "$APP" "$DMG" | tee smoke/sizes.txt
+
+      - name: Bundle contents
+        run: |
+          plutil -p "$APP/Contents/Info.plist" | tee smoke/info-plist.txt
+          grep -q NSMicrophoneUsageDescription smoke/info-plist.txt
+          ls -la "$APP/Contents/MacOS" "$APP/Contents/Resources" | tee smoke/contents.txt
+          file "$BIN" | tee smoke/binary.txt
+          otool -L "$BIN" | tee -a smoke/binary.txt
+          hdiutil verify "$DMG"
+
+      # The icon is written by scripts/mac_icon.py, not by Apple's tools, so
+      # Apple's tools are asked whether they can read every size in it.
+      - name: App icon
+        run: |
+          ICON="$APP/Contents/Resources/icon.icns"
+          {
+            sips -g pixelWidth -g pixelHeight -g format "$ICON" 2>&1 || echo "sips could not read the icon"
+            if iconutil --convert iconset "$ICON" --output smoke/icon.iconset 2>&1; then
+              ls smoke/icon.iconset
+            else
+              echo "iconutil could not read the icon"
+            fi
+          } | tee smoke/icon.txt
+
+      # Recorded, not required: an ad-hoc signature is valid but Gatekeeper
+      # rejects it, which is what a person downloading the .dmg will see.
+      - name: Signature
+        run: |
+          {
+            echo "## codesign -dv"
+            codesign -dv --verbose=4 "$APP" 2>&1 || true
+            echo
+            echo "## codesign --verify --deep --strict"
+            codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 && echo "verify: ok" || echo "verify: FAILED ($?)"
+            echo
+            echo "## entitlements"
+            codesign -d --entitlements - "$APP" 2>&1 || true
+            echo
+            echo "## spctl -a -vv"
+            spctl -a -vv "$APP" 2>&1 || echo "spctl exit code: $?"
+          } | tee smoke/signature.txt
+
+      - name: Compute devices
+        timeout-minutes: 5
+        run: |
+          "$BIN" --list-devices 2> smoke/list-devices.stderr | tee smoke/list-devices.txt
+          grep -q "kind=" smoke/list-devices.txt
+
+      - name: Cache the test model
+        id: model
+        uses: actions/cache@v5
+        with:
+          path: model/${{ env.MODEL_FILE }}
+          key: model-${{ env.MODEL_SHA256 }}
+
+      - name: Fetch the test model
+        if: steps.model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p model
+          curl --fail --location --retry 3 --output "model/$MODEL_FILE" "$MODEL_URL"
+
+      - name: Install the test model
+        timeout-minutes: 5
+        run: |
+          echo "$MODEL_SHA256  model/$MODEL_FILE" | shasum -a 256 -c -
+          MODELS="$HOME/Library/Application Support/io.github.abhash-chakraborty.legato/models"
+          mkdir -p "$MODELS"
+          cp "model/$MODEL_FILE" "$MODELS/"
+          "$BIN" --list-models 2> smoke/list-models.stderr | tee smoke/list-models.txt
+          grep -F "$MODEL_ID" smoke/list-models.txt > smoke/model-line.txt
+          grep -q "✓" smoke/model-line.txt
+
+      # A real sentence as the 16 kHz mono 16-bit WAV the app records: in
+      # macOS's own voice where the runner can speak. The first run's voice
+      # gave a file with no sound in it, so a runner like that gets a public
+      # recording, and the summary says which one was used.
+      - name: A sentence to transcribe
+        timeout-minutes: 5
+        run: |
+          say_it() {
+            rm -f smoke/said.aiff smoke/said.wav
+            if [ -n "$1" ]; then
+              say -v "$1" -o smoke/said.aiff "$SENTENCE" || return 1
+            else
+              say -o smoke/said.aiff "$SENTENCE" || return 1
+            fi
+            afconvert -f WAVE -d LEI16@16000 -c 1 smoke/said.aiff smoke/said.wav || return 1
+            stat -f %z smoke/said.wav
+          }
+          echo "voices installed: $(say -v '?' 2> /dev/null | wc -l | tr -d ' ')" | tee smoke/speech.txt
+          SPOKEN=""
+          # Four seconds of speech is about 128 kB; a voice with no sound
+          # leaves a few kB.
+          for voice in "" Samantha Alex Daniel Fred; do
+            BYTES="$(say_it "$voice" 2> /dev/null || echo 0)"
+            echo "say with ${voice:-the default voice}: $BYTES bytes of audio" | tee -a smoke/speech.txt
+            if [ "$BYTES" -gt 60000 ]; then
+              SPOKEN="${voice:-default}"
+              break
+            fi
+          done
+          if [ -n "$SPOKEN" ]; then
+            cp smoke/said.wav smoke/spoken.wav
+            echo "$SENTENCE_WORDS" > smoke/expected.txt
+            echo "input: macOS's own voice ($SPOKEN)" | tee -a smoke/speech.txt
+          else
+            curl --fail --location --retry 3 --output smoke/spoken.wav "$SAMPLE_URL"
+            echo "$SAMPLE_SHA256  smoke/spoken.wav" | shasum -a 256 -c -
+            echo "$SAMPLE_WORDS" > smoke/expected.txt
+            echo "input: macOS's voice gave no sound on this runner, so a recording of President Kennedy (whisper.cpp's jfk.wav)" | tee -a smoke/speech.txt
+          fi
+          afinfo smoke/spoken.wav
+
+      # The same sentence on each device by its index first, so that if the
+      # run below fails the summary still says which of the GPU and the CPU
+      # the runner could really use. Recorded, not required: a runner's GPU
+      # is a virtual one that ggml's Metal backend can't compute on.
+      - name: Transcribe on each device
+        timeout-minutes: 10
+        run: |
+          : > smoke/per-device.txt
+          for index in $(grep -o "index=[0-9]*" smoke/list-devices.txt | cut -d= -f2); do
+            if "$BIN" --transcribe-file smoke/spoken.wav --model "$MODEL_ID" --device-index "$index" --json \
+              > "smoke/device-$index.json" 2> "smoke/device-$index.stderr"; then
+              echo "device $index: $(jq -c '{bound_backend, audio_secs, load_ms, best_ms, text}' "smoke/device-$index.json")" | tee -a smoke/per-device.txt
+            else
+              echo "device $index: failed ($(tail -1 "smoke/device-$index.stderr"))" | tee -a smoke/per-device.txt
+            fi
+          done
+
+      # As the app does it: the device its settings pick, which is the GPU
+      # when transcribe.cpp finds one it can use.
+      - name: Transcribe it
+        timeout-minutes: 5
+        run: |
+          "$BIN" --transcribe-file smoke/spoken.wav --model "$MODEL_ID" --json \
+            2> smoke/transcribe.stderr | tee smoke/transcribe.json
+          TEXT="$(jq -r .text smoke/transcribe.json | tr '[:upper:]' '[:lower:]')"
+          echo "Heard: $TEXT"
+          echo "Backend: $(jq -r .bound_backend smoke/transcribe.json)"
+          FOUND=0
+          WORDS=0
+          for word in $(cat smoke/expected.txt); do
+            WORDS=$((WORDS + 1))
+            case "$TEXT" in *"$word"*) FOUND=$((FOUND + 1)) ;; esac
+          done
+          # Two thirds of the words, rounded up: one misheard word in a
+          # sentence is the model's business, not the build's.
+          NEED=$(((WORDS * 2 + 2) / 3))
+          echo "$FOUND of $WORDS words found, $NEED needed" | tee smoke/words.txt
+          test "$FOUND" -ge "$NEED"
+
+      # The window a new user meets. The runner has no microphone and can't
+      # answer macOS's permission questions, so this shows only that Legato
+      # starts, stays up and draws. It runs even if the transcription failed.
+      - name: Start the app
+        if: ${{ !cancelled() && env.APP != '' }}
+        timeout-minutes: 5
+        run: |
+          NAME="$(basename "$BIN")"
+          open "$APP"
+          sleep 25
+          if pgrep -x "$NAME" > /dev/null; then
+            echo "running after 25 s" | tee smoke/launch.txt
+          else
+            echo "NOT running after 25 s" | tee smoke/launch.txt
+          fi
+          screencapture -x smoke/screen.png || echo "screencapture failed: $?" | tee -a smoke/launch.txt
+          # What macOS itself says about the app: in the Dock or not, in front or not.
+          lsappinfo info -app Legato 2>&1 | tee -a smoke/launch.txt || true
+          cp "$HOME/Library/Logs/io.github.abhash-chakraborty.legato/"*.log smoke/ 2> /dev/null || echo "no log file" | tee -a smoke/launch.txt
+          cp "$HOME/Library/Logs/DiagnosticReports/"*egato* smoke/ 2> /dev/null || echo "no crash report" | tee -a smoke/launch.txt
+          pkill -x "$NAME" || true
+          grep -q "^running" smoke/launch.txt
+
+      # Legato's own log lines from each run above, which is where a failure
+      # explains itself.
+      - name: What Legato printed
+        if: always()
+        run: |
+          for file in smoke/*.stderr smoke/*.log; do
+            [ -f "$file" ] || continue
+            echo "::group::$file"
+            tail -n 80 "$file"
+            echo "::endgroup::"
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          # A step that didn't run left no file; say so and carry on.
+          show() {
+            echo "$1:"
+            cat "smoke/$2" 2> /dev/null || echo "(nothing: the step didn't get this far)"
+            echo
+          }
+          {
+            echo "### Legato for Mac, built on $(sw_vers -productName) $(sw_vers -productVersion) ($(uname -m))"
+            echo
+            echo '```'
+            show "sizes" sizes.txt
+            show "--list-devices" list-devices.txt
+            show "the sentence" speech.txt
+            show "transcription, as the app picks the device" transcribe.json
+            show "words that came back" words.txt
+            show "transcription, device by device" per-device.txt
+            show "launch" launch.txt
+            show "icon" icon.txt
+            show "signature" signature.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the app
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: legato-${{ env.TARGET }}
+          path: src-tauri/target/${{ env.TARGET }}/release/bundle/dmg/*.dmg
+          retention-days: 30
+
+      - name: Upload what the smoke test saw
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-test
+          path: smoke
+          retention-days: 30
+
+  # A whole dictation on the runner: Legato records, transcribes and pastes
+  # into Terminal, and what Terminal received is read back. Nobody can speak
+  # to a runner or answer macOS's questions on it, so this needs two things
+  # a person's Mac doesn't: a debug build, which can hear a WAV file in
+  # place of the microphone (LEGATO_DEBUG_MIC_WAV), and the two permissions
+  # written straight into macOS's permission database. Whether a runner
+  # allows that isn't promised, so the job is recorded and doesn't decide
+  # the run.
+  dictate:
+    name: dictation end to end
+    needs: check
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 45
+    env:
+      BUNDLE_ID: io.github.abhash-chakraborty.legato
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.TARGET }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: macos-debug
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build a debug app
+        run: bun run tauri build --debug --target "$TARGET" --bundles app
+
+      - name: Find the app
+        run: |
+          APP="$(ls -d "src-tauri/target/$TARGET/debug/bundle/macos/"*.app | head -1)"
+          BIN="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+          test -x "$BIN"
+          mkdir -p e2e
+          {
+            echo "APP=$PWD/$APP"
+            echo "BIN=$PWD/$BIN"
+            echo "DATA=$HOME/Library/Application Support/$BUNDLE_ID"
+          } >> "$GITHUB_ENV"
+
+      # What the runner allows, before anything is asked of it.
+      - name: What the runner is
+        run: |
+          {
+            sw_vers
+            csrutil status || true
+            echo "--- audio devices"
+            system_profiler SPAudioDataType 2>&1 | head -40 || true
+            echo "--- permissions macOS already holds for everyone"
+            sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
+              "select service, client, auth_value from access" 2>&1 | head -60 || true
+            echo "--- and for this user"
+            sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" \
+              "select service, client, auth_value from access" 2>&1 | head -60 || true
+          } | tee e2e/runner.txt
+
+      # Accessibility is kept for the whole Mac, the microphone per user.
+      - name: Grant Legato the microphone and Accessibility
+        run: |
+          cat > e2e/grant.py <<'PY'
+          import sqlite3
+          import sys
+          import time
+
+          db, service, client = sys.argv[1:4]
+          con = sqlite3.connect(db)
+          columns = [row[1] for row in con.execute("pragma table_info(access)")]
+          now = int(time.time())
+          # What a row that says "allowed" holds, by column; a macOS with
+          # other columns keeps their defaults.
+          row = {
+              "service": service,
+              "client": client,
+              "client_type": 1 if client.startswith("/") else 0,
+              "auth_value": 2,
+              "auth_reason": 4,
+              "auth_version": 1,
+              "csreq": None,
+              "policy_id": None,
+              "indirect_object_identifier_type": 0,
+              "indirect_object_identifier": "UNUSED",
+              "indirect_object_code_identity": None,
+              "flags": 0,
+              "last_modified": now,
+              "pid": None,
+              "pid_version": None,
+              "boot_uuid": "UNUSED",
+              "last_reminded": now,
+          }
+          used = [c for c in columns if c in row]
+          con.execute(
+              f"insert or replace into access ({','.join(used)}) values ({','.join('?' * len(used))})",
+              [row[c] for c in used],
+          )
+          con.commit()
+          print(f"{service} for {client}: written ({len(used)} of {len(columns)} columns)")
+          PY
+          {
+            sudo python3 e2e/grant.py "/Library/Application Support/com.apple.TCC/TCC.db" kTCCServiceAccessibility "$BUNDLE_ID" 2>&1 \
+              || echo "Accessibility: could NOT be written"
+            sudo python3 e2e/grant.py "$HOME/Library/Application Support/com.apple.TCC/TCC.db" kTCCServiceMicrophone "$BUNDLE_ID" 2>&1 \
+              || echo "Microphone: could NOT be written"
+          } | tee e2e/grants.txt
+
+      - name: Cache the test model
+        id: model
+        uses: actions/cache@v5
+        with:
+          path: model/${{ env.MODEL_FILE }}
+          key: model-${{ env.MODEL_SHA256 }}
+
+      - name: Fetch the test model
+        if: steps.model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p model
+          curl --fail --location --retry 3 --output "model/$MODEL_FILE" "$MODEL_URL"
+
+      # As a person who finished setup has it: the model chosen, and Enter
+      # after each paste, which is what hands the line to Terminal's `cat`.
+      - name: Set Legato up
+        run: |
+          echo "$MODEL_SHA256  model/$MODEL_FILE" | shasum -a 256 -c -
+          mkdir -p "$DATA/models"
+          cp "model/$MODEL_FILE" "$DATA/models/"
+          jq -n --arg model "$MODEL_ID" \
+            '{settings: {onboarding_completed: true, selected_model: $model, auto_submit: true, audio_feedback: false}}' \
+            > "$DATA/settings_store.json"
+          cat "$DATA/settings_store.json"
+          say -v Samantha -o e2e/said.aiff "$SENTENCE"
+          afconvert -f WAVE -d LEI16@16000 -c 1 e2e/said.aiff e2e/spoken.wav
+          afinfo e2e/spoken.wav
+          test "$(stat -f %z e2e/spoken.wav)" -gt 60000
+
+      - name: Dictate into Terminal
+        timeout-minutes: 8
+        run: |
+          NAME="$(basename "$BIN")"
+          LOG="$HOME/Library/Logs/$BUNDLE_ID/legato.log"
+          PASTED="$PWD/e2e/pasted.txt"
+          said() { grep -c "$1" "$LOG" 2> /dev/null || true; }
+
+          open --env LEGATO_DEBUG_MIC_WAV="$PWD/e2e/spoken.wav" "$APP"
+          sleep 25
+          pgrep -x "$NAME" > /dev/null || { echo "Legato isn't running"; exit 1; }
+          {
+            echo "Accessibility, as Legato saw it: enigo ready $(said 'Enigo initialized successfully'), shortcuts ready $(said 'Shortcuts initialized successfully')"
+          } | tee e2e/result.txt
+
+          # Terminal in front, with a shell that keeps what it's given.
+          printf '#!/bin/bash\ncat > "%s"\n' "$PASTED" > e2e/catcher.command
+          chmod +x e2e/catcher.command
+          open -a Terminal e2e/catcher.command
+          sleep 8
+          screencapture -x e2e/before.png || true
+
+          # Start, let the sentence play, stop, as the Dictate shortcut does.
+          # A second Legato hands the flag to the running one and exits.
+          toggle() {
+            "$BIN" --toggle-transcription > /dev/null 2>&1 &
+            local pid=$!
+            sleep 3
+            if kill -0 "$pid" 2> /dev/null; then
+              echo "the second Legato didn't hand its flag over and exit" | tee -a e2e/result.txt
+              kill "$pid" 2> /dev/null || true
+            fi
+          }
+          toggle
+          sleep 6
+          screencapture -x e2e/recording.png || true
+          toggle
+          sleep 20
+          screencapture -x e2e/after.png || true
+
+          # The same again from the keyboard: Option+Space, pressed by
+          # System Events, which Legato's key listener has to hear.
+          FIRST="$(wc -l < "$PASTED" 2> /dev/null | tr -d ' ' || echo 0)"
+          press() {
+            osascript -e 'tell application "System Events" to key code 49 using {option down}' > e2e/osascript.txt 2>&1 &
+            local pid=$!
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+              kill -0 "$pid" 2> /dev/null || return 0
+              sleep 1
+            done
+            kill "$pid" 2> /dev/null || true
+            echo "System Events didn't answer within 10 s" >> e2e/osascript.txt
+            return 1
+          }
+          if press; then
+            sleep 8
+            press || true
+            sleep 20
+          fi
+          screencapture -x e2e/after-shortcut.png || true
+          SECOND="$(wc -l < "$PASTED" 2> /dev/null | tr -d ' ' || echo 0)"
+
+          cp "$LOG" e2e/ 2> /dev/null || true
+          cp "$HOME/Library/Logs/DiagnosticReports/"*egato* e2e/ 2> /dev/null || true
+          pkill -x "$NAME" || true
+          pkill -x Terminal || true
+
+          TEXT="$(tr '[:upper:]' '[:lower:]' < "$PASTED" 2> /dev/null || true)"
+          FOUND=0
+          for word in $SENTENCE_WORDS; do
+            case "$TEXT" in *"$word"*) FOUND=$((FOUND + 1)) ;; esac
+          done
+          {
+            echo "Terminal received, after the command-line dictation: ${FIRST:-0} line(s)"
+            echo "Terminal received, after the Option+Space dictation: ${SECOND:-0} line(s)"
+            echo "What it received:"
+            cat "$PASTED" 2> /dev/null || echo "(nothing)"
+            echo "$FOUND of 6 words found, 4 needed"
+            echo "System Events said: $(cat e2e/osascript.txt 2> /dev/null)"
+          } | tee -a e2e/result.txt
+          test "$FOUND" -ge 4
+
+      # A debug build writes src/bindings.ts when it starts. The file in the
+      # repository is kept by hand and has drifted from that in order and
+      # comments, so only the two commands the Mac added are compared: each
+      # must be declared the same way in both. Recorded, not required.
+      - name: The Mac's commands in bindings.ts
+        if: always()
+        run: |
+          cp src/bindings.ts e2e/bindings.generated.ts
+          git show HEAD:src/bindings.ts > e2e/bindings.committed.ts
+          declared() { grep -o "async $1([^{]*" "$2" | tr -d '[:space:]' || true; }
+          {
+            git diff --shortstat -- src/bindings.ts || true
+            for name in keyboardAccessGranted requestKeyboardAccess; do
+              WANT="$(declared "$name" e2e/bindings.generated.ts)"
+              HAVE="$(declared "$name" e2e/bindings.committed.ts)"
+              if [ -n "$WANT" ] && [ "$WANT" = "$HAVE" ]; then
+                echo "$name: declared as the app generates it ($HAVE)"
+              else
+                echo "$name: DIFFERS. generated: ${WANT:-nothing}; in the repository: ${HAVE:-nothing}"
+              fi
+            done
+          } | tee e2e/bindings.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          show() {
+            echo "$1:"
+            cat "e2e/$2" 2> /dev/null || echo "(nothing: the step didn't get this far)"
+            echo
+          }
+          {
+            echo "### A dictation from start to finish"
+            echo
+            echo '```'
+            show "permissions written" grants.txt
+            show "result" result.txt
+            show "bindings" bindings.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -iE "error|warn|paste|Enigo|shortcut|Recording|microphone" e2e/legato.log 2> /dev/null | grep -v "transcribe_cpp" | tail -n 60 || true
+
+      - name: Upload what the dictation showed
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dictation-end-to-end
+          path: e2e
+          retention-days: 30

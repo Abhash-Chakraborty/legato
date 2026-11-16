@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
+#[cfg(windows)]
 use winreg::{
     enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE},
     RegKey, HKEY,
@@ -63,6 +64,7 @@ pub struct WindowsMicrophonePermissionStatus {
     pub desktop_app_access: PermissionAccess,
 }
 
+#[cfg(windows)]
 fn read_registry_permission_access(root_hkey: HKEY, path: &str) -> PermissionAccess {
     let root = RegKey::predef(root_hkey);
     let Ok(key) = root.open_subkey(path) else {
@@ -83,6 +85,30 @@ fn read_registry_permission_access(root_hkey: HKEY, path: &str) -> PermissionAcc
 #[tauri::command]
 #[specta::specta]
 pub fn get_windows_microphone_permission_status() -> WindowsMicrophonePermissionStatus {
+    microphone_permission_status()
+}
+
+/// The command keeps its Windows name. On a Mac the answer is macOS's own
+/// (allowed, denied, or unknown until it has asked), the same in every
+/// field.
+#[cfg(not(windows))]
+fn microphone_permission_status() -> WindowsMicrophonePermissionStatus {
+    use handy_recorder::Permission;
+    let access = match handy_recorder::permission_status() {
+        Permission::Granted => PermissionAccess::Allowed,
+        Permission::Denied => PermissionAccess::Denied,
+        _ => PermissionAccess::Unknown,
+    };
+    WindowsMicrophonePermissionStatus {
+        overall_access: access,
+        device_access: access,
+        app_access: access,
+        desktop_app_access: access,
+    }
+}
+
+#[cfg(windows)]
+fn microphone_permission_status() -> WindowsMicrophonePermissionStatus {
     const MICROPHONE_PATH: &str =
         "Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone";
     const DESKTOP_APPS_PATH: &str =
@@ -122,12 +148,19 @@ pub fn get_windows_microphone_permission_status() -> WindowsMicrophonePermission
 #[tauri::command]
 #[specta::specta]
 pub fn open_microphone_privacy_settings() -> Result<(), String> {
-    use std::process::Command;
-    Command::new("cmd")
-        .args(["/C", "start", "", "ms-settings:privacy-microphone"])
-        .spawn()
-        .map_err(|e| format!("Failed to open Windows microphone privacy settings: {}", e))?;
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        crate::mac::open_microphone_settings()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        use std::process::Command;
+        Command::new("cmd")
+            .args(["/C", "start", "", "ms-settings:privacy-microphone"])
+            .spawn()
+            .map_err(|e| format!("Failed to open Windows microphone privacy settings: {}", e))?;
+        Ok(())
+    }
 }
 
 #[tauri::command]

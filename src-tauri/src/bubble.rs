@@ -6,6 +6,10 @@
 //! being dictated into keeps it, and it steps aside while a window fills
 //! the screen. Placement math lives in `bubble_rules`.
 
+// The bubble is a Windows window so far. Elsewhere it's never made, and
+// what's kept below of showing and moving it has nothing to do there.
+#![cfg_attr(not(windows), allow(dead_code, unused_imports, unused_variables))]
+
 use crate::bubble_rules::{self, Edge, Rect};
 use crate::settings::{get_settings, write_settings, BubbleSpot};
 use log::{debug, warn};
@@ -200,6 +204,10 @@ fn should_show(app: &AppHandle) -> bool {
 /// Whether the bubble is on (and not hidden for an hour), so a dictation
 /// shows on it rather than on the bar.
 pub fn takes_dictation(app: &AppHandle) -> bool {
+    // No bubble off Windows yet, whatever the setting says.
+    if cfg!(not(windows)) {
+        return false;
+    }
     let settings = get_settings(app);
     // The island shows dictations and notes itself.
     settings.bubble_enabled
@@ -249,8 +257,13 @@ fn refresh(app: &AppHandle) {
     let _ = app.run_on_main_thread(move || refresh_visibility(&handle));
 }
 
+/// Off Windows there's no bubble to show or hide.
+#[cfg(not(windows))]
+fn refresh_visibility(_app: &AppHandle) {}
+
 /// Shows or hides the window to match the setting, the snooze and what's
 /// on screen, without taking focus. Main thread only.
+#[cfg(windows)]
 fn refresh_visibility(app: &AppHandle) {
     let Some(window) = app.get_webview_window(WINDOW) else {
         return;
@@ -272,6 +285,7 @@ fn refresh_visibility(app: &AppHandle) {
     VISIBLE.store(is_shown(hwnd), Ordering::Relaxed);
 }
 
+#[cfg(windows)]
 fn is_shown(hwnd: windows::Win32::Foundation::HWND) -> bool {
     // SAFETY: a query on our own window.
     unsafe { windows::Win32::UI::WindowsAndMessaging::IsWindowVisible(hwnd).as_bool() }
@@ -282,6 +296,7 @@ fn is_shown(hwnd: windows::Win32::Foundation::HWND) -> bool {
 /// and a window shown this way never told it otherwise, so the bubble used
 /// to stay up over fullscreen windows while `VISIBLE` said it had gone,
 /// and its meter got no levels again until Legato restarted.
+#[cfg(windows)]
 fn set_shown(hwnd: windows::Win32::Foundation::HWND, show: bool) {
     use windows::Win32::UI::WindowsAndMessaging::{
         SetWindowPos, ShowWindow, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
@@ -305,9 +320,15 @@ fn set_shown(hwnd: windows::Win32::Foundation::HWND, show: bool) {
     }
 }
 
+/// Off Windows there's no bubble yet, and nothing watches for windows
+/// that fill the screen.
+#[cfg(not(windows))]
+pub fn init(_app: &AppHandle) {}
+
 /// Starts watching for windows that fill the screen, and creates the
 /// bubble's window if it's on. With it off, the window (a whole webview) is
 /// left until it's turned on.
+#[cfg(windows)]
 pub fn init(app: &AppHandle) {
     *SPOT.lock().unwrap_or_else(|e| e.into_inner()) = saved_spot(app);
     refresh(app);
@@ -390,6 +411,7 @@ static LAST_FRONT: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsi
 /// switcher don't count. Each new window in front is described once in the
 /// log with the verdict, so a fullscreen app the island stayed over can be
 /// told apart from one it never saw.
+#[cfg(windows)]
 fn foreground_fills_screen() -> bool {
     use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
     // SAFETY: GetForegroundWindow has no preconditions; it may return null.
@@ -403,6 +425,7 @@ fn foreground_fills_screen() -> bool {
 }
 
 /// Whether `hwnd` fills its monitor, and what was seen.
+#[cfg(windows)]
 fn judge_front(hwnd: windows::Win32::Foundation::HWND) -> (bool, String) {
     use windows::Win32::Foundation::RECT;
     use windows::Win32::Graphics::Gdi::{

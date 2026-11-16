@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   Check,
   ExternalLink,
+  Keyboard,
   Mic,
   MicOff,
   ShieldAlert,
@@ -11,6 +12,7 @@ import {
 } from "@/icons";
 import { commands, events } from "@/bindings";
 import { useSettings } from "../../hooks/useSettings";
+import { isMac } from "../../lib/utils/platform";
 import { Button } from "../ui/Button";
 import { Dropdown } from "../ui/Dropdown";
 import type { StepProps } from "./SetupFlow";
@@ -26,6 +28,7 @@ const SILENT_MS = 4000;
 
 type Access = "checking" | "allowed" | "blocked";
 type CheckState = "listening" | "heard" | "failed";
+type KeysAccess = "checking" | "granted" | "needed";
 
 /** Microphone access, the microphone to use, and a level check that turns
  *  on Continue once Legato hears a sentence or two. */
@@ -40,6 +43,17 @@ export const MicStep: React.FC<StepProps> = ({ go, setFoot }) => {
   const [levels, setLevels] = useState<number[]>(() => Array(BARS).fill(0));
   const voiced = useRef(0);
   const lastLevel = useRef(0);
+  // A Mac asks before an app may listen for a shortcut in other apps and
+  // paste for you (Accessibility). Nothing setup teaches works without it,
+  // so the step waits for it; Windows never asks.
+  const [keys, setKeys] = useState<KeysAccess>(isMac ? "checking" : "granted");
+  const [keysOpened, setKeysOpened] = useState(false);
+  // Counts macOS turning the microphone on after its own question, so the
+  // level check opens the microphone again.
+  const [micGrants, setMicGrants] = useState(0);
+  // macOS has its question about the microphone up and no answer yet.
+  const [asking, setAsking] = useState(false);
+  const seen = useRef({ keys: "checking", mic: "" });
 
   const selected = getSetting("selected_microphone") || "Default";
   const microphone = selected === "default" ? "Default" : selected;
@@ -56,7 +70,50 @@ export const MicStep: React.FC<StepProps> = ({ go, setFoot }) => {
 
   useEffect(() => {
     refreshAudioDevices();
-    readAccess().then(setAccess);
+    // A Mac has a third answer, "not asked yet", which the look below
+    // reads together with the other two, so the row never says Allowed
+    // before macOS has.
+    if (!isMac) readAccess().then(setAccess);
+  }, []);
+
+  // On a Mac both answers can change in System Settings while this step is
+  // open, so it looks again every second.
+  useEffect(() => {
+    if (!isMac) return;
+    let stopped = false;
+    const look = async () => {
+      try {
+        const granted = await commands.keyboardAccessGranted();
+        const mic = (await commands.getWindowsMicrophonePermissionStatus())
+          .overall_access;
+        if (stopped) return;
+        const now = granted ? "granted" : "needed";
+        if (seen.current.keys !== now) {
+          // The key listener and the paste keys can start once it's on.
+          if (granted) {
+            commands.initializeEnigo().catch(() => {});
+            commands.initializeShortcuts().catch(() => {});
+          }
+          seen.current.keys = now;
+          setKeys(now);
+        }
+        if (seen.current.mic !== mic) {
+          if (seen.current.mic === "unknown" && mic === "allowed")
+            setMicGrants((n) => n + 1);
+          seen.current.mic = mic;
+          setAsking(mic === "unknown");
+          setAccess(mic === "denied" ? "blocked" : "allowed");
+        }
+      } catch {
+        // Looked at again in a second.
+      }
+    };
+    look();
+    const timer = setInterval(look, 1000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
   }, []);
 
   // The level check runs while access is allowed, and starts again for a
@@ -76,6 +133,11 @@ export const MicStep: React.FC<StepProps> = ({ go, setFoot }) => {
         setCheck((c) => (c === "listening" ? "heard" : c));
     });
     const silent = setInterval(() => {
+      // While macOS still has its question up, silence means nothing yet.
+      if (isMac && seen.current.mic === "unknown") {
+        lastLevel.current = Date.now();
+        return;
+      }
       if (Date.now() - lastLevel.current > SILENT_MS)
         setCheck((c) => (c === "listening" ? "failed" : c));
     }, 500);
@@ -84,12 +146,13 @@ export const MicStep: React.FC<StepProps> = ({ go, setFoot }) => {
       off.then((fn) => fn());
       commands.stopMicCheck();
     };
-  }, [access, microphone]);
+  }, [access, microphone, micGrants]);
 
   useEffect(() => {
     setFoot({
       back: false,
-      disabled: access !== "allowed" || check === "listening",
+      disabled:
+        access !== "allowed" || check === "listening" || keys !== "granted",
       note:
         access === "blocked"
           ? t("setup.mic.noteBlocked")
@@ -97,10 +160,12 @@ export const MicStep: React.FC<StepProps> = ({ go, setFoot }) => {
             ? t("setup.mic.noteWaiting")
             : check === "failed"
               ? t("setup.mic.noteFailed")
-              : "",
+              : keys !== "granted"
+                ? t("setup.mic.noteKeys")
+                : "",
       onNext: () => go("model"),
     });
-  }, [access, check, go, setFoot, t]);
+  }, [access, check, keys, go, setFoot, t]);
 
   const checkAgain = async () => {
     setStill(false);
@@ -177,14 +242,19 @@ export const MicStep: React.FC<StepProps> = ({ go, setFoot }) => {
           ) : (
             <Row
               icon={<ShieldCheck className="h-4 w-4" />}
-              tone="ok"
+              // Not the "allowed" look while macOS is still asking.
+              tone={asking ? undefined : "ok"}
               title={t("setup.mic.access")}
-              help={t("setup.mic.accessHelp")}
+              help={
+                asking ? t("setup.mic.askingHelp") : t("setup.mic.accessHelp")
+              }
               aside={
                 access === "allowed" && (
                   <span className="flex items-center gap-1.5 text-[13px] text-text-2">
-                    <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />
-                    {t("setup.mic.allowed")}
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${asking ? "bg-warn" : "bg-teal-500"}`}
+                    />
+                    {asking ? t("setup.mic.asking") : t("setup.mic.allowed")}
                   </span>
                 )
               }
@@ -210,6 +280,44 @@ export const MicStep: React.FC<StepProps> = ({ go, setFoot }) => {
               ariaLabel={t("setup.mic.microphone")}
             />
           </Row>
+          {isMac && keys !== "checking" && (
+            <Row
+              icon={<Keyboard className="h-4 w-4" />}
+              tone={keys === "granted" ? "ok" : "warn"}
+              title={t("setup.mic.keysTitle")}
+              help={
+                keys === "granted"
+                  ? t("setup.mic.keysOk")
+                  : keysOpened
+                    ? t("setup.mic.keysAfterOpen")
+                    : t("setup.mic.keysHelp")
+              }
+              aside={
+                keys === "granted" && (
+                  <span className="flex items-center gap-1.5 text-[13px] text-text-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />
+                    {t("setup.mic.allowed")}
+                  </span>
+                )
+              }
+            >
+              {keys === "needed" && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    variant={keysOpened ? "ghost" : "secondary"}
+                    size="sm"
+                    onClick={() => {
+                      commands.requestKeyboardAccess();
+                      setKeysOpened(true);
+                    }}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t("setup.mic.openPrivacy")}
+                  </Button>
+                </div>
+              )}
+            </Row>
+          )}
         </div>
       }
       right={

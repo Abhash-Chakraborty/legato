@@ -139,8 +139,16 @@ pub fn get_current_theme(app: &AppHandle) -> AppTheme {
     // personalization mode the two can differ (e.g. dark taskbar + light
     // apps), and the window theme would pick an icon that is invisible
     // against the taskbar.
-    if let Some(theme) = windows_taskbar_theme() {
-        return theme;
+    #[cfg(windows)]
+    {
+        if let Some(theme) = windows_taskbar_theme() {
+            return theme;
+        }
+    }
+    // The Mac's menu bar tints a template image itself, light bar or dark,
+    // so the dark glyphs do for both.
+    if cfg!(target_os = "macos") {
+        return AppTheme::Light;
     }
 
     // Otherwise, map the window theme to our app theme
@@ -160,6 +168,7 @@ pub fn get_current_theme(app: &AppHandle) -> AppTheme {
 /// Returns None if the value is missing (older Windows 10 builds default to a
 /// dark taskbar there, but falling back to the window theme is safer than
 /// guessing).
+#[cfg(windows)]
 fn windows_taskbar_theme() -> Option<AppTheme> {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
@@ -360,8 +369,13 @@ fn apply_on_main(app: &AppHandle) {
     // remembered as displayed.
     let mut icon_ok = false;
     if icon_changed {
+        // A plain `set_icon` drops the template flag the menu bar tints by.
+        #[cfg(target_os = "macos")]
+        let set = |image: Image<'static>| tray.set_icon_with_as_template(Some(image), true);
+        #[cfg(not(target_os = "macos"))]
+        let set = |image: Image<'static>| tray.set_icon(Some(image));
         match icon {
-            Some(image) => match tray.set_icon(Some(image)) {
+            Some(image) => match set(image) {
                 Ok(()) => icon_ok = true,
                 Err(err) => error!("Failed to update tray icon '{}': {err}", desired.icon_path),
             },

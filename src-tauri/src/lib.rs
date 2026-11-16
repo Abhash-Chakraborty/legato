@@ -23,16 +23,62 @@ mod correct;
 mod desktop;
 mod document;
 mod edit_reader;
+#[cfg(windows)]
 mod elevation;
+/// Running as administrator is a Windows matter. Elsewhere Legato is never
+/// elevated and has nothing to hand over to.
+#[cfg(not(windows))]
+mod elevation {
+    use tauri::AppHandle;
+
+    pub fn is_elevated() -> bool {
+        false
+    }
+
+    pub fn unavailable() -> Option<&'static str> {
+        Some("notAdmin")
+    }
+
+    pub fn create_task() -> Result<(), String> {
+        Err("notAdmin".to_string())
+    }
+
+    pub fn delete_task() {}
+
+    pub fn restart(_app: &AppHandle, _elevated: bool, _hidden: bool) -> Result<(), String> {
+        Err("notAdmin".to_string())
+    }
+
+    pub fn accept_second_launches(_app: &AppHandle) {}
+
+    pub fn take_hidden_marker(_app: &AppHandle) -> bool {
+        false
+    }
+
+    pub fn hand_over_at_startup(_app: &AppHandle, _hidden: bool) -> bool {
+        false
+    }
+}
 pub mod engine_supervisor;
 mod format_rules;
+#[cfg(windows)]
 mod handy_migration;
+/// Legato took over from Handy on Windows only, so elsewhere there is no
+/// data to bring across and the plugin does nothing.
+#[cfg(not(windows))]
+mod handy_migration {
+    pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+        tauri::plugin::Builder::new("handy-migration").build()
+    }
+}
 mod input;
 mod inyon;
 mod inyon_rules;
 mod learn_rules;
 mod llm_client;
 mod loopback;
+#[cfg(target_os = "macos")]
+mod mac;
 mod managers;
 pub mod mcp;
 mod mcp_rules;
@@ -175,6 +221,14 @@ fn handle_second_instance(app: &AppHandle, args: &[String]) {
 
 pub(crate) fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
+        // Back in the Dock while the window is open (it leaves when the
+        // window closes to the menu bar).
+        #[cfg(target_os = "macos")]
+        {
+            if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
+                log::error!("Failed to show Legato in the Dock: {e}");
+            }
+        }
         desktop::webview_resting(&main_window, false);
         if let Err(e) = main_window.unminimize() {
             log::error!("Failed to unminimize webview window: {}", e);
@@ -315,7 +369,38 @@ fn keep_on_screen(window: &tauri::WebviewWindow, area: &tauri::PhysicalRect<i32,
     }
 }
 
+/// Whether Legato starts with a Dock icon. Decided between `build()` and
+/// `run()`, the one point where the policy the process launches with can
+/// be set: started hidden with the menu bar icon to come back by, it
+/// launches as an accessory app; changing a running app from regular to
+/// accessory instead leaves the Dock icon behind on some macOS versions.
+#[cfg(target_os = "macos")]
+fn apply_startup_activation_policy(app: &mut tauri::App, headless_mode: bool) {
+    let cli_args = app.state::<CliArgs>().inner().clone();
+    // A one-shot run in a terminal never shows in the Dock.
+    if headless_mode {
+        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+        return;
+    }
+    let settings = settings::get_settings(app.handle());
+    let hidden = settings.start_hidden || cli_args.start_hidden;
+    let tray_available = settings.show_tray_icon && !cli_args.no_tray;
+    if hidden && tray_available {
+        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    }
+}
+
 fn should_force_show_permissions_window(app: &AppHandle) -> bool {
+    // Without Accessibility neither the shortcuts nor the paste work, and
+    // macOS forgets the grant when the app's signature changes.
+    #[cfg(target_os = "macos")]
+    {
+        if !mac::accessibility_granted() {
+            log::info!("Accessibility isn't granted; showing the window to ask for it");
+            return true;
+        }
+    }
+
     let model_manager = app.state::<Arc<ModelManager>>();
     let has_downloaded_models = model_manager
         .get_available_models()
@@ -443,10 +528,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         )
         .tooltip(tray::tray_tooltip())
         // Notification-area convention: left click opens the app, right click
-        // shows the menu.
-        .show_menu_on_left_click(false)
+        // shows the menu. In the Mac's menu bar a click opens the menu, and
+        // the icon is a template that macOS tints for a light or dark bar.
+        .show_menu_on_left_click(cfg!(target_os = "macos"))
+        .icon_as_template(cfg!(target_os = "macos"))
         .on_tray_icon_event(|tray, event| {
             use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+            if cfg!(target_os = "macos") {
+                return;
+            }
             let opens_window = matches!(
                 event,
                 TrayIconEvent::Click {
@@ -823,6 +913,7 @@ pub fn uninstall_cleanup_invocation() -> Option<i32> {
 
 /// Where the logs are, without an AppHandle: the portable folder's, or
 /// Tauri's log folder for this app's identifier.
+#[cfg(windows)]
 fn log_dir_for_errors() -> std::path::PathBuf {
     if let Some(dir) = portable::data_dir() {
         return dir.join("logs");
@@ -1247,6 +1338,8 @@ pub fn run(cli_args: CliArgs) {
             commands::setup::stop_mic_check,
             commands::setup::get_input_languages,
             commands::setup::change_setup_step_setting,
+            commands::setup::keyboard_access_granted,
+            commands::setup::request_keyboard_access,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -1382,7 +1475,9 @@ pub fn run(cli_args: CliArgs) {
         }));
     }
 
-    let app = builder
+    // Only the Mac changes the app between `build()` and `run()`.
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+    let mut app = builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_os::init())
@@ -1474,6 +1569,18 @@ pub fn run(cli_args: CliArgs) {
                 win_builder = win_builder.data_directory(data_dir.join("webview"));
             }
 
+            // A Mac window keeps its frame, shadow and traffic lights; the
+            // page's own title bar sits under them, with room left for them.
+            #[cfg(target_os = "macos")]
+            let mut win_builder = win_builder
+                .decorations(true)
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .hidden_title(true)
+                .traffic_light_position(tauri::LogicalPosition::new(
+                    mac::TRAFFIC_LIGHTS.0,
+                    mac::TRAFFIC_LIGHTS.1,
+                ));
+
             // Mica behind the sidebar and title bar on Windows 11; the page
             // keeps its content solid. Windows 10 keeps an opaque window.
             if desktop::supports_mica() {
@@ -1493,6 +1600,7 @@ pub fn run(cli_args: CliArgs) {
             // recording a shortcut was reported to turn the whole window white
             // (cjpais/Handy#1940), likely by triggering WebView2 focus cycling.
             // DevTools stays enabled; only the F12 accelerator is lost.
+            #[cfg(windows)]
             let _ = main_window.with_webview(|webview| unsafe {
                 use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
                 use windows::core::Interface;
@@ -1607,6 +1715,21 @@ pub fn run(cli_args: CliArgs) {
                 if let Some(w) = window.app_handle().get_webview_window(window.label()) {
                     desktop::webview_resting(&w, true);
                 }
+                // Closed to the menu bar: Legato leaves the Dock too. With
+                // no menu bar icon the Dock is the only way back in.
+                #[cfg(target_os = "macos")]
+                {
+                    let app = window.app_handle();
+                    let tray_visible =
+                        get_settings(app).show_tray_icon && !app.state::<CliArgs>().no_tray;
+                    if window.label() == "main" && tray_visible {
+                        if let Err(e) =
+                            app.set_activation_policy(tauri::ActivationPolicy::Accessory)
+                        {
+                            log::error!("Failed to take Legato out of the Dock: {e}");
+                        }
+                    }
+                }
             }
             // Shown some way other than show_main_window: draw again.
             tauri::WindowEvent::Focused(true)
@@ -1643,13 +1766,24 @@ pub fn run(cli_args: CliArgs) {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
+    #[cfg(target_os = "macos")]
+    apply_startup_activation_policy(&mut app, headless_mode);
+
     // No transcription teardown on exit: transcribe.cpp runs only in the
     // worker process, which exits by itself as soon as this process's end
     // of its stdin closes, even if it is hung. Waiting on an unload here
     // could block quitting behind a hung model load.
     // A clean exit leaves this line, so a log that stops without it means
     // the process was ended from outside or crashed.
-    app.run(|_, event| {
+    app.run(|_app, event| {
+        // Legato opened again from the Dock, Finder or Spotlight while it
+        // runs: macOS starts no second process, it asks this one to reopen.
+        #[cfg(target_os = "macos")]
+        {
+            if let tauri::RunEvent::Reopen { .. } = &event {
+                show_main_window(_app);
+            }
+        }
         if let tauri::RunEvent::Exit = event {
             log::info!("Legato is exiting.");
             EXITING.store(true, Ordering::SeqCst);

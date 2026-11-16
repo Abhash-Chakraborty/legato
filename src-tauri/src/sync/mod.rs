@@ -168,6 +168,13 @@ fn load_identity() -> Result<Identity> {
 /// Sets up phone sync once the history database is migrated. Listens only
 /// when a phone is paired.
 pub fn init(app: &AppHandle) {
+    // Not on a Mac yet: Legato can't name this Mac's addresses for a phone
+    // to reach, and the sync identity would be one more keychain item for
+    // macOS to ask about. Without the manager, phone sync is simply off.
+    if cfg!(target_os = "macos") {
+        log::info!("Phone sync isn't on the Mac yet");
+        return;
+    }
     let result = (|| -> Result<Arc<SyncManager>> {
         let data = crate::portable::app_data_dir(app)?;
         let identity = load_identity()?;

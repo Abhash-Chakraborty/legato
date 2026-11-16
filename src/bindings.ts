@@ -2840,6 +2840,25 @@ async getInputLanguages() : Promise<string[]> {
 async changeSetupStepSetting(step: string) : Promise<void> {
     await TAURI_INVOKE("change_setup_step_setting", { step });
 },
+/**
+ * Whether Legato may send keys to other apps and watch for its shortcuts.
+ * A Mac asks the person first (Accessibility); Windows always allows it.
+ */
+async keyboardAccessGranted() : Promise<boolean> {
+    return await TAURI_INVOKE("keyboard_access_granted");
+},
+/**
+ * Asks macOS for that access: its own prompt adds Legato to the list in
+ * System Settings, which opens on Accessibility. Nothing to ask elsewhere.
+ */
+async requestKeyboardAccess() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("request_keyboard_access") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async scratchpadDictate(noteId: number) : Promise<void> {
     return await TAURI_INVOKE("scratchpad_dictate", { noteId });
 },

@@ -8,6 +8,7 @@ import React, {
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isMac } from "@/lib/utils/platform";
 import { DictationMeter } from "../components/scratchpad/DictationMeter";
 import {
   Bold,
@@ -739,7 +740,8 @@ export const ScratchpadWindow: React.FC = () => {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-surface-2 text-text">
       <header
-        className="flex h-11 flex-none select-none items-center gap-1 pe-1.5 ps-3"
+        // A Mac window keeps its own buttons at the left, over this bar.
+        className={`flex h-11 flex-none select-none items-center gap-1 pe-1.5 ${isMac ? "ps-[76px]" : "ps-3"}`}
         data-tauri-drag-region
       >
         <img
@@ -881,6 +883,7 @@ export const ScratchpadWindow: React.FC = () => {
         </button>
         <button
           type="button"
+          hidden={isMac}
           onClick={() => getCurrentWindow().toggleMaximize()}
           aria-label={
             maximized
@@ -902,6 +905,7 @@ export const ScratchpadWindow: React.FC = () => {
         </button>
         <button
           type="button"
+          hidden={isMac}
           onClick={() => commands.hideScratchpad()}
           aria-label={t("scratchpad.window.close")}
           title={t("scratchpad.window.closeTip")}
