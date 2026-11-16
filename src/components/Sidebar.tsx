@@ -121,7 +121,7 @@ const NavButton: React.FC<{
       {current && (
         <span
           aria-hidden="true"
-          className="nav-mark absolute -start-3 top-2.5 bottom-2.5 w-[3px] rounded-e-[3px] bg-teal-700"
+          className={`nav-mark tile-${hue} absolute -start-3 top-2.5 bottom-2.5 w-[3px] rounded-e-[3px] bg-[var(--hf,var(--teal-700))]`}
         />
       )}
       {/* Each page has a colour of its own; the page you're on wears it. */}

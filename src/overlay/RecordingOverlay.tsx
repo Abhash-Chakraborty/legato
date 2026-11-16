@@ -1,7 +1,13 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Mic, SquareDashedMousePointer, X } from "lucide-react";
 import { agentName } from "@/lib/utils/agents";
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { CorrectCard, type CorrectPayload } from "./CorrectCard";
 import { PadGlyph, PenGlyph, VoiceGlyph } from "./glyphs";
@@ -347,8 +353,12 @@ const ISLAND_GAP = 6;
 const ISLAND_HOVER_IN_MS = 170;
 /** And it closes this long after the pointer leaves. */
 const ISLAND_HOVER_OUT_MS = 320;
-/** Stepped aside, it comes back this long after the pointer has gone. */
+/** Stepped aside, it comes back this long after the pointer has gone, */
 const ISLAND_BACK_MS = 900;
+/** this long after a click went through it to what's behind, */
+const ISLAND_BACK_AFTER_CLICK_MS = 2500;
+/** and after this long whatever happens. */
+const ISLAND_ASIDE_MAX_MS = 8000;
 /** How far the pointer moves with the button down before it's a drag. */
 const ISLAND_DRAG_PX = 5;
 
@@ -361,10 +371,10 @@ const ISLAND_DRAG_PX = 5;
  * window. With `hit`, only the element it selects takes clicks: live words
  * are there to read, so clicks on them reach the window under the island.
  *
- * At rest (`rest`) and stepped aside (`aside`) the shape itself lets clicks
- * through too; the backend still says when the pointer is over it. Held by
- * anything but a button, it drags along the top edge and stays where it's
- * dropped.
+ * It takes clicks like any control, at rest too. Stepped aside (`aside`)
+ * the shape lets clicks through to what's behind it; the backend still says
+ * when the pointer is over it. Held by anything but a button, it drags
+ * along the top edge and stays where it's dropped.
  */
 const IslandFrame: React.FC<{
   visible: boolean;
@@ -372,8 +382,12 @@ const IslandFrame: React.FC<{
   hit?: string;
   rest?: boolean;
   aside?: boolean;
+  /** A click on the island itself, not on a control in it. The island
+   *  holds the pointer from the press on, in case it's a drag, so a click
+   *  never reaches what's inside; it is told here instead. */
+  onTap?: () => void;
   children: React.ReactNode;
-}> = ({ visible, contentKey, hit, rest, aside, children }) => {
+}> = ({ visible, contentKey, hit, rest, aside, onTap, children }) => {
   const innerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0, growing: true });
   const [dragging, setDragging] = useState(false);
@@ -403,7 +417,7 @@ const IslandFrame: React.FC<{
   // takes clicks at once, a shrinking one lets them through at once. It
   // reaches up to the screen's edge, so a pointer thrown at the top of the
   // screen still lands on it.
-  const takes = !rest && !aside;
+  const takes = !aside;
   useEffect(() => {
     const ratio = window.devicePixelRatio || 1;
     const part = hit && innerRef.current?.querySelector(hit);
@@ -466,7 +480,10 @@ const IslandFrame: React.FC<{
     drag.current = null;
     if (!d) return;
     cancelAnimationFrame(d.frame);
-    if (!d.moved) return;
+    if (!d.moved) {
+      if (e.type === "pointerup") onTap?.();
+      return;
+    }
     setDragging(false);
     commands
       .islandDrag((e.screenX - d.x) * (window.devicePixelRatio || 1), true)
@@ -597,14 +614,23 @@ const RecordingOverlay: React.FC = () => {
   // and open, the words dictated today.
   const [islandOpen, setIslandOpen] = useState(false);
   // Stepped aside: the island fades to a ghost and lets every click
-  // through until the pointer has gone. Asked for with its own button, or
-  // by shaking the pointer over it.
+  // through. Asked for by wiggling the pointer over it, or with its own
+  // button; it comes back by itself once the pointer has gone, a moment
+  // after a click behind it, or after a few seconds at the latest.
   const [islandAside, setIslandAside] = useState(false);
+  const asideRef = useRef(false);
   const asideTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  // A click went through the resting island to the app behind it: it
-  // stays shut until the pointer leaves, so it doesn't open over what was
-  // just clicked.
-  const passedRef = useRef(false);
+  /** Steps aside for at most `ms`, or (with no time) comes back now. */
+  const stepAside = useCallback((ms?: number) => {
+    clearTimeout(asideTimerRef.current);
+    asideRef.current = ms !== undefined;
+    setIslandAside(ms !== undefined);
+    if (ms !== undefined)
+      asideTimerRef.current = setTimeout(() => {
+        asideRef.current = false;
+        setIslandAside(false);
+      }, ms);
+  }, []);
   const [clockNow, setClockNow] = useState(() => new Date());
   const [wordsToday, setWordsToday] = useState<number | null>(null);
   // The transform that runs after every dictation (Transforms), named at
@@ -779,9 +805,8 @@ const RecordingOverlay: React.FC = () => {
 
       const unlistenHide = await listen("hide-overlay", () => {
         clearTimeout(hoverTimerRef.current);
-        clearTimeout(asideTimerRef.current);
         setIslandOpen(false);
-        setIslandAside(false);
+        stepAside();
         setIsVisible(false);
         setCaptureReady(false);
         setStage(null);
@@ -794,32 +819,28 @@ const RecordingOverlay: React.FC = () => {
         "island-pointer",
         (event) => {
           clearTimeout(hoverTimerRef.current);
-          clearTimeout(asideTimerRef.current);
           const on = event.payload;
-          if (!on) {
-            passedRef.current = false;
-            asideTimerRef.current = setTimeout(
-              () => setIslandAside(false),
-              ISLAND_BACK_MS,
-            );
+          // Stepped aside, it comes back soon after the pointer has gone,
+          // and keeps out of the way while the pointer is still there.
+          if (asideRef.current) {
+            stepAside(on ? ISLAND_ASIDE_MAX_MS : ISLAND_BACK_MS);
+            return;
           }
-          if (on && passedRef.current) return;
           hoverTimerRef.current = setTimeout(
             () => setIslandOpen(on),
             on ? ISLAND_HOVER_IN_MS : ISLAND_HOVER_OUT_MS,
           );
         },
       );
+      // A click went through it to what's behind: that was what stepping
+      // aside was for, so it comes back shortly.
       const unlistenClickThrough = await listen("island-click-through", () => {
-        passedRef.current = true;
-        clearTimeout(hoverTimerRef.current);
-        setIslandOpen(false);
+        if (asideRef.current) stepAside(ISLAND_BACK_AFTER_CLICK_MS);
       });
       const unlistenShake = await listen("island-shake", () => {
         clearTimeout(hoverTimerRef.current);
-        clearTimeout(asideTimerRef.current);
         setIslandOpen(false);
-        setIslandAside(true);
+        stepAside(ISLAND_ASIDE_MAX_MS);
       });
 
       const unlistenOpacity = await listen<number>("bar-opacity", (event) =>
@@ -914,7 +935,7 @@ const RecordingOverlay: React.FC = () => {
     };
 
     setupEventListeners();
-  }, []);
+  }, [stepAside]);
 
   // Elapsed capture timer starts only once microphone samples are flowing.
   // Live shows it while listening, compact (recording) or open (streaming).
@@ -982,6 +1003,16 @@ const RecordingOverlay: React.FC = () => {
         hit={hit}
         rest={key === "rest"}
         aside={islandAside}
+        // A click on the resting pill opens it at once, without waiting
+        // for the pointer to settle.
+        onTap={
+          key === "rest"
+            ? () => {
+                clearTimeout(hoverTimerRef.current);
+                setIslandOpen(true);
+              }
+            : undefined
+        }
       >
         {card}
       </IslandFrame>
@@ -1131,7 +1162,7 @@ const RecordingOverlay: React.FC = () => {
             title={t("overlay.island.asideHelp")}
             onClick={() => {
               setIslandOpen(false);
-              setIslandAside(true);
+              stepAside(ISLAND_ASIDE_MAX_MS);
             }}
           >
             <SquareDashedMousePointer aria-hidden="true" />

@@ -201,8 +201,8 @@ pub fn island_offset(screen_x: i32, screen_w: i32, width: i32, x: i32, snap: i32
     (from_middle as f32 / free as f32).clamp(-1.0, 1.0)
 }
 
-/// A pointer shaken from side to side over the island, which asks it to
-/// get out of the way: three turns inside 700 ms, each after a stroke of
+/// A pointer wiggled from side to side over the island, which asks it to
+/// get out of the way: three turns inside 900 ms, each after a stroke of
 /// at least `stroke` pixels. Fed the pointer's x as it's seen.
 #[derive(Default)]
 pub struct Shake {
@@ -216,7 +216,7 @@ pub struct Shake {
 }
 
 impl Shake {
-    const WITHIN_MS: u64 = 700;
+    const WITHIN_MS: u64 = 900;
 
     /// Forgets the strokes so far: the pointer left the island.
     pub fn reset(&mut self) {

@@ -44,10 +44,9 @@ Settings › Legato bar decides what shows while you dictate.
 
 ### Reaching what's behind the island
 
-The island sits over the middle of the top edge, where browser tabs and title bars are. It gets out of the way four ways:
+The island sits over the middle of the top edge, where browser tabs and title bars are. It gets out of the way three ways:
 
-- **At rest, clicks go through it.** Click a tab under the small island and the tab gets the click; the island stays shut until the pointer has left.
-- **Shake the pointer over it** and it fades to an outline that lets every click through, whatever it's showing. It comes back a moment after the pointer has gone.
+- **Wiggle the pointer over it** and it fades to an outline that lets every click through, whatever it's showing. It comes back by itself: a moment after the pointer has gone, a couple of seconds after you click what was behind it, or after eight seconds at the latest.
 - **Let clicks through**, the last button on the open island, does the same.
 - **Drag it** by anything but a button to slide it along the top edge. It stays where you leave it, and goes back to the middle if you drop it there.
 
