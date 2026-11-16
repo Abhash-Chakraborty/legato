@@ -389,17 +389,17 @@ fn build_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     .maximizable(true)
     .always_on_top(get_settings(app).scratchpad_keep_on_top)
     .visible(false);
+    if let Some(data_dir) = crate::portable::data_dir() {
+        builder = builder.data_directory(data_dir.join("webview"));
+    }
     // A Mac window keeps its frame and traffic lights, over the page's own
     // 44 px bar.
     #[cfg(target_os = "macos")]
-    let mut builder = builder
+    let builder = builder
         .decorations(true)
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
         .traffic_light_position(tauri::LogicalPosition::new(14.0, 16.0));
-    if let Some(data_dir) = crate::portable::data_dir() {
-        builder = builder.data_directory(data_dir.join("webview"));
-    }
     match builder.build() {
         Ok(window) => {
             crate::fit_window_to_screen(&window, WINDOW_MIN);
