@@ -48,16 +48,16 @@ macOS asks before an app may do two of the things Legato needs:
 - **Microphone**, to hear you. macOS asks the first time Legato listens.
 - **Accessibility**, to hear its shortcut while another app is in front and to paste for you. Setup opens System Settings › Privacy & Security › Accessibility, where you switch Legato on.
 
-The preview isn't signed with an Apple developer certificate. Two things follow. macOS won't open it from a double-click the first time: right-click the app and choose Open, or allow it under System Settings › Privacy & Security. And macOS treats each new build as a new app, so it asks for both permissions again after an update, and may ask before giving Legato a key it saved in the keychain.
+The preview isn't signed with an Apple developer certificate. Two things follow. macOS won't open a downloaded copy the first time: try to open it once, then choose Open Anyway under System Settings › Privacy & Security. And macOS treats each new build as a new app, so it asks for both permissions again after an update, and may ask before giving Legato a key it saved in the keychain.
 
 ## Not on the Mac yet
 
 - **The Legato bar, the island and the bubble.** Nothing floats on screen while you dictate. The menu bar icon and the sounds say what Legato is doing. What the bar shows on Windows has nowhere to show: live text, the transform picker, a transform's changes with Keep and Undo, and Correct last dictation.
 - **Knowing the app in front.** Style can't yet tell an email from a chat on a Mac, so one tone and one set of paste settings apply everywhere.
-- **Meetings.** Notes records your microphone, but not the other side of a call, and Legato doesn't notice calls starting.
+- **Meetings.** Notes can record your microphone, but not the other side of a call, and Legato doesn't notice calls starting.
 - **Reading the screen.** Use words on screen, screenshots in notes and Learn from my edits need parts that are Windows-only so far.
 - **Phone sync.** Pairing a phone has not been brought over.
-- **Pausing or lowering other sound.** Mute while dictating works; pausing players and lowering their volume don't.
+- **Pausing or lowering other sound.** Legato can mute the Mac while you dictate; pausing players and lowering their volume aren't there.
 - **Updates.** The Mac app doesn't update itself yet.
 - **Intel Macs.** The build is for Apple silicon only.
 
