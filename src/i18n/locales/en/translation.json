@@ -3885,6 +3885,7 @@
       "noteWaiting": "You can continue once Legato hears you",
       "noteBlocked": "You can continue once Windows allows the microphone",
       "noteFailed": "Legato couldn't check this microphone",
+      "asking": "Waiting for your answer",
       "keysTitle": "Accessibility access",
       "keysHelp": "macOS asks before an app may hear a shortcut in other apps and paste for you. Legato uses it for nothing else.",
       "keysAfterOpen": "Switch Legato on in the list. This step notices by itself.",

@@ -324,3 +324,29 @@ pub fn move_keys_out_of_settings(app: &AppHandle) {
         info!("Moved {moved} API key(s) from the settings file into Credential Manager");
     }
 }
+
+#[cfg(all(test, target_os = "macos"))]
+mod keychain_tests {
+    use super::vault;
+
+    /// Writes, reads, lists and deletes one item in the login keychain.
+    /// Ignored by default: it needs a keychain that is unlocked, which a
+    /// person's Mac has and a build machine may not. macos.yml runs it and
+    /// records what happened.
+    #[test]
+    #[ignore]
+    fn a_secret_goes_into_the_keychain_and_comes_back() {
+        let name = format!("Legato/ci-test-{}", std::process::id());
+        vault::delete(&name).unwrap();
+        assert_eq!(vault::read(&name).unwrap(), None);
+        vault::write(&name, "first").unwrap();
+        assert_eq!(vault::read(&name).unwrap().as_deref(), Some("first"));
+        // Writing again replaces what was there.
+        vault::write(&name, "second").unwrap();
+        assert_eq!(vault::read(&name).unwrap().as_deref(), Some("second"));
+        assert!(vault::list("Legato/*").contains(&name));
+        vault::delete(&name).unwrap();
+        assert_eq!(vault::read(&name).unwrap(), None);
+        assert!(!vault::list("Legato/*").contains(&name));
+    }
+}

@@ -399,7 +399,10 @@ fn build_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
         .decorations(true)
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
-        .traffic_light_position(tauri::LogicalPosition::new(14.0, 16.0));
+        .traffic_light_position(tauri::LogicalPosition::new(
+            crate::mac::SCRATCHPAD_TRAFFIC_LIGHTS.0,
+            crate::mac::SCRATCHPAD_TRAFFIC_LIGHTS.1,
+        ));
     match builder.build() {
         Ok(window) => {
             crate::fit_window_to_screen(&window, WINDOW_MIN);

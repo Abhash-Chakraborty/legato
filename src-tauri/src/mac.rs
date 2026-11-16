@@ -8,9 +8,15 @@ use log::{debug, warn};
 use std::ffi::c_void;
 use std::process::Command;
 
-/// Where the main window's close, minimise and zoom buttons sit, in logical
-/// pixels from its top-left corner: centred in the page's 48 px title bar.
-pub const TRAFFIC_LIGHTS: (f64, f64) = (18.0, 18.0);
+/// Where the main window's close, minimise and zoom buttons sit: 18 px in
+/// from the left, and centred in the page's 48 px title bar. The second
+/// number isn't a distance from the top: the buttons, 14 px tall, sit in
+/// the middle of a strip that many pixels taller than they are, so 34
+/// puts their centre at (14 + 34) / 2 = 24.
+pub const TRAFFIC_LIGHTS: (f64, f64) = (18.0, 34.0);
+
+/// The same for the Scratchpad's 44 px bar: centred at (14 + 30) / 2 = 22.
+pub const SCRATCHPAD_TRAFFIC_LIGHTS: (f64, f64) = (14.0, 30.0);
 
 const ACCESSIBILITY_PANE: &str =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
@@ -203,4 +209,32 @@ pub fn key_for_windows_vk(vk: u32) -> Option<Key> {
         0x5A => Key::Other(6), // Z
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_key_codes_become_mac_keys() {
+        assert_eq!(key_for_windows_vk(0x43), Some(Key::Other(8))); // C
+        assert_eq!(key_for_windows_vk(0x5A), Some(Key::Other(6))); // Z
+        assert_eq!(key_for_windows_vk(0x27), Some(Key::RightArrow));
+        // The menu mask key has no Mac counterpart.
+        assert_eq!(key_for_windows_vk(0xE8), None);
+    }
+
+    /// Tests run off the main thread, where the layout can't be asked.
+    #[test]
+    fn off_the_main_thread_v_is_the_us_key() {
+        assert_eq!(command_v_key(), Key::Other(9));
+    }
+
+    /// The calls into macOS link and come back. What they answer depends
+    /// on the Mac: a build machine has granted nothing and holds no key.
+    #[test]
+    fn macos_answers_the_permission_and_key_queries() {
+        let _ = accessibility_granted();
+        let _ = modifiers_down();
+    }
 }

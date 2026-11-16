@@ -51,6 +51,8 @@ export const MicStep: React.FC<StepProps> = ({ go, setFoot }) => {
   // Counts macOS turning the microphone on after its own question, so the
   // level check opens the microphone again.
   const [micGrants, setMicGrants] = useState(0);
+  // macOS has its question about the microphone up and no answer yet.
+  const [asking, setAsking] = useState(false);
   const seen = useRef({ keys: "checking", mic: "" });
 
   const selected = getSetting("selected_microphone") || "Default";
@@ -96,6 +98,7 @@ export const MicStep: React.FC<StepProps> = ({ go, setFoot }) => {
           if (seen.current.mic === "unknown" && mic === "allowed")
             setMicGrants((n) => n + 1);
           seen.current.mic = mic;
+          setAsking(mic === "unknown");
           setAccess(mic === "denied" ? "blocked" : "allowed");
         }
       } catch {
@@ -242,8 +245,10 @@ export const MicStep: React.FC<StepProps> = ({ go, setFoot }) => {
               aside={
                 access === "allowed" && (
                   <span className="flex items-center gap-1.5 text-[13px] text-text-2">
-                    <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />
-                    {t("setup.mic.allowed")}
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${asking ? "bg-warn" : "bg-teal-500"}`}
+                    />
+                    {asking ? t("setup.mic.asking") : t("setup.mic.allowed")}
                   </span>
                 )
               }
