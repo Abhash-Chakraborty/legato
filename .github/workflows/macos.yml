@@ -630,18 +630,26 @@ jobs:
           test "$FOUND" -ge 4
 
       # A debug build writes src/bindings.ts when it starts. The file in the
-      # repository is kept by hand, so this says whether the two agree.
-      - name: Bindings match what the app generates
+      # repository is kept by hand and has drifted from that in order and
+      # comments, so only the two commands the Mac added are compared: each
+      # must be declared the same way in both. Recorded, not required.
+      - name: The Mac's commands in bindings.ts
         if: always()
         run: |
+          cp src/bindings.ts e2e/bindings.generated.ts
+          git show HEAD:src/bindings.ts > e2e/bindings.committed.ts
+          declared() { grep -o "async $1([^{]*" "$2" | tr -d '[:space:]' || true; }
           {
-            if git diff --quiet -- src/bindings.ts; then
-              echo "src/bindings.ts is what the app generates"
-            else
-              echo "src/bindings.ts differs from what the app generates:"
-              git diff --stat -- src/bindings.ts
-              git diff -- src/bindings.ts | head -80
-            fi
+            git diff --shortstat -- src/bindings.ts || true
+            for name in keyboardAccessGranted requestKeyboardAccess; do
+              WANT="$(declared "$name" e2e/bindings.generated.ts)"
+              HAVE="$(declared "$name" e2e/bindings.committed.ts)"
+              if [ -n "$WANT" ] && [ "$WANT" = "$HAVE" ]; then
+                echo "$name: declared as the app generates it ($HAVE)"
+              else
+                echo "$name: DIFFERS. generated: ${WANT:-nothing}; in the repository: ${HAVE:-nothing}"
+              fi
+            done
           } | tee e2e/bindings.txt
 
       - name: Summary
