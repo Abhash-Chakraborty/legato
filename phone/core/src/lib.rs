@@ -58,6 +58,14 @@ pub struct PairedPc {
     pub addrs: Vec<String>,
 }
 
+/// What this phone tells the PC it is: the same core runs in Legato for
+/// Android and Legato for iPhone.
+pub const PLATFORM: &str = if cfg!(target_os = "ios") {
+    "ios"
+} else {
+    "android"
+};
+
 /// How long the PC has to answer a check before a recording goes to it.
 const LINK_CHECK: Duration = Duration::from_secs(4);
 /// How long a recording waits for a link dialled again after a failed check.
@@ -815,7 +823,7 @@ impl Host for Phone {
             protocol: PROTOCOL,
             device_id: self.identity.device_id.clone(),
             name: self.name.clone(),
-            platform: "android".into(),
+            platform: PLATFORM.into(),
             app_version: self.app_version.clone(),
             kinds: KINDS.iter().map(|k| k.to_string()).collect(),
             clipboard: true,

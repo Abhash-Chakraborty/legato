@@ -1,3 +1,8 @@
 [bindings.kotlin]
 package_name = "tech.abhashchakraborty.legato.core"
 cdylib_name = "legato_android"
+
+# Legato for iPhone imports the same core as LegatoCore; its C header and
+# module map are LegatoCoreFFI.
+[bindings.swift]
+module_name = "LegatoCore"

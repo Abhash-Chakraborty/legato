@@ -1,14 +1,15 @@
 # Phone sync protocol
 
-How Legato on Windows and Legato for Android keep each other up to date. There's no server
-in between: the phone connects straight to the PC over Wi-Fi when they're on the same
-network (or Netbird, for anyone who runs it) and over Bluetooth when they aren't. Both ends
-check each other's certificate, and each keeps its own full copy.
+How Legato on Windows and Legato on a phone (Android or iPhone) keep each other up to date.
+There's no server in between: the phone connects straight to the PC over Wi-Fi when they're
+on the same network (or Netbird, for anyone who runs it) and over Bluetooth when they aren't.
+Both ends check each other's certificate, and each keeps its own full copy.
 
-This page is the contract the Android app implements. The PC side lives in
-`src-tauri/src/sync/`. `phone/core` (`legato-phone`) is the phone side of it, shared by the Android app and the
-`stand-in-phone` CLI, a command-line phone that speaks the
-protocol, for testing the PC before the Android app exists.
+This page is the contract the phone apps implement. The PC side lives in
+`src-tauri/src/sync/`. `phone/core` (`legato-phone`) is the phone side of it, shared by the
+Android app, the iPhone app and the `stand-in-phone` CLI, a command-line phone that speaks
+the protocol, for testing the PC without a phone. `stand-in-pc` is the other way round: the
+PC's hub from the command line, for testing a phone app without a Windows machine.
 
 ## Identity
 
@@ -26,6 +27,10 @@ On the phone, the private key is sealed with AES-256-GCM by a key held in the An
 an older version is moved into it on first start. A copy of the app's files can't pose as the
 phone. If the Keystore key is gone (the phone was reset), the phone makes a new identity and has
 to pair again. Neither file is backed up or carried to a new phone.
+
+On an iPhone the sealing key is in the Keychain instead, kept on this device only
+(`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`), and the app's sync folder is left out of
+backups.
 
 ## Pairing
 
@@ -90,6 +95,9 @@ on the `bt:` address from the pairing link. RFCOMM carries a byte stream, so eve
 security: TLS with pinned certificates covers that. The phone tries without Bluetooth pairing
 first. If the PC won't accept that, Android asks to pair the two once.
 
+iOS gives apps no Bluetooth Classic, so Legato for iPhone skips a `bt:` address and syncs
+over the network only.
+
 On Android, the app opens the RFCOMM socket and hands the core a port on 127.0.0.1 that
 carries it, so the core's connection code stays the same for both wires. Any app on the phone
 can reach that port, so the core makes a fresh random token for each link, and the bridge
@@ -121,7 +129,8 @@ The phone speaks first:
 }
 ```
 
-`secret` is only sent when pairing. The PC answers with one of:
+`platform` is `android` or `ios`. `secret` is only sent when pairing. The PC answers with one
+of:
 
 ```json
 {"type":"welcome","protocol":1,"device_id":"…","name":"Desk PC","platform":"windows",

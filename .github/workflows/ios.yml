@@ -1,0 +1,217 @@
+name: ios
+
+# Legato for iPhone: the Rust core for iOS and the simulator, the Swift
+# bindings from UniFFI, then the app and its tests in the simulator. No
+# Apple account is involved: the simulator needs no signing, and the IPA is
+# left unsigned for whoever installs it to sign.
+on:
+  push:
+    branches: [ios]
+    paths:
+      - "ios/**"
+      - "phone/**"
+      - "src-tauri/src/sync/**"
+      - "src-tauri/src/managers/history_store.rs"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: "1"
+  HOMEBREW_NO_INSTALL_CLEANUP: "1"
+
+jobs:
+  app:
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode and its iOS SDK
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i "ios"
+          swift --version
+
+      - name: Rust for iPhone and the simulator
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: phone
+          # A failed Xcode step shouldn't cost the next run the Rust build.
+          cache-on-failure: true
+
+      - name: Rust core, Swift bindings and the XCFramework
+        run: ios/scripts/build-core.sh
+
+      # The simulator shares this Mac's network, so the app and the core's
+      # tests can pair with the PC's own hub running here. Without it the
+      # pairing tests skip themselves and the rest still runs.
+      - name: A PC for the simulator to pair with
+        id: pc
+        continue-on-error: true
+        working-directory: phone
+        run: cargo build --release -p stand-in-pc
+
+      - name: XcodeGen
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Pick a simulator
+        id: sim
+        run: |
+          xcrun simctl list devices available | grep -E "^--|iPhone"
+          python3 ios/scripts/pick-simulator.py | tee -a "$GITHUB_OUTPUT"
+
+      - name: Build the app and its tests
+        run: |
+          # Every target's errors in one run, not just the first one's.
+          defaults write com.apple.dt.Xcode IDEBuildingContinueBuildingAfterErrors -bool YES
+          set +e
+          xcodebuild build-for-testing \
+            -project ios/Legato.xcodeproj -scheme Legato \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath ios/build/DerivedData \
+            > ios/build/build.log 2>&1
+          status=$?
+          grep -E -A6 "error:|warning: unre|\*\* " ios/build/build.log | head -400
+          exit $status
+
+      - name: Tests in the simulator
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          mkdir -p ios/build/shots ios/build/pc
+          xcrun simctl bootstatus "$UDID" -b
+
+          # Two stand-in PCs, since a pairing link works once: one for the
+          # core's own tests and one for the app. xcodebuild hands
+          # TEST_RUNNER_ variables to the tests, without the prefix.
+          if [ -x phone/target/release/stand-in-pc ]; then
+            phone/target/release/stand-in-pc --dir ios/build/pc/core --name "Desk PC" --port 47613 \
+              --link-file ios/build/pc/core.link --for 1500 > ios/build/pc/core.log 2>&1 &
+            core_pc=$!
+            phone/target/release/stand-in-pc --dir ios/build/pc/app --name "Desk PC" --port 47633 \
+              --link-file ios/build/pc/app.link --for 1500 > ios/build/pc/app.log 2>&1 &
+            app_pc=$!
+            for _ in $(seq 1 100); do
+              [ -s ios/build/pc/core.link ] && [ -s ios/build/pc/app.link ] && break
+              sleep 0.2
+            done
+            export TEST_RUNNER_LEGATO_PAIR_LINK_CORE="$(cat ios/build/pc/core.link)"
+            export TEST_RUNNER_LEGATO_PAIR_LINK="$(cat ios/build/pc/app.link)"
+          fi
+          export TEST_RUNNER_LEGATO_SHOTS_DIR="$PWD/ios/build/shots"
+
+          set +e
+          xcodebuild test-without-building \
+            -project ios/Legato.xcodeproj -scheme Legato \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -derivedDataPath ios/build/DerivedData \
+            -resultBundlePath ios/build/Legato.xcresult \
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES -default-test-execution-time-allowance 300 \
+            > ios/build/test.log 2>&1
+          status=$?
+          sleep 2
+          kill ${core_pc:-} ${app_pc:-} 2>/dev/null
+          grep -E "error:|Test Case .* (passed|failed|skipped)|Test Suite .* (passed|failed)|Executed [0-9]+ tests|Figtree:|\*\* " \
+            ios/build/test.log | head -300
+          exit $status
+
+      # What reached each stand-in PC from the simulator: proof that sync
+      # goes the phone's way too.
+      - name: What the stand-in PCs saw
+        if: ${{ !cancelled() && steps.pc.outcome == 'success' }}
+        run: |
+          for pc in core app; do
+            echo "--- the stand-in PC for the $pc tests"
+            grep -v "^legato://" "ios/build/pc/$pc.log" || true
+          done
+          missing=0
+          saw() {
+            if grep -q "$2" "ios/build/pc/$1.log"; then
+              echo "ok: the $1 tests' PC saw: $2"
+            else
+              echo "::error::The $1 tests' stand-in PC never saw: $2"
+              missing=1
+            fi
+          }
+          saw core "paired with Test iPhone (ios)"
+          saw core "now words: .*Zephyrine"
+          saw core "done: Book the community hall for the sale"
+          saw core "dictations: 4"
+          saw app "paired with .* (ios)"
+          saw app "done: Draft the poster"
+          saw app "the phone unpaired"
+          exit "$missing"
+
+      - name: Screenshots out of the test results
+        if: ${{ !cancelled() }}
+        run: |
+          ls ios/build/shots 2>/dev/null | head -80 || true
+          if [ -d ios/build/Legato.xcresult ] && [ -z "$(ls -A ios/build/shots 2>/dev/null)" ]; then
+            xcrun xcresulttool export attachments --path ios/build/Legato.xcresult \
+              --output-path ios/build/shots || true
+          fi
+          if [ -d ios/build/Legato.xcresult ]; then
+            xcrun xcresulttool get test-results summary --path ios/build/Legato.xcresult \
+              > ios/build/test-summary.json || true
+          fi
+
+      - name: Unsigned IPA
+        if: ${{ !cancelled() }}
+        run: |
+          set +e
+          xcodebuild archive \
+            -project ios/Legato.xcodeproj -scheme Legato -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath ios/build/Legato.xcarchive \
+            -derivedDataPath ios/build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            > ios/build/archive.log 2>&1
+          status=$?
+          grep -E -A6 "error:|\*\* " ios/build/archive.log | head -200
+          [ "$status" -eq 0 ] || exit "$status"
+          set -e
+          mkdir -p ios/build/ipa/Payload
+          cp -R ios/build/Legato.xcarchive/Products/Applications/Legato.app ios/build/ipa/Payload/
+          (cd ios/build/ipa && zip -qry ../Legato-unsigned.ipa Payload)
+          ls -l ios/build/Legato-unsigned.ipa
+          lipo -info ios/build/ipa/Payload/Legato.app/Legato
+          /usr/libexec/PlistBuddy -c "Print" ios/build/ipa/Payload/Legato.app/Info.plist | head -60
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: legato-ios-screenshots
+          path: ios/build/shots
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: legato-ios-unsigned-ipa
+          path: ios/build/Legato-unsigned.ipa
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: legato-ios-logs
+          path: |
+            ios/build/*.log
+            ios/build/test-summary.json
+            ios/build/pc/*.log
+          if-no-files-found: warn

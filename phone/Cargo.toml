@@ -1,8 +1,9 @@
 # The phone side of Legato, kept out of the app's build: the shared library,
-# the stand-in CLI and the Android bindings.
+# the stand-in CLIs (a phone, and a PC to pair one with) and the bindings the
+# Android and iPhone apps call.
 [workspace]
 resolver = "2"
-members = ["core", "android", "bindgen"]
+members = ["core", "android", "bindgen", "stand-in-pc"]
 
 [profile.release]
 opt-level = 3

@@ -1,0 +1,12 @@
+# Written by XcodeGen from project.yml
+Legato.xcodeproj/
+Legato/Info.plist
+# Built by scripts/build-core.sh: the Rust core and the UniFFI bindings
+LegatoCore/LegatoCoreFFI.xcframework/
+LegatoCore/Sources/LegatoCore/LegatoCore.swift
+LegatoCore/.build/
+LegatoCore/.swiftpm/
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/

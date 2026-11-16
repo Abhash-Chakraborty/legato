@@ -1,0 +1,13 @@
+[package]
+name = "stand-in-pc"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "A PC for a phone to pair with when no Windows machine is around: Legato's hub from the command line"
+
+[dependencies]
+anyhow = "1.0.95"
+legato-phone = { path = "../core" }
+rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite_migration = "2.3"
+tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread", "time", "sync"] }
