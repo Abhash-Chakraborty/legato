@@ -31,6 +31,7 @@ import {
   RecentlyDeletedLink,
   useTrash,
 } from "../../shared/RecentlyDeleted";
+import { PageTitle } from "../../shell/PageTitle";
 
 type Tab = "all" | "pinned";
 const OPENS: ScratchpadOpen[] = ["resume", "new", "pinned"];
@@ -208,9 +209,7 @@ export const ScratchpadPage: React.FC = () => {
   return (
     <div className="mx-auto flex w-full max-w-[1120px] flex-col min-[1000px]:min-h-0 min-[1000px]:flex-1">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
-        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
-          {t("scratchpad.title")}
-        </h1>
+        <PageTitle page="scratchpad">{t("scratchpad.title")}</PageTitle>
         <div className="flex items-center gap-2">
           <button
             type="button"

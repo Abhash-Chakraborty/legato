@@ -19,6 +19,7 @@ import { CleanupCard } from "./CleanupCard";
 import { EditApps } from "./EditApps";
 import { asCategory, CATEGORIES, styleOf } from "./model";
 import { useRecentDictations } from "./useRecent";
+import { PageTitle } from "../../shell/PageTitle";
 
 /** Saves one kind of app's style, showing it at once and rolling back if
  *  the backend refuses. */
@@ -112,9 +113,7 @@ export const StylePage: React.FC = () => {
   return (
     <div className="mx-auto w-full max-w-[1120px]">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
-        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
-          {t("style.title")}
-        </h1>
+        <PageTitle page="style">{t("style.title")}</PageTitle>
         <label className="flex cursor-pointer items-center gap-3 text-sm text-text-2">
           {enabled ? t("style.on") : t("style.off")}
           <button

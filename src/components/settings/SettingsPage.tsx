@@ -23,6 +23,7 @@ import {
   type SectionDef,
   type SettingRow,
 } from "./sections";
+import { PageTitle } from "../shell/PageTitle";
 
 /** Wraps a row in its dependency, so it greys out and says why. */
 const Row: React.FC<{ row: SettingRow; ctx: RowContext }> = ({ row, ctx }) => {
@@ -160,8 +161,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-[1120px] items-start gap-6 min-[1180px]:gap-8">
-      <div className="sticky top-0 w-[184px] flex-none min-[1180px]:w-[200px]">
+    // Beside the sidebar at any window width: the list of sections, then
+    // the rows at a width a label and its control read together at. A
+    // wider window leaves room at the right, not between the two.
+    <div className="flex w-full items-start gap-6 min-[1180px]:gap-8">
+      <div className="sticky top-0 w-[192px] flex-none min-[1180px]:w-[208px]">
         <div className="relative mb-3">
           <Search
             className="pointer-events-none absolute start-[11px] top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-text-3"
@@ -214,16 +218,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 data-section={s.id}
                 onClick={() => openSection(s.id)}
                 aria-current={on ? "true" : undefined}
-                className={`group flex h-9 w-full items-center gap-2.5 rounded-[var(--r-sm)] px-2.5 text-[15px] transition-colors duration-[var(--dur-1)] hover:duration-0 ring-inside ${
+                className={`group flex h-10 w-full items-center gap-2.5 rounded-[var(--r-md)] px-[7px] text-[15px] transition-colors duration-[var(--dur-1)] hover:duration-0 ring-inside ${
                   on
                     ? "bg-surface-2 font-medium text-text"
                     : "text-text-2 hover:bg-surface-2 hover:text-text"
                 }`}
               >
-                <Icon
-                  aria-hidden
-                  className={`${s.motion ? `im im-${s.motion}` : ""} h-[17px] w-[17px] flex-none stroke-[1.75] ${on ? "text-text" : "text-text-3 group-hover:text-text-2"}`}
-                />
+                <span className={`tile tile-${s.hue} ${on ? "on" : ""}`}>
+                  <Icon
+                    aria-hidden
+                    className={`${s.motion ? `im im-${s.motion}` : ""} h-4 w-4 flex-none stroke-[1.9]`}
+                  />
+                </span>
                 <span className="truncate">
                   {t(`settings.sections.${s.id}.title`)}
                 </span>
@@ -233,13 +239,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         </div>
       </div>
 
-      <div ref={contentRef} className="min-w-0 flex-1">
+      <div ref={contentRef} className="min-w-0 max-w-[840px] flex-1">
         {q ? (
           <>
             <div className="mb-4 flex min-h-10 items-center justify-between gap-4">
-              <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
+              <PageTitle page="settings">
                 {t("settings.search.title")}
-              </h1>
+              </PageTitle>
               <SavedTick />
             </div>
             {results.length === 0 ? (
@@ -265,11 +271,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             )}
           </>
         ) : (
-          <div key={current.id} className="view-enter">
+          <div key={current.id} data-hue={current.hue} className="view-enter">
             <div className="mb-4 flex min-h-10 items-center justify-between gap-4">
-              <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
+              <PageTitle page="settings" icon={current.icon} hue={current.hue}>
                 {t(`settings.sections.${current.id}.title`)}
-              </h1>
+              </PageTitle>
               <SavedTick />
             </div>
             <p className="-mt-3 mb-5 max-w-[640px] text-sm text-text-2">

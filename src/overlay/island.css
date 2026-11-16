@@ -1,83 +1,107 @@
 /* ============================================================
-   The island (Settings › Legato bar › Shape): a dark shape hanging from the top
-   edge of the screen, with concave shoulders where it meets the edge. It
-   takes the size of the card inside it (measured in RecordingOverlay's
-   IslandFrame) and morphs between sizes: width first when it grows, height
-   first when it shrinks, 320 ms ease-out, no bounce. The cards keep their
-   own layout and lose their own surface; the island is the surface.
+   The island (Settings › Legato bar › Shape): a dark pill floating just
+   under the top edge of the screen. It takes the size of the card inside
+   it (measured in RecordingOverlay's IslandFrame) and morphs between
+   sizes: width first when it grows, height first when it shrinks, with
+   one small overshoot on the way out. The cards keep their own layout and
+   lose their own surface; the island is the surface.
+
+   It is see-through as Settings › Bar › Background says, and more so at
+   rest, when it only tells the time. Stepped aside (its own button, or the
+   pointer shaken over it) it fades to an outline and lets clicks through.
    ============================================================ */
 .ov-stage.island {
-  /* See-through as Settings › Bar › Background says, below the control
-     row: the row stays solid so its controls read over anything, and the
-     words under it keep a shadow so they read over a bright page. */
   --isl-solid: #0d0e0d;
-  --isl-ink: rgb(13 14 13 / var(--bar-alpha, 0.8));
+  --isl-alpha: var(--bar-alpha, 0.8);
   --isl-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --isl-spring: cubic-bezier(0.3, 1.35, 0.45, 1);
   /* The cards read the bar's tokens; the island is dark in either theme. */
   --color-text: #f1f0ec;
   --s-surface: transparent;
   --s-accent: #6ec1b6;
   --s-accent-soft: rgb(110 193 182 / 0.22);
-  --s-muted: #b9b6b0;
-  --s-faint: #85827c;
+  --s-muted: #c4c1bb;
+  --s-faint: #8f8c86;
   --s-border: rgb(255 255 255 / 0.12);
   --s-hair: rgb(255 255 255 / 0.1);
   align-items: flex-start;
+  /* The gap to the screen's edge: ISLAND_GAP in RecordingOverlay.tsx. */
+  padding-top: 6px;
+  box-sizing: border-box;
 }
 
 .isl {
   position: relative;
   flex: none;
-  background: linear-gradient(
-    var(--isl-solid) var(--ov-base-h, 40px),
-    var(--isl-ink) calc(var(--ov-base-h, 40px) + 12px)
-  );
+  background: rgb(13 14 13 / var(--isl-alpha));
   color: var(--color-text);
-  border-radius: 0 0 var(--r, 12px) var(--r, 12px);
+  border-radius: var(--r, 12px);
+  /* A hairline of light and a soft shadow, so the pill keeps its edge
+     over a dark page and over a bright one. */
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.1),
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 6px 18px rgb(0 0 0 / 0.18);
+  transform-origin: 50% 0;
   transition:
-    width 320ms var(--isl-ease),
-    height 320ms var(--isl-ease) 40ms,
+    width 340ms var(--isl-spring),
+    height 340ms var(--isl-spring) 40ms,
     border-radius 320ms var(--isl-ease),
+    background-color 220ms ease-out,
+    box-shadow 220ms ease-out,
     opacity 220ms ease-out,
     transform 320ms var(--isl-ease);
 }
 .isl.shrink {
   transition:
-    width 320ms var(--isl-ease) 50ms,
-    height 320ms var(--isl-ease),
-    border-radius 320ms var(--isl-ease),
+    width 300ms var(--isl-ease) 50ms,
+    height 300ms var(--isl-ease),
+    border-radius 300ms var(--isl-ease),
+    background-color 220ms ease-out,
+    box-shadow 220ms ease-out,
     opacity 220ms ease-out,
     transform 320ms var(--isl-ease);
 }
-/* Going away: it slides back up under the edge. */
+/* At rest it's the least of what's on screen. */
+.isl.rest {
+  --isl-alpha: calc(var(--bar-alpha, 0.8) * 0.7);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.12),
+    0 1px 3px rgb(0 0 0 / 0.16);
+}
+/* Going away: it slides back up over the edge. */
 .isl.gone {
   opacity: 0;
-  transform: translateY(-100%);
+  transform: translateY(calc(-100% - 8px)) scale(0.9);
 }
-.isl::before,
-.isl::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  width: 10px;
-  height: 10px;
-  pointer-events: none;
+/* Stepped aside: an outline of itself that clicks go through. */
+.isl.aside {
+  background: rgb(13 14 13 / 0.1);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.5);
+  outline: 1px dashed rgb(0 0 0 / 0.45);
+  outline-offset: 0;
+  transform: scale(0.94);
 }
-.isl::before {
-  left: -10px;
-  background: radial-gradient(
-    circle at 0 100%,
-    transparent 9.5px,
-    var(--isl-solid) 10px
-  );
+.isl.aside .isl-clip {
+  opacity: 0.22;
 }
-.isl::after {
-  right: -10px;
-  background: radial-gradient(
-    circle at 100% 100%,
-    transparent 9.5px,
-    var(--isl-solid) 10px
-  );
+.isl-clip {
+  transition: opacity 200ms ease-out;
+}
+/* Held and moved along the edge. */
+.isl:not(.rest, .aside) {
+  cursor: grab;
+}
+.isl.dragging {
+  cursor: grabbing;
+  transition: none;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.16),
+    0 10px 28px rgb(0 0 0 / 0.3);
+}
+.isl button,
+.isl a {
+  cursor: pointer;
 }
 
 /* The content, at its own size, centred under the top edge; the shape
@@ -153,11 +177,11 @@
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
 }
 
-/* At rest: a small shape with the time in grey; under the pointer it opens
-   to Dictate, Notes, the Scratchpad and today's words. Nothing at rest is
+/* At rest: a small pill with the time; under the pointer it opens to
+   Dictate, Notes, the Scratchpad and today's words. Nothing at rest is
    coloured, so it never looks like the microphone is on. */
 .irest {
-  height: 20px;
+  height: 22px;
   padding: 0 11px;
   display: flex;
   align-items: center;
@@ -168,9 +192,10 @@
   font-size: 11px;
   font-weight: 500;
   line-height: 1;
-  color: var(--s-muted);
+  color: #e4e2dd;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
 }
 .irest-tx {
   margin-left: 7px;
@@ -188,9 +213,9 @@
 }
 .irest.open {
   width: auto;
-  height: 46px;
-  gap: 8px;
-  padding: 0 14px 0 10px;
+  height: 44px;
+  gap: 6px;
+  padding: 0 7px;
   font-family: var(--s-font);
 }
 .ibtn {
@@ -235,8 +260,26 @@
   height: 16px;
   flex: none;
 }
+/* Each button's mark has its feature's colour, as in the app's sidebar. */
+.ibtn .g-voice {
+  color: #6ec1b6;
+}
+.ibtn .g-pen {
+  color: #a6dc6b;
+}
+.ibtn .g-pad {
+  color: #fbb27a;
+}
+/* The last one, which sends the island out of the way, stays quiet. */
+.ibtn.quiet {
+  background: transparent;
+  color: var(--s-faint);
+}
+.ibtn.quiet:hover {
+  color: var(--color-text);
+}
 .iwords {
-  margin-left: 4px;
+  margin: 0 4px;
   font-size: 11px;
   color: var(--s-muted);
   font-variant-numeric: tabular-nums;
@@ -249,7 +292,8 @@
   .isl.shrink {
     transition: opacity 120ms ease-out;
   }
-  .isl.gone {
+  .isl.gone,
+  .isl.aside {
     transform: none;
   }
   .isl-fade {

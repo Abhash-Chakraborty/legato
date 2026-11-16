@@ -49,6 +49,7 @@ import {
   RecentlyDeletedLink,
   useTrash,
 } from "../../shared/RecentlyDeleted";
+import { PageTitle } from "../../shell/PageTitle";
 
 /** Search results: matching note ids, with the transcript line that matched
  *  when only the transcript did. */
@@ -417,9 +418,7 @@ export const NotesPage: React.FC = () => {
   return (
     <div className="mx-auto flex w-full max-w-[1240px] flex-col min-[1000px]:min-h-0 min-[1000px]:flex-1">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
-        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
-          {t("notes.title")}
-        </h1>
+        <PageTitle page="notes">{t("notes.title")}</PageTitle>
         <div className="flex items-center gap-2">
           <button
             type="button"

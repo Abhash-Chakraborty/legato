@@ -23,6 +23,8 @@ import { relativeTime } from "../dictionary/list";
 import { PASTE_METHODS, tonesFor } from "./model";
 
 const INHERIT = "inherit";
+/** This kind of app runs nothing after a dictation (`AFTER_NONE` in Rust). */
+const NO_TRANSFORM = "none";
 const AFTER: AfterPaste[] = ["nothing", "enter", "ctrl_enter"];
 const MAX_ICONS = 6;
 
@@ -154,6 +156,15 @@ export const CategoryPanel: React.FC<CategoryPanelProps> = ({
     (m) =>
       m.id !== globalModel && (m.is_downloaded || m.id === style.speech_model),
   );
+
+  // What runs after a dictation: Transforms' choice, or this kind's own.
+  const transformsOn = settings?.post_process_enabled ?? false;
+  const transforms = (settings?.transforms ?? []).filter(
+    (x) => x.enabled || x.id === style.after_transform,
+  );
+  const generalAfter =
+    transforms.find((x) => x.id === settings?.auto_transform_id && x.enabled)
+      ?.name ?? t("style.after.nothing");
 
   return (
     <div className={disabled ? "opacity-55" : ""} aria-disabled={disabled}>
@@ -382,6 +393,52 @@ export const CategoryPanel: React.FC<CategoryPanelProps> = ({
             />
           </SettingContainer>
         </div>
+      </div>
+
+      <div className="mb-2 mt-8 flex flex-wrap items-baseline justify-between gap-3">
+        <h3 className="text-[15px] font-semibold">{t("style.after.title")}</h3>
+        <span className="text-xs text-text-3">
+          {t("style.paste.inheritBefore")}
+          <button
+            type="button"
+            className="link"
+            onClick={() => go("transforms")}
+          >
+            {t("style.after.inheritLink")}
+          </button>
+        </span>
+      </div>
+      <div className="rounded-[var(--r-lg)] border border-line bg-surface px-4">
+        <SettingContainer
+          title={t("style.after.pick.title")}
+          description={
+            transformsOn
+              ? t("style.after.pick.help")
+              : t("style.after.pick.off")
+          }
+          disabled={disabled || !transformsOn}
+        >
+          <Dropdown
+            className="w-[240px]"
+            ariaLabel={t("style.after.pick.title")}
+            disabled={disabled || !transformsOn}
+            selectedValue={style.after_transform ?? INHERIT}
+            onSelect={(v) =>
+              onChange({
+                ...style,
+                after_transform: v === INHERIT ? null : v,
+              })
+            }
+            options={[
+              {
+                value: INHERIT,
+                label: t("style.paste.inherit", { value: generalAfter }),
+              },
+              { value: NO_TRANSFORM, label: t("style.after.nothing") },
+              ...transforms.map((x) => ({ value: x.id, label: x.name })),
+            ]}
+          />
+        </SettingContainer>
       </div>
 
       <div className="mb-2 mt-8 flex flex-wrap items-baseline justify-between gap-3">

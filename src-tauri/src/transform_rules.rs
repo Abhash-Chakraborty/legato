@@ -584,6 +584,28 @@ pub struct AutoRules {
 
 /// Whether the after-every-dictation transform runs for a dictation into an
 /// app of `category` ("code", "ai", …).
+/// A kind of app's own choice of nothing after a dictation (Style).
+pub const AFTER_NONE: &str = "none";
+
+/// What a dictation into a kind of app runs afterwards: the app kind's own
+/// choice from Style when it has one that still exists (`known`), over the
+/// general one from Transforms.
+#[derive(Debug, PartialEq, Eq)]
+pub enum After<'a> {
+    /// As everywhere: the general transform, with its skips.
+    General,
+    Nothing,
+    Run(&'a str),
+}
+
+pub fn after_for<'a>(own: Option<&'a str>, known: impl Fn(&str) -> bool) -> After<'a> {
+    match own {
+        Some(AFTER_NONE) => After::Nothing,
+        Some(id) if known(id) => After::Run(id),
+        _ => After::General,
+    }
+}
+
 pub fn auto_applies(rules: &AutoRules, category: Option<&str>, words: usize) -> bool {
     if rules.skip_code && category == Some("code") {
         return false;
@@ -626,6 +648,16 @@ pub fn same_text(copied: &str, pasted: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_kind_of_app_can_have_its_own_transform_after_a_dictation() {
+        let known = |id: &str| id == "polish" || id == "email";
+        assert_eq!(after_for(None, known), After::General);
+        assert_eq!(after_for(Some("none"), known), After::Nothing);
+        assert_eq!(after_for(Some("email"), known), After::Run("email"));
+        // One that was deleted or switched off since: as everywhere.
+        assert_eq!(after_for(Some("gone"), known), After::General);
+    }
 
     #[test]
     fn shipped_transforms_and_shortcuts() {

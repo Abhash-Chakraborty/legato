@@ -25,6 +25,7 @@ import { KeyCaps, TransformCard } from "./TransformCard";
 import { TransformEditor } from "./TransformEditor";
 import { TryIt } from "./TryIt";
 import { reorder, useGridDrag } from "./useGridDrag";
+import { PageTitle } from "../../shell/PageTitle";
 
 const NONE = "__none__";
 
@@ -171,9 +172,7 @@ export const TransformsPage: React.FC = () => {
   return (
     <div className="mx-auto w-full max-w-[1120px]">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
-        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
-          {t("transforms.title")}
-        </h1>
+        <PageTitle page="transforms">{t("transforms.title")}</PageTitle>
         <div className="flex items-center gap-3">
           {selectionKeys.length > 0 && (
             <span

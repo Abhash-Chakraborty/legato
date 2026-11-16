@@ -39,6 +39,7 @@ import {
 } from "./pendingDeletes";
 import { useHistory } from "./useHistory";
 import { useNavStore } from "../../../stores/navStore";
+import { PageTitle } from "../../shell/PageTitle";
 
 const FILTERS: HistoryFilter[] = ["all", "starred", "fixed", "transformed"];
 const ALL_APPS = "__all__";
@@ -324,9 +325,7 @@ export const HomePage: React.FC = () => {
             root's content edge, so the ::before strip covers the padding
             band above it. */}
         <div className="sticky top-0 z-10 -mx-2 mb-1.5 flex min-h-10 flex-wrap items-center justify-between gap-x-6 gap-y-3 bg-surface px-2 pb-2 before:absolute before:inset-x-0 before:-top-8 before:h-8 before:bg-surface before:content-['']">
-          <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
-            {t("home.title")}
-          </h1>
+          <PageTitle page="home">{t("home.title")}</PageTitle>
           <div className="relative w-full max-w-[300px]">
             <Search
               className="pointer-events-none absolute start-[11px] top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-text-3"

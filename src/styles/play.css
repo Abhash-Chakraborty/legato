@@ -11,8 +11,13 @@
    with utility classes; every selector here is narrow for that reason. */
 
 /* ------------------------------------------------- feature colours */
-/* --h is the ink (icon on the tint, text), --hf the fill behind a white
-   icon. Light first, then dark. */
+/* Each feature has a colour of its own: behind its icon wherever it shows
+   (`.tile-<hue>`), and as the accent of its page (`data-hue`), so a
+   page's buttons, switches, tabs and links wear the colour its icon has
+   in the sidebar. --h is the ink (an icon on the tint, text and lines),
+   --hf the fill behind a white mark. Light first, then dark. Rose leans
+   to magenta so it's never read as the red of a warning. */
+/* The tile behind an icon. */
 .tile {
   --h: var(--teal-700);
   --hf: var(--teal-fill);
@@ -38,96 +43,128 @@
   height: 30px;
   border-radius: 9px;
 }
-/* The control it sits in, under the pointer: the tile leans in. */
+/* The control it sits in, under the pointer: the tile comes forward a
+   little. It doesn't turn or wobble; the icon inside has the motion. */
 .group:hover > .tile,
 .group:focus-visible > .tile {
-  transform: scale(1.1) rotate(-4deg);
+  transform: scale(1.08);
 }
 .group:active > .tile {
   transform: scale(0.94);
   transition-duration: 60ms;
 }
-.tile-violet {
+
+/* The colours. */
+.tile-violet,
+[data-hue="violet"] {
   --h: #6d4fd8;
   --hf: #6d4fd8;
 }
-.tile-rose {
-  --h: #c0356b;
-  --hf: #d1447a;
+.tile-rose,
+[data-hue="rose"] {
+  --h: #b32e8f;
+  --hf: #c23d9e;
 }
-.tile-amber {
+.tile-amber,
+[data-hue="amber"] {
   --h: #a85a07;
   --hf: #c4700f;
 }
-.tile-sky {
+.tile-sky,
+[data-hue="sky"] {
   --h: #0b6aa8;
   --hf: #0f7cc2;
 }
-.tile-green {
+.tile-green,
+[data-hue="green"] {
   --h: #3d7a1c;
   --hf: #4a8f24;
 }
-.tile-orange {
+.tile-orange,
+[data-hue="orange"] {
   --h: #bd4410;
   --hf: #d4551c;
 }
-.tile-indigo {
+.tile-indigo,
+[data-hue="indigo"] {
   --h: #4a45d6;
   --hf: #4f4ae0;
 }
-.tile-slate {
+.tile-slate,
+[data-hue="slate"] {
   --h: #4b5868;
   --hf: #566475;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .tile-violet {
+  :root:not([data-theme="light"]) :is(.tile-violet, [data-hue="violet"]) {
     --h: #b6a5ff;
   }
-  :root:not([data-theme="light"]) .tile-rose {
-    --h: #f7a3c4;
+  :root:not([data-theme="light"]) :is(.tile-rose, [data-hue="rose"]) {
+    --h: #f3a0dc;
   }
-  :root:not([data-theme="light"]) .tile-amber {
+  :root:not([data-theme="light"]) :is(.tile-amber, [data-hue="amber"]) {
     --h: #f5bd4f;
   }
-  :root:not([data-theme="light"]) .tile-sky {
+  :root:not([data-theme="light"]) :is(.tile-sky, [data-hue="sky"]) {
     --h: #7fcdf7;
   }
-  :root:not([data-theme="light"]) .tile-green {
+  :root:not([data-theme="light"]) :is(.tile-green, [data-hue="green"]) {
     --h: #a6dc6b;
   }
-  :root:not([data-theme="light"]) .tile-orange {
+  :root:not([data-theme="light"]) :is(.tile-orange, [data-hue="orange"]) {
     --h: #fbb27a;
   }
-  :root:not([data-theme="light"]) .tile-indigo {
+  :root:not([data-theme="light"]) :is(.tile-indigo, [data-hue="indigo"]) {
     --h: #aab0ff;
   }
-  :root:not([data-theme="light"]) .tile-slate {
+  :root:not([data-theme="light"]) :is(.tile-slate, [data-hue="slate"]) {
     --h: #c3ccd8;
   }
 }
-:root[data-theme="dark"] .tile-violet {
+:root[data-theme="dark"] :is(.tile-violet, [data-hue="violet"]) {
   --h: #b6a5ff;
 }
-:root[data-theme="dark"] .tile-rose {
-  --h: #f7a3c4;
+:root[data-theme="dark"] :is(.tile-rose, [data-hue="rose"]) {
+  --h: #f3a0dc;
 }
-:root[data-theme="dark"] .tile-amber {
+:root[data-theme="dark"] :is(.tile-amber, [data-hue="amber"]) {
   --h: #f5bd4f;
 }
-:root[data-theme="dark"] .tile-sky {
+:root[data-theme="dark"] :is(.tile-sky, [data-hue="sky"]) {
   --h: #7fcdf7;
 }
-:root[data-theme="dark"] .tile-green {
+:root[data-theme="dark"] :is(.tile-green, [data-hue="green"]) {
   --h: #a6dc6b;
 }
-:root[data-theme="dark"] .tile-orange {
+:root[data-theme="dark"] :is(.tile-orange, [data-hue="orange"]) {
   --h: #fbb27a;
 }
-:root[data-theme="dark"] .tile-indigo {
+:root[data-theme="dark"] :is(.tile-indigo, [data-hue="indigo"]) {
   --h: #aab0ff;
 }
-:root[data-theme="dark"] .tile-slate {
+:root[data-theme="dark"] :is(.tile-slate, [data-hue="slate"]) {
   --h: #c3ccd8;
+}
+
+/* A page in its colour: the accent tokens (theme.css) are made again from
+   the page's two colours, so everything written against the accent
+   follows. Teal is the accent as it stands, and slate marks tools, which
+   keep it. */
+[data-hue]:not([data-hue="teal"], [data-hue="slate"]) {
+  --teal-900: color-mix(in oklab, var(--h) 76%, var(--text));
+  --teal-700: var(--h);
+  --teal-600: color-mix(in oklab, var(--h) 86%, var(--surface));
+  --teal-500: color-mix(in oklab, var(--hf) 76%, white);
+  --teal-400: color-mix(in oklab, var(--hf) 56%, white);
+  --teal-300: color-mix(in oklab, var(--h) 40%, var(--surface));
+  --teal-100: color-mix(in oklab, var(--h) 20%, var(--surface));
+  --teal-50: color-mix(in oklab, var(--h) 9%, var(--surface));
+  --teal-fill: var(--hf);
+  --teal-fill-hover: color-mix(in oklab, var(--hf) 86%, white);
+  --toggle-on: var(--hf);
+  --toggle-on-hover: color-mix(in oklab, var(--hf) 86%, white);
+  --color-background-ui: var(--hf);
+  --color-logo-primary: color-mix(in oklab, var(--h) 86%, var(--surface));
 }
 
 /* ------------------------------------------------------------ buttons */

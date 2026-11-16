@@ -102,7 +102,7 @@ If two shortcuts share the same keys, Settings says which one does nothing so yo
 
 While you dictate, a small bar at the bottom of the screen shows that Legato is listening, with Cancel, a waveform and the words as you say them when your model writes as you speak. After you stop, it names the step Legato is on, then says how many words went where, with Undo.
 
-Settings › Legato bar changes its style and position, turns it into an island that hangs from the top of the screen, or swaps it for a bubble on the desktop. [The bar, the island and the bubble](dictation.md#the-bar-the-island-and-the-bubble) has the details.
+Settings › Legato bar changes its style and position, turns it into an island that floats under the top of the screen, or swaps it for a bubble on the desktop. [The bar, the island and the bubble](dictation.md#the-bar-the-island-and-the-bubble) has the details.
 
 ## Where to go next
 

@@ -701,6 +701,11 @@ pub struct CategoryStyle {
     pub trailing_space: Option<bool>,
     #[serde(default)]
     pub speech_model: Option<String>,
+    /// What runs after a dictation into this kind of app, over the choice
+    /// in Transforms: a transform's id, `none` for nothing, or unset to
+    /// do as everywhere else.
+    #[serde(default)]
+    pub after_transform: Option<String>,
 }
 
 impl CategoryStyle {
@@ -711,6 +716,7 @@ impl CategoryStyle {
             after_paste: None,
             trailing_space: None,
             speech_model: None,
+            after_transform: None,
         }
     }
 }
@@ -1151,6 +1157,10 @@ pub struct AppSettings {
     /// screen shows through) to 1 (solid).
     #[serde(default = "default_bar_opacity")]
     pub bar_opacity: f32,
+    /// Where the island sits along the top edge after you drag it: 0 in
+    /// the middle, -1 against the left edge of the screen, 1 the right.
+    #[serde(default)]
+    pub island_offset: f32,
     /// The bar or island, the bubble and the Notes side panel stay on your
     /// screen but out of screenshots, recordings and shared screens.
     #[serde(default = "default_true")]
@@ -1809,6 +1819,7 @@ pub fn get_default_settings() -> AppSettings {
         bar_look: BarLook::Bar,
         island_idle: IslandIdle::Small,
         bar_opacity: default_bar_opacity(),
+        island_offset: 0.0,
         hide_from_capture: true,
     }
 }

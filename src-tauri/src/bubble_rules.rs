@@ -177,9 +177,142 @@ pub fn fits(window: (i32, i32, i32, i32), monitor: (i32, i32, i32, i32)) -> bool
         && (window.3 - monitor.3).abs() <= COVER_SLACK
 }
 
+/// The island's window along the top edge of a screen, in physical pixels:
+/// its left edge for an offset from -1 (against the left edge) through 0
+/// (the middle) to 1.
+pub fn island_x(screen_x: i32, screen_w: i32, width: i32, offset: f32) -> i32 {
+    let free = ((screen_w - width) / 2).max(0);
+    let offset = if offset.is_finite() {
+        offset.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    };
+    screen_x + free + (free as f32 * offset).round() as i32
+}
+
+/// The offset a dragged island is left with at `x`: back in the middle
+/// when it's dropped within `snap` pixels of it.
+pub fn island_offset(screen_x: i32, screen_w: i32, width: i32, x: i32, snap: i32) -> f32 {
+    let free = ((screen_w - width) / 2).max(0);
+    let from_middle = x - (screen_x + free);
+    if free == 0 || from_middle.abs() <= snap {
+        return 0.0;
+    }
+    (from_middle as f32 / free as f32).clamp(-1.0, 1.0)
+}
+
+/// A pointer shaken from side to side over the island, which asks it to
+/// get out of the way: three turns inside 700 ms, each after a stroke of
+/// at least `stroke` pixels. Fed the pointer's x as it's seen.
+#[derive(Default)]
+pub struct Shake {
+    last_x: Option<i32>,
+    /// The way the pointer is going (-1, 1), and how far it has gone.
+    dir: i32,
+    run: i32,
+    /// When the last turns were, in milliseconds.
+    turns: [u64; 3],
+    count: usize,
+}
+
+impl Shake {
+    const WITHIN_MS: u64 = 700;
+
+    /// Forgets the strokes so far: the pointer left the island.
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Takes the pointer's x at `now_ms`; true when that completes a shake.
+    pub fn feed(&mut self, x: i32, now_ms: u64, stroke: i32) -> bool {
+        let Some(last) = self.last_x.replace(x) else {
+            return false;
+        };
+        let dx = x - last;
+        if dx == 0 {
+            return false;
+        }
+        let dir = dx.signum();
+        if dir == self.dir {
+            self.run += dx.abs();
+            return false;
+        }
+        // A turn counts when the stroke before it was long enough.
+        let turned = self.dir != 0 && self.run >= stroke;
+        self.dir = dir;
+        self.run = dx.abs();
+        if !turned {
+            return false;
+        }
+        self.turns.rotate_left(1);
+        self.turns[2] = now_ms;
+        self.count = (self.count + 1).min(3);
+        if self.count == 3 && now_ms.saturating_sub(self.turns[0]) <= Self::WITHIN_MS {
+            self.reset();
+            return true;
+        }
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_island_sits_where_it_was_dragged_and_snaps_to_the_middle() {
+        // A 650 px window on a 1920 px screen that starts at x = 100.
+        assert_eq!(island_x(100, 1920, 650, 0.0), 735);
+        assert_eq!(island_x(100, 1920, 650, -1.0), 100);
+        assert_eq!(island_x(100, 1920, 650, 1.0), 1370);
+        assert_eq!(island_x(100, 1920, 650, 7.0), 1370);
+        assert_eq!(island_x(100, 1920, 650, f32::NAN), 735);
+        // A screen narrower than the window keeps it at the screen's edge.
+        assert_eq!(island_x(0, 500, 650, 0.5), 0);
+
+        assert_eq!(island_offset(100, 1920, 650, 735 + 20, 24), 0.0);
+        assert_eq!(island_offset(100, 1920, 650, 100, 24), -1.0);
+        let half = island_offset(100, 1920, 650, 735 + 318, 24);
+        assert!((half - 0.5).abs() < 0.01, "{half}");
+        // And back again lands where it was dropped.
+        assert_eq!(island_x(100, 1920, 650, half), 735 + 318);
+        assert_eq!(island_offset(0, 500, 650, 40, 24), 0.0);
+    }
+
+    #[test]
+    fn a_shake_is_three_quick_turns_and_nothing_less() {
+        let mut shake = Shake::default();
+        // Right, left, right, left: the third turn completes it.
+        let mut hit = false;
+        let mut x = 500;
+        let mut now = 0;
+        for stroke in [60, -60, 60, -60] {
+            for _ in 0..3 {
+                x += stroke / 3;
+                now += 33;
+                hit |= shake.feed(x, now, 28);
+            }
+        }
+        assert!(hit);
+
+        // Crossing the island once, however far, is no shake.
+        let mut shake = Shake::default();
+        assert!(!(0..40).any(|i| shake.feed(300 + i * 12, i as u64 * 33, 28)));
+
+        // A hand that trembles a few pixels each way isn't one either.
+        let mut shake = Shake::default();
+        assert!(!(0..60).any(|i| shake.feed(500 + (i % 2) * 5, i as u64 * 33, 28)));
+
+        // Slow sweeps back and forth: the turns are too far apart.
+        let mut shake = Shake::default();
+        let mut x = 500;
+        let mut slow = false;
+        for (n, stroke) in [80, -80, 80, -80, 80].into_iter().enumerate() {
+            x += stroke;
+            slow |= shake.feed(x, n as u64 * 500, 28);
+        }
+        assert!(!slow);
+    }
 
     const AREA: Rect = Rect {
         x: 0.0,

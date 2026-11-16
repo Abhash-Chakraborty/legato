@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "@/icons";
+import { usePageHue } from "../shell/marks";
 
 const FOCUSABLE = [
   "a[href]",
@@ -41,6 +42,8 @@ export const Sheet: React.FC<SheetProps> = ({
   wide = false,
   children,
 }) => {
+  // The colour of the page that opened it.
+  const hue = usePageHue();
   const titleId = useId();
   const descId = useId();
   const panelRef = useRef<HTMLFormElement>(null);
@@ -108,6 +111,7 @@ export const Sheet: React.FC<SheetProps> = ({
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
         tabIndex={-1}
+        data-hue={hue}
         onSubmit={(e) => {
           e.preventDefault();
           onSubmit();

@@ -1,9 +1,35 @@
 /* Icon hover motion for the bar, the island and the bubble.
 
    Those windows stay small and always loaded, so their few icons move with
-   plain CSS: one short pass per hover of their button, transform only, and
-   nothing with reduced motion. Every other window takes its icons from
+   plain CSS, and each moves the way its button works: one short pass per
+   hover (the meter keeps going while the pointer stays, as a meter does),
+   and nothing with reduced motion. Every other window takes its icons from
    src/icons.tsx, where each has a motion of its own. */
+
+/* The icons the island and the bubble draw themselves (overlay/glyphs.tsx). */
+.g {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.g-voice rect {
+  fill: currentColor;
+  stroke: none;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  transform: scaleY(var(--rest));
+  transition: transform 160ms var(--ease-out);
+}
+.g-ink,
+.g-line {
+  stroke-dasharray: 1;
+}
 
 @media (prefers-reduced-motion: no-preference) {
   :is(button, a, [role="button"], [role="menuitem"]):not(
@@ -25,11 +51,37 @@
       animation: icon-land 320ms var(--ease-out);
     }
 
-    /* The microphone and the note taker lean in. */
-    :is(.lucide-mic, .lucide-notebook-pen, .lucide-audio-lines) {
-      animation: icon-lean 420ms var(--ease-out);
-      transform-origin: 50% 80%;
+    /* Dictate's meter rises and falls for as long as the pointer is on
+       it, each bar at its own pace, the way it will once you talk. */
+    .g-voice rect {
+      animation: g-level var(--ms) ease-in-out var(--late) infinite alternate;
     }
+
+    /* Notes: the pen writes its line again. */
+    .g-pen .g-ink {
+      animation: g-draw 620ms var(--ease-out) both;
+    }
+    .g-pen .g-nib {
+      animation: g-write 620ms var(--ease-out) both;
+    }
+
+    /* The Scratchpad's lines are written one after another. */
+    .g-pad .g-line {
+      animation: g-draw 260ms var(--ease-out) both;
+    }
+    .g-pad .g-line:nth-of-type(2) {
+      animation-delay: 110ms;
+    }
+    .g-pad .g-line:nth-of-type(3) {
+      animation-delay: 220ms;
+    }
+  }
+
+  /* Pressed, the meter goes all the way up: you're on. */
+  :is(button, [role="button"]):active .g-voice rect {
+    animation: none;
+    transform: scaleY(1);
+    transition-duration: 60ms;
   }
 }
 
@@ -51,11 +103,34 @@
     transform: scale(1.12);
   }
 }
-@keyframes icon-lean {
-  35% {
-    transform: rotate(-9deg);
+@keyframes g-level {
+  from {
+    transform: scaleY(var(--lo));
   }
-  70% {
-    transform: rotate(5deg);
+  to {
+    transform: scaleY(var(--hi));
+  }
+}
+@keyframes g-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+/* The nib follows the line's two humps from its start to its end. */
+@keyframes g-write {
+  0% {
+    transform: translate(-6px, 0);
+  }
+  25% {
+    transform: translate(-4.5px, -1.2px);
+  }
+  50% {
+    transform: translate(-3px, 0);
+  }
+  75% {
+    transform: translate(-1.5px, -1.2px);
+  }
+  100% {
+    transform: none;
   }
 }

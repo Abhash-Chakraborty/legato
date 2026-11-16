@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Menu } from "@tauri-apps/api/menu";
-import { Check, Mic, NotebookPen, Square, X } from "lucide-react";
+import { Check, Square, X } from "lucide-react";
+import { PadGlyph, PenGlyph, VoiceGlyph } from "@/overlay/glyphs";
 import {
   commands,
   events,
@@ -388,7 +389,7 @@ const Bubble: React.FC = () => {
       ) : recording ? (
         <Check aria-hidden="true" />
       ) : (
-        <Mic aria-hidden="true" />
+        <VoiceGlyph />
       ),
     },
     {
@@ -396,7 +397,8 @@ const Bubble: React.FC = () => {
       dy: 0,
       label: notesLabel,
       on: notesOn,
-      icon: <span className={`bnotes-mark ${notesOn ? "on" : ""}`} />,
+      // A pen that writes; the record mark while notes are being taken.
+      icon: notesOn ? <span className="bnotes-mark on" /> : <PenGlyph />,
     },
     // While notes record, Stop takes the Scratchpad's place; the Notes
     // button opens the panel, which also has Pause.
@@ -421,7 +423,7 @@ const Bubble: React.FC = () => {
             dy: STEP,
             label: t("bubble.scratchpad"),
             on: false,
-            icon: <NotebookPen aria-hidden="true" />,
+            icon: <PadGlyph />,
           },
   ];
   // Buttons for features that are off go (notes already recording keep

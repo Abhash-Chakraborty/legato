@@ -965,6 +965,7 @@ pub fn run(cli_args: CliArgs) {
             commands::bubble::bubble_press,
             commands::bubble::bubble_action,
             commands::bubble::island_shape,
+            commands::bubble::island_drag,
             commands::bubble::show_notes_panel,
             commands::bubble::hide_notes_panel,
             commands::connections::inyon_status,

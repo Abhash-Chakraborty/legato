@@ -60,7 +60,7 @@ The bar shows what Legato is doing.
 | Setting                                  | Options                                                                                                     |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | Style                                    | None (no bar; the tray icon still shows when Legato listens), Minimal, or Live (your words as you say them) |
-| Shape                                    | Bar, a card at the top or bottom of the screen, or Island, which hangs from the top edge                    |
+| Shape                                    | Bar, a card at the top or bottom of the screen, or Island, a pill that floats under the top edge            |
 | When idle                                | For the island: Small island, with Dictate, Notes and the Scratchpad on hover, or Hide                      |
 | Position                                 | For the bar: Bottom or Top                                                                                  |
 | Background                               | How solid the background behind your words is, on the island and the live transcript box                    |

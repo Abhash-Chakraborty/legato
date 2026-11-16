@@ -626,9 +626,18 @@ async bubbleAction(action: string) : Promise<Result<null, string>> {
 /**
  * Where the island's shape sits in its window, in physical pixels from the
  * window's corner, so clicks elsewhere pass through to the app below.
+ * `takes` is false while the island lets clicks through its shape too:
+ * at rest, and while it has stepped aside.
  */
-async islandShape(x: number, y: number, width: number, height: number) : Promise<void> {
-    await TAURI_INVOKE("island_shape", { x, y, width, height });
+async islandShape(x: number, y: number, width: number, height: number, takes: boolean) : Promise<void> {
+    await TAURI_INVOKE("island_shape", { x, y, width, height, takes });
+},
+/**
+ * The island dragged along the top edge: `dx` physical pixels from where
+ * the drag began, and `done` when it's let go.
+ */
+async islandDrag(dx: number, done: boolean) : Promise<void> {
+    await TAURI_INVOKE("island_drag", { dx, done });
 },
 /**
  * Opens the Notes side panel on the recording in progress (the bar's
@@ -3733,7 +3742,13 @@ export type AppRuleKind =
  * How one kind of app gets its text. `None` fields inherit Settings › Output,
  * and the speech model the one chosen in Models.
  */
-export type CategoryStyle = { tone: Tone; paste_method?: PasteMethod | null; after_paste?: AfterPaste | null; trailing_space?: boolean | null; speech_model?: string | null }
+export type CategoryStyle = { tone: Tone; paste_method?: PasteMethod | null; after_paste?: AfterPaste | null; trailing_space?: boolean | null; speech_model?: string | null; 
+/**
+ * What runs after a dictation into this kind of app, over the choice
+ * in Transforms: a transform's id, `none` for nothing, or unset to
+ * do as everywhere else.
+ */
+after_transform?: string | null }
 /**
  * What a button on the call card, or Start notes on the Notes page, does.
  */
@@ -4483,6 +4498,11 @@ island_idle?: IslandIdle;
  * screen shows through) to 1 (solid).
  */
 bar_opacity?: number; 
+/**
+ * Where the island sits along the top edge after you drag it: 0 in
+ * the middle, -1 against the left edge of the screen, 1 the right.
+ */
+island_offset?: number; 
 /**
  * The bar or island, the bubble and the Notes side panel stay on your
  * screen but out of screenshots, recordings and shared screens.

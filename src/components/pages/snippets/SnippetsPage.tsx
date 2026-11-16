@@ -31,6 +31,7 @@ import { Button } from "../../ui/Button";
 import { matchesQuery, sortSnippets, SORTS, type Sort } from "./list";
 import { SnippetEditor, toastSaved } from "./SnippetEditor";
 import { SnippetRow } from "./SnippetRow";
+import { PageTitle } from "../../shell/PageTitle";
 
 /** Editor state: closed, adding, or editing one snippet. */
 type Editing = null | { snippet: Snippet | null };
@@ -221,9 +222,7 @@ export const SnippetsPage: React.FC = () => {
   return (
     <div className="mx-auto w-full max-w-[1120px]">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
-        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
-          {t("snippets.title")}
-        </h1>
+        <PageTitle page="snippets">{t("snippets.title")}</PageTitle>
         <div className="flex items-center gap-2">
           <div className="relative">
             <button

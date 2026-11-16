@@ -1,9 +1,10 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { AudioLines, Mic, NotebookPen, X } from "lucide-react";
+import { Mic, SquareDashedMousePointer, X } from "lucide-react";
 import { agentName } from "@/lib/utils/agents";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CorrectCard, type CorrectPayload } from "./CorrectCard";
+import { PadGlyph, PenGlyph, VoiceGlyph } from "./glyphs";
 import "./RecordingOverlay.css";
 import "./island.css";
 import { commands, events } from "@/bindings";
@@ -340,28 +341,45 @@ const setBarOpacity = (opacity: number | null | undefined) =>
 
 /** Slack around the island's shape that still counts as on it, in CSS px. */
 const ISLAND_SLACK = 6;
+/** The gap between the top of the screen and the island (island.css). */
+const ISLAND_GAP = 6;
 /** The pointer rests this long before the resting island opens. */
-const ISLAND_HOVER_IN_MS = 150;
+const ISLAND_HOVER_IN_MS = 170;
 /** And it closes this long after the pointer leaves. */
-const ISLAND_HOVER_OUT_MS = 300;
+const ISLAND_HOVER_OUT_MS = 320;
+/** Stepped aside, it comes back this long after the pointer has gone. */
+const ISLAND_BACK_MS = 900;
+/** How far the pointer moves with the button down before it's a drag. */
+const ISLAND_DRAG_PX = 5;
 
 /**
- * The island: a dark shape hanging from the top edge that takes the size of
- * what it shows. The content is measured and the shape follows it with a
- * transition (width first when growing, height first when shrinking), so
- * every state change is one smooth morph. The shape's place goes to the
- * backend, which lets clicks through everywhere else in the window. With
- * `hit`, only the element it selects takes clicks: live words are there to
- * read, so clicks on them reach the window under the island.
+ * The island: a dark pill floating just under the top edge that takes the
+ * size of what it shows. The content is measured and the shape follows it
+ * with a transition (width first when growing, height first when
+ * shrinking), so every state change is one smooth morph. The shape's place
+ * goes to the backend, which lets clicks through everywhere else in the
+ * window. With `hit`, only the element it selects takes clicks: live words
+ * are there to read, so clicks on them reach the window under the island.
+ *
+ * At rest (`rest`) and stepped aside (`aside`) the shape itself lets clicks
+ * through too; the backend still says when the pointer is over it. Held by
+ * anything but a button, it drags along the top edge and stays where it's
+ * dropped.
  */
 const IslandFrame: React.FC<{
   visible: boolean;
   contentKey: string;
   hit?: string;
+  rest?: boolean;
+  aside?: boolean;
   children: React.ReactNode;
-}> = ({ visible, contentKey, hit, children }) => {
+}> = ({ visible, contentKey, hit, rest, aside, children }) => {
   const innerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0, growing: true });
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ x: number; moved: boolean; frame: number } | null>(
+    null,
+  );
 
   useLayoutEffect(() => {
     const inner = innerRef.current;
@@ -382,7 +400,10 @@ const IslandFrame: React.FC<{
   }, [visible]);
 
   // Where the shape is going, not where it is mid-morph: a growing island
-  // takes clicks at once, a shrinking one lets them through at once.
+  // takes clicks at once, a shrinking one lets them through at once. It
+  // reaches up to the screen's edge, so a pointer thrown at the top of the
+  // screen still lands on it.
+  const takes = !rest && !aside;
   useEffect(() => {
     const ratio = window.devicePixelRatio || 1;
     const part = hit && innerRef.current?.querySelector(hit);
@@ -395,21 +416,62 @@ const IslandFrame: React.FC<{
           0,
           (r.width + 2 * ISLAND_SLACK) * ratio,
           (r.bottom + ISLAND_SLACK) * ratio,
+          takes,
         )
         .catch(() => {});
       return;
     }
     const w = size.w ? size.w + 2 * ISLAND_SLACK : 0;
-    const h = size.h ? size.h + ISLAND_SLACK : 0;
+    const h = size.h ? ISLAND_GAP + size.h + ISLAND_SLACK : 0;
     commands
       .islandShape(
         ((window.innerWidth - w) / 2) * ratio,
         0,
         w * ratio,
         h * ratio,
+        takes,
       )
       .catch(() => {});
-  }, [size.w, size.h, hit]);
+  }, [size.w, size.h, hit, takes]);
+
+  // Dragging: by the island itself, never by one of its controls or the
+  // words in it. The window follows the pointer across the screen, so the
+  // distance is read from the screen, not from the page.
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !takes) return;
+    const on = e.target as Element;
+    if (on.closest("button, a, input, textarea, select, [role='button'], p"))
+      return;
+    drag.current = { x: e.screenX, moved: false, frame: 0 };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.screenX - d.x;
+    if (!d.moved && Math.abs(dx) < ISLAND_DRAG_PX) return;
+    if (!d.moved) {
+      d.moved = true;
+      setDragging(true);
+    }
+    cancelAnimationFrame(d.frame);
+    d.frame = requestAnimationFrame(() =>
+      commands
+        .islandDrag(dx * (window.devicePixelRatio || 1), false)
+        .catch(() => {}),
+    );
+  };
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    cancelAnimationFrame(d.frame);
+    if (!d.moved) return;
+    setDragging(false);
+    commands
+      .islandDrag((e.screenX - d.x) * (window.devicePixelRatio || 1), true)
+      .catch(() => {});
+  };
 
   const radius = Math.min(size.h / 2, 22);
   return (
@@ -417,6 +479,8 @@ const IslandFrame: React.FC<{
       <div
         className={`isl ${size.growing ? "" : "shrink"} ${
           visible && size.w ? "" : "gone"
+        } ${rest ? "rest" : ""} ${aside ? "aside" : ""} ${
+          dragging ? "dragging" : ""
         }`}
         style={
           {
@@ -425,6 +489,10 @@ const IslandFrame: React.FC<{
             "--r": `${radius}px`,
           } as React.CSSProperties
         }
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
       >
         <div className="isl-clip">
           <div className="isl-in" ref={innerRef}>
@@ -528,6 +596,15 @@ const RecordingOverlay: React.FC = () => {
   // The resting island opened under the pointer; at rest it shows the time,
   // and open, the words dictated today.
   const [islandOpen, setIslandOpen] = useState(false);
+  // Stepped aside: the island fades to a ghost and lets every click
+  // through until the pointer has gone. Asked for with its own button, or
+  // by shaking the pointer over it.
+  const [islandAside, setIslandAside] = useState(false);
+  const asideTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  // A click went through the resting island to the app behind it: it
+  // stays shut until the pointer leaves, so it doesn't open over what was
+  // just clicked.
+  const passedRef = useRef(false);
   const [clockNow, setClockNow] = useState(() => new Date());
   const [wordsToday, setWordsToday] = useState<number | null>(null);
   // The transform that runs after every dictation (Transforms), named at
@@ -702,7 +779,9 @@ const RecordingOverlay: React.FC = () => {
 
       const unlistenHide = await listen("hide-overlay", () => {
         clearTimeout(hoverTimerRef.current);
+        clearTimeout(asideTimerRef.current);
         setIslandOpen(false);
+        setIslandAside(false);
         setIsVisible(false);
         setCaptureReady(false);
         setStage(null);
@@ -715,13 +794,33 @@ const RecordingOverlay: React.FC = () => {
         "island-pointer",
         (event) => {
           clearTimeout(hoverTimerRef.current);
+          clearTimeout(asideTimerRef.current);
           const on = event.payload;
+          if (!on) {
+            passedRef.current = false;
+            asideTimerRef.current = setTimeout(
+              () => setIslandAside(false),
+              ISLAND_BACK_MS,
+            );
+          }
+          if (on && passedRef.current) return;
           hoverTimerRef.current = setTimeout(
             () => setIslandOpen(on),
             on ? ISLAND_HOVER_IN_MS : ISLAND_HOVER_OUT_MS,
           );
         },
       );
+      const unlistenClickThrough = await listen("island-click-through", () => {
+        passedRef.current = true;
+        clearTimeout(hoverTimerRef.current);
+        setIslandOpen(false);
+      });
+      const unlistenShake = await listen("island-shake", () => {
+        clearTimeout(hoverTimerRef.current);
+        clearTimeout(asideTimerRef.current);
+        setIslandOpen(false);
+        setIslandAside(true);
+      });
 
       const unlistenOpacity = await listen<number>("bar-opacity", (event) =>
         setBarOpacity(event.payload),
@@ -800,6 +899,9 @@ const RecordingOverlay: React.FC = () => {
         unlistenWorkSince();
         unlistenHide();
         unlistenPointer();
+        unlistenClickThrough();
+        unlistenShake();
+        clearTimeout(asideTimerRef.current);
         unlistenOpacity();
         clearTimeout(hoverTimerRef.current);
         unlistenReady();
@@ -874,7 +976,13 @@ const RecordingOverlay: React.FC = () => {
     hit?: string,
   ) =>
     island ? (
-      <IslandFrame visible={isVisible} contentKey={key} hit={hit}>
+      <IslandFrame
+        visible={isVisible}
+        contentKey={key}
+        hit={hit}
+        rest={key === "rest"}
+        aside={islandAside}
+      >
         {card}
       </IslandFrame>
     ) : (
@@ -984,7 +1092,7 @@ const RecordingOverlay: React.FC = () => {
             className="ibtn"
             onClick={() => commands.bubbleAction("dictate")}
           >
-            <Mic aria-hidden="true" />
+            <VoiceGlyph />
             {t("overlay.island.dictate")}
           </button>
           {features.notes && (
@@ -993,7 +1101,7 @@ const RecordingOverlay: React.FC = () => {
               className="ibtn"
               onClick={() => commands.bubbleAction("notes")}
             >
-              <AudioLines aria-hidden="true" />
+              <PenGlyph />
               {t("overlay.island.notes")}
             </button>
           )}
@@ -1005,7 +1113,7 @@ const RecordingOverlay: React.FC = () => {
               title={t("overlay.island.scratchpad")}
               onClick={() => commands.bubbleAction("scratchpad")}
             >
-              <NotebookPen aria-hidden="true" />
+              <PadGlyph />
             </button>
           )}
           {wordsToday !== null && wordsToday > 0 && (
@@ -1016,6 +1124,18 @@ const RecordingOverlay: React.FC = () => {
               })}
             </span>
           )}
+          <button
+            type="button"
+            className="ibtn icon quiet"
+            aria-label={t("overlay.island.aside")}
+            title={t("overlay.island.asideHelp")}
+            onClick={() => {
+              setIslandOpen(false);
+              setIslandAside(true);
+            }}
+          >
+            <SquareDashedMousePointer aria-hidden="true" />
+          </button>
         </div>
       ) : (
         <div className="irest" aria-hidden="true">

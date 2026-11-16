@@ -126,6 +126,10 @@ Speech model › Transcribe with picks the model for dictations into this kind o
 
 If you delete the model, the setting falls back to Inherit. See [Dictation](dictation.md#speech-models-on-the-pc) for the models.
 
+## A transform per kind of app
+
+After dictating › Transform for this kind of app picks what runs after every dictation into these apps: Polish in email, say, and Nothing in a terminal. Inherit does what [Transforms › After every dictation](transforms.md#after-every-dictation) says. A transform picked here runs whatever the skip rules there say, except that dictations shorter than Skip dictations under are still pasted as you said them. Dictate then transform runs it too.
+
 ## Turning Style off
 
 The switch at the top of the Style page turns Style per kind of app off. Dictations then get cleanup and your Settings › Output paste settings, the same in every app, with no tone and the Models page's speech model. Cleanup keeps working either way.

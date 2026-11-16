@@ -21,6 +21,7 @@ import { AppToaster } from "./components/shell/AppToaster";
 import { TitleBar } from "./components/shell/TitleBar";
 import { WhatsNewGate } from "./components/whats-new";
 import { pages, warmPages } from "./pages";
+import { PAGE_MARKS } from "./components/shell/marks";
 import {
   useNavStore,
   type Page,
@@ -502,6 +503,7 @@ function App() {
               <ErrorBoundary key={page} context={page}>
                 <div
                   key={page}
+                  data-hue={PAGE_MARKS[page].hue}
                   className={`view-enter ${page === "notes" || page === "scratchpad" ? "flex min-h-0 flex-1 flex-col" : ""}`}
                 >
                   <Suspense fallback={null}>

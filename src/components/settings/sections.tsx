@@ -18,6 +18,7 @@ import {
 } from "@/icons";
 import type { AiStatus, AppSettings, ModelInfo } from "@/bindings";
 import type { SettingsSection } from "../../stores/navStore";
+import type { Hue } from "../shell/marks";
 import { useModelStore } from "../../stores/modelStore";
 
 import { AdminAppsToggle } from "./AdminAppsToggle";
@@ -190,6 +191,8 @@ export interface SettingsGroupDef {
 export interface SectionDef {
   id: SettingsSection;
   icon: LucideIcon;
+  /** Its colour: the tile behind its icon and its accent (shell/marks.ts). */
+  hue: Hue;
   /** The move its icon plays on hover (`.im-*` in controls.css). */
   motion?: string;
   groups: SettingsGroupDef[];
@@ -258,6 +261,7 @@ export const buildSections = (
   {
     id: "general",
     icon: Settings2,
+    hue: "slate",
     motion: "slide",
     groups: [
       {
@@ -337,6 +341,7 @@ export const buildSections = (
   {
     id: "features",
     icon: Blocks,
+    hue: "indigo",
     groups: [
       {
         id: "features",
@@ -403,6 +408,7 @@ export const buildSections = (
   {
     id: "shortcuts",
     icon: Keyboard,
+    hue: "amber",
     motion: "keys",
     groups: [
       {
@@ -630,6 +636,7 @@ export const buildSections = (
   {
     id: "audio",
     icon: Mic,
+    hue: "rose",
     groups: [
       {
         id: "microphone",
@@ -729,6 +736,7 @@ export const buildSections = (
   {
     id: "transcription",
     icon: Captions,
+    hue: "green",
     groups: [
       {
         id: "language",
@@ -865,6 +873,7 @@ export const buildSections = (
   {
     id: "output",
     icon: ClipboardPaste,
+    hue: "orange",
     motion: "paste",
     groups: [
       {
@@ -952,6 +961,7 @@ export const buildSections = (
   {
     id: "ai",
     icon: Plug,
+    hue: "violet",
     groups: [
       {
         id: "connection",
@@ -1067,6 +1077,7 @@ export const buildSections = (
   {
     id: "calls",
     icon: PhoneIncoming,
+    hue: "amber",
     motion: "call",
     groups: [
       {
@@ -1250,6 +1261,7 @@ export const buildSections = (
   {
     id: "connections",
     icon: CalendarDays,
+    hue: "teal",
     groups: [
       {
         id: "calendars",
@@ -1353,6 +1365,7 @@ export const buildSections = (
   {
     id: "bar",
     icon: PanelBottom,
+    hue: "indigo",
     groups: [
       {
         id: "look",
@@ -1438,6 +1451,7 @@ export const buildSections = (
   {
     id: "devices",
     icon: Smartphone,
+    hue: "sky",
     motion: "lift",
     groups: [
       {
@@ -1581,6 +1595,7 @@ export const buildSections = (
   {
     id: "privacy",
     icon: Shield,
+    hue: "slate",
     groups: [
       {
         id: "history",
@@ -1623,6 +1638,7 @@ export const buildSections = (
   {
     id: "about",
     icon: Info,
+    hue: "teal",
     groups: [
       {
         id: "updates",
@@ -1712,6 +1728,7 @@ export const buildSections = (
   {
     id: "debug",
     icon: Bug,
+    hue: "rose",
     hidden: (settings) => !(settings?.debug_mode ?? false),
     groups: [
       {

@@ -95,7 +95,7 @@ const EMIT_THROTTLE_MS: u64 = 33; // ~30 FPS
 /// transform picker), so the shape grows and shrinks inside it and the window
 /// never resizes mid-animation. Clicks pass through all of it but the shape.
 const ISLAND_WIDTH: f64 = 520.0;
-const ISLAND_HEIGHT: f64 = 380.0;
+const ISLAND_HEIGHT: f64 = 388.0;
 
 const OVERLAY_TOP_OFFSET: f64 = 4.0;
 const OVERLAY_BOTTOM_OFFSET: f64 = 40.0;
@@ -238,9 +238,17 @@ fn place_windows_overlay(
             settings.overlay_position
         },
     );
-    // The island hangs from the very top of the screen.
+    // The island floats just under the very top of the screen, in the
+    // middle unless it was dragged along the edge.
+    let mut x = x;
     if island {
         y = monitor.position().y;
+        x = crate::bubble_rules::island_x(
+            monitor.position().x,
+            monitor.size().width as i32,
+            width,
+            settings.island_offset,
+        );
     }
     let hwnd = overlay_window
         .hwnd()
@@ -1158,6 +1166,24 @@ mod tests {
 /// What the bar's window shows now (a state name), or None while hidden.
 static SHOWN: Mutex<Option<String>> = Mutex::new(None);
 
+/// The island dragged along the top edge of the screen by `dx` physical
+/// pixels; dropped (`done`), it remembers where.
+pub fn island_drag(app_handle: &AppHandle, dx: f64, done: bool) {
+    let mut settings = settings::get_settings(app_handle);
+    if !island_on(&settings) {
+        return;
+    }
+    let Some(window) = app_handle.get_webview_window("recording_overlay") else {
+        return;
+    };
+    if let Some(offset) = island_hit::drag(&window, dx, done) {
+        if settings.island_offset != offset {
+            settings.island_offset = offset;
+            settings::write_settings(app_handle, settings);
+        }
+    }
+}
+
 /// Whether the bar takes the island's look: picked in Settings › Bar, and
 /// the bar isn't turned off.
 pub fn island_on(settings: &AppSettings) -> bool {
@@ -1251,9 +1277,15 @@ pub mod island_hit {
     static TOLD: AtomicU8 = AtomicU8::new(UNTOLD);
     const UNTOLD: u8 = 2;
 
-    /// The page's report of where the shape is.
-    pub fn set_shape(x: f64, y: f64, w: f64, h: f64) {
+    /// Whether a click on the shape is the island's. At rest, and while
+    /// it has stepped aside, clicks go to the app behind it.
+    static TAKES: AtomicBool = AtomicBool::new(true);
+
+    /// The page's report of where the shape is, and whether it takes
+    /// clicks there.
+    pub fn set_shape(x: f64, y: f64, w: f64, h: f64, takes: bool) {
         *SHAPE.lock().unwrap_or_else(|e| e.into_inner()) = (x, y, w, h);
+        TAKES.store(takes, Ordering::SeqCst);
     }
 
     fn take_clicks(window: &tauri::webview::WebviewWindow, take: bool) {
@@ -1289,6 +1321,9 @@ pub mod island_hit {
     }
 
     fn run() {
+        let started = std::time::Instant::now();
+        let mut shake = crate::bubble_rules::Shake::default();
+        let mut was_down = false;
         loop {
             let window = {
                 let mut armed = ARMED.lock().unwrap_or_else(|e| e.into_inner());
@@ -1299,22 +1334,48 @@ pub mod island_hit {
             };
             let mut near = true;
             if let Some(window) = window {
-                let (inside, close) = cursor_on_shape(HWND_OF.load(Ordering::SeqCst));
+                let (inside, close, x) = cursor_on_shape(HWND_OF.load(Ordering::SeqCst));
                 near = close;
                 // The window may have been disarmed while we looked.
                 if ARMED.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
-                    if TAKING.load(Ordering::SeqCst) != inside {
-                        take_clicks(&window, inside);
+                    use tauri::{Emitter, Manager};
+                    let tell = |event: &str, payload: bool| {
+                        let _ = window
+                            .app_handle()
+                            .emit_to("recording_overlay", event, payload);
+                    };
+                    let take = inside && TAKES.load(Ordering::SeqCst);
+                    if TAKING.load(Ordering::SeqCst) != take {
+                        take_clicks(&window, take);
                     }
                     // The page can't see the pointer leave once clicks pass
                     // through, so it hears both ways from here.
                     if TOLD.swap(inside as u8, Ordering::SeqCst) != inside as u8 {
-                        use tauri::{Emitter, Manager};
-                        let _ = window.app_handle().emit_to(
-                            "recording_overlay",
-                            "island-pointer",
-                            inside,
-                        );
+                        tell("island-pointer", inside);
+                    }
+                    if inside {
+                        // A click that went through the island to the app
+                        // behind it: the island stays out of the way.
+                        let held = left_button_down();
+                        let down = !take && held;
+                        if down && !was_down {
+                            tell("island-click-through", true);
+                        }
+                        was_down = down;
+                        // The pointer shaken over it asks it to step aside;
+                        // with the button held it's a drag, not a shake.
+                        if held {
+                            shake.reset();
+                        } else if shake.feed(
+                            x,
+                            started.elapsed().as_millis() as u64,
+                            shake_stroke(),
+                        ) {
+                            tell("island-shake", true);
+                        }
+                    } else {
+                        was_down = false;
+                        shake.reset();
                     }
                 }
             }
@@ -1346,13 +1407,99 @@ pub mod island_hit {
             && cursor.y < rect.bottom
     }
 
-    /// Whether the cursor is on the island's shape, and whether it's within
-    /// a short reach of its window.
-    fn cursor_on_shape(hwnd: isize) -> (bool, bool) {
+    /// Whether the left mouse button is down now, or went down and up
+    /// since the last look.
+    fn left_button_down() -> bool {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+        // SAFETY: a plain query of the key's state.
+        let state = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) };
+        state as u16 & 0x8001 != 0
+    }
+
+    /// How long a stroke of a shake is, in physical pixels: about a
+    /// centimetre on any screen.
+    fn shake_stroke() -> i32 {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::HiDpi::GetDpiForWindow;
+        let hwnd = HWND(HWND_OF.load(Ordering::SeqCst) as _);
+        // SAFETY: a plain query on our own window; 0 if it has gone.
+        let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
+        (28 * dpi as i32) / 96
+    }
+
+    /// The island dragged along the top edge: `dx` physical pixels from
+    /// where the drag began. Dropped (`done`), it stays there, or goes back
+    /// to the middle if that's where it was let go. Returns the offset to
+    /// keep (see `island_offset` in the settings) once dropped.
+    pub fn drag(window: &tauri::webview::WebviewWindow, dx: f64, done: bool) -> Option<f32> {
+        use windows::Win32::Foundation::RECT;
+        use windows::Win32::Graphics::Gdi::{
+            GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        };
+        use windows::Win32::UI::HiDpi::GetDpiForWindow;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetWindowRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
+        };
+        static FROM: Mutex<Option<i32>> = Mutex::new(None);
+        let hwnd = window.hwnd().ok()?;
+        let mut rect = RECT::default();
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: plain queries into stack values on our own window.
+        let ok = unsafe {
+            GetWindowRect(hwnd, &mut rect).is_ok()
+                && GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mut info)
+                    .as_bool()
+        };
+        if !ok {
+            return None;
+        }
+        let width = rect.right - rect.left;
+        let screen = info.rcMonitor;
+        let screen_w = screen.right - screen.left;
+        let mut from = FROM.lock().unwrap_or_else(|e| e.into_inner());
+        let start = *from.get_or_insert(rect.left);
+        let mut x =
+            (start + dx.round() as i32).clamp(screen.left, (screen.right - width).max(screen.left));
+        let mut kept = None;
+        if done {
+            *from = None;
+            // SAFETY: as above.
+            let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96) as i32;
+            let offset = crate::bubble_rules::island_offset(
+                screen.left,
+                screen_w,
+                width,
+                x,
+                (28 * dpi) / 96,
+            );
+            x = crate::bubble_rules::island_x(screen.left, screen_w, width, offset);
+            kept = Some(offset);
+        }
+        // SAFETY: moves our own window; the size and order stay.
+        let _ = unsafe {
+            SetWindowPos(
+                hwnd,
+                None,
+                x,
+                rect.top,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER,
+            )
+        };
+        kept
+    }
+
+    /// Whether the cursor is on the island's shape, whether it's within a
+    /// short reach of its window, and where it is across the screen.
+    fn cursor_on_shape(hwnd: isize) -> (bool, bool, i32) {
         use windows::Win32::Foundation::{HWND, POINT, RECT};
         use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
         if hwnd == 0 {
-            return (false, false);
+            return (false, false, 0);
         }
         let hwnd = HWND(hwnd as _);
         let mut cursor = POINT::default();
@@ -1361,7 +1508,7 @@ pub mod island_hit {
         let ok =
             unsafe { GetCursorPos(&mut cursor).is_ok() && GetWindowRect(hwnd, &mut rect).is_ok() };
         if !ok {
-            return (false, true);
+            return (false, true, 0);
         }
         // Far enough that a quick flick is seen coming between two looks.
         const REACH: i32 = 320;
@@ -1371,6 +1518,10 @@ pub mod island_hit {
             && cursor.y < rect.bottom + REACH;
         let (x, y, w, h) = *SHAPE.lock().unwrap_or_else(|e| e.into_inner());
         let (cx, cy) = ((cursor.x - rect.left) as f64, (cursor.y - rect.top) as f64);
-        (cx >= x && cx < x + w && cy >= y && cy < y + h, near)
+        (
+            cx >= x && cx < x + w && cy >= y && cy < y + h,
+            near,
+            cursor.x,
+        )
     }
 }

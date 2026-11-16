@@ -1,4 +1,6 @@
 import React from "react";
+import { useNavStore } from "../../stores/navStore";
+import { PageTitle } from "./PageTitle";
 
 interface PageProps {
   title: string;
@@ -19,21 +21,22 @@ export const Page: React.FC<PageProps> = ({
   actions,
   width = "reading",
   children,
-}) => (
-  <div
-    className={`mx-auto w-full ${width === "reading" ? "max-w-[1120px]" : "max-w-[1320px]"}`}
-  >
-    <div className="mb-6 flex min-h-10 items-center justify-between gap-4">
-      <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
-        {title}
-      </h1>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+}) => {
+  const page = useNavStore((state) => state.page);
+  return (
+    <div
+      className={`mx-auto w-full ${width === "reading" ? "max-w-[1120px]" : "max-w-[1320px]"}`}
+    >
+      <div className="mb-6 flex min-h-10 items-center justify-between gap-4">
+        <PageTitle page={page}>{title}</PageTitle>
+        {actions && <div className="flex items-center gap-2">{actions}</div>}
+      </div>
+      {subtitle && (
+        <p className="-mt-3.5 mb-6 max-w-[640px] text-sm text-text-2">
+          {subtitle}
+        </p>
+      )}
+      {children}
     </div>
-    {subtitle && (
-      <p className="-mt-3.5 mb-6 max-w-[640px] text-sm text-text-2">
-        {subtitle}
-      </p>
-    )}
-    {children}
-  </div>
-);
+  );
+};

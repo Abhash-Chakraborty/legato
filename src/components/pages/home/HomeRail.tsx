@@ -28,6 +28,7 @@ import { describeAi } from "../../../lib/utils/aiStatus";
 import { AiDotMark, useAiAction } from "../../shared/AiStatusLine";
 import { getLanguageLabel } from "../../../lib/constants/languages";
 import { getTranslatedModelName } from "../../../lib/utils/modelTranslation";
+import type { Hue } from "../../shell/marks";
 
 const BARS = 6;
 
@@ -91,19 +92,21 @@ const Step: React.FC<{
   icon: LucideIcon;
   /** The move its icon plays on hover (`.im-*` in controls.css). */
   motion: string;
+  /** The colour of the page the step is changed on. */
+  hue: Hue;
   title: string;
   detail: string;
   onClick: () => void;
-}> = ({ icon: Icon, motion, title, detail, onClick }) => (
+}> = ({ icon: Icon, motion, hue, title, detail, onClick }) => (
   <li>
     <button
       type="button"
       onClick={onClick}
       className="group flex w-full items-center gap-3 rounded-[var(--r-sm)] px-1.5 py-1.5 text-start transition-colors duration-[var(--dur-1)] hover:bg-surface-2 hover:duration-0"
     >
-      <span className="grid h-7 w-7 flex-none place-items-center rounded-full border border-line text-text-2 group-hover:text-text">
+      <span className={`tile tile-${hue}`}>
         <Icon
-          className={`im im-${motion} h-3.5 w-3.5 stroke-[1.75]`}
+          className={`im im-${motion} h-3.5 w-3.5 stroke-[1.9]`}
           aria-hidden="true"
         />
       </span>
@@ -231,6 +234,7 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
         <ol className="flex flex-col">
           <Step
             icon={AudioLines}
+            hue="teal"
             motion="meter"
             title={t("home.rail.steps.transcribe")}
             detail={modelName}
@@ -238,6 +242,7 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
           />
           <Step
             icon={BookA}
+            hue="violet"
             motion="tilt"
             title={t("home.rail.steps.dictionary")}
             detail={t(
@@ -250,6 +255,7 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
           />
           <Step
             icon={Eraser}
+            hue="green"
             motion="erase"
             title={t("home.rail.steps.cleanup")}
             detail={
@@ -261,6 +267,7 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
           />
           <Step
             icon={Replace}
+            hue="sky"
             motion="swap"
             title={t("home.rail.steps.transform")}
             detail={
@@ -276,6 +283,7 @@ export const HomeRail: React.FC<{ fixedToday: TodayFix[] }> = ({
           />
           <Step
             icon={ClipboardPaste}
+            hue="orange"
             motion="paste"
             title={t("home.rail.steps.paste")}
             detail={pasteLabel}

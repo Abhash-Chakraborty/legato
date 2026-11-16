@@ -541,10 +541,29 @@ fn dictation_transform(
         .as_deref()
         .and_then(|id| settings.transform(id))
         .filter(|t| t.enabled);
+    // The kind of app may have a choice of its own (Style).
+    use crate::transform_rules::After;
+    let own = category.and_then(|c| settings.styles.get(c).after_transform);
+    let own = crate::transform_rules::after_for(own.as_deref(), |id| {
+        settings.transform(id).is_some_and(|t| t.enabled)
+    });
     match mode {
-        DictationMode::Transform => auto
-            .or_else(|| settings.transform(&settings.dictate_transform_id))
-            .cloned(),
+        DictationMode::Transform => match own {
+            After::Run(id) => settings.transform(id).cloned(),
+            _ => auto
+                .or_else(|| settings.transform(&settings.dictate_transform_id))
+                .cloned(),
+        },
+        DictationMode::Plain if own == After::Nothing => None,
+        // Chosen for this kind of app, so the skips for kinds of app don't
+        // apply; a few words are still left as they were said.
+        DictationMode::Plain if matches!(own, After::Run(_)) => {
+            let After::Run(id) = own else { return None };
+            settings.transform(id).cloned().filter(|_| {
+                crate::transform_rules::word_count(text)
+                    >= settings.auto_transform_min_words as usize
+            })
+        }
         DictationMode::Plain => {
             let rules = crate::transform_rules::AutoRules {
                 skip_code: settings.auto_transform_skip_code,

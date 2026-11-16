@@ -69,6 +69,8 @@ Under After every dictation, Run after every dictation picks a transform that re
 | Skip in AI prompts         | On      | Claude, ChatGPT and other AI apps rewrite prompts anyway           |
 | Skip dictations under      | 5 words | Short replies are pasted as you said them; 0 runs it on everything |
 
+A kind of app can have a transform of its own, or none: [Style › A transform per kind of app](style.md#a-transform-per-kind-of-app).
+
 To transform just one dictation, use **Dictate then transform** (Ctrl+Shift+Space by default). Dictate then transform runs picks which transform it uses; Polish unless you change it.
 
 If a transform can't run, your words are pasted as you said them and the bar says why.

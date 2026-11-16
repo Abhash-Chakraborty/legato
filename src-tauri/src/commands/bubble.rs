@@ -84,10 +84,20 @@ pub async fn bubble_action(app: AppHandle, action: String) -> Result<(), String>
 
 /// Where the island's shape sits in its window, in physical pixels from the
 /// window's corner, so clicks elsewhere pass through to the app below.
+/// `takes` is false while the island lets clicks through its shape too:
+/// at rest, and while it has stepped aside.
 #[tauri::command]
 #[specta::specta]
-pub fn island_shape(x: f64, y: f64, width: f64, height: f64) {
-    crate::overlay::island_hit::set_shape(x, y, width, height);
+pub fn island_shape(x: f64, y: f64, width: f64, height: f64, takes: bool) {
+    crate::overlay::island_hit::set_shape(x, y, width, height, takes);
+}
+
+/// The island dragged along the top edge: `dx` physical pixels from where
+/// the drag began, and `done` when it's let go.
+#[tauri::command]
+#[specta::specta]
+pub fn island_drag(app: AppHandle, dx: f64, done: bool) {
+    crate::overlay::island_drag(&app, dx, done);
 }
 
 /// Opens the Notes side panel on the recording in progress (the bar's

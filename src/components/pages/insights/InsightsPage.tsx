@@ -13,6 +13,7 @@ import { parseDay } from "./insights";
 import { UsageTab } from "./UsageTab";
 import { HabitsTab } from "./HabitsTab";
 import { AccuracyTab } from "./AccuracyTab";
+import { PageTitle } from "../../shell/PageTitle";
 
 type Tab = "usage" | "habits" | "accuracy";
 const TABS: Tab[] = ["usage", "habits", "accuracy"];
@@ -98,9 +99,7 @@ export const InsightsPage: React.FC = () => {
   return (
     <div className="mx-auto w-full max-w-[1240px]">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
-        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
-          {t("insights.title")}
-        </h1>
+        <PageTitle page="insights">{t("insights.title")}</PageTitle>
         {dictations > 0 && (
           <Segmented
             label={t("insights.range.label")}

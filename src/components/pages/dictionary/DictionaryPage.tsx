@@ -50,6 +50,7 @@ import { TestSentence } from "./TestSentence";
 import { toastSaved, WordEditor } from "./WordEditor";
 import { WordRow } from "./WordRow";
 import { MergeWords } from "./MergeWords";
+import { PageTitle } from "../../shell/PageTitle";
 
 const INTRO_KEY = "legato.dictionary.introHidden";
 
@@ -288,9 +289,7 @@ export const DictionaryPage: React.FC = () => {
   return (
     <div className="mx-auto w-full max-w-[1120px]">
       <div className="mb-6 flex min-h-10 flex-wrap items-center justify-between gap-4">
-        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.015em]">
-          {t("dictionary.title")}
-        </h1>
+        <PageTitle page="dictionary">{t("dictionary.title")}</PageTitle>
         <div className="flex items-center gap-2">
           {keys.length > 0 && (
             <span

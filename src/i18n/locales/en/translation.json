@@ -1739,7 +1739,9 @@
       "wordsToday_one": "{{formatted}} word today",
       "wordsToday_other": "{{formatted}} words today",
       "notes": "Notes",
-      "scratchpad": "Scratchpad"
+      "scratchpad": "Scratchpad",
+      "aside": "Let clicks through",
+      "asideHelp": "Let clicks through to what's behind. Shaking the pointer over the island does the same."
     },
     "agent": {
       "asks": "{{agent}} needs you",
@@ -2903,6 +2905,16 @@
         "help": "Dictating in these apps switches to this model, which takes a moment after dictating elsewhere.",
         "none": "Download another model in Models to use it for these apps.",
         "deleted": "{{name}} (deleted, uses Inherit)"
+      }
+    },
+    "after": {
+      "title": "After dictating",
+      "inheritLink": "Transforms",
+      "nothing": "Nothing",
+      "pick": {
+        "title": "Transform for this kind of app",
+        "help": "Runs on every dictation into these apps, whatever runs elsewhere: Polish in email, nothing in a terminal. A few words are still left as you said them.",
+        "off": "Transforms are off. Switch them on in Settings › Features to pick one here."
       }
     }
   },

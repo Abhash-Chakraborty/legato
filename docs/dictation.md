@@ -37,9 +37,19 @@ Settings › Shortcuts › Keyboard backend picks how Legato hears keys. The bui
 Settings › Legato bar decides what shows while you dictate.
 
 - **Style**: None shows no bar (the tray icon still shows when Legato is listening). Minimal shows Cancel, a waveform and Finish, and never grows. Live, the default, shows your words as you say them, the time, and the transform that runs after.
-- **Shape**: Bar is a card at the top or bottom of the screen; Position picks which, and Bottom is the default. Island hangs from the top edge and grows with what it shows.
+- **Shape**: Bar is a card at the top or bottom of the screen; Position picks which, and Bottom is the default. Island is a dark pill that floats just under the top edge and grows with what it shows.
 - **When idle**: with the island, Small island keeps it at the top with Dictate, Notes and the Scratchpad on hover. Hide shows it only while there's something to show.
+- **Background**: how see-through the island and the live transcript box are. At rest the island is fainter still.
 - **Hide from screenshots and screen sharing**: on by default. The bar, the island, the bubble and the Notes side panel stay on your screen but don't show in screenshots, recordings or a screen you share in a call.
+
+### Reaching what's behind the island
+
+The island sits over the middle of the top edge, where browser tabs and title bars are. It gets out of the way four ways:
+
+- **At rest, clicks go through it.** Click a tab under the small island and the tab gets the click; the island stays shut until the pointer has left.
+- **Shake the pointer over it** and it fades to an outline that lets every click through, whatever it's showing. It comes back a moment after the pointer has gone.
+- **Let clicks through**, the last button on the open island, does the same.
+- **Drag it** by anything but a button to slide it along the top edge. It stays where you leave it, and goes back to the middle if you drop it there.
 
 ### The bubble
 

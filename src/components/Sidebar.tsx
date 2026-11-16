@@ -1,36 +1,20 @@
 import React, { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  AudioLines,
-  BookA,
-  ChartColumn,
-  Cpu,
-  House,
-  NotebookPen,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Replace,
-  Scissors,
-  Settings,
-  Type,
-  type LucideIcon,
-} from "@/icons";
+import { PanelLeftClose, PanelLeftOpen } from "@/icons";
 import type { AppSettings } from "@/bindings";
 import { useSettings } from "../hooks/useSettings";
 import { useNavStore, type Page } from "../stores/navStore";
+import { PAGE_MARKS } from "./shell/marks";
 
 interface NavItem {
   id: Page;
   labelKey: string;
-  icon: LucideIcon;
   /** Starts a new group, with space above it. */
   gapBefore?: boolean;
   /** The Settings › Features switch the page goes with. */
   feature?: "notes_enabled" | "scratchpad_enabled" | "insights_enabled";
   /** The move its icon plays on hover (`.im-*` in controls.css). */
   motion: string;
-  /** The page's own colour, behind its icon (`.tile-*` in play.css). */
-  hue: string;
 }
 
 // What you do with dictation first, then the words and prompts you keep,
@@ -40,44 +24,32 @@ const TOP: NavItem[] = [
   {
     id: "home",
     labelKey: "sidebar.home",
-    hue: "teal",
-    icon: House,
     motion: "lift",
   },
   {
     id: "dictionary",
     labelKey: "sidebar.dictionary",
-    hue: "violet",
-    icon: BookA,
     motion: "tilt",
     gapBefore: true,
   },
   {
     id: "snippets",
     labelKey: "sidebar.snippets",
-    hue: "rose",
-    icon: Scissors,
     motion: "snip",
   },
   {
     id: "style",
     labelKey: "sidebar.style",
-    hue: "amber",
-    icon: Type,
     motion: "type",
   },
   {
     id: "transforms",
     labelKey: "sidebar.transforms",
-    hue: "sky",
-    icon: Replace,
     motion: "swap",
   },
   {
     id: "notes",
     labelKey: "sidebar.notes",
-    hue: "green",
-    icon: AudioLines,
     motion: "meter",
     gapBefore: true,
     feature: "notes_enabled",
@@ -85,16 +57,12 @@ const TOP: NavItem[] = [
   {
     id: "scratchpad",
     labelKey: "sidebar.scratchpad",
-    hue: "orange",
-    icon: NotebookPen,
     motion: "write",
     feature: "scratchpad_enabled",
   },
   {
     id: "insights",
     labelKey: "sidebar.insights",
-    hue: "indigo",
-    icon: ChartColumn,
     motion: "bars",
     feature: "insights_enabled",
   },
@@ -103,15 +71,11 @@ const BOTTOM: NavItem[] = [
   {
     id: "models",
     labelKey: "sidebar.models",
-    hue: "slate",
-    icon: Cpu,
     motion: "chip",
   },
   {
     id: "settings",
     labelKey: "sidebar.settings",
-    hue: "slate",
-    icon: Settings,
     motion: "turn",
   },
 ];
@@ -137,7 +101,8 @@ const NavButton: React.FC<{
   const page = useNavStore((state) => state.page);
   const go = useNavStore((state) => state.go);
   const current = page === item.id;
-  const Icon = item.icon;
+  // The page's icon on its own colour (shell/marks.ts).
+  const { icon: Icon, hue } = PAGE_MARKS[item.id];
   const label = t(item.labelKey);
 
   return (
@@ -160,7 +125,7 @@ const NavButton: React.FC<{
         />
       )}
       {/* Each page has a colour of its own; the page you're on wears it. */}
-      <span className={`tile tile-${item.hue} ${current ? "on" : ""}`}>
+      <span className={`tile tile-${hue} ${current ? "on" : ""}`}>
         <Icon
           aria-hidden
           className={`im im-${item.motion} h-4 w-4 flex-none stroke-[1.9]`}
