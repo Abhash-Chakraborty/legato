@@ -18,10 +18,9 @@ let package = Package(
             dependencies: ["LegatoCoreFFI"],
             path: "Sources/LegatoCore",
             linkerSettings: [
-                // What the Rust library asks the system for.
-                .linkedLibrary("resolv"),
+                // What the Rust library asks the system for: the list
+                // rustc prints as native-static-libs when it builds it.
                 .linkedLibrary("iconv"),
-                .linkedFramework("Security"),
                 .linkedFramework("CoreFoundation"),
             ]
         ),

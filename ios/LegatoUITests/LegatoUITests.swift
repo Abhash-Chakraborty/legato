@@ -213,7 +213,7 @@ final class LegatoUITests: XCTestCase {
     // MARK: Edits against the core
 
     /// Delete lives in a row's menu and always offers Undo.
-    func testRemovingAWordOffersUndo() {
+    func testDeletingOffersUndo() {
         launch(["-seedDemo"])
         tab("words")
         let figma = app.buttons["word-Figma"]
@@ -225,6 +225,17 @@ final class LegatoUITests: XCTestCase {
         tap(app.buttons["Undo"], "Undo")
         see(figma, "the word, back")
         gone(app.staticTexts["Removed Figma"], "the toast")
+
+        // A memo made on this device: hidden at once, back with Undo.
+        tab("notes")
+        let memo = app.buttons["note-Thoughts after the call"]
+        see(memo, "the memo")
+        tap(app.buttons["More for this note"].firstMatch, "the memo's menu button")
+        tap(app.buttons["Delete"], "Delete")
+        see(app.staticTexts["Deleted Thoughts after the call"], "the toast")
+        gone(memo, "the deleted memo", timeout: 3)
+        tap(app.buttons["Undo"], "Undo")
+        see(memo, "the memo, back")
     }
 
     /// A word with what it's heard as, a snippet and a Scratchpad note,
@@ -296,12 +307,24 @@ final class LegatoUITests: XCTestCase {
 
     // MARK: A real pairing
 
+    /// The stand-in PC's pairing link. A link works once and for ten
+    /// minutes, and the stand-in keeps a fresh one in a file on the Mac,
+    /// which the simulator can read; the one from when the run started is
+    /// the fallback.
+    private func standInLink() -> String? {
+        let environment = ProcessInfo.processInfo.environment
+        if let file = environment["LEGATO_PAIR_LINK_FILE"],
+           let fresh = try? String(contentsOfFile: file, encoding: .utf8),
+           fresh.hasPrefix("legato://pair?") {
+            return fresh.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return environment["LEGATO_PAIR_LINK"].flatMap { $0.isEmpty ? nil : $0 }
+    }
+
     /// Opens a pairing link from a stand-in PC on this Mac, as the Camera
     /// would from the PC's code, pairs, and reads what comes over.
     func testPairingWithAStandInPC() throws {
-        guard let link = ProcessInfo.processInfo.environment["LEGATO_PAIR_LINK"],
-              let url = URL(string: link)
-        else {
+        guard let link = standInLink(), let url = URL(string: link) else {
             throw XCTSkip("No stand-in PC is running (LEGATO_PAIR_LINK isn't set).")
         }
         launch(["-freshData"])
@@ -357,10 +380,22 @@ final class LegatoUITests: XCTestCase {
         shot("light-28-advanced-paired")
         back()
 
-        // The same screens in dark would repeat this; one of them is enough.
+        // Away and back: the link is let go when Legato leaves the screen
+        // and comes up again when it returns.
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 4)
+        app.activate()
+        tab("home")
+        let chip = app.buttons["sync-chip"]
+        see(chip, "the PC's chip")
+        expectation(for: NSPredicate(format: "label BEGINSWITH %@", "Desk PC · "), evaluatedWith: chip)
+        waitForExpectations(timeout: 30)
+        shot("light-29-home-after-coming-back")
+
+        tab("settings")
         tap(button(containing: "More"), "More")
         see(app.buttons["Unpair"], "the PC's menu")
-        shot("light-29-pc-menu")
+        shot("light-30-pc-menu")
         tap(app.buttons["Unpair"], "Unpair")
         let confirm = app.alerts.firstMatch
         see(confirm, "the question before unpairing")

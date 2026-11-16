@@ -111,6 +111,8 @@ jobs:
             done
             export TEST_RUNNER_LEGATO_PAIR_LINK_CORE="$(cat ios/build/pc/core.link)"
             export TEST_RUNNER_LEGATO_PAIR_LINK="$(cat ios/build/pc/app.link)"
+            export TEST_RUNNER_LEGATO_PAIR_LINK_CORE_FILE="$PWD/ios/build/pc/core.link"
+            export TEST_RUNNER_LEGATO_PAIR_LINK_FILE="$PWD/ios/build/pc/app.link"
           fi
           export TEST_RUNNER_LEGATO_SHOTS_DIR="$PWD/ios/build/shots"
 
@@ -155,6 +157,13 @@ jobs:
           saw app "paired with .* (ios)"
           saw app "done: Draft the poster"
           saw app "the phone unpaired"
+          # The app left the screen and came back: it let go and connected again.
+          if [ "$(grep -c "the phone connected" ios/build/pc/app.log)" -ge 2 ]; then
+            echo "ok: the app tests' PC saw the phone connect twice"
+          else
+            echo "::error::The app tests' stand-in PC never saw the phone come back"
+            missing=1
+          fi
           exit "$missing"
 
       - name: Screenshots out of the test results
@@ -190,6 +199,8 @@ jobs:
           (cd ios/build/ipa && zip -qry ../Legato-unsigned.ipa Payload)
           ls -l ios/build/Legato-unsigned.ipa
           lipo -info ios/build/ipa/Payload/Legato.app/Legato
+          # Says "code object is not signed at all": signing is left to whoever installs it.
+          codesign -dv ios/build/ipa/Payload/Legato.app 2>&1 | head -3 || true
           /usr/libexec/PlistBuddy -c "Print" ios/build/ipa/Payload/Legato.app/Info.plist | head -60
 
       - uses: actions/upload-artifact@v4

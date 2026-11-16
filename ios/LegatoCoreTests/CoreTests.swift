@@ -246,7 +246,16 @@ final class CoreTests: XCTestCase {
     /// Pairs with a stand-in PC on this Mac (phone/stand-in-pc), when the
     /// run started one: the simulator shares the Mac's network.
     func testItPairsAndSyncsBothWaysWithAStandInPC() throws {
-        guard let link = ProcessInfo.processInfo.environment["LEGATO_PAIR_LINK_CORE"], !link.isEmpty else {
+        // A link works once and for ten minutes; the stand-in keeps a fresh
+        // one in a file on the Mac, which the simulator can read.
+        let environment = ProcessInfo.processInfo.environment
+        var link = environment["LEGATO_PAIR_LINK_CORE"] ?? ""
+        if let file = environment["LEGATO_PAIR_LINK_CORE_FILE"],
+           let fresh = try? String(contentsOfFile: file, encoding: .utf8),
+           fresh.hasPrefix("legato://pair?") {
+            link = fresh.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard !link.isEmpty else {
             throw XCTSkip("No stand-in PC is running (LEGATO_PAIR_LINK_CORE isn't set).")
         }
         let preview = try core.inspect(link: link)

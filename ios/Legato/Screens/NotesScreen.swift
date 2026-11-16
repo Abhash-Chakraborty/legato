@@ -46,7 +46,9 @@ struct NotesScreen: View {
         return "desktopcomputer"
     }
 
-    /// A note: tap to open it, the dots for the rest.
+    /// A note: tap to open it. One made on this device has a menu as well,
+    /// to delete it; the PC's are deleted there, where Recently deleted
+    /// keeps them a while.
     private func row(_ note: NoteRow) -> some View {
         HStack(alignment: .top, spacing: 0) {
             Button {
@@ -79,44 +81,45 @@ struct NotesScreen: View {
             .buttonStyle(RowPress())
             .accessibilityIdentifier("note-\(note.title)")
 
-            Button {
-                menu = choices(for: note)
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(Theme.faint)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            if note.device == nil {
+                Button {
+                    menu = choices(for: note)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(Theme.faint)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 8)
+                .padding(.trailing, 6)
+                .accessibilityLabel("More for this note")
+            } else {
+                Spacer().frame(width: 16)
             }
-            .buttonStyle(.plain)
-            .padding(.top, 8)
-            .padding(.trailing, 6)
-            .accessibilityLabel("More for this note")
         }
     }
 
     private func choices(for note: NoteRow) -> MenuModel {
-        var actions = [
-            MenuAction(label: "Open", icon: "doc.text") {
-                open(note.id)
-            },
-        ]
-        // A PC's note is deleted there, where Recently deleted keeps it a while.
-        if note.device == nil {
-            actions.append(MenuAction(label: "Delete", icon: "trash", danger: true) {
-                hidden.insert(note.id)
-                store.show(
-                    "Deleted \(note.title)",
-                    action: "Undo",
-                    expired: { store.run { _ = try $0.deleteNote(id: note.id) } },
-                    perform: { hidden.remove(note.id) }
-                )
-            })
-        }
-        return MenuModel(
+        MenuModel(
             title: note.title,
-            subtitle: note.device.map { "Made on \($0); delete it there." } ?? meta(note),
-            actions: actions
+            subtitle: meta(note),
+            actions: [
+                MenuAction(label: "Open", icon: "doc.text") {
+                    open(note.id)
+                },
+                MenuAction(label: "Delete", icon: "trash", danger: true) {
+                    // Hidden at once; deleted once Undo has had its time.
+                    hidden.insert(note.id)
+                    store.show(
+                        "Deleted \(note.title)",
+                        action: "Undo",
+                        expired: { store.run { _ = try $0.deleteNote(id: note.id) } },
+                        perform: { hidden.remove(note.id) }
+                    )
+                },
+            ]
         )
     }
 }

@@ -363,10 +363,18 @@ private struct MenuSheet: View {
             .padding(.bottom, 16)
         }
         .scrollBounceBehavior(.basedOnSize)
-        .presentationDetents([.height(CGFloat(128 + 56 * model.actions.count))])
+        .presentationDetents([.height(height)])
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(28)
         .presentationBackground(Theme.card)
+    }
+
+    /// About what the menu needs: its title on one line or two, the line
+    /// under it, and 56 for each action.
+    private var height: CGFloat {
+        let title: CGFloat = model.title.count > 34 ? 48 : 24
+        let subtitle: CGFloat = (model.subtitle ?? "").isEmpty ? 0 : 22
+        return 28 + title + subtitle + 10 + CGFloat(56 * model.actions.count) + 16
     }
 
     private struct MenuPress: ButtonStyle {
