@@ -626,8 +626,8 @@ async bubbleAction(action: string) : Promise<Result<null, string>> {
 /**
  * Where the island's shape sits in its window, in physical pixels from the
  * window's corner, so clicks elsewhere pass through to the app below.
- * `takes` is false while the island lets clicks through its shape too:
- * at rest, and while it has stepped aside.
+ * `takes` is false while the island lets clicks through its shape too,
+ * which it does once it has stepped aside.
  */
 async islandShape(x: number, y: number, width: number, height: number, takes: boolean) : Promise<void> {
     await TAURI_INVOKE("island_shape", { x, y, width, height, takes });

@@ -1741,7 +1741,7 @@
       "notes": "Notes",
       "scratchpad": "Scratchpad",
       "aside": "Let clicks through",
-      "asideHelp": "Let clicks through to what's behind. Shaking the pointer over the island does the same."
+      "asideHelp": "Let clicks through to what's behind for a moment. Wiggling the pointer over the island does the same."
     },
     "agent": {
       "asks": "{{agent}} needs you",

@@ -1277,8 +1277,8 @@ pub mod island_hit {
     static TOLD: AtomicU8 = AtomicU8::new(UNTOLD);
     const UNTOLD: u8 = 2;
 
-    /// Whether a click on the shape is the island's. At rest, and while
-    /// it has stepped aside, clicks go to the app behind it.
+    /// Whether a click on the shape is the island's. While it has stepped
+    /// aside, clicks go to the app behind it.
     static TAKES: AtomicBool = AtomicBool::new(true);
 
     /// The page's report of where the shape is, and whether it takes
@@ -1355,7 +1355,7 @@ pub mod island_hit {
                     }
                     if inside {
                         // A click that went through the island to the app
-                        // behind it: the island stays out of the way.
+                        // behind it, which the page waits for to come back.
                         let held = left_button_down();
                         let down = !take && held;
                         if down && !was_down {
@@ -1407,24 +1407,25 @@ pub mod island_hit {
             && cursor.y < rect.bottom
     }
 
-    /// Whether the left mouse button is down now, or went down and up
-    /// since the last look.
+    /// Whether the left mouse button is down now. Only the "down now" bit
+    /// is read: the other, "pressed since anyone last asked", is still set
+    /// from a click made anywhere else, long before the pointer got here.
     fn left_button_down() -> bool {
         use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
         // SAFETY: a plain query of the key's state.
         let state = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) };
-        state as u16 & 0x8001 != 0
+        state as u16 & 0x8000 != 0
     }
 
-    /// How long a stroke of a shake is, in physical pixels: about a
-    /// centimetre on any screen.
+    /// How long a stroke of a wiggle is, in physical pixels: about half a
+    /// centimetre on any screen, so a small wiggle is enough.
     fn shake_stroke() -> i32 {
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::HiDpi::GetDpiForWindow;
         let hwnd = HWND(HWND_OF.load(Ordering::SeqCst) as _);
         // SAFETY: a plain query on our own window; 0 if it has gone.
         let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
-        (28 * dpi as i32) / 96
+        (16 * dpi as i32) / 96
     }
 
     /// The island dragged along the top edge: `dx` physical pixels from
