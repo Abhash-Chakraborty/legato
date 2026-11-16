@@ -17,6 +17,12 @@ concurrency:
 permissions:
   contents: read
 
+# With pipefail, so a step that pipes Legato's output into tee still fails
+# when Legato does.
+defaults:
+  run:
+    shell: bash
+
 env:
   TARGET: aarch64-apple-darwin
   # The smallest English model in the catalog (src-tauri/src/catalog), pinned
@@ -28,7 +34,7 @@ env:
 
 jobs:
   check:
-    name: clippy and tests
+    name: clippy
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -78,6 +84,25 @@ jobs:
             Cargo.lock.diff
           retention-days: 7
 
+  # The unit tests were written on Windows; this is where one that assumed
+  # Windows (a path with backslashes, say) shows itself.
+  test:
+    name: tests
+    needs: check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.TARGET }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: macos-test
+          cache-on-failure: true
+
       - name: Rust tests
         working-directory: src-tauri
         run: cargo test --target "$TARGET" --no-fail-fast
@@ -86,6 +111,7 @@ jobs:
     name: build and smoke test
     needs: check
     runs-on: macos-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
@@ -129,14 +155,23 @@ jobs:
           plutil -p "$APP/Contents/Info.plist" | tee smoke/info-plist.txt
           grep -q NSMicrophoneUsageDescription smoke/info-plist.txt
           ls -la "$APP/Contents/MacOS" "$APP/Contents/Resources" | tee smoke/contents.txt
-          # The icon is written by scripts/mac_icon.py, not by Apple's tools;
-          # iconutil must still read every size in it.
-          ICON="$(ls "$APP"/Contents/Resources/*.icns | head -1)"
-          iconutil --convert iconset "$ICON" --output smoke/icon.iconset
-          ls -la smoke/icon.iconset
           file "$BIN" | tee smoke/binary.txt
           otool -L "$BIN" | tee -a smoke/binary.txt
           hdiutil verify "$DMG"
+
+      # The icon is written by scripts/mac_icon.py, not by Apple's tools, so
+      # Apple's tools are asked whether they can read every size in it.
+      - name: App icon
+        run: |
+          ICON="$APP/Contents/Resources/icon.icns"
+          {
+            sips -g pixelWidth -g pixelHeight -g format "$ICON" 2>&1 || echo "sips could not read the icon"
+            if iconutil --convert iconset "$ICON" --output smoke/icon.iconset 2>&1; then
+              ls smoke/icon.iconset
+            else
+              echo "iconutil could not read the icon"
+            fi
+          } | tee smoke/icon.txt
 
       # Recorded, not required: an ad-hoc signature is valid but Gatekeeper
       # rejects it, which is what a person downloading the .dmg will see.
@@ -157,6 +192,7 @@ jobs:
           } | tee smoke/signature.txt
 
       - name: Compute devices
+        timeout-minutes: 5
         run: |
           "$BIN" --list-devices 2> smoke/list-devices.stderr | tee smoke/list-devices.txt
           grep -q "kind=" smoke/list-devices.txt
@@ -175,13 +211,15 @@ jobs:
           curl --fail --location --retry 3 --output "model/$MODEL_FILE" "$MODEL_URL"
 
       - name: Install the test model
+        timeout-minutes: 5
         run: |
           echo "$MODEL_SHA256  model/$MODEL_FILE" | shasum -a 256 -c -
           MODELS="$HOME/Library/Application Support/io.github.abhash-chakraborty.legato/models"
           mkdir -p "$MODELS"
           cp "model/$MODEL_FILE" "$MODELS/"
           "$BIN" --list-models 2> smoke/list-models.stderr | tee smoke/list-models.txt
-          grep "✓" smoke/list-models.txt | grep -q "$MODEL_ID"
+          grep -F "$MODEL_ID" smoke/list-models.txt > smoke/model-line.txt
+          grep -q "✓" smoke/model-line.txt
 
       # A real sentence in macOS's own voice, as the 16 kHz mono 16-bit WAV
       # the app records.
@@ -191,7 +229,26 @@ jobs:
           afconvert -f WAVE -d LEI16@16000 -c 1 smoke/spoken.aiff smoke/spoken.wav
           afinfo smoke/spoken.wav
 
+      # The same sentence on each device by its index first, so that if the
+      # run below fails the summary still says which of the GPU and the CPU
+      # the runner could really use. Recorded, not required.
+      - name: Transcribe on each device
+        timeout-minutes: 10
+        run: |
+          : > smoke/per-device.txt
+          for index in $(grep -o "index=[0-9]*" smoke/list-devices.txt | cut -d= -f2); do
+            if "$BIN" --transcribe-file smoke/spoken.wav --model "$MODEL_ID" --device-index "$index" --json \
+              > "smoke/device-$index.json" 2> "smoke/device-$index.stderr"; then
+              echo "device $index: $(jq -c '{bound_backend, load_ms, best_ms, rtf, text}' "smoke/device-$index.json")" | tee -a smoke/per-device.txt
+            else
+              echo "device $index: failed ($(tail -1 "smoke/device-$index.stderr"))" | tee -a smoke/per-device.txt
+            fi
+          done
+
+      # As the app does it: the device its settings pick, which is the GPU
+      # when there is one.
       - name: Transcribe it
+        timeout-minutes: 5
         run: |
           "$BIN" --transcribe-file smoke/spoken.wav --model "$MODEL_ID" --json \
             2> smoke/transcribe.stderr | tee smoke/transcribe.json
@@ -205,60 +262,59 @@ jobs:
           echo "$FOUND of 6 words found"
           test "$FOUND" -ge 4
 
-      # The same sentence on each device by its index, so the summary says
-      # which of the GPU and the CPU the runner could really use.
-      - name: Transcribe on each device
-        run: |
-          : > smoke/per-device.txt
-          grep -o "^ *\[[0-9]*\]\|index=[0-9]*" smoke/list-devices.txt || true
-          for index in 0 1 2; do
-            if "$BIN" --transcribe-file smoke/spoken.wav --model "$MODEL_ID" --device-index "$index" --json \
-              > "smoke/device-$index.json" 2> "smoke/device-$index.stderr"; then
-              echo "device $index: $(jq -c '{bound_backend, load_ms, best_ms, rtf, text}' "smoke/device-$index.json")" | tee -a smoke/per-device.txt
-            else
-              echo "device $index: failed ($(tail -1 "smoke/device-$index.stderr"))" | tee -a smoke/per-device.txt
-            fi
-          done
-
       # The window a new user meets. The runner has no microphone and can't
       # answer macOS's permission questions, so this shows only that Legato
       # starts, stays up and draws.
       - name: Start the app
+        timeout-minutes: 5
         run: |
+          NAME="$(basename "$BIN")"
           open "$APP"
           sleep 25
-          if pgrep -x "$(basename "$BIN")" > /dev/null; then
+          if pgrep -x "$NAME" > /dev/null; then
             echo "running after 25 s" | tee smoke/launch.txt
           else
             echo "NOT running after 25 s" | tee smoke/launch.txt
           fi
           screencapture -x smoke/screen.png || echo "screencapture failed: $?" | tee -a smoke/launch.txt
-          osascript -e 'tell application "System Events" to get name of every process whose background only is false' 2>&1 | tee -a smoke/launch.txt || true
+          # What macOS itself says about the app: in the Dock or not, in front or not.
+          lsappinfo info -only name,type,pid,bundleID,isfrontmost Legato 2>&1 | tee -a smoke/launch.txt || true
           cp "$HOME/Library/Logs/io.github.abhash-chakraborty.legato/"*.log smoke/ 2> /dev/null || echo "no log file" | tee -a smoke/launch.txt
+          pkill -x "$NAME" || true
           grep -q "^running" smoke/launch.txt
-          pkill -x "$(basename "$BIN")" || true
+
+      # Legato's own log lines from each run above, which is where a failure
+      # explains itself.
+      - name: What Legato printed
+        if: always()
+        run: |
+          for file in smoke/*.stderr smoke/*.log; do
+            [ -f "$file" ] || continue
+            echo "::group::$file"
+            tail -n 80 "$file"
+            echo "::endgroup::"
+          done
 
       - name: Summary
         if: always()
         run: |
+          # A step that didn't run left no file; say so and carry on.
+          show() {
+            echo "$1:"
+            cat "smoke/$2" 2> /dev/null || echo "(nothing: the step didn't get this far)"
+            echo
+          }
           {
             echo "### Legato for Mac, built on $(sw_vers -productName) $(sw_vers -productVersion) ($(uname -m))"
             echo
             echo '```'
-            cat smoke/sizes.txt 2> /dev/null
-            echo
-            echo "--list-devices:"
-            cat smoke/list-devices.txt 2> /dev/null
-            echo
-            echo "transcription:"
-            cat smoke/transcribe.json 2> /dev/null
-            echo
-            cat smoke/per-device.txt 2> /dev/null
-            echo
-            echo "launch:"
-            cat smoke/launch.txt 2> /dev/null
-            echo
-            cat smoke/signature.txt 2> /dev/null
+            show "sizes" sizes.txt
+            show "--list-devices" list-devices.txt
+            show "transcription, as the app picks the device" transcribe.json
+            show "transcription, device by device" per-device.txt
+            show "launch" launch.txt
+            show "icon" icon.txt
+            show "signature" signature.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
