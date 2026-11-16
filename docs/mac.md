@@ -10,14 +10,14 @@ Every build of the branch is tried on a Mac build machine before it counts:
 
 - The app builds for Apple silicon and is packed as `Legato.app` and a `.dmg`.
 - It lists the Mac's GPU (Metal) and CPU as places to run a speech model.
-- It transcribes a sentence spoken by macOS's own voice and gets the words right.
-- It starts, stays up and draws its window.
+- It transcribes a sentence spoken by macOS's own voice and gets the words back.
+- It starts, stays up and draws its window, with its icon in the menu bar and the Dock.
 
-A build machine has no microphone and nobody to answer macOS's permission questions. So the microphone, the shortcut and the paste into another app have not been tried there. They are built and waiting for a person with a Mac.
+A build machine can't try everything. It has no microphone and nobody to answer macOS's permission questions, so the microphone, the shortcut and the paste into another app are untried. And its GPU is a virtual one the speech engine can't compute on, so the sentence above is transcribed on the CPU: Metal starts there, but a model has yet to run on a real Mac's GPU. All of this is built and waiting for a person with a Mac.
 
 ## What is built
 
-- **Dictation.** Hold or press Option+Space, speak, and the text is pasted into the app in front with Command+V. The model runs on the Mac's GPU.
+- **Dictation.** Hold or press Option+Space, speak, and the text is pasted into the app in front with Command+V. The model is set up to run on the Mac's GPU, through Metal.
 - **Setup.** The first step asks for the microphone and for Accessibility, and waits until both are on.
 - **The menu bar icon.** It changes while Legato listens and while it writes, and its menu picks the model, copies the last dictation and quits. Closing the window leaves Legato in the menu bar.
 - **Sounds.** The start and stop sounds are on by default on a Mac, since the Legato bar isn't there yet to show that it's listening.
