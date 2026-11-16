@@ -12,8 +12,11 @@ Every build of the branch is tried on a Mac build machine before it counts:
 - It lists the Mac's GPU (Metal) and CPU as places to run a speech model.
 - It transcribes a sentence spoken by macOS's own voice and gets the words back.
 - It starts, stays up and draws its window, with its icon in the menu bar and the Dock.
+- It does a whole dictation: Option+Space starts it, Legato records and transcribes, and the sentence arrives in Terminal by Command+V. The keychain keeps a secret and gives it back.
 
-A build machine can't try everything. It has no microphone and nobody to answer macOS's permission questions, so the microphone, the shortcut and the paste into another app are untried. And its GPU is a virtual one the speech engine can't compute on, so the sentence above is transcribed on the CPU: Metal starts there, but a model has yet to run on a real Mac's GPU. All of this is built and waiting for a person with a Mac.
+That last check uses stand-ins, because a build machine has no microphone and nobody at it. A test build hears a recording in place of the microphone. The two permissions are written into macOS's records, not granted by a person answering its questions. And the key press comes from a script, not a keyboard.
+
+So four things are still untried: a real microphone, macOS's permission questions as a person meets them, a real keyboard, and the GPU. The build machine's GPU is a virtual one the speech engine can't compute on, so its sentences are transcribed on the CPU. Metal starts there, but a model has yet to run on a real Mac's GPU. These wait for a person with a Mac.
 
 ## What is built
 
