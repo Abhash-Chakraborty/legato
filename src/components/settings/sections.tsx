@@ -20,6 +20,7 @@ import type { AiStatus, AppSettings, ModelInfo } from "@/bindings";
 import type { SettingsSection } from "../../stores/navStore";
 import type { Hue } from "../shell/marks";
 import { useModelStore } from "../../stores/modelStore";
+import { isMac } from "../../lib/utils/platform";
 
 import { AdminAppsToggle } from "./AdminAppsToggle";
 import { YourName } from "./YourName";
@@ -254,6 +255,42 @@ const SpokenLanguage: React.FC = () => {
     />
   );
 };
+
+/** What Legato for Mac doesn't have yet: the bar, bubble and island, call
+ *  detection, admin apps, and the shortcuts whose results show on the bar.
+ *  Left out of Settings there rather than shown as switches that do
+ *  nothing (see docs/mac.md). */
+const NOT_ON_MAC = {
+  sections: ["bar"],
+  groups: ["calls-master", "calls-detection", "call-start", "call-end"],
+  rows: [
+    "admin-apps",
+    "reliable-paste",
+    "note-screenshot",
+    "correct-last",
+    "transform-selection",
+    "view-changes",
+  ],
+};
+
+/** The sections as this system has them. */
+export const sectionsForSystem = (sections: SectionDef[]): SectionDef[] =>
+  !isMac
+    ? sections
+    : sections
+        .filter((section) => !NOT_ON_MAC.sections.includes(section.id))
+        .map((section) => ({
+          ...section,
+          groups: section.groups
+            .filter((group) => !NOT_ON_MAC.groups.includes(group.id))
+            .map((group) => ({
+              ...group,
+              rows: group.rows.filter(
+                (row) => !NOT_ON_MAC.rows.includes(row.id),
+              ),
+            }))
+            .filter((group) => group.rows.length > 0),
+        }));
 
 export const buildSections = (
   onPreviewOnboarding: (step: OnboardingPreviewStep) => void,

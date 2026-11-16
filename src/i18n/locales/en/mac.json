@@ -1,0 +1,281 @@
+{
+  "settings": {
+    "debug": {
+      "recordingRetention": {
+        "description": "How long dictations and their recordings stay on this Mac. The limit above still applies."
+      },
+      "alwaysOnMicrophone": {
+        "description": "Keeps the microphone open all the time for the fastest start. macOS shows the microphone as in use all day."
+      },
+      "keyboardImplementation": {
+        "description": "The built-in listener handles holds and single keys like Esc. Switch to system hotkeys if another tool blocks it."
+      },
+      "mode": {
+        "description": "Shows this section. Turn it off here or with Command+Shift+D."
+      },
+      "updateChecks": {
+        "lockedDescription": "Legato for Mac doesn't update itself yet."
+      }
+    },
+    "about": {
+      "version": {
+        "description": "Open-source speech to text that runs on this Mac."
+      }
+    },
+    "sections": {
+      "transcription": {
+        "subtitle": "How speech becomes text on this Mac."
+      },
+      "privacy": {
+        "subtitle": "What Legato keeps on this Mac, and for how long."
+      }
+    },
+    "ai": {
+      "status": {
+        "noKeyHelp": "Add your {{name}} API key below, or run a model on this Mac with Ollama."
+      },
+      "provider": {
+        "help": "Choose an AI provider and API key, or Ollama to run models on this Mac."
+      },
+      "providers": {
+        "ollama": "Runs models on this Mac. Nothing leaves it."
+      },
+      "baseUrl": {
+        "insecure": "Plain http works only on this Mac or a NetBird or Tailscale IP, so nobody on the network reads your text or key. Use the https address.",
+        "ollamaHelp": "Where Ollama listens. On another computer, use its https address or its NetBird or Tailscale IP."
+      },
+      "privacy": {
+        "local": "{{name}} runs on this Mac, so text for these uses never leaves it. Audio is never sent anywhere.",
+        "cloud": "Text for the uses you turned on goes to {{name}} ({{host}}). Audio never leaves this Mac."
+      },
+      "key": {
+        "help": "Starts with {{prefix}}. Kept in your keychain and sent only to {{host}}.",
+        "optionalHelp": "Only if your server asks for one. Kept in your keychain.",
+        "saved": "Key saved in your keychain"
+      }
+    },
+    "devices": {
+      "whatSyncs": "Each device keeps a full copy and updates this Mac directly.",
+      "pair": {
+        "noNetwork": "No network or Bluetooth found. Connect this Mac to a network or turn on Bluetooth first.",
+        "bluetoothOff": "Turn on Bluetooth on this Mac to sync when your phone isn't on the same network.",
+        "private": "The phone syncs over the network when it's on the same one as this Mac, and over Bluetooth when it's nearby. Everything is encrypted end to end, and nothing goes through a server."
+      },
+      "unpair": {
+        "stops": "{{name}} stops syncing with this Mac, and the clipboard stops going between them.",
+        "keeps": "What's already on {{name}} stays there, and nothing is deleted on this Mac."
+      },
+      "merges": {
+        "keptOurs": "kept the edit from this Mac"
+      },
+      "status": {
+        "waiting": "Changes on this Mac wait here until {{name}} connects."
+      },
+      "kinds": {
+        "notes": {
+          "help_one": "{{count}} note: transcript, summary and action items. Recordings stay on this Mac.",
+          "help_other": "{{count}} notes: transcripts, summaries and action items. Recordings stay on this Mac."
+        },
+        "style": {
+          "help": "The tone for each kind of app. Paste settings stay on this Mac."
+        }
+      },
+      "never": "Never syncs: audio recordings, models, this Mac's microphone, shortcuts, paste method and Legato bar settings.",
+      "private": {
+        "help": "Password managers mark what they copy as private, and Legato leaves it on this Mac."
+      },
+      "shareAi": {
+        "help": "So {{name}} can run your transforms away from this Mac. Keys go only over the encrypted link to a paired phone, which keeps them encrypted and never shows them. Off, it forgets them."
+      },
+      "clips": {
+        "clearHelp": "The list empties on this Mac. Your clipboard stays as it is."
+      },
+      "pairAnother": {
+        "help": "Each phone or tablet syncs with this Mac on its own."
+      },
+      "pcName": {
+        "help": "What this Mac is called in Legato for Android."
+      }
+    },
+    "connections": {
+      "mcp": {
+        "help": "Claude, Cursor and other MCP apps on this Mac can search your dictations, notes, Dictionary, Scratchpad and meetings, and add Scratchpad notes."
+      }
+    },
+    "speakers": {
+      "model": {
+        "help": "Needed to tell voices apart. {{size}} MB, downloaded with your first meeting and run on this Mac."
+      },
+      "remember": {
+        "help": "When you name a speaker, Legato keeps an 8-second clip of their voice and puts the name on them in later meetings. The clips stay on this Mac and are never synced or sent anywhere."
+      }
+    },
+    "sound": {
+      "microphone": {
+        "description": "The microphone Legato listens to. Default follows the input in System Settings › Sound."
+      },
+      "backgroundAudio": {
+        "help": {
+          "mute": "The whole Mac is muted while you dictate, Legato's sounds included."
+        }
+      }
+    },
+    "advanced": {
+      "startHidden": {
+        "description": "Opens to the menu bar instead of showing this window."
+      },
+      "autostart": {
+        "description": "Starts Legato when you log in to your Mac."
+      },
+      "showTrayIcon": {
+        "label": "Show menu bar icon",
+        "description": "The menu bar icon opens this window and has quick actions."
+      },
+      "pasteMethod": {
+        "description": "How the text gets into the app. Command+V works in most apps.",
+        "options": {
+          "clipboard": "Clipboard (Command+V)",
+          "clipboardCtrlShiftV": "Clipboard (Command+Shift+V)"
+        }
+      },
+      "autoSubmit": {
+        "options": {
+          "superEnter": "Command+Return",
+          "ctrlEnter": "Control+Return"
+        }
+      }
+    },
+    "requires": {
+      "tray": "Needs the menu bar icon, or there would be no way to open the window."
+    }
+  },
+  "home": {
+    "todayHere": "Today on this Mac · {{dictations}} · {{words}} · {{speech}} of speech",
+    "nothingTodayHere": "Nothing dictated on this Mac today yet.",
+    "tour": {
+      "rows": {
+        "phone": {
+          "body": "Legato for Android dictates in any app and keeps your Dictionary, snippets and notes in step with this Mac."
+        }
+      }
+    },
+    "meta": {
+      "unknownReason": "macOS didn't say why."
+    },
+    "rail": {
+      "defaultMic": "System default"
+    }
+  },
+  "dictionary": {
+    "learning": {
+      "screen": {
+        "help": "While you dictate, Legato reads the words in the window in front, on this Mac, so names, code and products you're looking at come out spelled as they are there. A word it fixes that way is offered to your Dictionary. With an AI model set up, those terms and the window's title go to it with your dictation. Password managers are never read."
+      },
+      "edits": {
+        "help": "Ten seconds after a paste, Legato reads the field once, on this Mac, and picks up words you corrected; Slack, Teams and VS Code often don't share their text."
+      }
+    }
+  },
+  "scratchpad": {
+    "footer": "{{notes}} · {{pinned}} pinned · kept on this Mac until you delete them",
+    "editor": {
+      "placeholder": "Start typing, or press Control+Space to dictate"
+    },
+    "keys": {
+      "ctrl": "Control"
+    },
+    "window": {
+      "newTabTip": "New tab (Control+T)",
+      "sendTip": "Paste into {{app}} (Control+Return)",
+      "searchTip": "Search notes (Control+F)",
+      "dictateTip": "Dictate here (Control+Space)"
+    }
+  },
+  "notes": {
+    "subtitle": "Meetings and voice memos, recorded and transcribed on this Mac.",
+    "record": {
+      "everything": "Everything this Mac plays",
+      "everythingOn": "Everything this Mac plays · {{device}}",
+      "systemHelpEverything": "Every sound this Mac plays is recorded, including notifications and videos."
+    },
+    "mine": {
+      "recordingBoth": "Recording {{mic}} and {{system}}, on this Mac. The summary is ready a few seconds after you stop.",
+      "recordingMic": "Recording {{mic}}, on this Mac. The summary is ready a few seconds after you stop."
+    }
+  },
+  "insights": {
+    "subtitle_one": "Computed on this Mac from {{formatted}} dictation since {{date}}. Kept when transcripts are deleted.",
+    "subtitle_other": "Computed on this Mac from {{formatted}} dictations since {{date}}. Kept when transcripts are deleted.",
+    "subtitleEmpty": "Computed on this Mac from your dictations, and kept when transcripts are deleted."
+  },
+  "setup": {
+    "done": {
+      "later": {
+        "aiNoneDesc": "Optional, for cleanup, transforms and note summaries. Ollama keeps it on this Mac."
+      },
+      "subHold": "Legato runs in the menu bar. Hold",
+      "subPress": "Legato runs in the menu bar. Press",
+      "subNoKey": "Legato runs in the menu bar. Set a dictate shortcut in Settings › Shortcuts.",
+      "autostart": "Start Legato when you log in",
+      "opensHidden": "It opens hidden in the menu bar"
+    },
+    "mic": {
+      "sub": "Legato listens only when you ask it to, and turns speech into text on this Mac.",
+      "accessHelp": "macOS asks the first time Legato listens. Choose Allow.",
+      "blocked": "macOS is blocking the microphone",
+      "blockedHelp": "Switch Legato on under Microphone in System Settings, then check again.",
+      "stillBlocked": "Still blocked. Switch Legato on under Microphone in System Settings first.",
+      "openPrivacy": "Open System Settings",
+      "followsDefault": "Follows the input chosen in System Settings",
+      "default": "System default",
+      "hearBlocked": "Nothing comes through while macOS blocks the microphone",
+      "noteBlocked": "You can continue once macOS allows the microphone"
+    },
+    "model": {
+      "sub": "Speech turns into text on this Mac.",
+      "downloaded": "On this Mac",
+      "inUse": "On this Mac · in use",
+      "onPc": "Already on this Mac, nothing to download",
+      "subGpu": "Speech turns into text on this Mac, on its graphics chip.",
+      "inputLanguages": "Your input languages: {{list}}",
+      "because": "Recommended, because {{language}} is one of your input languages"
+    }
+  },
+  "inyon": {
+    "reason": {
+      "unreachable": "Couldn't reach the hub. Check the address and that this Mac can reach it.",
+      "insecure": "Legato pairs over https, or over plain http only on this Mac or a NetBird or Tailscale address, so nobody on the network can read the hub's token. Use the hub's https address.",
+      "vault": "The keychain wouldn't keep the hub's token.",
+      "untrusted": "macOS doesn't trust this hub's certificate. In Inyon, open Settings › Paired devices › Copy pairing link, and paste the link here: it names the hub's own certificate."
+    }
+  },
+  "onboarding": {
+    "permissions": {
+      "title": "Legato needs your OK",
+      "description": "macOS asks before an app may use the microphone or work in other apps.",
+      "microphone": {
+        "description": "So Legato can hear you. Switch it on under Microphone in System Settings."
+      }
+    }
+  },
+  "accessibility": {
+    "openSettings": "Open System Settings"
+  },
+  "errors": {
+    "micPermissionDenied": "Allow Legato under System Settings › Privacy & Security › Microphone."
+  },
+  "theme": {
+    "description": "System follows your Mac's appearance."
+  },
+  "style": {
+    "paste": {
+      "methods": {
+        "ctrl_v": "Command+V",
+        "ctrl_shift_v": "Command+Shift+V"
+      },
+      "afterOptions": {
+        "ctrl_enter": "Control+Return"
+      }
+    }
+  }
+}

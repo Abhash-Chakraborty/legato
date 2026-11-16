@@ -87,6 +87,10 @@
         "title": "Microphone Access",
         "description": "Required to hear your voice for transcription."
       },
+      "keyboard": {
+        "title": "Accessibility access",
+        "description": "So Legato can hear its shortcut in any app and paste what you said. Switch it on under Accessibility in System Settings."
+      },
       "waiting": "Waiting...",
       "allGranted": "All set!",
       "errors": {
@@ -3880,7 +3884,12 @@
       "hearBlocked": "Nothing comes through while Windows blocks the microphone",
       "noteWaiting": "You can continue once Legato hears you",
       "noteBlocked": "You can continue once Windows allows the microphone",
-      "noteFailed": "Legato couldn't check this microphone"
+      "noteFailed": "Legato couldn't check this microphone",
+      "keysTitle": "Accessibility access",
+      "keysHelp": "macOS asks before an app may hear a shortcut in other apps and paste for you. Legato uses it for nothing else.",
+      "keysAfterOpen": "Switch Legato on in the list. This step notices by itself.",
+      "keysOk": "Legato can hear its shortcut in any app and paste what you said.",
+      "noteKeys": "You can continue once Legato is switched on under Accessibility"
     },
     "model": {
       "title": "Pick a speech model",

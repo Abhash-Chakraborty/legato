@@ -19,6 +19,7 @@ import { Requires } from "../ui/SettingContainer";
 import type { OnboardingPreviewStep } from "./debug/OnboardingPreview";
 import {
   buildSections,
+  sectionsForSystem,
   type RowContext,
   type SectionDef,
   type SettingRow,
@@ -85,7 +86,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const searchRef = useRef<HTMLInputElement>(null);
 
   const sections = useMemo(
-    () => buildSections(onPreviewOnboarding),
+    () => sectionsForSystem(buildSections(onPreviewOnboarding)),
     [onPreviewOnboarding],
   );
   const visible = sections.filter((s) => !s.hidden?.(settings));

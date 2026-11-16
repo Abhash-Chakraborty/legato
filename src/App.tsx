@@ -33,6 +33,7 @@ import { commands, events } from "@/bindings";
 import { HomePage } from "@/components/pages/home/HomePage";
 import { deleteRetiredModel } from "@/components/onboarding/retiredModels";
 import { isStep, type Step } from "@/components/setup/setup";
+import { isMac } from "@/lib/utils/platform";
 
 // First-run setup and the screens a returning user rarely sees load when
 // they're needed, not with every launch.
@@ -339,7 +340,11 @@ function App() {
         settingsResult.status === "ok" ? settingsResult.data.setup_step : "";
       if (isStep(resume)) {
         await revealMainWindowForPermissions();
-        setSetupStep(resume);
+        // On a Mac the first step is also where Accessibility is asked
+        // for; without it no later step's shortcut works.
+        const ready =
+          !isMac || (await commands.keyboardAccessGranted().catch(() => true));
+        setSetupStep(ready ? resume : "mic");
         setOnboardingStep("setup");
         return;
       }
@@ -355,7 +360,14 @@ function App() {
         try {
           const microphoneStatus =
             await commands.getWindowsMicrophonePermissionStatus();
-          if (microphoneStatus.overall_access === "denied") {
+          // A Mac also asks before Legato may hear its shortcut and paste,
+          // and forgets the answer when the app's signature changes.
+          const keyboardAllowed =
+            !isMac || (await commands.keyboardAccessGranted());
+          if (
+            microphoneStatus.overall_access === "denied" ||
+            !keyboardAllowed
+          ) {
             await revealMainWindowForPermissions();
             setOnboardingStep("accessibility");
             return;

@@ -1,6 +1,7 @@
 /**
  * Keyboard utility functions for handling keyboard events
  */
+import { isMac } from "./platform";
 
 // Shortcut parsers require compact tokens; keep display labels separate.
 const KEY_DISPLAY: Record<string, string> = {
@@ -12,6 +13,24 @@ const KEY_DISPLAY: Record<string, string> = {
   scrolllock: "Scroll Lock",
   // The parsers call the Windows key "super".
   super: "Win",
+};
+
+// A Mac's own names for its keys, however the shortcut spells them: the key
+// listener writes "option" and "command", defaults and older settings may
+// say "alt" or "super".
+const MAC_KEY_DISPLAY: Record<string, string> = {
+  super: "Command",
+  command: "Command",
+  cmd: "Command",
+  meta: "Command",
+  win: "Command",
+  alt: "Option",
+  option: "Option",
+  opt: "Option",
+  ctrl: "Control",
+  control: "Control",
+  enter: "Return",
+  return: "Return",
 };
 
 /**
@@ -143,9 +162,10 @@ export const getKeyName = (e: KeyboardEvent): string => {
 /**
  * Capitalize a key name for display (e.g. "space" -> "Space", "f1" -> "F1")
  */
-const capitalizeKey = (key: string): string => {
+const capitalizeKey = (key: string, mac: boolean): string => {
   // fn key: keep lowercase
   if (key === "fn") return "fn";
+  if (mac && MAC_KEY_DISPLAY[key]) return MAC_KEY_DISPLAY[key];
   // Function keys: f1 -> F1
   if (/^f\d+$/.test(key)) return key.toUpperCase();
   // Single char: a -> A
@@ -160,30 +180,37 @@ const capitalizeKey = (key: string): string => {
  * Handles _left/_right suffixes and capitalizes names.
  * e.g. "shift_left" -> "Left Shift", "alt" -> "Alt", "space" -> "Space"
  */
-const formatKeyPart = (part: string): string => {
+const formatKeyPart = (part: string, mac: boolean): string => {
   const trimmed = part.trim();
   if (!trimmed) return "";
 
   if (trimmed.endsWith("_left")) {
     const name = trimmed.slice(0, -5);
-    return `Left ${capitalizeKey(name)}`;
+    return `Left ${capitalizeKey(name, mac)}`;
   }
   if (trimmed.endsWith("_right")) {
     const name = trimmed.slice(0, -6);
-    return `Right ${capitalizeKey(name)}`;
+    return `Right ${capitalizeKey(name, mac)}`;
   }
 
-  return capitalizeKey(trimmed);
+  return capitalizeKey(trimmed, mac);
 };
 
 /**
  * Get display-friendly key combination string
  * Formats raw hotkey strings like "ctrl_left+shift+space" into
- * human-readable form like "Left Ctrl + Shift + Space"
+ * human-readable form like "Left Ctrl + Shift + Space". On a Mac the keys
+ * take its names: "option+space" reads "Option + Space".
  */
-export const formatKeyCombination = (combination: string): string => {
+export const formatKeyCombination = (
+  combination: string,
+  mac: boolean = isMac,
+): string => {
   if (!combination) return "";
-  return combination.split("+").map(formatKeyPart).join(" + ");
+  return combination
+    .split("+")
+    .map((part) => formatKeyPart(part, mac))
+    .join(" + ");
 };
 
 /**

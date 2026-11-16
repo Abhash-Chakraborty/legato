@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import legatoIcon from "../../assets/legato-icon.svg";
+import { isMac } from "../../lib/utils/platform";
 import ModelSelector from "../model-selector";
 import UpdateChecker from "../update-checker";
 
@@ -49,6 +50,41 @@ export const TitleBar: React.FC<TitleBarProps> = ({ minimal = false }) => {
   }, []);
 
   const win = getCurrentWindow();
+
+  // A Mac window keeps its own close, minimise and zoom buttons at the left,
+  // over this bar; the bar leaves them room and draws none of its own.
+  if (isMac) {
+    return (
+      <header
+        className="flex h-12 flex-none select-none items-stretch"
+        data-tauri-drag-region
+      >
+        <div className="w-[78px] flex-none" data-tauri-drag-region />
+        {!minimal && (
+          <div
+            className="flex items-center gap-2 pe-3 text-[15px] font-semibold tracking-[-0.01em] text-text"
+            data-tauri-drag-region
+          >
+            <img
+              src={legatoIcon}
+              alt=""
+              width={20}
+              height={20}
+              className="pointer-events-none h-5 w-5 rounded-[5px]"
+            />
+            <span className="pointer-events-none">{APP_NAME}</span>
+          </div>
+        )}
+        <div className="flex-1" data-tauri-drag-region />
+        {!minimal && (
+          <div className="flex items-center gap-1 pe-3.5">
+            <UpdateChecker />
+            <ModelSelector />
+          </div>
+        )}
+      </header>
+    );
+  }
 
   return (
     <header
