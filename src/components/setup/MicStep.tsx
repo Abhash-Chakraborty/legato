@@ -70,7 +70,10 @@ export const MicStep: React.FC<StepProps> = ({ go, setFoot }) => {
 
   useEffect(() => {
     refreshAudioDevices();
-    readAccess().then(setAccess);
+    // A Mac has a third answer, "not asked yet", which the look below
+    // reads together with the other two, so the row never says Allowed
+    // before macOS has.
+    if (!isMac) readAccess().then(setAccess);
   }, []);
 
   // On a Mac both answers can change in System Settings while this step is
@@ -239,9 +242,12 @@ export const MicStep: React.FC<StepProps> = ({ go, setFoot }) => {
           ) : (
             <Row
               icon={<ShieldCheck className="h-4 w-4" />}
-              tone="ok"
+              // Not the "allowed" look while macOS is still asking.
+              tone={asking ? undefined : "ok"}
               title={t("setup.mic.access")}
-              help={t("setup.mic.accessHelp")}
+              help={
+                asking ? t("setup.mic.askingHelp") : t("setup.mic.accessHelp")
+              }
               aside={
                 access === "allowed" && (
                   <span className="flex items-center gap-1.5 text-[13px] text-text-2">

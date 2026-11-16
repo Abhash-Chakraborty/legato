@@ -10,13 +10,13 @@ use std::process::Command;
 
 /// Where the main window's close, minimise and zoom buttons sit: 18 px in
 /// from the left, and centred in the page's 48 px title bar. The second
-/// number isn't a distance from the top: the buttons, 14 px tall, sit in
-/// the middle of a strip that many pixels taller than they are, so 34
-/// puts their centre at (14 + 34) / 2 = 24.
-pub const TRAFFIC_LIGHTS: (f64, f64) = (18.0, 34.0);
+/// number isn't the distance to their top: measured on screenshots of
+/// macOS 26, their centre lands 2 px above it (18 gave 16, 34 gave 32), so
+/// 26 puts it at 24.
+pub const TRAFFIC_LIGHTS: (f64, f64) = (18.0, 26.0);
 
-/// The same for the Scratchpad's 44 px bar: centred at (14 + 30) / 2 = 22.
-pub const SCRATCHPAD_TRAFFIC_LIGHTS: (f64, f64) = (14.0, 30.0);
+/// The same for the Scratchpad's 44 px bar: 24 puts their centre at 22.
+pub const SCRATCHPAD_TRAFFIC_LIGHTS: (f64, f64) = (14.0, 24.0);
 
 const ACCESSIBILITY_PANE: &str =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";

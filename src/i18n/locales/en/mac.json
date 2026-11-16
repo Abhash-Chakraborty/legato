@@ -221,7 +221,7 @@
     },
     "mic": {
       "sub": "Legato listens only when you ask it to, and turns speech into text on this Mac.",
-      "accessHelp": "macOS asks the first time Legato listens. Choose Allow.",
+      "accessHelp": "macOS lets Legato use it.",
       "blocked": "macOS is blocking the microphone",
       "blockedHelp": "Switch Legato on under Microphone in System Settings, then check again.",
       "stillBlocked": "Still blocked. Switch Legato on under Microphone in System Settings first.",
