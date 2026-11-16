@@ -1,0 +1,279 @@
+name: "macOS"
+
+# Builds Legato for Apple silicon and tries the result on the runner: the
+# app must list its compute devices, transcribe a sentence macOS's own voice
+# speaks, and start. Nobody on the project has a Mac, so this is the only
+# place the Mac build runs before a person tries it.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [mac]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TARGET: aarch64-apple-darwin
+  # The smallest English model in the catalog (src-tauri/src/catalog), pinned
+  # to the catalog's revision and hash.
+  MODEL_ID: handy-computer/whisper-tiny.en-gguf/whisper-tiny.en-Q8_0.gguf
+  MODEL_FILE: whisper-tiny.en-Q8_0.gguf
+  MODEL_URL: https://huggingface.co/handy-computer/whisper-tiny.en-gguf/resolve/becb8bcb804405dc97b380a523d9975888820986/whisper-tiny.en-Q8_0.gguf
+  MODEL_SHA256: e8c9b73c06344307d8b346e07fbe93dd88d894627854bcff31523f1ce44394fa
+
+jobs:
+  check:
+    name: clippy and tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Say what the runner is
+        run: |
+          sw_vers
+          uname -m
+          sysctl -n machdep.cpu.brand_string
+          xcodebuild -version || true
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: ${{ env.TARGET }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: macos-check
+          # The dependencies take most of the time; keep them even when
+          # Legato's own code doesn't build yet.
+          cache-on-failure: true
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --target "$TARGET" --all-targets
+
+      # A dependency added for the Mac changes Cargo.lock; the file in the
+      # repository should already say so.
+      - name: Cargo.lock is up to date
+        if: always()
+        run: |
+          git diff --stat -- src-tauri/Cargo.lock
+          git diff -- src-tauri/Cargo.lock > Cargo.lock.diff
+          if [ -s Cargo.lock.diff ]; then
+            echo "::warning::Cargo.lock changed during the build; commit the uploaded file"
+          fi
+
+      - name: Upload Cargo.lock
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cargo-lock
+          path: |
+            src-tauri/Cargo.lock
+            Cargo.lock.diff
+          retention-days: 7
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --target "$TARGET" --no-fail-fast
+
+  build:
+    name: build and smoke test
+    needs: check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.TARGET }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: macos-release
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      # The bundle config for a Mac is src-tauri/tauri.macos.conf.json: an
+      # .app and a .dmg, signed ad hoc, with no updater artifacts.
+      - name: Build
+        run: bun run tauri build --target "$TARGET"
+
+      - name: Find the bundle
+        run: |
+          BUNDLE="src-tauri/target/$TARGET/release/bundle"
+          APP="$(ls -d "$BUNDLE"/macos/*.app | head -1)"
+          DMG="$(ls "$BUNDLE"/dmg/*.dmg | head -1)"
+          BIN="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+          test -x "$BIN"
+          {
+            echo "APP=$APP"
+            echo "DMG=$DMG"
+            echo "BIN=$BIN"
+          } >> "$GITHUB_ENV"
+          mkdir -p smoke
+          du -sh "$APP" "$DMG" | tee smoke/sizes.txt
+
+      - name: Bundle contents
+        run: |
+          plutil -p "$APP/Contents/Info.plist" | tee smoke/info-plist.txt
+          grep -q NSMicrophoneUsageDescription smoke/info-plist.txt
+          ls -la "$APP/Contents/MacOS" "$APP/Contents/Resources" | tee smoke/contents.txt
+          # The icon is written by scripts/mac_icon.py, not by Apple's tools;
+          # iconutil must still read every size in it.
+          ICON="$(ls "$APP"/Contents/Resources/*.icns | head -1)"
+          iconutil --convert iconset "$ICON" --output smoke/icon.iconset
+          ls -la smoke/icon.iconset
+          file "$BIN" | tee smoke/binary.txt
+          otool -L "$BIN" | tee -a smoke/binary.txt
+          hdiutil verify "$DMG"
+
+      # Recorded, not required: an ad-hoc signature is valid but Gatekeeper
+      # rejects it, which is what a person downloading the .dmg will see.
+      - name: Signature
+        run: |
+          {
+            echo "## codesign -dv"
+            codesign -dv --verbose=4 "$APP" 2>&1 || true
+            echo
+            echo "## codesign --verify --deep --strict"
+            codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 && echo "verify: ok" || echo "verify: FAILED ($?)"
+            echo
+            echo "## entitlements"
+            codesign -d --entitlements - "$APP" 2>&1 || true
+            echo
+            echo "## spctl -a -vv"
+            spctl -a -vv "$APP" 2>&1 || echo "spctl exit code: $?"
+          } | tee smoke/signature.txt
+
+      - name: Compute devices
+        run: |
+          "$BIN" --list-devices 2> smoke/list-devices.stderr | tee smoke/list-devices.txt
+          grep -q "kind=" smoke/list-devices.txt
+
+      - name: Cache the test model
+        id: model
+        uses: actions/cache@v5
+        with:
+          path: model/${{ env.MODEL_FILE }}
+          key: model-${{ env.MODEL_SHA256 }}
+
+      - name: Fetch the test model
+        if: steps.model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p model
+          curl --fail --location --retry 3 --output "model/$MODEL_FILE" "$MODEL_URL"
+
+      - name: Install the test model
+        run: |
+          echo "$MODEL_SHA256  model/$MODEL_FILE" | shasum -a 256 -c -
+          MODELS="$HOME/Library/Application Support/io.github.abhash-chakraborty.legato/models"
+          mkdir -p "$MODELS"
+          cp "model/$MODEL_FILE" "$MODELS/"
+          "$BIN" --list-models 2> smoke/list-models.stderr | tee smoke/list-models.txt
+          grep "✓" smoke/list-models.txt | grep -q "$MODEL_ID"
+
+      # A real sentence in macOS's own voice, as the 16 kHz mono 16-bit WAV
+      # the app records.
+      - name: Speak a sentence
+        run: |
+          say -o smoke/spoken.aiff "The quick brown fox jumps over the lazy dog near the river bank."
+          afconvert -f WAVE -d LEI16@16000 -c 1 smoke/spoken.aiff smoke/spoken.wav
+          afinfo smoke/spoken.wav
+
+      - name: Transcribe it
+        run: |
+          "$BIN" --transcribe-file smoke/spoken.wav --model "$MODEL_ID" --json \
+            2> smoke/transcribe.stderr | tee smoke/transcribe.json
+          TEXT="$(jq -r .text smoke/transcribe.json | tr '[:upper:]' '[:lower:]')"
+          echo "Heard: $TEXT"
+          echo "Backend: $(jq -r .bound_backend smoke/transcribe.json)"
+          FOUND=0
+          for word in quick brown fox lazy dog river; do
+            case "$TEXT" in *"$word"*) FOUND=$((FOUND + 1)) ;; esac
+          done
+          echo "$FOUND of 6 words found"
+          test "$FOUND" -ge 4
+
+      # The same sentence on each device by its index, so the summary says
+      # which of the GPU and the CPU the runner could really use.
+      - name: Transcribe on each device
+        run: |
+          : > smoke/per-device.txt
+          grep -o "^ *\[[0-9]*\]\|index=[0-9]*" smoke/list-devices.txt || true
+          for index in 0 1 2; do
+            if "$BIN" --transcribe-file smoke/spoken.wav --model "$MODEL_ID" --device-index "$index" --json \
+              > "smoke/device-$index.json" 2> "smoke/device-$index.stderr"; then
+              echo "device $index: $(jq -c '{bound_backend, load_ms, best_ms, rtf, text}' "smoke/device-$index.json")" | tee -a smoke/per-device.txt
+            else
+              echo "device $index: failed ($(tail -1 "smoke/device-$index.stderr"))" | tee -a smoke/per-device.txt
+            fi
+          done
+
+      # The window a new user meets. The runner has no microphone and can't
+      # answer macOS's permission questions, so this shows only that Legato
+      # starts, stays up and draws.
+      - name: Start the app
+        run: |
+          open "$APP"
+          sleep 25
+          if pgrep -x "$(basename "$BIN")" > /dev/null; then
+            echo "running after 25 s" | tee smoke/launch.txt
+          else
+            echo "NOT running after 25 s" | tee smoke/launch.txt
+          fi
+          screencapture -x smoke/screen.png || echo "screencapture failed: $?" | tee -a smoke/launch.txt
+          osascript -e 'tell application "System Events" to get name of every process whose background only is false' 2>&1 | tee -a smoke/launch.txt || true
+          cp "$HOME/Library/Logs/io.github.abhash-chakraborty.legato/"*.log smoke/ 2> /dev/null || echo "no log file" | tee -a smoke/launch.txt
+          grep -q "^running" smoke/launch.txt
+          pkill -x "$(basename "$BIN")" || true
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Legato for Mac, built on $(sw_vers -productName) $(sw_vers -productVersion) ($(uname -m))"
+            echo
+            echo '```'
+            cat smoke/sizes.txt 2> /dev/null
+            echo
+            echo "--list-devices:"
+            cat smoke/list-devices.txt 2> /dev/null
+            echo
+            echo "transcription:"
+            cat smoke/transcribe.json 2> /dev/null
+            echo
+            cat smoke/per-device.txt 2> /dev/null
+            echo
+            echo "launch:"
+            cat smoke/launch.txt 2> /dev/null
+            echo
+            cat smoke/signature.txt 2> /dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the app
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: legato-${{ env.TARGET }}
+          path: src-tauri/target/${{ env.TARGET }}/release/bundle/dmg/*.dmg
+          retention-days: 30
+
+      - name: Upload what the smoke test saw
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-test
+          path: smoke
+          retention-days: 30
