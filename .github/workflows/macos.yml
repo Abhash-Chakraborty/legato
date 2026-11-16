@@ -116,6 +116,25 @@ jobs:
         working-directory: src-tauri
         run: cargo test --target "$TARGET" --no-fail-fast
 
+      # Keeping a secret in the keychain and reading it back. It needs a
+      # login keychain a test may use, which not every runner gives, so the
+      # result is recorded and doesn't decide the job.
+      - name: Keychain round trip
+        continue-on-error: true
+        working-directory: src-tauri
+        run: |
+          {
+            echo "### Keychain round trip"
+            echo '```'
+            if cargo test --target "$TARGET" --lib keychain_tests -- --ignored 2>&1 | tail -n 15; then
+              echo "passed"
+            else
+              echo "FAILED"
+            fi
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          ! grep -q "^FAILED" "$GITHUB_STEP_SUMMARY"
+
   build:
     name: build and smoke test
     needs: check
@@ -384,4 +403,270 @@ jobs:
         with:
           name: smoke-test
           path: smoke
+          retention-days: 30
+
+  # A whole dictation on the runner: Legato records, transcribes and pastes
+  # into Terminal, and what Terminal received is read back. Nobody can speak
+  # to a runner or answer macOS's questions on it, so this needs two things
+  # a person's Mac doesn't: a debug build, which can hear a WAV file in
+  # place of the microphone (LEGATO_DEBUG_MIC_WAV), and the two permissions
+  # written straight into macOS's permission database. Whether a runner
+  # allows that isn't promised, so the job is recorded and doesn't decide
+  # the run.
+  dictate:
+    name: dictation end to end
+    needs: check
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 45
+    env:
+      BUNDLE_ID: io.github.abhash-chakraborty.legato
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.TARGET }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: macos-debug
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build a debug app
+        run: bun run tauri build --debug --target "$TARGET" --bundles app
+
+      - name: Find the app
+        run: |
+          APP="$(ls -d "src-tauri/target/$TARGET/debug/bundle/macos/"*.app | head -1)"
+          BIN="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+          test -x "$BIN"
+          mkdir -p e2e
+          {
+            echo "APP=$PWD/$APP"
+            echo "BIN=$PWD/$BIN"
+            echo "DATA=$HOME/Library/Application Support/$BUNDLE_ID"
+          } >> "$GITHUB_ENV"
+
+      # What the runner allows, before anything is asked of it.
+      - name: What the runner is
+        run: |
+          {
+            sw_vers
+            csrutil status || true
+            echo "--- audio devices"
+            system_profiler SPAudioDataType 2>&1 | head -40 || true
+            echo "--- permissions macOS already holds for everyone"
+            sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
+              "select service, client, auth_value from access" 2>&1 | head -60 || true
+            echo "--- and for this user"
+            sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" \
+              "select service, client, auth_value from access" 2>&1 | head -60 || true
+          } | tee e2e/runner.txt
+
+      # Accessibility is kept for the whole Mac, the microphone per user.
+      - name: Grant Legato the microphone and Accessibility
+        run: |
+          cat > e2e/grant.py <<'PY'
+          import sqlite3
+          import sys
+          import time
+
+          db, service, client = sys.argv[1:4]
+          con = sqlite3.connect(db)
+          columns = [row[1] for row in con.execute("pragma table_info(access)")]
+          now = int(time.time())
+          # What a row that says "allowed" holds, by column; a macOS with
+          # other columns keeps their defaults.
+          row = {
+              "service": service,
+              "client": client,
+              "client_type": 1 if client.startswith("/") else 0,
+              "auth_value": 2,
+              "auth_reason": 4,
+              "auth_version": 1,
+              "csreq": None,
+              "policy_id": None,
+              "indirect_object_identifier_type": 0,
+              "indirect_object_identifier": "UNUSED",
+              "indirect_object_code_identity": None,
+              "flags": 0,
+              "last_modified": now,
+              "pid": None,
+              "pid_version": None,
+              "boot_uuid": "UNUSED",
+              "last_reminded": now,
+          }
+          used = [c for c in columns if c in row]
+          con.execute(
+              f"insert or replace into access ({','.join(used)}) values ({','.join('?' * len(used))})",
+              [row[c] for c in used],
+          )
+          con.commit()
+          print(f"{service} for {client}: written ({len(used)} of {len(columns)} columns)")
+          PY
+          {
+            sudo python3 e2e/grant.py "/Library/Application Support/com.apple.TCC/TCC.db" kTCCServiceAccessibility "$BUNDLE_ID" 2>&1 \
+              || echo "Accessibility: could NOT be written"
+            sudo python3 e2e/grant.py "$HOME/Library/Application Support/com.apple.TCC/TCC.db" kTCCServiceMicrophone "$BUNDLE_ID" 2>&1 \
+              || echo "Microphone: could NOT be written"
+          } | tee e2e/grants.txt
+
+      - name: Cache the test model
+        id: model
+        uses: actions/cache@v5
+        with:
+          path: model/${{ env.MODEL_FILE }}
+          key: model-${{ env.MODEL_SHA256 }}
+
+      - name: Fetch the test model
+        if: steps.model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p model
+          curl --fail --location --retry 3 --output "model/$MODEL_FILE" "$MODEL_URL"
+
+      # As a person who finished setup has it: the model chosen, and Enter
+      # after each paste, which is what hands the line to Terminal's `cat`.
+      - name: Set Legato up
+        run: |
+          echo "$MODEL_SHA256  model/$MODEL_FILE" | shasum -a 256 -c -
+          mkdir -p "$DATA/models"
+          cp "model/$MODEL_FILE" "$DATA/models/"
+          jq -n --arg model "$MODEL_ID" \
+            '{settings: {onboarding_completed: true, selected_model: $model, auto_submit: true, audio_feedback: false}}' \
+            > "$DATA/settings_store.json"
+          cat "$DATA/settings_store.json"
+          say -v Samantha -o e2e/said.aiff "$SENTENCE"
+          afconvert -f WAVE -d LEI16@16000 -c 1 e2e/said.aiff e2e/spoken.wav
+          afinfo e2e/spoken.wav
+          test "$(stat -f %z e2e/spoken.wav)" -gt 60000
+
+      - name: Dictate into Terminal
+        timeout-minutes: 8
+        run: |
+          NAME="$(basename "$BIN")"
+          LOG="$HOME/Library/Logs/$BUNDLE_ID/legato.log"
+          PASTED="$PWD/e2e/pasted.txt"
+          said() { grep -c "$1" "$LOG" 2> /dev/null || true; }
+
+          open --env LEGATO_DEBUG_MIC_WAV="$PWD/e2e/spoken.wav" "$APP"
+          sleep 25
+          pgrep -x "$NAME" > /dev/null || { echo "Legato isn't running"; exit 1; }
+          {
+            echo "Accessibility, as Legato saw it: enigo ready $(said 'Enigo initialized successfully'), shortcuts ready $(said 'Shortcuts initialized successfully')"
+          } | tee e2e/result.txt
+
+          # Terminal in front, with a shell that keeps what it's given.
+          printf '#!/bin/bash\ncat > "%s"\n' "$PASTED" > e2e/catcher.command
+          chmod +x e2e/catcher.command
+          open -a Terminal e2e/catcher.command
+          sleep 8
+          screencapture -x e2e/before.png || true
+
+          # Start, let the sentence play, stop, as the Dictate shortcut does.
+          # A second Legato hands the flag to the running one and exits.
+          toggle() {
+            "$BIN" --toggle-transcription > /dev/null 2>&1 &
+            local pid=$!
+            sleep 3
+            if kill -0 "$pid" 2> /dev/null; then
+              echo "the second Legato didn't hand its flag over and exit" | tee -a e2e/result.txt
+              kill "$pid" 2> /dev/null || true
+            fi
+          }
+          toggle
+          sleep 6
+          screencapture -x e2e/recording.png || true
+          toggle
+          sleep 20
+          screencapture -x e2e/after.png || true
+
+          # The same again from the keyboard: Option+Space, pressed by
+          # System Events, which Legato's key listener has to hear.
+          FIRST="$(wc -l < "$PASTED" 2> /dev/null | tr -d ' ' || echo 0)"
+          press() {
+            osascript -e 'tell application "System Events" to key code 49 using {option down}' > e2e/osascript.txt 2>&1 &
+            local pid=$!
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+              kill -0 "$pid" 2> /dev/null || return 0
+              sleep 1
+            done
+            kill "$pid" 2> /dev/null || true
+            echo "System Events didn't answer within 10 s" >> e2e/osascript.txt
+            return 1
+          }
+          if press; then
+            sleep 8
+            press || true
+            sleep 20
+          fi
+          screencapture -x e2e/after-shortcut.png || true
+          SECOND="$(wc -l < "$PASTED" 2> /dev/null | tr -d ' ' || echo 0)"
+
+          cp "$LOG" e2e/ 2> /dev/null || true
+          cp "$HOME/Library/Logs/DiagnosticReports/"*egato* e2e/ 2> /dev/null || true
+          pkill -x "$NAME" || true
+          pkill -x Terminal || true
+
+          TEXT="$(tr '[:upper:]' '[:lower:]' < "$PASTED" 2> /dev/null || true)"
+          FOUND=0
+          for word in $SENTENCE_WORDS; do
+            case "$TEXT" in *"$word"*) FOUND=$((FOUND + 1)) ;; esac
+          done
+          {
+            echo "Terminal received, after the command-line dictation: ${FIRST:-0} line(s)"
+            echo "Terminal received, after the Option+Space dictation: ${SECOND:-0} line(s)"
+            echo "What it received:"
+            cat "$PASTED" 2> /dev/null || echo "(nothing)"
+            echo "$FOUND of 6 words found, 4 needed"
+            echo "System Events said: $(cat e2e/osascript.txt 2> /dev/null)"
+          } | tee -a e2e/result.txt
+          test "$FOUND" -ge 4
+
+      # A debug build writes src/bindings.ts when it starts. The file in the
+      # repository is kept by hand, so this says whether the two agree.
+      - name: Bindings match what the app generates
+        if: always()
+        run: |
+          {
+            if git diff --quiet -- src/bindings.ts; then
+              echo "src/bindings.ts is what the app generates"
+            else
+              echo "src/bindings.ts differs from what the app generates:"
+              git diff --stat -- src/bindings.ts
+              git diff -- src/bindings.ts | head -80
+            fi
+          } | tee e2e/bindings.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          show() {
+            echo "$1:"
+            cat "e2e/$2" 2> /dev/null || echo "(nothing: the step didn't get this far)"
+            echo
+          }
+          {
+            echo "### A dictation from start to finish"
+            echo
+            echo '```'
+            show "permissions written" grants.txt
+            show "result" result.txt
+            show "bindings" bindings.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -iE "error|warn|paste|Enigo|shortcut|Recording|microphone" e2e/legato.log 2> /dev/null | grep -v "transcribe_cpp" | tail -n 60 || true
+
+      - name: Upload what the dictation showed
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dictation-end-to-end
+          path: e2e
           retention-days: 30
